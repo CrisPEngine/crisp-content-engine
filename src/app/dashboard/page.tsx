@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { PlanUsageCard } from '@/components/PlanUsageCard';
 
 export default async function Dashboard() {
-	const supabase = createClient();
+	const supabase = await createClient();
 	const { data: { user } } = await supabase.auth.getUser();
 
 	if (!user) redirect('/login');
