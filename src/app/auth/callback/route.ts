@@ -4,8 +4,29 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 
 export async function GET(request: Request) {
 	const url = new URL(request.url);
+	const requestUrl = new URL(request.url);
+	const code = requestUrl.searchParams.get('code');
+	
+	// If code is present, exchange it for a session
+	if (code) {
+		const supabase = await createClient();
+		// Exchange code for session - this will set cookies automatically
+		const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+		
+		if (exchangeError) {
+			console.error('Error exchanging code for session:', exchangeError);
+			// Redirect to login with error
+			return NextResponse.redirect(new URL('/login?error=oauth_error', url.origin));
+		}
+	}
+	
 	const supabase = await createClient();
-	const { data: { user } } = await supabase.auth.getUser();
+	const { data: { user }, error: userError } = await supabase.auth.getUser();
+	
+	if (userError) {
+		console.error('Error getting user:', userError);
+		return NextResponse.redirect(new URL('/login?error=auth_error', url.origin));
+	}
 	
 	if (user) {
 		// Ensure profile exists on first login
