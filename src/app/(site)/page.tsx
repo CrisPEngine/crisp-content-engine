@@ -1,3 +1,5 @@
+'use client';
+
 import { LoginClient } from './login/LoginClient';
 import Link from 'next/link';
 
