@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getStripe } from '@/lib/stripe';
+import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
 export const runtime = 'nodejs';
@@ -10,15 +11,21 @@ export async function POST(req: Request) {
         if (!priceId) return NextResponse.json({ error: 'Missing priceId' }, { status: 400 });
 
         // Resolve authenticated user from cookies
-        const res = NextResponse.next();
+        const cookieStore = await cookies();
         const supabase = createServerClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
             process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
             {
                 cookies: {
-                    get(name: string) { return (req as any).cookies?.get?.(name)?.value; },
-                    set(name: string, value: string, options: CookieOptions) { res.cookies.set({ name, value, ...options }); },
-                    remove(name: string, options: CookieOptions) { res.cookies.set({ name, value: '', ...options, expires: new Date(0) }); },
+                    get(name: string) {
+                        return cookieStore.get(name)?.value;
+                    },
+                    set(name: string, value: string, options: CookieOptions) {
+                        cookieStore.set({ name, value, ...options });
+                    },
+                    remove(name: string, options: CookieOptions) {
+                        cookieStore.set({ name, value: '', ...options });
+                    },
                 },
             }
         );
@@ -43,7 +50,7 @@ export async function POST(req: Request) {
             subscription_data: { metadata: { user_id: user.id } },
             metadata: { user_id: user.id },
         });
-        return NextResponse.json({ url: session.url }, { headers: res.headers });
+        return NextResponse.json({ url: session.url });
     } catch (e: any) {
         return NextResponse.json({ error: e?.message ?? 'Checkout failed' }, { status: 400 });
     }
