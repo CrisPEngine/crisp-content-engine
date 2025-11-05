@@ -23,7 +23,13 @@ export async function POST(req: Request) {
             }
         );
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+        if (!user) {
+            // Redirect to login with return URL
+            return NextResponse.json({ 
+                error: 'Not authenticated',
+                redirectTo: `/login?redirect=${encodeURIComponent('/billing')}`
+            }, { status: 401 });
+        }
 
         const stripe = getStripe();
         const session = await stripe.checkout.sessions.create({

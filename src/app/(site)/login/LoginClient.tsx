@@ -4,12 +4,18 @@ import { useSupabase } from '@/components/SupabaseProvider';
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { motion } from 'framer-motion';
+import { useEffect, useState } from 'react';
 
 export function LoginClient() {
 	const supabase = useSupabase();
+	const [mounted, setMounted] = useState(false);
 	
-	// Fallback if Supabase isn't ready yet
-	if (!supabase) {
+	useEffect(() => {
+		setMounted(true);
+	}, []);
+	
+	// Fallback if Supabase isn't ready yet or not mounted
+	if (!mounted || !supabase) {
 		return (
 			<div className="mx-auto max-w-lg px-6">
 				<div className="card p-8 mt-16">

@@ -64,13 +64,24 @@ export default function BillingPage() {
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ priceId }),
 			});
-			const { url, error } = await res.json();
-			if (error) throw new Error(error);
-			window.location.href = url;
-		} catch (err) {
+			const data = await res.json();
+			if (!res.ok) {
+				// If not authenticated, redirect to login
+				if (res.status === 401 && data.redirectTo) {
+					window.location.href = data.redirectTo;
+					return;
+				}
+				throw new Error(data.error || 'Checkout failed');
+			}
+			if (data.url) {
+				window.location.href = data.url;
+			} else {
+				throw new Error('No checkout URL returned');
+			}
+		} catch (err: any) {
 			console.error(err);
 			setLoading(null);
-			alert("Checkout failed. Please try again.");
+			alert(err.message || "Checkout failed. Please try again.");
 		}
 	};
 
@@ -78,6 +89,13 @@ export default function BillingPage() {
 
 	return (
 		<div className="mx-auto max-w-5xl">
+			{/* Back link */}
+			<div className="mb-6">
+				<a href="/" className="text-text-soft hover:text-text text-sm inline-flex items-center gap-1">
+					← Back to home
+				</a>
+			</div>
+			
 			{/* Hero */}
 			<section className="mb-8 rounded-xl2 border border-edge/60 p-6 bg-gradient-to-br from-surface/70 to-surface/30">
 				<h1 className="text-2xl font-semibold">Choose your plan</h1>
