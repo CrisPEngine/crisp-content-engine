@@ -106,7 +106,7 @@ export async function POST(req: Request) {
 			stripeCustomerId: customerId,
 			stripeSubscriptionId: subscription.id,
 			priceId,
-			currentPeriodEnd: subscription.current_period_end,
+			currentPeriodEnd: (subscription as any).current_period_end,
 		});
 
 		return NextResponse.json({ success: true, subscription: mapping });
