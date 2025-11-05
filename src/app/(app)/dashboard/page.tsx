@@ -12,9 +12,37 @@ export default async function Dashboard() {
 
 	if (!user) redirect('/login');
 
+	// Get user profile to check admin status
+	const { data: profile } = await supabase
+		.from('profiles')
+		.select('is_admin')
+		.eq('user_id', user.id)
+		.single();
+
+	// Check if user has a subscription - if not, redirect to billing
+	const { data: sub } = await supabase
+		.from('subscriptions')
+		.select('plan')
+		.eq('user_id', user.id)
+		.maybeSingle();
+
+	if (!sub) {
+		redirect('/billing');
+	}
+
 	return (
 		<main className="p-6 space-y-6">
-			<h1 className="text-3xl font-semibold">Welcome 👋</h1>
+			<div className="flex items-center justify-between">
+				<h1 className="text-3xl font-semibold">Welcome 👋</h1>
+				{profile?.is_admin && (
+					<a
+						href="/admin"
+						className="px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm"
+					>
+						Admin Dashboard
+					</a>
+				)}
+			</div>
 			<p className="text-text-dim">
 				You're signed in as <span className="font-medium">{user.email}</span>.
 			</p>
