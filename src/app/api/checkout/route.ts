@@ -42,8 +42,8 @@ export async function POST(req: Request) {
         const session = await stripe.checkout.sessions.create({
             mode: 'subscription',
             line_items: [{ price: priceId, quantity: 1 }],
-            success_url: successUrl ?? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard?sub=success`,
-            cancel_url: cancelUrl ?? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/billing?canceled=1`,
+            success_url: successUrl ?? `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io'}/dashboard?sub=success`,
+            cancel_url: cancelUrl ?? `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io'}/billing?canceled=1`,
             allow_promotion_codes: true,
             billing_address_collection: 'auto',
             client_reference_id: user.id,

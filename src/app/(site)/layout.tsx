@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
 	const pathname = usePathname();
-	// Only provide Supabase for login page (needs auth)
-	if (pathname === '/login') {
+	// Provide Supabase for login page and homepage (both need auth)
+	if (pathname === '/login' || pathname === '/') {
 		return <SupabaseProvider>{children}</SupabaseProvider>;
 	}
 	return <>{children}</>;

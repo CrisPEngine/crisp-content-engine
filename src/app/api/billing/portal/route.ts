@@ -29,7 +29,7 @@ export async function POST(req: Request) {
 	const stripe = getStripe();
 	const session = await stripe.billingPortal.sessions.create({
 		customer: customerId,
-		return_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/billing`,
+		return_url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io'}/billing`,
 	});
 	return NextResponse.json({ url: session.url });
 }

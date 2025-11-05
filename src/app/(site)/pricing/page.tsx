@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 
 async function createCheckout(priceId: string) {
 	'use server';
-	const res = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/checkout`, {
+	const res = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://app.crispdigital.io'}/api/checkout`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ priceId }),
