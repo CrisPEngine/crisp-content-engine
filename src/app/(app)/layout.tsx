@@ -1,8 +1,9 @@
-"use client";
+import { SupabaseProviderWrapper } from "@/components/SupabaseProviderWrapper";
 
-import { SupabaseProvider } from "@/components/SupabaseProvider";
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-	return <SupabaseProvider>{children}</SupabaseProvider>;
+	return <SupabaseProviderWrapper>{children}</SupabaseProviderWrapper>;
 }
 
