@@ -47,7 +47,14 @@ export async function GET(request: Request) {
 		}
 	}
 	
-	const next = url.searchParams.get('next') ?? '/dashboard';
+	// Determine redirect destination
+	let redirectPath = '/dashboard';
+	if (!sub) {
+		redirectPath = '/billing'; // Redirect to billing if no subscription
+	}
+	
+	const next = url.searchParams.get('next') || redirectPath;
+	// Use url.origin to ensure we stay on the same domain (production or localhost)
 	return NextResponse.redirect(new URL(next, url.origin));
 }
 
