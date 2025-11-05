@@ -37,25 +37,20 @@ export async function GET(request: Request) {
 			.eq('user_id', user.id)
 			.maybeSingle();
 		
-		// If no subscription, redirect to onboarding/billing
+		// Determine redirect destination based on subscription status
+		const next = url.searchParams.get('next');
 		if (!sub) {
-			const next = url.searchParams.get('next');
-			if (next?.startsWith('/dashboard') || next?.startsWith('/app')) {
-				return NextResponse.redirect(new URL('/onboarding', url.origin));
-			}
-			return NextResponse.redirect(new URL('/onboarding', url.origin));
+			// If no subscription, redirect to billing to select a plan
+			return NextResponse.redirect(new URL('/billing', url.origin));
 		}
+		
+		// If subscription exists, redirect to dashboard or requested path
+		const redirectPath = next || '/dashboard';
+		return NextResponse.redirect(new URL(redirectPath, url.origin));
 	}
 	
-	// Determine redirect destination
-	let redirectPath = '/dashboard';
-	if (!sub) {
-		redirectPath = '/billing'; // Redirect to billing if no subscription
-	}
-	
-	const next = url.searchParams.get('next') || redirectPath;
-	// Use url.origin to ensure we stay on the same domain (production or localhost)
-	return NextResponse.redirect(new URL(next, url.origin));
+	// If no user, redirect to login
+	return NextResponse.redirect(new URL('/login', url.origin));
 }
 
 
