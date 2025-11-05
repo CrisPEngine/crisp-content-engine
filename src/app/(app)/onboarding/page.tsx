@@ -10,23 +10,31 @@ import { TIMEZONES } from '@/lib/timezones';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { useEffect } from 'react';
 
+const PlatformsEnum = z.enum(['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog', 'Medium']);
+
 const schema = z.object({
 	client_name: z.string().min(2, 'Brand name must be at least 2 characters'),
-	website: z.string().url('Invalid URL').optional().or(z.literal('')),
 	audience: z.string().min(10, 'Please describe your audience (at least 10 characters)'),
 	value_props: z.string().min(10, 'Please describe your value propositions (at least 10 characters)'),
 	offers: z.string().min(5, 'Please describe your offers/products (at least 5 characters)'),
-	voice_rules: z.string().optional().default(''),
-	brand_keywords: z.string().optional().default(''),
-	exclude_keywords: z.string().optional().default(''),
-	content_rules: z.string().optional().default(''),
-	platforms_requested: z
-		.array(z.enum(['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog', 'Medium']))
-		.min(1, 'Select at least one platform'),
-	timezone: z.string().min(2, 'Please select a timezone'),
-	brand_palette: z.string().optional().default(''),
+	// Make these optional with empty-string defaults so the resolver is happy
+	voice_rules: z.string().default(''),
+	brand_keywords: z.string().default(''),
+	exclude_keywords: z.string().default(''),
+	content_rules: z.string().default(''),
+	// Platforms: require at least one
+	platforms_requested: z.array(PlatformsEnum).min(1, 'Select at least one platform'),
+	timezone: z.string().min(1, 'Please select a timezone'),
+	// Optional, validate URL if provided, otherwise empty string
+	website: z
+		.string()
+		.default('')
+		.refine((val) => !val || z.string().url().safeParse(val).success, {
+			message: 'Invalid URL',
+		}),
+	brand_palette: z.string().default(''),
 	approval_contact_email: z.string().email('Invalid email address'),
-	brand_assets_urls: z.array(z.string().url()).optional().default([]),
+	brand_assets_urls: z.array(z.string().url()).default([]),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -55,9 +63,21 @@ export default function OnboardingPage() {
 		watch,
 		trigger,
 	} = useForm<FormData>({
-		resolver: zodResolver(schema),
+		resolver: zodResolver(schema) as any,
 		defaultValues: {
+			client_name: '',
+			audience: '',
+			value_props: '',
+			offers: '',
+			voice_rules: '',
+			brand_keywords: '',
+			exclude_keywords: '',
+			content_rules: '',
 			platforms_requested: [],
+			timezone: '',
+			website: '',
+			brand_palette: '',
+			approval_contact_email: '',
 			brand_assets_urls: [],
 		},
 	});
@@ -117,7 +137,7 @@ export default function OnboardingPage() {
 
 	const nextStep = async () => {
 		const currentStepFields = STEPS[currentStep - 1].fields;
-		const isValid = await trigger(currentStepFields as any);
+		const isValid = await trigger(currentStepFields as (keyof FormData)[]);
 		if (isValid) {
 			setCurrentStep(Math.min(currentStep + 1, STEPS.length));
 		}
@@ -204,7 +224,7 @@ export default function OnboardingPage() {
 											{...register('website')}
 											type="url"
 											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-											placeholder="https://example.com"
+											placeholder="https://example.com (optional)"
 										/>
 										{errors.website && <p className="mt-1 text-sm text-danger">{errors.website.message}</p>}
 									</div>

@@ -5,23 +5,31 @@ import { z } from 'zod';
 
 export const runtime = 'nodejs';
 
+const PlatformsEnum = z.enum(['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog', 'Medium']);
+
 const schema = z.object({
 	client_name: z.string().min(2),
-	website: z.string().url().optional().or(z.literal('')),
 	audience: z.string().min(10),
 	value_props: z.string().min(10),
 	offers: z.string().min(5),
-	voice_rules: z.string().optional().default(''),
-	brand_keywords: z.string().optional().default(''),
-	exclude_keywords: z.string().optional().default(''),
-	content_rules: z.string().optional().default(''),
-	platforms_requested: z
-		.array(z.enum(['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog', 'Medium']))
-		.min(1),
-	timezone: z.string().min(2),
-	brand_palette: z.string().optional().default(''),
+	// Make these optional with empty-string defaults
+	voice_rules: z.string().default(''),
+	brand_keywords: z.string().default(''),
+	exclude_keywords: z.string().default(''),
+	content_rules: z.string().default(''),
+	// Platforms: require at least one
+	platforms_requested: z.array(PlatformsEnum).min(1),
+	timezone: z.string().min(1),
+	// Optional, validate URL if provided, otherwise empty string
+	website: z
+		.string()
+		.default('')
+		.refine((val) => !val || z.string().url().safeParse(val).success, {
+			message: 'Invalid URL',
+		}),
+	brand_palette: z.string().default(''),
 	approval_contact_email: z.string().email(),
-	brand_assets_urls: z.array(z.string().url()).optional().default([]),
+	brand_assets_urls: z.array(z.string().url()).default([]),
 });
 
 export async function POST(req: Request) {
@@ -75,7 +83,7 @@ export async function POST(req: Request) {
 		const recordPayload = {
 			fields: {
 				client_name: data.client_name,
-				website: data.website || '',
+				website: (data.website && data.website.trim()) || '',
 				audience: data.audience,
 				value_props: data.value_props,
 				offers: data.offers,
