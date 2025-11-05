@@ -5,8 +5,22 @@ import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { motion } from 'framer-motion';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export default function LoginPage() {
 	const supabase = useSupabase();
+	
+	// Fallback if Supabase isn't ready yet
+	if (!supabase) {
+		return (
+			<div className="mx-auto max-w-lg px-6">
+				<div className="card p-8 mt-16">
+					<div className="text-text-soft">Loading...</div>
+				</div>
+			</div>
+		);
+	}
 
 	return (
 		<div className="mx-auto max-w-lg px-6">
