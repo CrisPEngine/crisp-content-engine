@@ -163,7 +163,7 @@ export async function POST(req: Request) {
 		console.error('Onboarding error:', e);
 		if (e instanceof z.ZodError) {
 			return NextResponse.json(
-				{ error: 'Validation error', details: e.errors },
+				{ error: 'Validation error', details: e.issues },
 				{ status: 400 }
 			);
 		}
