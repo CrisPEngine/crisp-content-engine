@@ -1,4 +1,4 @@
-import { cookies, headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
 export function createClient() {
@@ -17,10 +17,6 @@ export function createClient() {
 				remove(name: string, options: CookieOptions) {
 					cookieStore.set({ name, value: '', ...options });
 				}
-			},
-			headers: {
-				'x-forwarded-host': headers().get('x-forwarded-host') ?? undefined,
-				'x-forwarded-proto': headers().get('x-forwarded-proto') ?? undefined,
 			}
 		}
 	);
