@@ -1,12 +1,12 @@
 'use client';
 
-import { supabaseBrowser } from '@/lib/supabase/client';
+import { useSupabase } from '@/components/SupabaseProvider';
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { motion } from 'framer-motion';
 
 export default function LoginPage() {
-	const supabase = supabaseBrowser();
+	const supabase = useSupabase();
 
 	return (
 		<div className="mx-auto max-w-lg px-6">
@@ -28,7 +28,7 @@ export default function LoginPage() {
 					supabaseClient={supabase}
 					view="sign_in"
 					providers={["google", "linkedin"]}
-					redirectTo={typeof window !== 'undefined' ? `${window.location.origin}/app` : undefined}
+					redirectTo={typeof window !== 'undefined' ? `${window.location.origin}/dashboard` : undefined}
 					appearance={{
 						theme: ThemeSupa,
 						variables: {

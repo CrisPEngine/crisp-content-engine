@@ -34,14 +34,14 @@ export async function GET(request: Request) {
 		// If no subscription, redirect to onboarding/billing
 		if (!sub) {
 			const next = url.searchParams.get('next');
-			if (next?.startsWith('/app')) {
+			if (next?.startsWith('/dashboard') || next?.startsWith('/app')) {
 				return NextResponse.redirect(new URL('/onboarding', url.origin));
 			}
 			return NextResponse.redirect(new URL('/onboarding', url.origin));
 		}
 	}
 	
-	const next = url.searchParams.get('next') ?? '/app';
+	const next = url.searchParams.get('next') ?? '/dashboard';
 	return NextResponse.redirect(new URL(next, url.origin));
 }
 

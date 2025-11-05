@@ -10,7 +10,7 @@ export default async function OnboardingPage() {
 	
 	// Check if user already has a subscription
 	const { data: sub } = await supabase.from('subscriptions').select('plan').eq('user_id', user.id).maybeSingle();
-	if (sub) redirect('/app');
+	if (sub) redirect('/dashboard');
 	
 	return (
 		<div className="mx-auto max-w-2xl">
