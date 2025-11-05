@@ -19,14 +19,15 @@ export default async function Dashboard() {
 		.eq('id', user.id)
 		.single();
 
-	// Check if user has a subscription - if not, redirect to billing
+	// Check if user has a subscription - admins can bypass
 	const { data: sub } = await supabase
 		.from('subscriptions')
 		.select('plan')
 		.eq('user_id', user.id)
 		.maybeSingle();
 
-	if (!sub) {
+	// Admins can bypass subscription requirement
+	if (!sub && !profile?.is_admin) {
 		redirect('/billing');
 	}
 

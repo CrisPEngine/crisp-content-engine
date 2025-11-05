@@ -51,6 +51,9 @@ export async function GET(request: Request) {
 			await admin.from('profiles').update({ is_admin: true }).eq('id', user.id);
 		}
 		
+		// Check if user is admin - admins can bypass subscription requirement
+		const isAdmin = existing?.is_admin === true;
+		
 		// Check if user has entitlements (subscription)
 		const { data: sub } = await admin
 			.from('subscriptions')
@@ -60,12 +63,14 @@ export async function GET(request: Request) {
 		
 		// Determine redirect destination based on subscription status
 		const next = url.searchParams.get('next');
-		if (!sub) {
-			// If no subscription, redirect to billing to select a plan
+		
+		// Admins can bypass subscription check
+		if (!sub && !isAdmin) {
+			// If no subscription and not admin, redirect to billing to select a plan
 			return NextResponse.redirect(new URL('/billing', url.origin));
 		}
 		
-		// If subscription exists, redirect to dashboard or requested path
+		// If subscription exists or user is admin, redirect to dashboard or requested path
 		const redirectPath = next || '/dashboard';
 		return NextResponse.redirect(new URL(redirectPath, url.origin));
 	}
