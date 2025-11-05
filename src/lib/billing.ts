@@ -7,18 +7,17 @@ export const supabaseAdmin = getSupabaseService;
 export async function upsertUserFromStripe(stripeCustomerId: string | null | undefined, email?: string | null) {
 	if (!email) return null;
 	const admin = supabaseAdmin();
+	// First try to find by email
 	const { data: profile } = await admin
 		.from('profiles')
 		.select('*')
 		.eq('email', email)
-		.single();
+		.maybeSingle();
 	if (profile) return profile;
-		const { data: inserted } = await admin
-			.from('profiles')
-			.insert({ email, id: email }) // Use email as temporary id, will need proper user_id later
-			.select()
-			.single();
-		return inserted;
+	// If not found, we can't create a profile without a user_id (auth.users.id)
+	// This should only happen if the user hasn't logged in yet
+	// The webhook will use metadata.user_id or client_reference_id instead
+	return null;
 }
 
 export function capsFor(plan: 'creator' | 'growth' | 'pro' | 'scale') {
