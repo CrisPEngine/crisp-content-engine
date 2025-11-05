@@ -6,7 +6,7 @@ import { PRICING, type PlanId } from '@/config/pricing';
 import Link from 'next/link';
 
 type User = {
-	user_id: string;
+	id: string;
 	email: string;
 	full_name: string | null;
 	is_admin: boolean;
@@ -48,7 +48,7 @@ export default function AdminPage() {
 			const { data: profile } = await supabase
 				.from('profiles')
 				.select('is_admin')
-				.eq('user_id', user.id)
+				.eq('id', user.id)
 				.single();
 
 			if (!profile?.is_admin) {
@@ -172,9 +172,9 @@ export default function AdminPage() {
 				<div className="space-y-2 max-h-96 overflow-y-auto">
 					{users.map((user) => (
 						<div
-							key={user.user_id}
+							key={user.id}
 							className="flex items-center justify-between p-3 rounded-lg border border-edge/60 hover:bg-surface/50 cursor-pointer"
-							onClick={() => loadUserDetails(user.user_id)}
+							onClick={() => loadUserDetails(user.id)}
 						>
 							<div>
 								<div className="font-medium">{user.email}</div>
@@ -202,7 +202,7 @@ export default function AdminPage() {
 						<div className="space-y-1 text-sm">
 							<div>Email: {selectedUser.profile?.email}</div>
 							<div>Name: {selectedUser.profile?.full_name || 'N/A'}</div>
-							<div>User ID: {selectedUser.profile?.user_id}</div>
+							<div>User ID: {selectedUser.profile?.id}</div>
 						</div>
 					</div>
 
@@ -222,7 +222,7 @@ export default function AdminPage() {
 							<div className="text-text-dim text-sm">No subscription</div>
 						)}
 						<button
-							onClick={() => refreshStripe(selectedUser.profile.user_id, selectedUser.subscription?.stripe_customer_id)}
+							onClick={() => refreshStripe(selectedUser.profile.id, selectedUser.subscription?.stripe_customer_id)}
 							disabled={refreshLoading}
 							className="mt-2 px-3 py-1.5 rounded-lg border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm disabled:opacity-50"
 						>
@@ -269,7 +269,7 @@ export default function AdminPage() {
 								<option value="annual">Annual</option>
 							</select>
 							<button
-								onClick={() => setPlan(selectedUser.profile.user_id)}
+								onClick={() => setPlan(selectedUser.profile.id)}
 								className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20"
 							>
 								Set Plan

@@ -9,7 +9,7 @@ async function checkAdmin(userId: string) {
 	const { data: profile } = await admin
 		.from('profiles')
 		.select('is_admin')
-		.eq('user_id', userId)
+		.eq('id', userId)
 		.single();
 	return profile?.is_admin === true;
 }
@@ -35,7 +35,7 @@ export async function GET(req: Request, { params }: { params: { userId: string }
 		const { data: profile, error: profileError } = await admin
 			.from('profiles')
 			.select('*')
-			.eq('user_id', userId)
+			.eq('id', userId)
 			.single();
 
 		if (profileError) {

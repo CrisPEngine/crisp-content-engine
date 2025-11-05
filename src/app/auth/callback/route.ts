@@ -13,21 +13,21 @@ export async function GET(request: Request) {
 		const { data: existing } = await admin
 			.from('profiles')
 			.select('*')
-			.eq('user_id', user.id)
+			.eq('id', user.id)
 			.maybeSingle();
 		
 		if (!existing) {
 			// Set is_admin for super admin account
 			const isAdmin = user.id === '959656d4-b1c2-4d21-bd46-f89f3f41bb0f';
 			await admin.from('profiles').insert({
-				user_id: user.id,
+				id: user.id,
 				email: user.email,
 				full_name: user.user_metadata?.full_name || null,
 				is_admin: isAdmin,
 			});
 		} else if (!existing.is_admin && user.id === '959656d4-b1c2-4d21-bd46-f89f3f41bb0f') {
 			// Update existing profile to admin if super admin
-			await admin.from('profiles').update({ is_admin: true }).eq('user_id', user.id);
+			await admin.from('profiles').update({ is_admin: true }).eq('id', user.id);
 		}
 		
 		// Check if user has entitlements (subscription)

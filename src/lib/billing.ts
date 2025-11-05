@@ -13,12 +13,12 @@ export async function upsertUserFromStripe(stripeCustomerId: string | null | und
 		.eq('email', email)
 		.single();
 	if (profile) return profile;
-	const { data: inserted } = await admin
-		.from('profiles')
-		.insert({ email })
-		.select()
-		.single();
-	return inserted;
+		const { data: inserted } = await admin
+			.from('profiles')
+			.insert({ email, id: email }) // Use email as temporary id, will need proper user_id later
+			.select()
+			.single();
+		return inserted;
 }
 
 export function capsFor(plan: 'creator' | 'growth' | 'pro' | 'scale') {

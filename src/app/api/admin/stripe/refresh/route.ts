@@ -12,7 +12,7 @@ async function checkAdmin(userId: string) {
 	const { data: profile } = await admin
 		.from('profiles')
 		.select('is_admin')
-		.eq('user_id', userId)
+		.eq('id', userId)
 		.single();
 	return profile?.is_admin === true;
 }
@@ -88,10 +88,10 @@ export async function POST(req: Request) {
 		if (!targetUserId) {
 			const { data: profile } = await admin
 				.from('profiles')
-				.select('user_id')
+				.select('id')
 				.eq('email', (customer as any).email)
 				.maybeSingle();
-			targetUserId = profile?.user_id;
+			targetUserId = profile?.id;
 		}
 
 		if (!targetUserId) {

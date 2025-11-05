@@ -9,7 +9,7 @@ async function checkAdmin(userId: string) {
 	const { data: profile } = await admin
 		.from('profiles')
 		.select('is_admin')
-		.eq('user_id', userId)
+		.eq('id', userId)
 		.single();
 	return profile?.is_admin === true;
 }
@@ -33,7 +33,7 @@ export async function GET(req: Request) {
 		const query = searchParams.get('q') || '';
 		const limit = parseInt(searchParams.get('limit') || '50', 10);
 
-		let queryBuilder = admin.from('profiles').select('user_id, email, full_name, is_admin, created_at');
+		let queryBuilder = admin.from('profiles').select('id, email, full_name, is_admin, created_at');
 
 		if (query) {
 			queryBuilder = queryBuilder.or(`email.ilike.%${query}%,full_name.ilike.%${query}%`);
