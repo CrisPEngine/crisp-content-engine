@@ -1,0 +1,165 @@
+import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { z } from 'zod';
+
+export const runtime = 'nodejs';
+
+const schema = z.object({
+	client_name: z.string().min(2),
+	website: z.string().url().optional().or(z.literal('')),
+	audience: z.string().min(10),
+	value_props: z.string().min(10),
+	offers: z.string().min(5),
+	voice_rules: z.string().optional().default(''),
+	brand_keywords: z.string().optional().default(''),
+	exclude_keywords: z.string().optional().default(''),
+	content_rules: z.string().optional().default(''),
+	platforms_requested: z
+		.array(z.enum(['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog', 'Medium']))
+		.min(1),
+	timezone: z.string().min(2),
+	brand_palette: z.string().optional().default(''),
+	approval_contact_email: z.string().email(),
+	brand_assets_urls: z.array(z.string().url()).optional().default([]),
+});
+
+export async function POST(req: Request) {
+	try {
+		const body = await req.json();
+		const data = schema.parse(body);
+
+		// Authenticate user
+		const cookieStore = await cookies();
+		const supabase = createServerClient(
+			process.env.NEXT_PUBLIC_SUPABASE_URL!,
+			process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+			{
+				cookies: {
+					get(name: string) {
+						return cookieStore.get(name)?.value;
+					},
+					set(name: string, value: string, options: CookieOptions) {
+						cookieStore.set({ name, value, ...options });
+					},
+					remove(name: string, options: CookieOptions) {
+						cookieStore.set({ name, value: '', ...options });
+					},
+				},
+			}
+		);
+
+		const { data: { user }, error: userErr } = await supabase.auth.getUser();
+
+		if (userErr || !user) {
+			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+		}
+
+		// Airtable configuration
+		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
+		const BASE_ID = process.env.AIRTABLE_BASE_ID;
+		const TABLE_ID = process.env.AIRTABLE_BRANDPROFILES_TABLE;
+
+		if (!AIRTABLE_TOKEN || !BASE_ID || !TABLE_ID) {
+			return NextResponse.json(
+				{ error: 'Airtable configuration missing. Please contact support.' },
+				{ status: 500 }
+			);
+		}
+
+		// Map attachment URLs to Airtable attachment format
+		const attachments = (data.brand_assets_urls || []).map((url) => ({ url }));
+
+		// Prepare Airtable record payload
+		// IMPORTANT: Field names must exactly match Airtable table schema
+		const recordPayload = {
+			fields: {
+				client_name: data.client_name,
+				website: data.website || '',
+				audience: data.audience,
+				value_props: data.value_props,
+				offers: data.offers,
+				voice_rules: data.voice_rules || '',
+				brand_keywords: data.brand_keywords || '',
+				exclude_keywords: data.exclude_keywords || '',
+				content_rules: data.content_rules || '',
+				platforms_requested: data.platforms_requested, // Multi-select field
+				timezone: data.timezone, // Single-select field - must match exact option
+				brand_palette: data.brand_palette || '',
+				approval_contact_email: data.approval_contact_email,
+				brand_assets: attachments.length > 0 ? attachments : undefined, // Attachment field
+				status: 'Strategy Needed', // Initial status
+				strategy_approval: false,
+				user_id: user.id, // Link to Supabase user
+				created_at: new Date().toISOString(),
+			},
+		};
+
+		// Write to Airtable
+		const airtableRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify(recordPayload),
+		});
+
+		const airtableResult = await airtableRes.json();
+
+		if (!airtableRes.ok) {
+			console.error('Airtable error:', airtableResult);
+			// Common errors:
+			// - Unknown field name
+			// - Invalid select option value
+			// - Insufficient permissions
+			return NextResponse.json(
+				{
+					error: airtableResult?.error?.message || 'Failed to create brand profile',
+					details: airtableResult?.error,
+				},
+				{ status: 422 }
+			);
+		}
+
+		// Optional: Trigger Make webhook for site scraping/strategy generation
+		if (process.env.MAKE_ONBOARDING_WEBHOOK_URL) {
+			try {
+				await fetch(process.env.MAKE_ONBOARDING_WEBHOOK_URL, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						...(process.env.MAKE_API_KEY && {
+							'x-api-key': process.env.MAKE_API_KEY,
+						}),
+					},
+					body: JSON.stringify({
+						brand_profile_id: airtableResult.id,
+						user_id: user.id,
+						client_name: data.client_name,
+						website: data.website || '',
+					}),
+				});
+			} catch (webhookError) {
+				// Log but don't fail the request if webhook fails
+				console.error('Make webhook error:', webhookError);
+			}
+		}
+
+		return NextResponse.json({
+			ok: true,
+			airtableId: airtableResult.id,
+			message: 'Brand profile created successfully',
+		});
+	} catch (e: any) {
+		console.error('Onboarding error:', e);
+		if (e instanceof z.ZodError) {
+			return NextResponse.json(
+				{ error: 'Validation error', details: e.errors },
+				{ status: 400 }
+			);
+		}
+		return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 });
+	}
+}
+
