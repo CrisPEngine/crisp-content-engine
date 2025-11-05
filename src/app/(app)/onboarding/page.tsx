@@ -88,8 +88,8 @@ export default function OnboardingPage() {
 		setMounted(true);
 		if (supabase) {
 			// Check if user is logged in
-			supabase.auth.getUser().then(({ data: { user } }) => {
-				if (!user) {
+			supabase.auth.getUser().then((response: any) => {
+				if (!response.data.user) {
 					window.location.href = '/login';
 				}
 			});
@@ -137,7 +137,7 @@ export default function OnboardingPage() {
 
 	const nextStep = async () => {
 		const currentStepFields = STEPS[currentStep - 1].fields;
-		const isValid = await trigger(currentStepFields as (keyof FormData)[]);
+		const isValid = await trigger(currentStepFields as any);
 		if (isValid) {
 			setCurrentStep(Math.min(currentStep + 1, STEPS.length));
 		}
