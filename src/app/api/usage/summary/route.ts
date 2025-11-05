@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { enforceCaps } from '@/lib/enforceCaps';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
+export const runtime = 'nodejs';
+
 async function getUserId(req: Request): Promise<string | null> {
 	const res = NextResponse.next();
 	const supabase = createServerClient(

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabaseService } from '@/lib/supabaseService';
 import dayjs from 'dayjs';
+
+export const runtime = 'nodejs';
 
 export async function POST(req: Request) {
 	try {
@@ -12,10 +14,7 @@ export async function POST(req: Request) {
 			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 		}
 		const ym = dayjs().format('YYYY-MM');
-		const supabase = createClient(
-			process.env.NEXT_PUBLIC_SUPABASE_URL!,
-			process.env.SUPABASE_SERVICE_ROLE_KEY!
-		);
+		const supabase = getSupabaseService();
 		const { data: existing } = await supabase
 			.from('usage_posts')
 			.select('*')

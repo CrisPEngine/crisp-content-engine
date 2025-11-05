@@ -1,10 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
 import dayjs from 'dayjs';
-
-const supabase = createClient(
-	process.env.NEXT_PUBLIC_SUPABASE_URL!,
-	process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { getSupabaseService } from './supabaseService';
 
 export type CapsCheck = {
 	ok: boolean;
@@ -14,6 +9,7 @@ export type CapsCheck = {
 };
 
 export async function getMonthUsage(userId: string) {
+	const supabase = getSupabaseService();
 	const ym = dayjs().format('YYYY-MM');
 	const { data } = await supabase
 		.from('usage_posts')
@@ -25,6 +21,7 @@ export async function getMonthUsage(userId: string) {
 }
 
 export async function getEntitlements(userId: string) {
+	const supabase = getSupabaseService();
 	const { data, error } = await supabase
 		.from('entitlements')
 		.select('*')

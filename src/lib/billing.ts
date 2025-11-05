@@ -1,13 +1,8 @@
-import { createClient } from '@supabase/supabase-js';
 import type Stripe from 'stripe';
 import { CAPS, PRICE_TO_PLAN } from '@/config/pricing';
+import { getSupabaseService } from './supabaseService';
 
-export const supabaseAdmin = () =>
-	createClient(
-		process.env.NEXT_PUBLIC_SUPABASE_URL!,
-		process.env.SUPABASE_SERVICE_ROLE_KEY!,
-		{ auth: { persistSession: false } }
-	);
+export const supabaseAdmin = getSupabaseService;
 
 export async function upsertUserFromStripe(stripeCustomerId: string | null | undefined, email?: string | null) {
 	if (!email) return null;
