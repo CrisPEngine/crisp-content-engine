@@ -142,9 +142,12 @@ export default function AdminPage() {
 		<div className="mx-auto max-w-6xl p-6 space-y-6">
 			<div className="flex items-center justify-between">
 				<h1 className="text-3xl font-semibold">Admin Dashboard</h1>
-				<Link href="/dashboard" className="text-text-soft hover:text-text text-sm">
-					← Back to Dashboard
-				</Link>
+				<button
+					onClick={() => window.history.back()}
+					className="text-text-soft hover:text-text text-sm"
+				>
+					← Back
+				</button>
 			</div>
 
 			{/* User Search */}

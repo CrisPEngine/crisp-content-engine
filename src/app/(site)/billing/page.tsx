@@ -91,9 +91,12 @@ export default function BillingPage() {
 		<div className="mx-auto max-w-5xl">
 			{/* Back link */}
 			<div className="mb-6">
-				<a href="/" className="text-text-soft hover:text-text text-sm inline-flex items-center gap-1">
-					← Back to home
-				</a>
+				<button
+					onClick={() => window.history.back()}
+					className="text-text-soft hover:text-text text-sm inline-flex items-center gap-1"
+				>
+					← Back
+				</button>
 			</div>
 			
 			{/* Hero */}

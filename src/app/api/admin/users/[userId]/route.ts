@@ -14,7 +14,7 @@ async function checkAdmin(userId: string) {
 	return profile?.is_admin === true;
 }
 
-export async function GET(req: Request, { params }: { params: { userId: string } }) {
+export async function GET(req: Request, { params }: { params: Promise<{ userId: string }> }) {
 	try {
 		const supabase = await createClient();
 		const { data: { user } } = await supabase.auth.getUser();
@@ -29,7 +29,7 @@ export async function GET(req: Request, { params }: { params: { userId: string }
 		}
 
 		const admin = getSupabaseService();
-		const { userId } = params;
+		const { userId } = await params;
 
 		// Get user profile
 		const { data: profile, error: profileError } = await admin
@@ -66,7 +66,7 @@ export async function GET(req: Request, { params }: { params: { userId: string }
 	}
 }
 
-export async function PATCH(req: Request, { params }: { params: { userId: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ userId: string }> }) {
 	try {
 		const supabase = await createClient();
 		const { data: { user } } = await supabase.auth.getUser();
@@ -81,7 +81,7 @@ export async function PATCH(req: Request, { params }: { params: { userId: string
 		}
 
 		const admin = getSupabaseService();
-		const { userId } = params;
+		const { userId } = await params;
 		const body = await req.json();
 		const { plan, cycle } = body;
 
