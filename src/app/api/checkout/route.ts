@@ -1,8 +1,8 @@
-import Stripe from 'stripe';
 import { NextResponse } from 'next/server';
+import { getStripe } from '@/lib/stripe';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2025-10-29.clover' });
+export const runtime = 'nodejs';
 
 export async function POST(req: Request) {
     try {
@@ -25,6 +25,7 @@ export async function POST(req: Request) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
+        const stripe = getStripe();
         const session = await stripe.checkout.sessions.create({
             mode: 'subscription',
             line_items: [{ price: priceId, quantity: 1 }],

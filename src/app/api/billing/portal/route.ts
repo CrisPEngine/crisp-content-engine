@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import Stripe from 'stripe';
+import { getStripe } from '@/lib/stripe';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2025-10-29.clover' });
+export const runtime = 'nodejs';
 
 export async function POST(req: Request) {
 	// Resolve user
@@ -26,6 +26,7 @@ export async function POST(req: Request) {
 	const customerId = (sub as any)?.stripe_customer_id;
 	if (!customerId) return NextResponse.json({ error: 'No Stripe customer' }, { status: 404 });
 
+	const stripe = getStripe();
 	const session = await stripe.billingPortal.sessions.create({
 		customer: customerId,
 		return_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/billing`,

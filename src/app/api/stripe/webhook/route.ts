@@ -1,20 +1,17 @@
-import Stripe from 'stripe';
 import { NextResponse } from 'next/server';
+import { getStripe } from '@/lib/stripe';
 import { PRICE_TO_PLAN } from '@/config/pricing';
 import { extractCustomerAndEmail, upsertUserFromStripe, upsertSubscriptionAndEntitlements } from '@/lib/billing';
 
 export const runtime = 'nodejs';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-	apiVersion: '2025-10-29.clover',
-});
-
 export async function POST(request: Request) {
+	const stripe = getStripe();
 	const sig = request.headers.get('stripe-signature');
 	if (!sig) return new NextResponse('Missing signature', { status: 400 });
 
 	const text = await request.text(); // raw body
-	let event: Stripe.Event;
+	let event: import('stripe').Stripe.Event;
 	try {
 		event = stripe.webhooks.constructEvent(
 			text,
