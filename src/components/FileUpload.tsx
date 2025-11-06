@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Upload, X, Loader2 } from 'lucide-react';
 
 interface FileUploadProps {
@@ -138,6 +138,27 @@ export function FileUpload({ onUpload, acceptedTypes = ['image/*', 'application/
 		setUploadedFiles(newFiles);
 		onUpload(newFiles);
 	};
+
+	// Prevent browser from opening files when dropped outside the drop zone
+	useEffect(() => {
+		const handleDragOverGlobal = (e: DragEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+		};
+
+		const handleDropGlobal = (e: DragEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+		};
+
+		document.addEventListener('dragover', handleDragOverGlobal);
+		document.addEventListener('drop', handleDropGlobal);
+
+		return () => {
+			document.removeEventListener('dragover', handleDragOverGlobal);
+			document.removeEventListener('drop', handleDropGlobal);
+		};
+	}, []);
 
 	return (
 		<div className="space-y-3">
