@@ -109,7 +109,8 @@ export async function POST(req: Request) {
 				status: 'New Brief', // Initial status - matches Airtable options
 				strategy_approval: false,
 				user_id: user.id, // Link to Supabase user
-				created_at: new Date().toISOString(),
+				// Note: created_time and last_modified_time are automatic fields in Airtable
+				// Do not set them manually - Airtable will handle them automatically
 			},
 		};
 

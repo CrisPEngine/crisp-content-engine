@@ -59,13 +59,29 @@ export function FileUpload({ onUpload, acceptedTypes = ['image/*', 'application/
 	const handleDragOver = (e: React.DragEvent) => {
 		e.preventDefault();
 		e.stopPropagation();
-		setIsDragging(true);
+		if (!uploading) {
+			setIsDragging(true);
+		}
+	};
+
+	const handleDragEnter = (e: React.DragEvent) => {
+		e.preventDefault();
+		e.stopPropagation();
+		if (!uploading) {
+			setIsDragging(true);
+		}
 	};
 
 	const handleDragLeave = (e: React.DragEvent) => {
 		e.preventDefault();
 		e.stopPropagation();
-		setIsDragging(false);
+		// Only set dragging to false if we're actually leaving the drop zone
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		const x = e.clientX;
+		const y = e.clientY;
+		if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+			setIsDragging(false);
+		}
 	};
 
 	const handleDrop = async (e: React.DragEvent) => {
@@ -76,7 +92,9 @@ export function FileUpload({ onUpload, acceptedTypes = ['image/*', 'application/
 		if (uploading) return;
 
 		const files = Array.from(e.dataTransfer.files || []);
-		await processFiles(files);
+		if (files.length > 0) {
+			await processFiles(files);
+		}
 	};
 
 	const uploadToCloudinary = async (files: File[]): Promise<string[]> => {
@@ -125,6 +143,7 @@ export function FileUpload({ onUpload, acceptedTypes = ['image/*', 'application/
 		<div className="space-y-3">
 			<div
 				onClick={() => !uploading && fileInputRef.current?.click()}
+				onDragEnter={handleDragEnter}
 				onDragOver={handleDragOver}
 				onDragLeave={handleDragLeave}
 				onDrop={handleDrop}
