@@ -142,13 +142,19 @@ export function FileUpload({ onUpload, acceptedTypes = ['image/*', 'application/
 	// Prevent browser from opening files when dropped outside the drop zone
 	useEffect(() => {
 		const handleDragOverGlobal = (e: DragEvent) => {
-			e.preventDefault();
-			e.stopPropagation();
+			// Only prevent default if dragging files (not text/elements)
+			if (e.dataTransfer?.types.includes('Files')) {
+				e.preventDefault();
+				e.stopPropagation();
+			}
 		};
 
 		const handleDropGlobal = (e: DragEvent) => {
-			e.preventDefault();
-			e.stopPropagation();
+			// Only prevent default if dropping files (not text/elements)
+			if (e.dataTransfer?.types.includes('Files')) {
+				e.preventDefault();
+				e.stopPropagation();
+			}
 		};
 
 		document.addEventListener('dragover', handleDragOverGlobal);
