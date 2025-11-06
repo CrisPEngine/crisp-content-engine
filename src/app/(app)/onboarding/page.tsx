@@ -9,6 +9,7 @@ import { FileUpload } from '@/components/FileUpload';
 import { TIMEZONES } from '@/lib/timezones';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { useEffect } from 'react';
+import { SubmissionLoading } from '@/components/SubmissionLoading';
 
 const PlatformsEnum = z.enum(['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog', 'Medium']);
 
@@ -61,6 +62,8 @@ export default function OnboardingPage() {
 	const [submitting, setSubmitting] = useState(false);
 	const [uploadedUrls, setUploadedUrls] = useState<string[]>([]);
 	const [mounted, setMounted] = useState(false);
+	const [showLoading, setShowLoading] = useState(false);
+	const [submittedBrandName, setSubmittedBrandName] = useState('');
 
 	const {
 		register,
@@ -137,13 +140,18 @@ export default function OnboardingPage() {
 				throw new Error(result.error || 'Failed to save brand profile');
 			}
 
-			// Redirect to dashboard or strategy review page
-			window.location.href = '/dashboard';
+			// Show loading animation
+			setSubmittedBrandName(data.client_name);
+			setShowLoading(true);
 		} catch (e: any) {
 			alert(e.message || 'Failed to save. Please try again.');
-		} finally {
 			setSubmitting(false);
 		}
+	};
+
+	const handleLoadingComplete = () => {
+		// Redirect to dashboard after loading animation
+		window.location.href = '/dashboard';
 	};
 
 	const nextStep = async () => {
@@ -166,6 +174,10 @@ export default function OnboardingPage() {
 				</div>
 			</div>
 		);
+	}
+
+	if (showLoading) {
+		return <SubmissionLoading brandName={submittedBrandName} onComplete={handleLoadingComplete} />;
 	}
 
 	return (

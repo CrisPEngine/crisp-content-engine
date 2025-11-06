@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { PlanUsageCard } from '@/components/PlanUsageCard';
+import { BrandProfilesList } from '@/components/BrandProfilesList';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -50,14 +51,28 @@ export default async function Dashboard() {
 
 			<PlanUsageCard />
 
-			{/* Replace this with your onboarding / plan selection / connections */}
-			<div className="card p-4">
-				<h2 className="text-xl font-medium mb-2">Next steps</h2>
-				<ol className="list-decimal ml-5 space-y-1">
-					<li>Connect Airtable / Buffer (or native LI/X) accounts</li>
-					<li>Create your Brand Profile</li>
-					<li>Generate your first content calendar</li>
-				</ol>
+			<BrandProfilesList />
+
+			{/* Quick Actions */}
+			<div className="grid gap-4 md:grid-cols-2">
+				<a
+					href="/onboarding"
+					className="card p-6 hover:bg-surface/50 transition cursor-pointer border-2 border-dashed border-edge/60"
+				>
+					<h3 className="font-semibold mb-2">Create New Brand</h3>
+					<p className="text-sm text-text-dim">
+						Add a new brand profile to start generating content
+					</p>
+				</a>
+				<a
+					href="/connections"
+					className="card p-6 hover:bg-surface/50 transition cursor-pointer border-2 border-dashed border-edge/60"
+				>
+					<h3 className="font-semibold mb-2">Connect Accounts</h3>
+					<p className="text-sm text-text-dim">
+						Connect your social media accounts for publishing
+					</p>
+				</a>
 			</div>
 		</main>
 	);
