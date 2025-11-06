@@ -14,10 +14,10 @@ export function FileUpload({ onUpload, acceptedTypes = ['image/*', 'application/
 	const [uploading, setUploading] = useState(false);
 	const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
 	const [error, setError] = useState<string | null>(null);
+	const [isDragging, setIsDragging] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
-	const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-		const files = Array.from(e.target.files || []);
+	const processFiles = async (files: File[]) => {
 		if (files.length === 0) return;
 
 		if (files.length > maxFiles) {
@@ -38,8 +38,9 @@ export function FileUpload({ onUpload, acceptedTypes = ['image/*', 'application/
 
 		try {
 			const urls = await uploadToCloudinary(files);
-			setUploadedFiles(prev => [...prev, ...urls]);
-			onUpload([...uploadedFiles, ...urls]);
+			const newFiles = [...uploadedFiles, ...urls];
+			setUploadedFiles(newFiles);
+			onUpload(newFiles);
 		} catch (err: any) {
 			setError(err.message || 'Upload failed');
 		} finally {
@@ -48,6 +49,34 @@ export function FileUpload({ onUpload, acceptedTypes = ['image/*', 'application/
 				fileInputRef.current.value = '';
 			}
 		}
+	};
+
+	const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+		const files = Array.from(e.target.files || []);
+		await processFiles(files);
+	};
+
+	const handleDragOver = (e: React.DragEvent) => {
+		e.preventDefault();
+		e.stopPropagation();
+		setIsDragging(true);
+	};
+
+	const handleDragLeave = (e: React.DragEvent) => {
+		e.preventDefault();
+		e.stopPropagation();
+		setIsDragging(false);
+	};
+
+	const handleDrop = async (e: React.DragEvent) => {
+		e.preventDefault();
+		e.stopPropagation();
+		setIsDragging(false);
+
+		if (uploading) return;
+
+		const files = Array.from(e.dataTransfer.files || []);
+		await processFiles(files);
 	};
 
 	const uploadToCloudinary = async (files: File[]): Promise<string[]> => {
@@ -96,10 +125,15 @@ export function FileUpload({ onUpload, acceptedTypes = ['image/*', 'application/
 		<div className="space-y-3">
 			<div
 				onClick={() => !uploading && fileInputRef.current?.click()}
+				onDragOver={handleDragOver}
+				onDragLeave={handleDragLeave}
+				onDrop={handleDrop}
 				className={`
 					border-2 border-dashed rounded-xl2 p-6 text-center cursor-pointer transition
 					${uploading 
 						? 'border-edge/40 bg-surface/30 cursor-not-allowed' 
+						: isDragging
+						? 'border-primary/60 bg-primary/10'
 						: 'border-edge/60 bg-surface/20 hover:border-primary/40 hover:bg-surface/30'
 					}
 				`}

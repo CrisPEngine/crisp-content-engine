@@ -93,7 +93,7 @@ export async function POST(req: Request) {
 				audience: data.audience,
 				value_props: data.value_props,
 				offers: data.offers,
-				brand_goals: data.brand_goals,
+				brand_goals: String(data.brand_goals || ''), // Ensure it's always a string
 				voice_rules: String(data.voice_rules || ''), // Ensure it's always a string
 				brand_keywords: String(data.brand_keywords || ''),
 				exclude_keywords: String(data.exclude_keywords || ''),
@@ -126,15 +126,23 @@ export async function POST(req: Request) {
 		const airtableResult = await airtableRes.json();
 
 		if (!airtableRes.ok) {
-			console.error('Airtable error:', airtableResult);
+			console.error('Airtable error:', JSON.stringify(airtableResult, null, 2));
 			// Common errors:
 			// - Unknown field name
 			// - Invalid select option value
 			// - Insufficient permissions
+			// - Field type mismatch (e.g., trying to send text to a select field)
+			const errorMessage = airtableResult?.error?.message || 'Failed to create brand profile';
+			const errorDetails = airtableResult?.error || {};
+			
+			// Log the full payload for debugging
+			console.error('Airtable payload sent:', JSON.stringify(recordPayload, null, 2));
+			
 			return NextResponse.json(
 				{
-					error: airtableResult?.error?.message || 'Failed to create brand profile',
-					details: airtableResult?.error,
+					error: errorMessage,
+					details: errorDetails,
+					fieldErrors: airtableResult?.error?.fields || {},
 				},
 				{ status: 422 }
 			);
