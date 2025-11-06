@@ -23,22 +23,28 @@ export function SubmissionLoading({ brandName, onComplete }: SubmissionLoadingPr
 	useEffect(() => {
 		if (completed) return;
 
-		let currentStep = 0;
-		const interval = setInterval(() => {
-			if (currentStep < steps.length - 1) {
-				currentStep++;
-				setStep(currentStep);
-			} else {
-				setCompleted(true);
-				clearInterval(interval);
-				// Wait a bit before calling onComplete
-				setTimeout(() => {
-					onComplete?.();
-				}, 1500);
-			}
-		}, steps[currentStep]?.duration || 2000);
+		let currentStepIndex = 0;
+		const timeouts: NodeJS.Timeout[] = [];
 
-		return () => clearInterval(interval);
+		steps.forEach((s, index) => {
+			const timeout = setTimeout(() => {
+				if (index < steps.length - 1) {
+					setStep(index + 1);
+				} else {
+					setCompleted(true);
+					// Wait a bit before calling onComplete
+					setTimeout(() => {
+						onComplete?.();
+					}, 1500);
+				}
+			}, s.duration + (index > 0 ? steps.slice(0, index).reduce((acc, step) => acc + step.duration, 0) : 0));
+
+			timeouts.push(timeout);
+		});
+
+		return () => {
+			timeouts.forEach((timeout) => clearTimeout(timeout));
+		};
 	}, [completed, onComplete]);
 
 	return (
