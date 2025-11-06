@@ -53,12 +53,27 @@ export default function RootLayout({
         {/* Footer */}
         <footer className="border-t border-edge/60 py-6 mt-12">
           <div className="mx-auto max-w-5xl px-6">
-            <div className="flex items-center justify-between flex-wrap gap-4 text-sm text-text-dim">
-              <div>© {new Date().getFullYear()} CrisP Content Engine</div>
-              <div className="flex items-center gap-4">
-                <Link href="https://www.crispdigital.io/privacy-policy" target="_blank" className="hover:text-text-soft transition">
-                  Privacy Policy
-                </Link>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-4 text-sm text-text-dim">
+                <div className="flex items-center gap-2">
+                  <img 
+                    src="https://res.cloudinary.com/dr75zvtso/image/upload/v1762325831/CrispContentEngineLogo_white_1200x627_ojrxn6.png" 
+                    alt="CrisP Content Engine" 
+                    className="h-4 w-auto opacity-70"
+                  />
+                  <span>© {new Date().getFullYear()} CRISP Content Engine</span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <Link href="https://www.crispdigital.io/cookies-policy" target="_blank" rel="noopener noreferrer" className="hover:text-text-soft transition">
+                    Cookies Policy
+                  </Link>
+                  <Link href="https://www.crispdigital.io/privacy-policy" target="_blank" rel="noopener noreferrer" className="hover:text-text-soft transition">
+                    Privacy Policy
+                  </Link>
+                </div>
+              </div>
+              <div className="text-xs text-text-dim">
+                Created and developed by CrisP Digital trading as ABL International FZE (3637)
               </div>
             </div>
           </div>

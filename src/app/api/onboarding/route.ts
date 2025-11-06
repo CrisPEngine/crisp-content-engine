@@ -6,20 +6,26 @@ import { z } from 'zod';
 export const runtime = 'nodejs';
 
 const PlatformsEnum = z.enum(['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog', 'Medium']);
+const LanguageRegionEnum = z.enum(['US English', 'UK English', 'AU English']);
+const PreferredImageSourceEnum = z.enum(['AI Generated', 'Stock', 'Brand']);
 
 const schema = z.object({
 	client_name: z.string().min(2),
 	audience: z.string().min(10),
 	value_props: z.string().min(10),
 	offers: z.string().min(5),
+	brand_goals: z.string().min(10),
 	// Make these optional with empty-string defaults
 	voice_rules: z.string().default(''),
 	brand_keywords: z.string().default(''),
 	exclude_keywords: z.string().default(''),
 	content_rules: z.string().default(''),
+	additional_info: z.string().default(''),
 	// Platforms: require at least one
 	platforms_requested: z.array(PlatformsEnum).min(1),
 	timezone: z.string().min(1),
+	language_region: LanguageRegionEnum,
+	preferred_image_source: PreferredImageSourceEnum,
 	// Optional, validate URL if provided, otherwise empty string
 	website: z
 		.string()
@@ -87,16 +93,20 @@ export async function POST(req: Request) {
 				audience: data.audience,
 				value_props: data.value_props,
 				offers: data.offers,
-				voice_rules: data.voice_rules || '',
-				brand_keywords: data.brand_keywords || '',
-				exclude_keywords: data.exclude_keywords || '',
-				content_rules: data.content_rules || '',
+				brand_goals: data.brand_goals,
+				voice_rules: String(data.voice_rules || ''), // Ensure it's always a string
+				brand_keywords: String(data.brand_keywords || ''),
+				exclude_keywords: String(data.exclude_keywords || ''),
+				content_rules: String(data.content_rules || ''),
+				additional_info: String(data.additional_info || ''),
 				platforms_requested: data.platforms_requested, // Multi-select field
 				timezone: data.timezone, // Single-select field - must match exact option
+				language_region: data.language_region, // Single-select field
+				preferred_image_source: data.preferred_image_source, // Single-select field
 				brand_palette: data.brand_palette || '',
 				approval_contact_email: data.approval_contact_email,
 				brand_assets: attachments.length > 0 ? attachments : undefined, // Attachment field
-				status: 'Strategy Needed', // Initial status
+				status: 'New Brief', // Initial status - matches Airtable options
 				strategy_approval: false,
 				user_id: user.id, // Link to Supabase user
 				created_at: new Date().toISOString(),

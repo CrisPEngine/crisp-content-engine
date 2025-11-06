@@ -52,23 +52,35 @@ export function FileUpload({ onUpload, acceptedTypes = ['image/*', 'application/
 
 	const uploadToCloudinary = async (files: File[]): Promise<string[]> => {
 		const urls: string[] = [];
+		const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || 'dr75zvtso';
+		const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'ml_default';
 
 		for (const file of files) {
-			const formData = new FormData();
-			formData.append('file', file);
-			formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'default');
+			try {
+				const formData = new FormData();
+				formData.append('file', file);
+				formData.append('upload_preset', uploadPreset);
 
-			const res = await fetch(`https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || 'dr75zvtso'}/image/upload`, {
-				method: 'POST',
-				body: formData,
-			});
+				// Use appropriate endpoint based on file type
+				const endpoint = file.type.startsWith('image/') 
+					? `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`
+					: `https://api.cloudinary.com/v1_1/${cloudName}/raw/upload`;
 
-			if (!res.ok) {
-				throw new Error(`Failed to upload ${file.name}`);
+				const res = await fetch(endpoint, {
+					method: 'POST',
+					body: formData,
+				});
+
+				if (!res.ok) {
+					const errorData = await res.json().catch(() => ({}));
+					throw new Error(errorData.error?.message || `Failed to upload ${file.name}`);
+				}
+
+				const data = await res.json();
+				urls.push(data.secure_url || data.url);
+			} catch (err: any) {
+				throw new Error(err.message || `Failed to upload ${file.name}`);
 			}
-
-			const data = await res.json();
-			urls.push(data.secure_url);
 		}
 
 		return urls;

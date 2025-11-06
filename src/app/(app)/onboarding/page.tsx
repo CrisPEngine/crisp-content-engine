@@ -12,19 +12,26 @@ import { useEffect } from 'react';
 
 const PlatformsEnum = z.enum(['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog', 'Medium']);
 
+const LanguageRegionEnum = z.enum(['US English', 'UK English', 'AU English']);
+const PreferredImageSourceEnum = z.enum(['AI Generated', 'Stock', 'Brand']);
+
 const schema = z.object({
 	client_name: z.string().min(2, 'Brand name must be at least 2 characters'),
 	audience: z.string().min(10, 'Please describe your audience (at least 10 characters)'),
 	value_props: z.string().min(10, 'Please describe your value propositions (at least 10 characters)'),
 	offers: z.string().min(5, 'Please describe your offers/products (at least 5 characters)'),
+	brand_goals: z.string().min(10, 'Please describe your content engine objectives (at least 10 characters)'),
 	// Make these optional with empty-string defaults so the resolver is happy
 	voice_rules: z.string().default(''),
 	brand_keywords: z.string().default(''),
 	exclude_keywords: z.string().default(''),
 	content_rules: z.string().default(''),
+	additional_info: z.string().default(''),
 	// Platforms: require at least one
 	platforms_requested: z.array(PlatformsEnum).min(1, 'Select at least one platform'),
 	timezone: z.string().min(1, 'Please select a timezone'),
+	language_region: LanguageRegionEnum,
+	preferred_image_source: PreferredImageSourceEnum,
 	// Optional, validate URL if provided, otherwise empty string
 	website: z
 		.string()
@@ -42,9 +49,9 @@ type FormData = z.infer<typeof schema>;
 const PLATFORMS = ['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog', 'Medium'] as const;
 
 const STEPS = [
-	{ id: 1, title: 'Brand Basics', fields: ['client_name', 'website', 'timezone', 'approval_contact_email'] },
-	{ id: 2, title: 'Audience & Value', fields: ['audience', 'value_props', 'offers'] },
-	{ id: 3, title: 'Voice & Content', fields: ['voice_rules', 'brand_keywords', 'exclude_keywords', 'content_rules'] },
+	{ id: 1, title: 'Brand Basics', fields: ['client_name', 'website', 'timezone', 'approval_contact_email', 'language_region', 'preferred_image_source'] },
+	{ id: 2, title: 'Audience & Value', fields: ['audience', 'value_props', 'offers', 'brand_goals'] },
+	{ id: 3, title: 'Voice & Content', fields: ['voice_rules', 'brand_keywords', 'exclude_keywords', 'content_rules', 'additional_info'] },
 	{ id: 4, title: 'Platforms & Assets', fields: ['platforms_requested', 'brand_palette', 'brand_assets_urls'] },
 ] as const;
 
@@ -69,12 +76,16 @@ export default function OnboardingPage() {
 			audience: '',
 			value_props: '',
 			offers: '',
+			brand_goals: '',
 			voice_rules: '',
 			brand_keywords: '',
 			exclude_keywords: '',
 			content_rules: '',
+			additional_info: '',
 			platforms_requested: [],
 			timezone: '',
+			language_region: 'US English',
+			preferred_image_source: 'AI Generated',
 			website: '',
 			brand_palette: '',
 			approval_contact_email: '',
@@ -246,6 +257,38 @@ export default function OnboardingPage() {
 									</div>
 
 									<div>
+										<label className="block text-sm font-medium mb-2">Language / Region *</label>
+										<select
+											{...register('language_region')}
+											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+										>
+											<option value="US English">US English</option>
+											<option value="UK English">UK English</option>
+											<option value="AU English">AU English</option>
+										</select>
+										<p className="mt-1 text-xs text-text-dim">
+											What regional language should content be created in?
+										</p>
+										{errors.language_region && <p className="mt-1 text-sm text-danger">{errors.language_region.message}</p>}
+									</div>
+
+									<div>
+										<label className="block text-sm font-medium mb-2">Preferred Image Source *</label>
+										<select
+											{...register('preferred_image_source')}
+											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+										>
+											<option value="AI Generated">AI Generated</option>
+											<option value="Stock">Stock</option>
+											<option value="Brand">Brand</option>
+										</select>
+										<p className="mt-1 text-xs text-text-dim">
+											Where should images come from for your content?
+										</p>
+										{errors.preferred_image_source && <p className="mt-1 text-sm text-danger">{errors.preferred_image_source.message}</p>}
+									</div>
+
+									<div>
 										<label className="block text-sm font-medium mb-2">Approval Contact Email *</label>
 										<input
 											{...register('approval_contact_email')}
@@ -305,6 +348,19 @@ export default function OnboardingPage() {
 										/>
 										{errors.offers && <p className="mt-1 text-sm text-danger">{errors.offers.message}</p>}
 									</div>
+
+									<div>
+										<label className="block text-sm font-medium mb-2">
+											Content Engine Objectives <span className="text-text-dim">(What are your goals?)</span> *
+										</label>
+										<textarea
+											{...register('brand_goals')}
+											rows={4}
+											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+											placeholder="What do you want to achieve with your content engine? (e.g., increase brand awareness, drive leads, educate audience...)"
+										/>
+										{errors.brand_goals && <p className="mt-1 text-sm text-danger">{errors.brand_goals.message}</p>}
+									</div>
 								</div>
 							)}
 
@@ -356,6 +412,21 @@ export default function OnboardingPage() {
 											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
 											placeholder="Any additional rules, flags, or guidelines for content creation..."
 										/>
+									</div>
+
+									<div>
+										<label className="block text-sm font-medium mb-2">
+											Additional Information <span className="text-text-dim">(Websites, pages to scrape, etc.)</span>
+										</label>
+										<textarea
+											{...register('additional_info')}
+											rows={4}
+											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+											placeholder="Any additional websites, specific pages, or information sources we should scrape or reference when creating content..."
+										/>
+										<p className="mt-1 text-xs text-text-dim">
+											Provide URLs to specific pages or websites that contain valuable information about your brand
+										</p>
 									</div>
 								</div>
 							)}
