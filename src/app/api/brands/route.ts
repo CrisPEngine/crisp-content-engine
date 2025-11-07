@@ -66,13 +66,21 @@ export async function GET(req: Request) {
 			);
 		}
 
+		const normaliseStatus = (status: string | undefined) => {
+			if (status === 'Strategy Ready (Awaiting Approval)') return 'Strategy Ready';
+			return status || 'New Brief';
+		};
+
 		// Map Airtable records to our format
 		const profiles = (airtableResult.records || []).map((record: any) => ({
 			id: record.id,
 			client_name: record.fields.client_name || '',
-			status: record.fields.status || 'New Brief',
+			status: normaliseStatus(record.fields.status),
 			created_time: record.fields.created_time || record.createdTime,
 			platforms_requested: record.fields.platforms_requested || [],
+			strategy_summary: record.fields.strategy_summary || '',
+			strategy_payload: record.fields.strategy_payload || null,
+			strategy_meta: record.fields.strategy_meta || null,
 		}));
 
 		return NextResponse.json({ profiles });

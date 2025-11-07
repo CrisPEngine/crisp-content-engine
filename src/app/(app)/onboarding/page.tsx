@@ -140,9 +140,21 @@ export default function OnboardingPage() {
 				throw new Error(result.error || 'Failed to save brand profile');
 			}
 
-			// Show loading animation
+			// Show loading animation straight away so the user sees feedback
 			setSubmittedBrandName(data.client_name);
 			setShowLoading(true);
+
+			// Kick off strategy generation in the background
+			await fetch('/api/strategy/generate', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					...data,
+					airtableId: result.airtableId,
+				}),
+			}).catch((error) => {
+				console.error('Failed to trigger strategy generation', error);
+			});
 		} catch (e: any) {
 			alert(e.message || 'Failed to save. Please try again.');
 			setSubmitting(false);
@@ -555,7 +567,7 @@ export default function OnboardingPage() {
 							disabled={submitting}
 							className="px-6 py-3 rounded-xl2 border border-primary/40 bg-primary/10 text-text hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed transition"
 						>
-							{submitting ? 'Saving...' : 'Save & Continue'}
+							{submitting ? 'Saving...' : 'Save & Generate Strategy'}
 						</button>
 					)}
 				</div>

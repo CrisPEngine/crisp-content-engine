@@ -11,6 +11,9 @@ type BrandProfile = {
 	status: string;
 	created_time: string;
 	platforms_requested?: string[];
+	strategy_summary?: string;
+	strategy_payload?: any;
+	strategy_meta?: any;
 };
 
 export function BrandProfilesList() {
@@ -27,7 +30,10 @@ export function BrandProfilesList() {
 			const res = await fetch('/api/brands', { cache: 'no-store' });
 			const data = await res.json();
 			if (res.ok) {
-				setProfiles(data.profiles || []);
+				setProfiles((data.profiles || []).map((profile: BrandProfile) => ({
+					...profile,
+					status: normaliseStatus(profile.status),
+				})));
 			}
 		} catch (error) {
 			console.error('Failed to load brand profiles:', error);
@@ -36,12 +42,18 @@ export function BrandProfilesList() {
 		}
 	}
 
+	const normaliseStatus = (status: string) => {
+		if (status === 'Strategy Ready (Awaiting Approval)') return 'Strategy Ready';
+		return status;
+	};
+
 	const getStatusIcon = (status: string) => {
-		switch (status) {
+		const normalised = normaliseStatus(status);
+		switch (normalised) {
 			case 'New Brief':
 			case 'Needs Strategy':
 				return <Clock className="w-4 h-4 text-warning" />;
-			case 'Strategy Ready (Awaiting Approval)':
+			case 'Strategy Ready':
 				return <FileText className="w-4 h-4 text-primary" />;
 			case 'Strategy Approved':
 			case 'Ready To Publish':
@@ -56,11 +68,12 @@ export function BrandProfilesList() {
 	};
 
 	const getStatusColor = (status: string) => {
-		switch (status) {
+		const normalised = normaliseStatus(status);
+		switch (normalised) {
 			case 'New Brief':
 			case 'Needs Strategy':
 				return 'bg-warning/15 border-warning/30 text-warning';
-			case 'Strategy Ready (Awaiting Approval)':
+			case 'Strategy Ready':
 				return 'bg-primary/15 border-primary/30 text-primary';
 			case 'Strategy Approved':
 			case 'Ready To Publish':
@@ -130,7 +143,7 @@ export function BrandProfilesList() {
 											<span
 												className={`px-2 py-1 rounded-full text-xs border ${getStatusColor(profile.status)}`}
 											>
-												{profile.status}
+												{normaliseStatus(profile.status)}
 											</span>
 										</div>
 										{profile.platforms_requested && profile.platforms_requested.length > 0 && (
@@ -154,7 +167,7 @@ export function BrandProfilesList() {
 											</p>
 										)}
 									</div>
-									{profile.status === 'Strategy Ready (Awaiting Approval)' && (
+									{normaliseStatus(profile.status) === 'Strategy Ready' && (
 										<span className="text-primary text-sm">Review →</span>
 									)}
 								</div>

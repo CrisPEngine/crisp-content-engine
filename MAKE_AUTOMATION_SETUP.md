@@ -35,7 +35,7 @@ Make automations handle:
 3. Scrape website (if provided) using web scraping module
 4. Analyze brand data and generate strategy
 5. Update Airtable record:
-   - Set `status` to "Strategy Ready (Awaiting Approval)"
+   - Set `status` to "Strategy Ready"
    - Add `strategy_content` field with generated strategy
    - Set `scraped_text` with website content
    - Set `brand_context` with summary
@@ -165,7 +165,7 @@ Make automations handle:
 
 **Key Fields:**
 - `client_name` (Single line text)
-- `status` (Single select) - Options: Active, New Brief, Strategy Ready (Awaiting Approval), Strategy Approved, Needs Image, Needs Approval, Ready To Publish, Scheduled, Published, Error, Needs Strategy, Needs Copy, Approved, Failed, Needs Review
+- `status` (Single select) - Options: Active, New Brief, Strategy Ready, Strategy Approved, Needs Image, Needs Approval, Ready To Publish, Scheduled, Published, Error, Needs Strategy, Needs Copy, Approved, Failed, Needs Review
 - `strategy_content` (Long text) - Generated strategy
 - `strategy_approval` (Checkbox)
 - `user_id` (Single line text) - Supabase user ID
@@ -200,6 +200,15 @@ MAKE_ONBOARDING_WEBHOOK_URL=https://hook.make.com/your-webhook-id
 ### Optional (for authentication):
 ```
 MAKE_API_KEY=your-api-key-here
+```
+
+### Strategy Generation & Callback
+
+```
+MAKE_STRATEGY_WEBHOOK_URL=https://hook.make.com/...
+MAKE_STRATEGY_WEBHOOK_SECRET=optional-shared-secret
+MAKE_CALLBACK_SECRET=shared-secret-from-make
+MAKE_STRATEGY_COMPLETED_WEBHOOK_URL=https://your-domain.com/api/strategy/webhook
 ```
 
 ### Future Webhooks (to be created):
@@ -237,7 +246,7 @@ MAKE_CONTENT_PUBLISH_WEBHOOK_URL=https://hook.make.com/...
 
 5. **Airtable - Update Record**
    - Update BrandProfiles record
-   - Set `status` to "Strategy Ready (Awaiting Approval)"
+   - Set `status` to "Strategy Ready"
    - Add `strategy_content` with generated strategy
    - Add `scraped_text` with website content
    - Add `brand_context` with summary

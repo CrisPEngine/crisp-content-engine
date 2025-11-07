@@ -43,7 +43,7 @@ export default function StrategyReviewPage() {
 			setStrategy({
 				id: params.id,
 				brand_name: 'Example Brand',
-				status: 'Strategy Ready (Awaiting Approval)',
+				status: 'Strategy Ready',
 				content: 'This is the generated strategy content...',
 				created_at: new Date().toISOString(),
 			});
@@ -221,7 +221,7 @@ export default function StrategyReviewPage() {
 							) : (
 								<Check className="w-5 h-5" />
 							)}
-							Approve Strategy
+							Approve & Continue
 						</button>
 						<button
 							onClick={rejectStrategy}
@@ -233,7 +233,7 @@ export default function StrategyReviewPage() {
 							) : (
 								<X className="w-5 h-5" />
 							)}
-							Reject & Request Revision
+							Request Update
 						</button>
 					</div>
 				)}

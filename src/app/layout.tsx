@@ -31,7 +31,7 @@ export default function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} body-grid min-h-screen`}>
         {/* Top bar */}
         <header className="sticky top-0 z-30 backdrop-blur-xs bg-bg/60 border-b border-edge/60 min-h-[90px] flex items-center">
-          <div className="mx-auto max-w-5xl px-6 w-full flex items-center">
+          <div className="mx-auto max-w-5xl px-4 sm:px-6 w-full flex items-center">
             <a href="/" className="flex items-center">
               <img 
                 src="https://res.cloudinary.com/dr75zvtso/image/upload/v1762325831/CrispContentEngineLogo_white_1200x627_ojrxn6.png" 
@@ -42,7 +42,7 @@ export default function RootLayout({
           </div>
         </header>
         {/* Page */}
-        <main className="mx-auto max-w-5xl px-6 py-10">
+        <main className="mx-auto max-w-5xl px-4 sm:px-6 py-10">
           {children}
         </main>
         {/* Glow accents */}
@@ -52,7 +52,7 @@ export default function RootLayout({
         </div>
         {/* Footer */}
         <footer className="border-t border-edge/60 py-6 mt-12">
-          <div className="mx-auto max-w-5xl px-6">
+          <div className="mx-auto max-w-5xl px-4 sm:px-6">
             <div className="space-y-4">
               <div className="flex items-center justify-between flex-wrap gap-4 text-sm text-text-dim">
                 <div className="flex items-center gap-2">
