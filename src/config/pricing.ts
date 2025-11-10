@@ -14,7 +14,7 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		maxBrands: 1,
 		maxChannels: 2,
 		postsPerMonth: 10,
-		includedImageGen: true,
+		includedImageGen: false,
 		includedPlatforms: ["linkedin","blog","medium"],
 		notes: "LinkedIn + Blog (Medium cross-post).",
 	},
@@ -54,7 +54,7 @@ export const PRICING = {
 				"1 brand workspace",
 				"LinkedIn + Blog/Medium",
 				"10 posts/month",
-				"Image generation included",
+				"Bring your own images (AI gen starts on Growth)",
 			],
 		},
 		growth: {
@@ -104,7 +104,7 @@ export const PRICING = {
 				"1 brand workspace",
 				"LinkedIn + Blog/Medium",
 				"10 posts/month",
-				"Image generation included",
+				"Bring your own images (AI gen starts on Growth)",
 			],
 		},
 		growth: {
