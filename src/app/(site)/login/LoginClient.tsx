@@ -44,7 +44,7 @@ export function LoginClient() {
 				<Auth
 					supabaseClient={supabase}
 					view="sign_in"
-					providers={["google", "linkedin"]}
+					providers={["google", "linkedin_oidc"]}
 					redirectTo={typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://app.crispdigital.io/auth/callback'}
 					appearance={{
 						theme: ThemeSupa,
