@@ -524,14 +524,14 @@ export default function OnboardingPage() {
 														{...register('preferred_image_source')}
 														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
 													>
-													<option value="AI Generated">AI Generated</option>
-													<option value="Stock">Stock</option>
-													<option value="Brand">Brand</option>
-												</select>
+														<option value="AI Generated">AI Generated</option>
+														<option value="Stock">Stock</option>
+														<option value="Brand">Brand</option>
+													</select>
+												</div>
 											</div>
 										</div>
-									</div>
-								)}
+									)}
 
 								<div>
 									<label className="block text-sm font-medium mb-2">Language / Region *</label>
