@@ -55,6 +55,10 @@ function PlanCard({
 export default function BillingPage() {
 	const [cycle, setCycle] = useState<"monthly" | "annual">("monthly");
 	const [loading, setLoading] = useState<string | null>(null);
+	const [waitlistOpenPlan, setWaitlistOpenPlan] = useState<string | null>(null);
+	const [waitlistEmail, setWaitlistEmail] = useState('');
+	const [waitlistStatus, setWaitlistStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+	const [waitlistMessage, setWaitlistMessage] = useState<string | null>(null);
 
 	const goCheckout = async (priceId: string) => {
 		setLoading(priceId);
@@ -107,6 +111,52 @@ export default function BillingPage() {
 			],
 		},
 	];
+
+	const toggleWaitlist = (planName: string) => {
+		if (waitlistOpenPlan === planName) {
+			setWaitlistOpenPlan(null);
+			setWaitlistEmail('');
+			setWaitlistStatus('idle');
+			setWaitlistMessage(null);
+		} else {
+			setWaitlistOpenPlan(planName);
+			setWaitlistEmail('');
+			setWaitlistStatus('idle');
+			setWaitlistMessage(null);
+		}
+	};
+
+	const submitWaitlist = async (planName: string) => {
+		const email = waitlistEmail.trim().toLowerCase();
+		const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+		if (!email || !emailRegex.test(email)) {
+			setWaitlistStatus('error');
+			setWaitlistMessage('Please enter a valid email address.');
+			return;
+		}
+
+		setWaitlistStatus('loading');
+		setWaitlistMessage(null);
+
+		try {
+			const res = await fetch('/api/waitlist', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ email, plan: planName }),
+			});
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				throw new Error(data?.error || 'Failed to join the waitlist.');
+			}
+			setWaitlistStatus('success');
+			setWaitlistMessage('Thanks! We’ll email you as soon as it’s available.');
+		} catch (error: any) {
+			console.error('Waitlist submission error', error);
+			setWaitlistStatus('error');
+			setWaitlistMessage(error?.message || 'Failed to join the waitlist.');
+		}
+	};
 
 	return (
 		<div className="mx-auto max-w-5xl">
@@ -167,8 +217,10 @@ export default function BillingPage() {
 			<section className="mt-8">
 				<h2 className="text-sm font-semibold text-text-soft uppercase tracking-widest mb-3">Coming soon</h2>
 				<div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-					{comingSoonPlans.map((plan) => (
-						<div key={plan.name} className="card p-6 border border-edge/60 bg-surface/30">
+					{comingSoonPlans.map((plan) => {
+						const isOpen = waitlistOpenPlan === plan.name;
+						return (
+							<div key={plan.name} className="card p-6 border border-edge/60 bg-surface/30 space-y-4">
 							<div className="flex items-center justify-between">
 								<h3 className="text-lg font-semibold">{plan.name}</h3>
 								<span className="text-xs px-2 py-0.5 rounded-full bg-warning/15 border border-warning/40 text-warning">Soon</span>
@@ -182,15 +234,49 @@ export default function BillingPage() {
 									</li>
 								))}
 							</ul>
-							<button
-								type="button"
-								disabled
-								className="mt-6 w-full rounded-xl2 border border-edge/60 bg-surface/40 px-4 py-2 text-sm text-text-dim"
-							>
-								Join waitlist
-							</button>
+							<div className="space-y-3">
+								{isOpen && (
+									<form
+										onSubmit={(e) => {
+											e.preventDefault();
+											submitWaitlist(plan.name);
+										}}
+										className="space-y-2"
+									>
+										<input
+											type="email"
+											value={waitlistEmail}
+											onChange={(e) => setWaitlistEmail(e.target.value)}
+											placeholder="you@example.com"
+											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-2 text-sm focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+											required
+										/>
+										<button
+											type="submit"
+											disabled={waitlistStatus === 'loading'}
+											className="w-full rounded-xl2 border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-text hover:bg-primary/20 transition disabled:opacity-60"
+										>
+											{waitlistStatus === 'loading' ? 'Joining…' : 'Submit'}
+										</button>
+										{waitlistStatus === 'success' && waitlistMessage && (
+											<p className="text-xs text-emerald-400">{waitlistMessage}</p>
+										)}
+										{waitlistStatus === 'error' && waitlistMessage && (
+											<p className="text-xs text-danger">{waitlistMessage}</p>
+										)}
+									</form>
+								)}
+								<button
+									type="button"
+									onClick={() => toggleWaitlist(plan.name)}
+									className="w-full rounded-xl2 border border-edge/60 bg-surface/40 px-4 py-2 text-sm text-text hover:bg-surface/60 transition"
+								>
+									{isOpen ? 'Close' : 'Join waitlist'}
+								</button>
+							</div>
 						</div>
-					))}
+						);
+					})}
 				</div>
 			</section>
 

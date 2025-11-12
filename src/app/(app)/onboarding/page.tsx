@@ -126,10 +126,7 @@ export default function OnboardingPage() {
 	const [currentStep, setCurrentStep] = useState(1);
 	const [submitting, setSubmitting] = useState(false);
 	const [uploadedUrls, setUploadedUrls] = useState<string[]>([]);
-	const [personalUploadedUrls, setPersonalUploadedUrls] = useState<string[]>([]);
 	const [mounted, setMounted] = useState(false);
-	const [linkedinProfile, setLinkedinProfile] = useState<any>(null);
-	const [appliedLinkedinPrefill, setAppliedLinkedinPrefill] = useState(false);
 	const [showLoading, setShowLoading] = useState(false);
 	const [submittedBrandName, setSubmittedBrandName] = useState('');
 
@@ -177,11 +174,7 @@ export default function OnboardingPage() {
 	});
 
 	const brandType = watch('brand_type');
-	const watchedPlatforms = watch('platforms_requested') || [];
-	const personalFullName = watch('personal_full_name') ?? '';
-	const personalHeadline = watch('personal_headline') ?? '';
-	const clientName = watch('client_name') ?? '';
-	const personalAssetsUrls = watch('personal_assets_urls') ?? [];
+	const watchedPlatforms = watch('platforms_requested') ?? [];
 
 	useEffect(() => {
 		setMounted(true);
@@ -193,57 +186,6 @@ export default function OnboardingPage() {
 			});
 		}
 	}, [supabase]);
-
-	useEffect(() => {
-		const fetchLinkedinStatus = async () => {
-			try {
-				const res = await fetch('/api/connections/linkedin/status', { cache: 'no-store' });
-				if (res.ok) {
-					const data = await res.json();
-					if (data?.connected) {
-						setLinkedinProfile(data);
-					}
-				}
-			} catch (error) {
-				console.error('Failed to fetch LinkedIn status', error);
-			}
-		};
-		fetchLinkedinStatus();
-	}, []);
-
-	useEffect(() => {
-		if (brandType === 'personal' && linkedinProfile && !appliedLinkedinPrefill) {
-			const meta = linkedinProfile.metadata || {};
-			const name = linkedinProfile.accountName || meta.localizedFirstName && meta.localizedLastName
-				? `${meta.localizedFirstName ?? ''} ${meta.localizedLastName ?? ''}`.trim()
-				: '';
-			const headline = meta.localizedHeadline || '';
-			const avatarUrl = linkedinProfile.accountAvatar || null;
-
-			if (name && !personalFullName.trim()) {
-				setValue('personal_full_name', name, { shouldDirty: false });
-			}
-			if (headline && !personalHeadline.trim()) {
-				setValue('personal_headline', headline, { shouldDirty: false });
-			}
-			if (name && !clientName.trim()) {
-				setValue('client_name', name, { shouldDirty: false });
-			}
-			if (avatarUrl && personalAssetsUrls.length === 0) {
-				setValue('personal_assets_urls', [avatarUrl], { shouldDirty: false });
-				setPersonalUploadedUrls([avatarUrl]);
-			}
-			setAppliedLinkedinPrefill(true);
-		}
-	}, [brandType, linkedinProfile, appliedLinkedinPrefill, personalFullName, personalHeadline, clientName, personalAssetsUrls, setValue]);
-
-	useEffect(() => {
-		if (brandType === 'personal' && personalFullName.trim()) {
-			if (!clientName.trim()) {
-				setValue('client_name', personalFullName, { shouldDirty: false });
-			}
-		}
-	}, [brandType, personalFullName, clientName, setValue]);
 
 	const togglePlatform = (platform: typeof PLATFORMS[number]) => {
 		const current = watchedPlatforms || [];
@@ -261,7 +203,6 @@ export default function OnboardingPage() {
 	};
 
 	const handlePersonalFileUpload = (urls: string[]) => {
-		setPersonalUploadedUrls(urls);
 		setValue('personal_assets_urls', urls);
 	};
 
