@@ -28,7 +28,9 @@ function LinkedInCard({
 					</div>
 				</div>
 				{connected && (
-					<div className="text-xs px-2 py-1 rounded-full bg-accent/15 border border-accent/30 text-accent">Connected</div>
+					<div className="text-xs px-2 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300">
+						Connected
+					</div>
 				)}
 			</div>
 

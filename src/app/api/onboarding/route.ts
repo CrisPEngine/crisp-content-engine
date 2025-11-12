@@ -8,35 +8,73 @@ export const runtime = 'nodejs';
 const PlatformsEnum = z.enum(['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog', 'Medium']);
 const LanguageRegionEnum = z.enum(['US English', 'UK English', 'AU English']);
 const PreferredImageSourceEnum = z.enum(['AI Generated', 'Stock', 'Brand']);
+const BrandTypeEnum = z.enum(['company', 'personal']);
 
-const schema = z.object({
-	client_name: z.string().min(2),
-	audience: z.string().min(10),
-	value_props: z.string().min(10),
-	offers: z.string().min(5),
-	brand_goals: z.string().min(10),
-	// Make these optional with empty-string defaults
-	voice_rules: z.string().default(''),
-	brand_keywords: z.string().default(''),
-	exclude_keywords: z.string().default(''),
-	content_rules: z.string().default(''),
-	additional_info: z.string().default(''),
-	// Platforms: require at least one
-	platforms_requested: z.array(PlatformsEnum).min(1),
-	timezone: z.string().min(1),
-	language_region: LanguageRegionEnum,
-	preferred_image_source: PreferredImageSourceEnum,
-	// Optional, validate URL if provided, otherwise empty string
-	website: z
-		.string()
-		.default('')
-		.refine((val) => !val || z.string().url().safeParse(val).success, {
-			message: 'Invalid URL',
-		}),
-	brand_palette: z.string().default(''),
-	approval_contact_email: z.string().email(),
-	brand_assets_urls: z.array(z.string().url()).default([]),
-});
+const schema = z
+	.object({
+		brand_type: BrandTypeEnum,
+		client_name: z.string().min(2),
+		audience: z.string().min(10),
+		value_props: z.string().min(10),
+		offers: z.string().min(5),
+		brand_goals: z.string().min(10),
+		// Make these optional with empty-string defaults
+		voice_rules: z.string().default(''),
+		brand_keywords: z.string().default(''),
+		exclude_keywords: z.string().default(''),
+		content_rules: z.string().default(''),
+		additional_info: z.string().default(''),
+		// Platforms: require at least one
+		platforms_requested: z.array(PlatformsEnum).min(1),
+		timezone: z.string().min(1),
+		language_region: LanguageRegionEnum,
+		preferred_image_source: PreferredImageSourceEnum,
+		// Optional, validate URL if provided, otherwise empty string
+		website: z
+			.string()
+			.default('')
+			.refine((val) => !val || z.string().url().safeParse(val).success, {
+				message: 'Invalid URL',
+			}),
+		brand_palette: z.string().default(''),
+		approval_contact_email: z.string().email(),
+		brand_assets_urls: z.array(z.string().url()).default([]),
+		personal_full_name: z.string().default(''),
+		personal_headline: z.string().default(''),
+		personal_expertise: z.string().default(''),
+		personal_audience: z.string().default(''),
+		personal_goals: z.string().default(''),
+		personal_voice_traits: z.string().default(''),
+		personal_story: z.string().default(''),
+		personal_links: z.string().default(''),
+		personal_assets_urls: z.array(z.string().url()).default([]),
+		assistants: z.string().default(''),
+		ghost_writer_preference: z.enum(['Yes', 'No', 'Sometimes']).default('Yes'),
+	})
+	.superRefine((data, ctx) => {
+		if (data.brand_type === 'personal') {
+			const requiredPersonalFields: Array<[keyof typeof data, string]> = [
+				['personal_full_name', 'Please provide your full name'],
+				['personal_headline', 'Please provide a personal headline'],
+				['personal_expertise', 'Please describe your expertise'],
+				['personal_audience', 'Please describe your target audience'],
+				['personal_goals', 'Please describe your goals'],
+				['personal_voice_traits', 'Please describe your voice traits'],
+				['personal_story', 'Please share your credibility highlights'],
+			];
+
+			requiredPersonalFields.forEach(([field, message]) => {
+				const value = (data[field] as string) || '';
+				if (!value.trim()) {
+					ctx.addIssue({
+						path: [field],
+						code: z.ZodIssueCode.custom,
+						message,
+					});
+				}
+			});
+		}
+	});
 
 export async function POST(req: Request) {
 	try {
@@ -88,6 +126,7 @@ export async function POST(req: Request) {
 		// IMPORTANT: Field names must exactly match Airtable table schema
 		const recordPayload = {
 			fields: {
+				brand_type: data.brand_type,
 				client_name: data.client_name,
 				website: (data.website && data.website.trim()) || '',
 				audience: data.audience,
@@ -106,6 +145,16 @@ export async function POST(req: Request) {
 				brand_palette: data.brand_palette || '',
 				approval_contact_email: data.approval_contact_email,
 				brand_assets: attachments.length > 0 ? attachments : undefined, // Attachment field
+				personal_full_name: String(data.personal_full_name || ''),
+				personal_headline: String(data.personal_headline || ''),
+				personal_expertise: String(data.personal_expertise || ''),
+				personal_audience: String(data.personal_audience || ''),
+				personal_goals: String(data.personal_goals || ''),
+				personal_voice_traits: String(data.personal_voice_traits || ''),
+				personal_story: String(data.personal_story || ''),
+				personal_links: String(data.personal_links || ''),
+				assistants: String(data.assistants || ''),
+				ghost_writer_preference: data.ghost_writer_preference,
 				status: 'New Brief', // Initial status - matches Airtable options
 				strategy_approval: false,
 				user_id: user.id, // Link to Supabase user
@@ -113,6 +162,11 @@ export async function POST(req: Request) {
 				// Do not set them manually - Airtable will handle them automatically
 			},
 		};
+
+		const personalAttachments = (data.personal_assets_urls || []).map((url) => ({ url }));
+		if (personalAttachments.length > 0) {
+			recordPayload.fields.personal_assets = personalAttachments;
+		}
 
 		// Write to Airtable
 		const airtableRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`, {

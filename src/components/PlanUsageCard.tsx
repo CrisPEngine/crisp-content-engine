@@ -38,6 +38,9 @@ export function PlanUsageCard() {
 				<div className="h-2 bg-accent" style={{ width: `${pct}%` }} />
 			</div>
 			<div className="text-text-dim text-sm">{used} / {cap === 999999 ? '∞' : cap}</div>
+			<div className="text-xs text-text-dim">
+				Includes 8 auto-published LinkedIn posts and 2 long-form blogs.
+			</div>
 			{!data?.ok && (
 				<div className="text-danger text-sm">{data?.reason ?? 'Limit reached.'}</div>
 			)}

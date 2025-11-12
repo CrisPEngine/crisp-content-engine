@@ -86,6 +86,27 @@ export default function BillingPage() {
 	};
 
 	const ordered = useMemo(() => PRICING.order, []);
+	const activePlanIds = useMemo(() => ordered.filter((id) => id === "creator"), [ordered]);
+	const comingSoonPlans = [
+		{
+			name: "Creator+",
+			description: "Everything in Creator plus AI image generation.",
+			bullets: [
+				"All Creator benefits",
+				"AI-generated imagery for social posts",
+				"Advanced scheduling",
+			],
+		},
+		{
+			name: "Growth",
+			description: "Multi-channel automation via Buffer integration.",
+			bullets: [
+				"LinkedIn, Instagram, X, Facebook",
+				"Image support across channels",
+				"Expanded usage limits",
+			],
+		},
+	];
 
 	return (
 		<div className="mx-auto max-w-5xl">
@@ -129,17 +150,48 @@ export default function BillingPage() {
 				</div>
 			</section>
 
-			{/* Plans */}
-			<section className="grid gap-5 md:grid-cols-3">
-				{ordered.map((id) => (
+			{/* Active plan */}
+			<section className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+				{activePlanIds.map((id) => (
 					<PlanCard
 						key={id}
 						tier={id}
 						billingCycle={cycle}
 						onCheckout={goCheckout}
-						highlight={id === "pro"}
+						highlight
 					/>
 				))}
+			</section>
+
+			{/* Coming soon */}
+			<section className="mt-8">
+				<h2 className="text-sm font-semibold text-text-soft uppercase tracking-widest mb-3">Coming soon</h2>
+				<div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+					{comingSoonPlans.map((plan) => (
+						<div key={plan.name} className="card p-6 border border-edge/60 bg-surface/30">
+							<div className="flex items-center justify-between">
+								<h3 className="text-lg font-semibold">{plan.name}</h3>
+								<span className="text-xs px-2 py-0.5 rounded-full bg-warning/15 border border-warning/40 text-warning">Soon</span>
+							</div>
+							<p className="text-text-dim mt-2 text-sm">{plan.description}</p>
+							<ul className="mt-4 space-y-2 text-sm">
+								{plan.bullets.map((item) => (
+									<li key={item} className="flex items-start gap-2">
+										<span className="mt-[6px] size-1.5 rounded-full bg-edge/60" />
+										<span>{item}</span>
+									</li>
+								))}
+							</ul>
+							<button
+								type="button"
+								disabled
+								className="mt-6 w-full rounded-xl2 border border-edge/60 bg-surface/40 px-4 py-2 text-sm text-text-dim"
+							>
+								Join waitlist
+							</button>
+						</div>
+					))}
+				</div>
 			</section>
 
 			{/* Footnotes */}

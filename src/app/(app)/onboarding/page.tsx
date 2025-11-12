@@ -3,20 +3,23 @@
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FileUpload } from '@/components/FileUpload';
 import { TIMEZONES } from '@/lib/timezones';
 import { useSupabase } from '@/components/SupabaseProvider';
-import { useEffect } from 'react';
-import { SubmissionLoading } from '@/components/SubmissionLoading';
+import { Linkedin } from 'lucide-react';
 
 const PlatformsEnum = z.enum(['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog', 'Medium']);
 
 const LanguageRegionEnum = z.enum(['US English', 'UK English', 'AU English']);
 const PreferredImageSourceEnum = z.enum(['AI Generated', 'Stock', 'Brand']);
 
-const schema = z.object({
+const BrandTypeEnum = z.enum(['company', 'personal']);
+
+const schema = z
+  .object({
+    brand_type: BrandTypeEnum,
 	client_name: z.string().min(2, 'Brand name must be at least 2 characters'),
 	audience: z.string().min(10, 'Please describe your audience (at least 10 characters)'),
 	value_props: z.string().min(10, 'Please describe your value propositions (at least 10 characters)'),
@@ -43,25 +46,89 @@ const schema = z.object({
 	brand_palette: z.string().default(''),
 	approval_contact_email: z.string().email('Invalid email address'),
 	brand_assets_urls: z.array(z.string().url()).default([]),
-});
+	personal_full_name: z.string().default(''),
+	personal_headline: z.string().default(''),
+	personal_expertise: z.string().default(''),
+	personal_audience: z.string().default(''),
+	personal_goals: z.string().default(''),
+	personal_voice_traits: z.string().default(''),
+	personal_story: z.string().default(''),
+	personal_links: z.string().default(''),
+	personal_assets_urls: z.array(z.string().url()).default([]),
+	assistants: z.string().default(''),
+	ghost_writer_preference: z.enum(['Yes', 'No', 'Sometimes']).default('Yes'),
+  })
+  .superRefine((data, ctx) => {
+    if (data.brand_type === 'personal') {
+      const requiredPersonalFields: Array<[keyof typeof data, string]> = [
+        ['personal_full_name', 'Please provide your full name'],
+        ['personal_headline', 'Please provide a personal headline'],
+        ['personal_expertise', 'Please describe your expertise'],
+        ['personal_audience', 'Please describe your target audience'],
+        ['personal_goals', 'Please describe your goals'],
+        ['personal_voice_traits', 'Please describe your voice traits'],
+        ['personal_story', 'Please share your credibility highlights'],
+      ];
+
+      requiredPersonalFields.forEach(([field, message]) => {
+        const value = (data[field] as string) || '';
+        if (!value.trim()) {
+          ctx.addIssue({
+            path: [field],
+            code: z.ZodIssueCode.custom,
+            message,
+          });
+        }
+      });
+    }
+  });
 
 type FormData = z.infer<typeof schema>;
 
 const PLATFORMS = ['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog', 'Medium'] as const;
 
-const STEPS = [
-	{ id: 1, title: 'Brand Basics', fields: ['client_name', 'website', 'timezone', 'approval_contact_email', 'language_region', 'preferred_image_source'] },
-	{ id: 2, title: 'Audience & Value', fields: ['audience', 'value_props', 'offers', 'brand_goals'] },
-	{ id: 3, title: 'Voice & Content', fields: ['voice_rules', 'brand_keywords', 'exclude_keywords', 'content_rules', 'additional_info'] },
-	{ id: 4, title: 'Platforms & Assets', fields: ['platforms_requested', 'brand_palette', 'brand_assets_urls'] },
-] as const;
+const STEPS = useMemo(
+		() => [
+			{
+				id: 1,
+				title: 'Brand Basics',
+				fields: [
+					'brand_type',
+					'client_name',
+					'personal_full_name',
+					'personal_headline',
+					'personal_expertise',
+					'personal_audience',
+					'personal_goals',
+					'personal_voice_traits',
+					'personal_story',
+					'personal_links',
+					'personal_assets_urls',
+					'assistants',
+					'ghost_writer_preference',
+					'website',
+					'timezone',
+					'approval_contact_email',
+					'language_region',
+					'preferred_image_source',
+				],
+			},
+			{ id: 2, title: 'Audience & Value', fields: ['audience', 'value_props', 'offers', 'brand_goals'] },
+			{ id: 3, title: 'Voice & Content', fields: ['voice_rules', 'brand_keywords', 'exclude_keywords', 'content_rules', 'additional_info'] },
+			{ id: 4, title: 'Platforms & Assets', fields: ['platforms_requested', 'brand_palette', 'brand_assets_urls'] },
+		],
+		[]
+	);
 
 export default function OnboardingPage() {
 	const supabase = useSupabase();
 	const [currentStep, setCurrentStep] = useState(1);
 	const [submitting, setSubmitting] = useState(false);
 	const [uploadedUrls, setUploadedUrls] = useState<string[]>([]);
+	const [personalUploadedUrls, setPersonalUploadedUrls] = useState<string[]>([]);
 	const [mounted, setMounted] = useState(false);
+	const [linkedinProfile, setLinkedinProfile] = useState<any>(null);
+	const [appliedLinkedinPrefill, setAppliedLinkedinPrefill] = useState(false);
 	const [showLoading, setShowLoading] = useState(false);
 	const [submittedBrandName, setSubmittedBrandName] = useState('');
 
@@ -75,6 +142,7 @@ export default function OnboardingPage() {
 	} = useForm<FormData>({
 		resolver: zodResolver(schema) as any,
 		defaultValues: {
+			brand_type: 'personal',
 			client_name: '',
 			audience: '',
 			value_props: '',
@@ -93,15 +161,30 @@ export default function OnboardingPage() {
 			brand_palette: '',
 			approval_contact_email: '',
 			brand_assets_urls: [],
+			personal_full_name: '',
+			personal_headline: '',
+			personal_expertise: '',
+			personal_audience: '',
+			personal_goals: '',
+			personal_voice_traits: '',
+			personal_story: '',
+			personal_links: '',
+			personal_assets_urls: [],
+			assistants: '',
+			ghost_writer_preference: 'Yes',
 		},
 	});
 
+	const brandType = watch('brand_type');
 	const watchedPlatforms = watch('platforms_requested');
+	const personalFullName = watch('personal_full_name');
+	const personalHeadline = watch('personal_headline');
+	const clientName = watch('client_name');
+	const personalAssetsUrls = watch('personal_assets_urls');
 
 	useEffect(() => {
 		setMounted(true);
 		if (supabase) {
-			// Check if user is logged in
 			supabase.auth.getUser().then((response: any) => {
 				if (!response.data.user) {
 					window.location.href = '/login';
@@ -109,6 +192,57 @@ export default function OnboardingPage() {
 			});
 		}
 	}, [supabase]);
+
+	useEffect(() => {
+		const fetchLinkedinStatus = async () => {
+			try {
+				const res = await fetch('/api/connections/linkedin/status', { cache: 'no-store' });
+				if (res.ok) {
+					const data = await res.json();
+					if (data?.connected) {
+						setLinkedinProfile(data);
+					}
+				}
+			} catch (error) {
+				console.error('Failed to fetch LinkedIn status', error);
+			}
+		};
+		fetchLinkedinStatus();
+	}, []);
+
+	useEffect(() => {
+		if (brandType === 'personal' && linkedinProfile && !appliedLinkedinPrefill) {
+			const meta = linkedinProfile.metadata || {};
+			const name = linkedinProfile.accountName || meta.localizedFirstName && meta.localizedLastName
+				? `${meta.localizedFirstName ?? ''} ${meta.localizedLastName ?? ''}`.trim()
+				: '';
+			const headline = meta.localizedHeadline || '';
+			const avatarUrl = linkedinProfile.accountAvatar || null;
+
+			if (name && !personalFullName) {
+				setValue('personal_full_name', name, { shouldDirty: false });
+			}
+			if (headline && !personalHeadline) {
+				setValue('personal_headline', headline, { shouldDirty: false });
+			}
+			if (name && !clientName) {
+				setValue('client_name', name, { shouldDirty: false });
+			}
+			if (avatarUrl && personalAssetsUrls.length === 0) {
+				setValue('personal_assets_urls', [avatarUrl], { shouldDirty: false });
+				setPersonalUploadedUrls([avatarUrl]);
+			}
+			setAppliedLinkedinPrefill(true);
+		}
+	}, [brandType, linkedinProfile, appliedLinkedinPrefill, personalFullName, personalHeadline, clientName, personalAssetsUrls, setValue]);
+
+	useEffect(() => {
+		if (brandType === 'personal' && personalFullName) {
+			if (!clientName || clientName === '' || clientName === personalFullName) {
+				setValue('client_name', personalFullName, { shouldDirty: false });
+			}
+		}
+	}, [brandType, personalFullName, clientName, setValue]);
 
 	const togglePlatform = (platform: typeof PLATFORMS[number]) => {
 		const current = watchedPlatforms || [];
@@ -123,6 +257,11 @@ export default function OnboardingPage() {
 	const handleFileUpload = (urls: string[]) => {
 		setUploadedUrls(urls);
 		setValue('brand_assets_urls', urls);
+	};
+
+	const handlePersonalFileUpload = (urls: string[]) => {
+		setPersonalUploadedUrls(urls);
+		setValue('personal_assets_urls', urls);
 	};
 
 	const onSubmit = async (data: FormData) => {
@@ -166,8 +305,30 @@ export default function OnboardingPage() {
 		window.location.href = '/dashboard';
 	};
 
+	const personalOnlyFields = useMemo(
+		() => [
+			'personal_full_name',
+			'personal_headline',
+			'personal_expertise',
+			'personal_audience',
+			'personal_goals',
+			'personal_voice_traits',
+			'personal_story',
+			'personal_links',
+			'personal_assets_urls',
+			'assistants',
+			'ghost_writer_preference',
+		],
+		[]
+	);
+
 	const nextStep = async () => {
-		const currentStepFields = STEPS[currentStep - 1].fields;
+		const currentStepFields = STEPS[currentStep - 1].fields.filter((field) => {
+			if (personalOnlyFields.includes(field)) {
+				return brandType === 'personal';
+			}
+			return true;
+		});
 		const isValid = await trigger(currentStepFields as any);
 		if (isValid) {
 			setCurrentStep(Math.min(currentStep + 1, STEPS.length));
@@ -241,12 +402,169 @@ export default function OnboardingPage() {
 										<p className="text-text-dim">Tell us about your brand</p>
 									</div>
 
+									<input type="hidden" {...register('brand_type')} />
+
 									<div>
-										<label className="block text-sm font-medium mb-2">Brand Name *</label>
+										<label className="block text-sm font-medium mb-2">Brand Type *</label>
+										<div className="inline-flex rounded-xl2 border border-edge/60 overflow-hidden">
+											<button
+												type="button"
+												onClick={() => setValue('brand_type', 'personal')}
+												className={`px-4 py-2 text-sm transition ${brandType === 'personal' ? 'bg-primary/15 border-r border-primary/40 text-primary' : 'text-text'}`}
+											>
+												Personal
+											</button>
+											<button
+												type="button"
+												onClick={() => setValue('brand_type', 'company')}
+												className={`px-4 py-2 text-sm transition ${brandType === 'company' ? 'bg-primary/15 text-primary' : 'text-text'}`}
+											>
+												Company
+											</button>
+										</div>
+									</div>
+
+									{brandType === 'personal' ? (
+										<div className="space-y-5 border border-primary/30 rounded-xl2 p-5 bg-primary/5">
+											<div className="flex items-center gap-2 text-sm text-primary">
+												<Linkedin className="w-4 h-4" />
+												<span>Pulls from your LinkedIn profile if available.</span>
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">What is your full name? *</label>
+												<input
+													{...register('personal_full_name')}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+													placeholder="e.g. Jordan Chen"
+												/>
+												{errors.personal_full_name && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_full_name.message}</p>
+												)}
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">How do you describe yourself in one sentence? *</label>
+												<input
+													{...register('personal_headline')}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+													placeholder="Helping founders scale through data-driven marketing"
+												/>
+												{errors.personal_headline && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_headline.message}</p>
+												)}
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">What subjects or themes do you want to post about regularly? *</label>
+												<textarea
+													{...register('personal_expertise')}
+													rows={3}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+													placeholder="e.g. Digital marketing, leadership, productivity, AI tools"
+												/>
+												{errors.personal_expertise && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_expertise.message}</p>
+												)}
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">Who do you want your content to reach or influence? *</label>
+												<textarea
+													{...register('personal_audience')}
+													rows={3}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+													placeholder="Describe your ideal audience—job title, industry, interests"
+												/>
+												{errors.personal_audience && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_audience.message}</p>
+												)}
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">What do you want to achieve with your content? *</label>
+												<textarea
+													{...register('personal_goals')}
+													rows={3}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+													placeholder="Grow authority, attract clients, drive traffic, etc."
+												/>
+												{errors.personal_goals && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_goals.message}</p>
+												)}
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">How would you describe your communication style? *</label>
+												<textarea
+													{...register('personal_voice_traits')}
+													rows={2}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+													placeholder="Pick 3–5 words such as bold, analytical, witty..."
+												/>
+												{errors.personal_voice_traits && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_voice_traits.message}</p>
+												)}
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">What experience or achievements should your audience know about? *</label>
+												<textarea
+													{...register('personal_story')}
+													rows={3}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+													placeholder="Notable roles, companies, awards, results, milestones"
+												/>
+												{errors.personal_story && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_story.message}</p>
+												)}
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">Add any links you’d like referenced (optional)</label>
+												<textarea
+													{...register('personal_links')}
+													rows={2}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+													placeholder="Website, portfolio, podcast, Twitter..."
+												/>
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">Upload a profile photo or assets (optional)</label>
+												<FileUpload onUpload={handlePersonalFileUpload} />
+												<p className="mt-2 text-xs text-text-dim">We’ll reference these in social content where appropriate.</p>
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">Should anyone else review or approve content?</label>
+												<input
+													{...register('assistants')}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+													placeholder="List names or emails"
+												/>
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">Ghost writing preference</label>
+												<select
+													{...register('ghost_writer_preference')}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+												>
+													<option value="Yes">Yes – write fully in my voice</option>
+													<option value="No">No – I’ll draft my own</option>
+													<option value="Sometimes">Sometimes – co-authored</option>
+												</select>
+											</div>
+										</div>
+									) : null}
+
+									<div>
+										<label className="block text-sm font-medium mb-2">{brandType === 'personal' ? 'Display Name *' : 'Brand Name *'}</label>
 										<input
 											{...register('client_name')}
 											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-											placeholder="Your brand name"
+											placeholder={brandType === 'personal' ? 'e.g. Jordan Chen' : 'Your brand name'}
 										/>
 										{errors.client_name && (
 											<p className="mt-1 text-sm text-danger">{errors.client_name.message}</p>
