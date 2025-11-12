@@ -305,246 +305,247 @@ export default function OnboardingPage() {
 						exit={{ opacity: 0, x: -20 }}
 						transition={{ duration: 0.3 }}
 					>
-						{currentStep === 1 && (
-							<div className="space-y-6">
-								<div>
-									<h2 className="text-2xl font-semibold mb-2">Brand Basics</h2>
-									<p className="text-text-dim">Tell us about your brand.</p>
-								</div>
-
-								<div>
-									<label className="block text-sm font-medium mb-2">Brand Type *</label>
-									<div className="inline-flex rounded-xl2 border border-edge/60 overflow-hidden">
-										<button
-											type="button"
-											onClick={() => handleBrandTypeChange('personal')}
-											className={`px-4 py-2 text-sm transition ${isPersonal ? 'bg-primary/15 border-r border-primary/40 text-primary' : 'text-text'}`}
-										>
-											Personal
-										</button>
-										<button
-											type="button"
-											onClick={() => handleBrandTypeChange('company')}
-											className={`px-4 py-2 text-sm transition ${!isPersonal ? 'bg-primary/15 text-primary' : 'text-text'}`}
-										>
-											Company
-										</button>
+						<div className="card p-8 space-y-6">
+							{currentStep === 1 && (
+								<div className="space-y-6">
+									<div>
+										<h2 className="text-2xl font-semibold mb-2">Brand Basics</h2>
+										<p className="text-text-dim">Tell us about your brand.</p>
 									</div>
-								</div>
 
-								{isPersonal ? (
-									<div className="space-y-5 border border-primary/30 rounded-xl2 p-5 bg-primary/5">
-										<div>
-											<label className="block text-sm font-medium mb-2">What is your full name? *</label>
-											<input
-												{...register('personal_full_name')}
-												className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-												placeholder="e.g. Jordan Chen"
-											/>
-											{errors.personal_full_name && (
-												<p className="mt-1 text-sm text-danger">{errors.personal_full_name.message}</p>
-											)}
+									<div>
+										<label className="block text-sm font-medium mb-2">Brand Type *</label>
+										<div className="inline-flex rounded-xl2 border border-edge/60 overflow-hidden">
+											<button
+												type="button"
+												onClick={() => handleBrandTypeChange('personal')}
+												className={`px-4 py-2 text-sm transition ${isPersonal ? 'bg-primary/15 border-r border-primary/40 text-primary' : 'text-text'}`}
+											>
+												Personal
+											</button>
+											<button
+												type="button"
+												onClick={() => handleBrandTypeChange('company')}
+												className={`px-4 py-2 text-sm transition ${!isPersonal ? 'bg-primary/15 text-primary' : 'text-text'}`}
+											>
+												Company
+											</button>
 										</div>
+									</div>
 
-										<div>
-											<label className="block text-sm font-medium mb-2">How do you describe yourself in one sentence? *</label>
-											<input
-												{...register('personal_headline')}
-												className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-												placeholder="Helping founders scale through data-driven marketing"
-											/>
-											{errors.personal_headline && (
-												<p className="mt-1 text-sm text-danger">{errors.personal_headline.message}</p>
-											)}
-										</div>
-
-										<div>
-											<label className="block text-sm font-medium mb-2">What subjects or themes do you want to post about regularly? *</label>
-											<textarea
-												{...register('personal_expertise')}
-												rows={3}
-												className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-												placeholder="Digital marketing, leadership, productivity, AI tools..."
-											/>
-											{errors.personal_expertise && (
-												<p className="mt-1 text-sm text-danger">{errors.personal_expertise.message}</p>
-											)}
-										</div>
-
-										<div>
-											<label className="block text-sm font-medium mb-2">Who do you want your content to reach or influence? *</label>
-											<textarea
-												{...register('personal_audience')}
-												rows={3}
-												className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-												placeholder="Describe your ideal audience"
-											/>
-											{errors.personal_audience && (
-												<p className="mt-1 text-sm text-danger">{errors.personal_audience.message}</p>
-											)}
-										</div>
-
-										<div className="grid gap-4 md:grid-cols-2">
+									{isPersonal ? (
+										<div className="space-y-5 border border-primary/30 rounded-xl2 p-5 bg-primary/5">
 											<div>
-												<label className="block text-sm font-medium mb-2">What do you want to achieve with your content? *</label>
-												<textarea
-													{...register('personal_goals')}
-													rows={2}
-													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-													placeholder="Grow authority, attract clients, build community..."
-												/>
-												{errors.personal_goals && (
-													<p className="mt-1 text-sm text-danger">{errors.personal_goals.message}</p>
-												)}
-											</div>
-
-											<div>
-												<label className="block text-sm font-medium mb-2">How would you describe your communication style? *</label>
-												<textarea
-													{...register('personal_voice_traits')}
-													rows={2}
-													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-													placeholder="Bold, analytical, witty, educational..."
-												/>
-												{errors.personal_voice_traits && (
-													<p className="mt-1 text-sm text-danger">{errors.personal_voice_traits.message}</p>
-												)}
-											</div>
-										</div>
-
-										<div>
-											<label className="block text-sm font-medium mb-2">What experience or achievements should your audience know about? *</label>
-											<textarea
-												{...register('personal_story')}
-												rows={3}
-												className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-												placeholder="Notable roles, results, awards, milestones"
-											/>
-											{errors.personal_story && (
-												<p className="mt-1 text-sm text-danger">{errors.personal_story.message}</p>
-											)}
-										</div>
-
-										<div>
-											<label className="block text-sm font-medium mb-2">Add any links you’d like referenced (optional)</label>
-											<textarea
-												{...register('personal_links')}
-												rows={2}
-												className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-												placeholder="Website, portfolio, podcast, Twitter, YouTube..."
-											/>
-										</div>
-
-										<div>
-											<label className="block text-sm font-medium mb-2">Upload a profile photo or assets (optional)</label>
-											<FileUpload onUpload={handlePersonalFileUpload} />
-											<p className="mt-2 text-xs text-text-dim">We’ll reference these in social content where appropriate.</p>
-										</div>
-
-										<div className="grid gap-4 md:grid-cols-2">
-											<div>
-												<label className="block text-sm font-medium mb-2">Should anyone else review content? (optional)</label>
+												<label className="block text-sm font-medium mb-2">What is your full name? *</label>
 												<input
-													{...register('assistants')}
+													{...register('personal_full_name')}
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-													placeholder="Names or emails"
-											/>
-										</div>
+													placeholder="e.g. Jordan Chen"
+												/>
+												{errors.personal_full_name && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_full_name.message}</p>
+												)}
+											</div>
 
 											<div>
-												<label className="block text-sm font-medium mb-2">Ghost writing preference</label>
+												<label className="block text-sm font-medium mb-2">How do you describe yourself in one sentence? *</label>
+												<input
+													{...register('personal_headline')}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+													placeholder="Helping founders scale through data-driven marketing"
+												/>
+												{errors.personal_headline && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_headline.message}</p>
+												)}
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">What subjects or themes do you want to post about regularly? *</label>
+												<textarea
+													{...register('personal_expertise')}
+													rows={3}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+													placeholder="Digital marketing, leadership, productivity, AI tools..."
+												/>
+												{errors.personal_expertise && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_expertise.message}</p>
+												)}
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">Who do you want your content to reach or influence? *</label>
+												<textarea
+													{...register('personal_audience')}
+													rows={3}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+													placeholder="Describe your ideal audience"
+												/>
+												{errors.personal_audience && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_audience.message}</p>
+												)}
+											</div>
+
+											<div className="grid gap-4 md:grid-cols-2">
+												<div>
+													<label className="block text-sm font-medium mb-2">What do you want to achieve with your content? *</label>
+													<textarea
+														{...register('personal_goals')}
+														rows={2}
+														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+														placeholder="Grow authority, attract clients, build community..."
+													/>
+													{errors.personal_goals && (
+														<p className="mt-1 text-sm text-danger">{errors.personal_goals.message}</p>
+													)}
+												</div>
+
+												<div>
+													<label className="block text-sm font-medium mb-2">How would you describe your communication style? *</label>
+													<textarea
+														{...register('personal_voice_traits')}
+														rows={2}
+														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+														placeholder="Bold, analytical, witty, educational..."
+													/>
+													{errors.personal_voice_traits && (
+														<p className="mt-1 text-sm text-danger">{errors.personal_voice_traits.message}</p>
+													)}
+												</div>
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">What experience or achievements should your audience know about? *</label>
+												<textarea
+													{...register('personal_story')}
+													rows={3}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+													placeholder="Notable roles, results, awards, milestones"
+												/>
+												{errors.personal_story && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_story.message}</p>
+												)}
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">Add any links you’d like referenced (optional)</label>
+												<textarea
+													{...register('personal_links')}
+													rows={2}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+													placeholder="Website, portfolio, podcast, Twitter, YouTube..."
+												/>
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">Upload a profile photo or assets (optional)</label>
+												<FileUpload onUpload={handlePersonalFileUpload} />
+												<p className="mt-2 text-xs text-text-dim">We’ll reference these in social content where appropriate.</p>
+											</div>
+
+											<div className="grid gap-4 md:grid-cols-2">
+												<div>
+													<label className="block text-sm font-medium mb-2">Should anyone else review content? (optional)</label>
+													<input
+														{...register('assistants')}
+														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+														placeholder="Names or emails"
+												/>
+											</div>
+
+												<div>
+													<label className="block text-sm font-medium mb-2">Ghost writing preference</label>
+													<select
+														{...register('ghost_writer_preference')}
+														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+													>
+														<option value="Yes">Yes – write fully in my voice</option>
+														<option value="No">No – I’ll draft my own pieces</option>
+														<option value="Sometimes">Sometimes – co-authored</option>
+													</select>
+												</div>
+											</div>
+										</div>
+									) : (
+										<div className="space-y-5">
+											<div>
+												<label className="block text-sm font-medium mb-2">Brand Name *</label>
+												<input
+													{...register('client_name')}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+													placeholder="Your brand name"
+												/>
+												{errors.client_name && (
+													<p className="mt-1 text-sm text-danger">{errors.client_name.message}</p>
+												)}
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">Website</label>
+												<input
+													{...register('website')}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+													placeholder="https://example.com (optional)"
+												/>
+												{errors.website && <p className="mt-1 text-sm text-danger">{errors.website.message}</p>}
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">Timezone *</label>
 												<select
-													{...register('ghost_writer_preference')}
+													{...register('timezone')}
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
 												>
-													<option value="Yes">Yes – write fully in my voice</option>
-													<option value="No">No – I’ll draft my own pieces</option>
-													<option value="Sometimes">Sometimes – co-authored</option>
+													<option value="">Select timezone...</option>
+													{TIMEZONES.map((tz) => (
+														<option key={tz} value={tz}>
+															{tz}
+														</option>
+													))}
+												</select>
+												{errors.timezone && <p className="mt-1 text-sm text-danger">{errors.timezone.message}</p>}
+											</div>
+
+											<div className="grid gap-4 md:grid-cols-2">
+												<div>
+													<label className="block text-sm font-medium mb-2">Approval Contact Email *</label>
+													<input
+														{...register('approval_contact_email')}
+														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+														placeholder="approver@example.com"
+												/>
+												{errors.approval_contact_email && (
+													<p className="mt-1 text-sm text-danger">{errors.approval_contact_email.message}</p>
+												)}
+											</div>
+
+												<div>
+													<label className="block text-sm font-medium mb-2">Preferred Image Source *</label>
+													<select
+														{...register('preferred_image_source')}
+														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+													>
+													<option value="AI Generated">AI Generated</option>
+													<option value="Stock">Stock</option>
+													<option value="Brand">Brand</option>
 												</select>
 											</div>
 										</div>
 									</div>
-								) : (
-									<div className="space-y-5">
-										<div>
-											<label className="block text-sm font-medium mb-2">Brand Name *</label>
-											<input
-												{...register('client_name')}
-												className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-												placeholder="Your brand name"
-											/>
-											{errors.client_name && (
-												<p className="mt-1 text-sm text-danger">{errors.client_name.message}</p>
-											)}
-										</div>
+								)}
 
-										<div>
-											<label className="block text-sm font-medium mb-2">Website</label>
-											<input
-												{...register('website')}
-												className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-												placeholder="https://example.com (optional)"
-											/>
-											{errors.website && <p className="mt-1 text-sm text-danger">{errors.website.message}</p>}
-										</div>
-
-										<div>
-											<label className="block text-sm font-medium mb-2">Timezone *</label>
-											<select
-												{...register('timezone')}
-												className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-											>
-												<option value="">Select timezone...</option>
-												{TIMEZONES.map((tz) => (
-													<option key={tz} value={tz}>
-														{tz}
-													</option>
-												))}
-											</select>
-											{errors.timezone && <p className="mt-1 text-sm text-danger">{errors.timezone.message}</p>}
-										</div>
-
-										<div className="grid gap-4 md:grid-cols-2">
-											<div>
-												<label className="block text-sm font-medium mb-2">Approval Contact Email *</label>
-												<input
-													{...register('approval_contact_email')}
-													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-													placeholder="approver@example.com"
-											/>
-											{errors.approval_contact_email && (
-												<p className="mt-1 text-sm text-danger">{errors.approval_contact_email.message}</p>
-											)}
-										</div>
-
-											<div>
-												<label className="block text-sm font-medium mb-2">Preferred Image Source *</label>
-												<select
-													{...register('preferred_image_source')}
-													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-												>
-												<option value="AI Generated">AI Generated</option>
-												<option value="Stock">Stock</option>
-												<option value="Brand">Brand</option>
-											</select>
-										</div>
-									</div>
+								<div>
+									<label className="block text-sm font-medium mb-2">Language / Region *</label>
+									<select
+										{...register('language_region')}
+										className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+									>
+										<option value="US English">US English</option>
+										<option value="UK English">UK English</option>
+										<option value="AU English">AU English</option>
+									</select>
 								</div>
-							)}
-
-							<div>
-								<label className="block text-sm font-medium mb-2">Language / Region *</label>
-								<select
-									{...register('language_region')}
-									className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-								>
-									<option value="US English">US English</option>
-									<option value="UK English">UK English</option>
-									<option value="AU English">AU English</option>
-								</select>
 							</div>
-						</div>
-						)
+						)}
 					</motion.div>
 				</AnimatePresence>
 
