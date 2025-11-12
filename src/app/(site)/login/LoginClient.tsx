@@ -90,7 +90,7 @@ export function LoginClient() {
 				<button
 					onClick={handleLinkedInSignIn}
 					type="button"
-					className="mt-4 w-full flex items-center justify-center gap-2 rounded-xl2 border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-text hover:bg-primary/20 transition"
+					className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl2 border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-text hover:bg-primary/20 transition"
 				>
 					<Linkedin className="w-4 h-4" />
 					Sign in with LinkedIn
