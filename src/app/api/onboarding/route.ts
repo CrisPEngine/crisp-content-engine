@@ -124,7 +124,45 @@ export async function POST(req: Request) {
 
 		// Prepare Airtable record payload
 		// IMPORTANT: Field names must exactly match Airtable table schema
-		const recordPayload = {
+		const recordPayload: {
+			fields: {
+				brand_type: typeof data.brand_type;
+				client_name: string;
+				website: string;
+				audience: string;
+				value_props: string;
+				offers: string;
+				brand_goals: string;
+				voice_rules: string;
+				brand_keywords: string;
+				exclude_keywords: string;
+				content_rules: string;
+				additional_info: string;
+				platforms_requested: string[];
+				timezone: string;
+				language_region: typeof data.language_region;
+				preferred_image_source: typeof data.preferred_image_source;
+				brand_palette: string;
+				approval_contact_email: string;
+				brand_assets?: { url: string }[];
+				personal_full_name: string;
+				personal_headline: string;
+				personal_expertise: string;
+				personal_audience: string;
+				personal_goals: string;
+				personal_voice_traits: string;
+				personal_story: string;
+				personal_links: string;
+				assistants: string;
+				ghost_writer_preference: typeof data.ghost_writer_preference;
+				personal_assets?: { url: string }[];
+				status: string;
+				strategy_approval: boolean;
+				user_id: string;
+				created_time?: string;
+				last_modified_time?: string;
+			};
+		} = {
 			fields: {
 				brand_type: data.brand_type,
 				client_name: data.client_name,
