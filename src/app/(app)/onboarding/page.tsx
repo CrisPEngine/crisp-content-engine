@@ -178,10 +178,10 @@ export default function OnboardingPage() {
 
 	const brandType = watch('brand_type');
 	const watchedPlatforms = watch('platforms_requested') || [];
-	const personalFullName = watch('personal_full_name') || '';
-	const personalHeadline = watch('personal_headline') || '';
-	const clientName = watch('client_name') || '';
-	const personalAssetsUrls = watch('personal_assets_urls') || [];
+	const personalFullName = watch('personal_full_name') ?? '';
+	const personalHeadline = watch('personal_headline') ?? '';
+	const clientName = watch('client_name') ?? '';
+	const personalAssetsUrls = watch('personal_assets_urls') ?? [];
 
 	useEffect(() => {
 		setMounted(true);
