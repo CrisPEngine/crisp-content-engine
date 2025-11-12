@@ -1,232 +1,134 @@
-'use client';
+import { redirect } from 'next/navigation';
+import { createClient } from '@/lib/supabase/server';
+import { getSupabaseService } from '@/lib/supabaseService';
 
-import { useState, useEffect } from 'react';
-import { useSupabase } from '@/components/SupabaseProvider';
-import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
-import { CheckCircle, XCircle, Loader2, Link2, ExternalLink } from 'lucide-react';
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
-type Connection = {
-	platform: string;
+function LinkedInCard({
+	connected,
+	accountName,
+	accountAvatar,
+	personUrn,
+}: {
 	connected: boolean;
-	account_name?: string;
-	connected_at?: string;
-};
-
-const PLATFORMS = [
-	{ id: 'linkedin', name: 'LinkedIn', icon: '💼', color: 'bg-blue-500/20 border-blue-500/30 text-blue-400' },
-	{ id: 'twitter', name: 'X (Twitter)', icon: '🐦', color: 'bg-black/20 border-black/30 text-white' },
-	{ id: 'instagram', name: 'Instagram', icon: '📷', color: 'bg-pink-500/20 border-pink-500/30 text-pink-400' },
-	{ id: 'facebook', name: 'Facebook', icon: '👥', color: 'bg-blue-600/20 border-blue-600/30 text-blue-300' },
-	{ id: 'buffer', name: 'Buffer', icon: '📊', color: 'bg-orange-500/20 border-orange-500/30 text-orange-400' },
-] as const;
-
-export default function ConnectionsPage() {
-	const supabase = useSupabase();
-	const router = useRouter();
-	const [loading, setLoading] = useState(true);
-	const [connections, setConnections] = useState<Connection[]>([]);
-	const [connecting, setConnecting] = useState<string | null>(null);
-
-	useEffect(() => {
-		if (!supabase) return;
-		loadConnections();
-	}, [supabase]);
-
-	async function loadConnections() {
-		if (!supabase) return;
-		setLoading(true);
-		try {
-			const { data: { user } } = await supabase.auth.getUser();
-			if (!user) {
-				router.push('/login');
-				return;
-			}
-
-			// TODO: Replace with actual API call to fetch connections
-			// const res = await fetch('/api/connections');
-			// const data = await res.json();
-			// setConnections(data.connections || []);
-
-			// Placeholder data
-			setConnections(
-				PLATFORMS.map((p) => ({
-					platform: p.id,
-					connected: false,
-				}))
-			);
-		} catch (error) {
-			console.error('Failed to load connections:', error);
-		} finally {
-			setLoading(false);
-		}
-	}
-
-	async function connectPlatform(platformId: string) {
-		if (!supabase) return;
-		setConnecting(platformId);
-		try {
-			const { data: { user } } = await supabase.auth.getUser();
-			if (!user) {
-				router.push('/login');
-				return;
-			}
-
-			// TODO: Replace with actual OAuth flow
-			// For now, this is a placeholder
-			// In production, you'd:
-			// 1. Redirect to OAuth provider
-			// 2. Handle callback
-			// 3. Store connection in database
-
-			// Example: LinkedIn OAuth
-			if (platformId === 'linkedin') {
-				// Redirect to LinkedIn OAuth
-				// window.location.href = `/api/connections/linkedin/authorize`;
-				alert('OAuth connection will be implemented. This will redirect to LinkedIn for authorization.');
-			} else {
-				// For other platforms, show placeholder
-				alert(`${PLATFORMS.find((p) => p.id === platformId)?.name} connection will be implemented.`);
-			}
-		} catch (error) {
-			console.error('Failed to connect platform:', error);
-			alert('Failed to connect. Please try again.');
-		} finally {
-			setConnecting(null);
-		}
-	}
-
-	async function disconnectPlatform(platformId: string) {
-		if (!supabase) return;
-		try {
-			// TODO: Replace with actual API call
-			// await fetch(`/api/connections/${platformId}`, { method: 'DELETE' });
-			
-			setConnections((prev) =>
-				prev.map((c) => (c.platform === platformId ? { ...c, connected: false } : c))
-			);
-			alert('Platform disconnected successfully');
-		} catch (error) {
-			console.error('Failed to disconnect platform:', error);
-			alert('Failed to disconnect. Please try again.');
-		}
-	}
-
-	if (loading) {
-		return (
-			<div className="mx-auto max-w-4xl">
-				<div className="card p-8 text-center">
-					<Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
-					<p className="text-text-soft">Loading connections...</p>
+	accountName?: string | null;
+	accountAvatar?: string | null;
+	personUrn?: string | null;
+}) {
+	const connectHref = '/api/connections/linkedin/authorize';
+	return (
+		<div className="card p-6 space-y-4">
+			<div className="flex items-center justify-between">
+				<div className="flex items-center gap-3">
+					<span className="text-4xl">💼</span>
+					<div>
+						<h2 className="text-xl font-semibold">LinkedIn</h2>
+						<p className="text-sm text-text-dim">Share directly to your LinkedIn profile or company page.</p>
+					</div>
 				</div>
+				{connected && (
+					<div className="text-xs px-2 py-1 rounded-full bg-accent/15 border border-accent/30 text-accent">Connected</div>
+				)}
 			</div>
-		);
+
+			{connected ? (
+				<div className="flex items-start gap-4">
+					{accountAvatar && (
+						<img src={accountAvatar} alt="LinkedIn avatar" className="w-12 h-12 rounded-full border border-edge/60" />
+					)}
+					<div className="text-sm space-y-1">
+						<div className="font-medium">{accountName}</div>
+						{personUrn && <div className="text-text-dim">{personUrn}</div>}
+					</div>
+				</div>
+			) : (
+				<p className="text-sm text-text-dim">
+					Connect your LinkedIn account to publish strategies, updates, and content without leaving CrisP Content Engine.
+				</p>
+			)}
+
+			<div className="flex gap-3">
+				{connected ? (
+					<form action="/api/connections/linkedin/disconnect" method="post">
+						<button
+							type="submit"
+							className="px-4 py-2 rounded-xl2 border border-danger/40 bg-danger/10 hover:bg-danger/20 text-sm"
+						>
+							Disconnect LinkedIn
+						</button>
+					</form>
+				) : (
+					<a
+						href={connectHref}
+						className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm"
+					>
+						Connect LinkedIn
+					</a>
+				)}
+				{connected && (
+					<a
+						href="https://www.linkedin.com/help/linkedin/answer/a507721"
+						target="_blank"
+						rel="noopener noreferrer"
+						className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 text-sm"
+					>
+						Manage on LinkedIn
+					</a>
+				)}
+			</div>
+		</div>
+	);
+}
+
+export default async function ConnectionsPage() {
+	const supabase = await createClient();
+	const {
+		data: { user },
+	} = await supabase.auth.getUser();
+
+	if (!user) {
+		redirect('/login');
 	}
+
+	const admin = getSupabaseService();
+	const { data } = await admin
+		.from('social_connections')
+		.select('account_name, account_avatar, person_urn, provider')
+		.eq('user_id', user.id)
+		.eq('provider', 'linkedin')
+		.maybeSingle();
+
+	const linkedInStatus = {
+		connected: Boolean(data),
+		accountName: data?.account_name ?? null,
+		accountAvatar: data?.account_avatar ?? null,
+		personUrn: data?.person_urn ?? null,
+	};
 
 	return (
-		<div className="mx-auto max-w-4xl">
-			<div className="mb-6">
-				<button
-					onClick={() => router.back()}
-					className="text-text-soft hover:text-text text-sm inline-flex items-center gap-1"
-				>
+		<div className="mx-auto max-w-4xl space-y-6">
+			<div className="mb-2">
+				<a href="/dashboard" className="text-text-soft hover:text-text text-sm inline-flex items-center gap-1">
 					← Back
-				</button>
+				</a>
 			</div>
-
-			<div className="mb-6">
-				<h1 className="text-3xl font-semibold mb-2">Social Media Connections</h1>
+			<header className="space-y-2">
+				<h1 className="text-3xl font-semibold">Connections</h1>
 				<p className="text-text-dim">
-					Connect your social media accounts to enable content publishing
+					Connect your social accounts so the AI can publish content automatically on your behalf.
 				</p>
-			</div>
+			</header>
 
-			<div className="space-y-4">
-				{PLATFORMS.map((platform) => {
-					const connection = connections.find((c) => c.platform === platform.id);
-					const isConnected = connection?.connected || false;
-					const isConnecting = connecting === platform.id;
+			<LinkedInCard {...linkedInStatus} />
 
-					return (
-						<motion.div
-							key={platform.id}
-							initial={{ opacity: 0, y: 20 }}
-							animate={{ opacity: 1, y: 0 }}
-							className="card p-6"
-						>
-							<div className="flex items-center justify-between">
-								<div className="flex items-center gap-4 flex-1">
-									<div className="text-4xl">{platform.icon}</div>
-									<div className="flex-1">
-										<h3 className="text-lg font-semibold mb-1">{platform.name}</h3>
-										{isConnected ? (
-											<div className="space-y-1">
-												<div className="flex items-center gap-2 text-sm text-accent">
-													<CheckCircle className="w-4 h-4" />
-													<span>Connected</span>
-												</div>
-												{connection?.account_name && (
-													<p className="text-xs text-text-dim">
-														Account: {connection.account_name}
-													</p>
-												)}
-												{connection?.connected_at && (
-													<p className="text-xs text-text-dim">
-														Connected: {new Date(connection.connected_at).toLocaleDateString()}
-													</p>
-												)}
-											</div>
-										) : (
-											<p className="text-sm text-text-dim">
-												Not connected. Connect to enable publishing to {platform.name}.
-											</p>
-										)}
-									</div>
-								</div>
-								<div className="flex items-center gap-2">
-									{isConnected ? (
-										<button
-											onClick={() => disconnectPlatform(platform.id)}
-											className="px-4 py-2 rounded-xl2 border border-danger/40 bg-danger/10 hover:bg-danger/20 text-sm flex items-center gap-2"
-										>
-											<XCircle className="w-4 h-4" />
-											Disconnect
-										</button>
-									) : (
-										<button
-											onClick={() => connectPlatform(platform.id)}
-											disabled={isConnecting}
-											className={`px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${platform.color}`}
-										>
-											{isConnecting ? (
-												<>
-													<Loader2 className="w-4 h-4 animate-spin" />
-													Connecting...
-												</>
-											) : (
-												<>
-													<Link2 className="w-4 h-4" />
-													Connect
-												</>
-											)}
-										</button>
-									)}
-								</div>
-							</div>
-						</motion.div>
-					);
-				})}
-			</div>
-
-			<div className="mt-8 card p-6 bg-primary/5 border-primary/20">
-				<h3 className="font-semibold mb-2 flex items-center gap-2">
-					<ExternalLink className="w-4 h-4" />
-					When to Connect Accounts
-				</h3>
-				<p className="text-sm text-text-dim">
-					Connect your social media accounts after your brand strategy has been approved. This allows
-					the AI to publish content directly to your connected platforms.
-				</p>
+			<div className="card p-6 bg-primary/5 border-primary/20">
+				<h2 className="font-semibold mb-2">How it works</h2>
+				<ol className="list-decimal ml-5 text-sm space-y-1 text-text-dim">
+					<li>Connect your LinkedIn account.</li>
+					<li>Approve your content strategy and schedule posts.</li>
+					<li>Our automation publishes directly to LinkedIn with tracking.</li>
+				</ol>
 			</div>
 		</div>
 	);

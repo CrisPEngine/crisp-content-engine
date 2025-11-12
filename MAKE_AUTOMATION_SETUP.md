@@ -382,3 +382,111 @@ For API integration questions, check:
 - Platform API documentation (LinkedIn, X, Instagram, Facebook)
 - Buffer API documentation
 
+# LinkedIn Publishing
+
+We support publishing directly to LinkedIn using LinkedIn's "Share on LinkedIn" product [[docs](https://learn.microsoft.com/en-gb/linkedin/consumer/integrations/self-serve/share-on-linkedin)].
+
+## LinkedIn OAuth Setup
+
+1. In the LinkedIn Developer Portal, add the **Share on LinkedIn** product to the CrisP Digital application. This grants the `w_member_social` scope required to create posts.
+2. Configure the OAuth callback: `https://app.crispdigital.io/api/connections/linkedin/callback`.
+3. Capture the client credentials and add them to Vercel:
+
+```
+LINKEDIN_CLIENT_ID=your-app-client-id
+LINKEDIN_CLIENT_SECRET=your-app-client-secret
+LINKEDIN_REDIRECT_URI=https://app.crispdigital.io/api/connections/linkedin/callback
+LINKEDIN_ENCRYPTION_KEY=base64-encoded-32-byte-secret
+```
+
+Generate the encryption key once, e.g. `openssl rand -base64 32`.
+
+## Database (Supabase)
+
+Create the table that stores encrypted connection data:
+
+```sql
+create table if not exists public.social_connections (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  provider text not null,
+  access_token text,
+  refresh_token text,
+  expires_at timestamptz,
+  person_urn text,
+  account_name text,
+  account_avatar text,
+  metadata jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique (user_id, provider)
+);
+```
+
+RLS can remain disabled for this table because all access flows through server-side service role queries.
+
+## App Flow
+
+- The `/connections` page now lets members connect or disconnect their LinkedIn account.
+- `/api/connections/linkedin/authorize` sends the member to the LinkedIn consent screen (scopes: `r_liteprofile`, `w_member_social`, `openid`, `profile`, `email`).
+- `/api/connections/linkedin/callback` exchanges the code, encrypts tokens, fetches the member URN, and stores account metadata.
+- `/api/connections/linkedin/status` returns connection status for the signed-in member.
+- `/api/connections/linkedin/disconnect` removes stored tokens.
+- `/api/social/linkedin/credentials` is a secure automation endpoint that returns a fresh access token + person URN when Make provides `x-api-key: MAKE_API_KEY`.
+
+## Make Scenario Steps
+
+1. **Fetch LinkedIn credentials**
+   - HTTP module → `GET https://app.crispdigital.io/api/social/linkedin/credentials?userId={{user_id}}`
+   - Headers: `x-api-key: {{MAKE_API_KEY}}`
+   - Response includes `accessToken`, `personUrn`, `accountName`, `expiresAt`.
+
+2. **Optional: Upload images** (if your post includes creatives)
+   - Register asset: `POST https://api.linkedin.com/v2/assets?action=registerUpload`
+   - Upload binary to returned `uploadUrl`.
+
+3. **Create the share**
+   - `POST https://api.linkedin.com/v2/ugcPosts`
+   - Headers: `Authorization: Bearer {{accessToken}}`, `X-Restli-Protocol-Version: 2.0.0`, `Content-Type: application/json`
+   - Body structure:
+
+```json
+{
+  "author": "{{personUrn}}",
+  "lifecycleState": "PUBLISHED",
+  "specificContent": {
+    "com.linkedin.ugc.ShareContent": {
+      "shareCommentary": { "text": "Post copy" },
+      "shareMediaCategory": "ARTICLE",
+      "media": [
+        {
+          "status": "READY",
+          "originalUrl": "https://app.crispdigital.io/blog/...",
+          "title": { "text": "Title" },
+          "description": { "text": "Description" }
+        }
+      ]
+    }
+  },
+  "visibility": {
+    "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+  }
+}
+```
+
+4. **Record success**
+   - The response includes the new post URN in the `X-RestLi-Id` header. Update Airtable/Supabase via existing admin routes and call `/api/usage/increment` so entitlements remain accurate.
+
+5. **Error handling**
+   - If credentials route returns 401/404, notify the user to reconnect.
+   - If LinkedIn returns 401/403, the refresh token might be invalid—ask the user to reconnect.
+   - Respect LinkedIn rate limits: 150 requests/member/day, 100k requests/app/day.
+
+## User Checklist
+
+- [ ] Add LinkedIn client credentials and encryption key to Vercel.
+- [ ] Run the SQL migration to create `social_connections`.
+- [ ] Re-deploy the app (connections page + API routes are live).
+- [ ] Connect LinkedIn via `/connections` as a test user.
+- [ ] Update Make scenario to fetch credentials and publish using the LinkedIn UGC API.
+
