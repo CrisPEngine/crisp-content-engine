@@ -220,13 +220,13 @@ export default function OnboardingPage() {
 			const headline = meta.localizedHeadline || '';
 			const avatarUrl = linkedinProfile.accountAvatar || null;
 
-			if (name && !personalFullName) {
+			if (name && !personalFullName.trim()) {
 				setValue('personal_full_name', name, { shouldDirty: false });
 			}
-			if (headline && !personalHeadline) {
+			if (headline && !personalHeadline.trim()) {
 				setValue('personal_headline', headline, { shouldDirty: false });
 			}
-			if (name && !clientName) {
+			if (name && !clientName.trim()) {
 				setValue('client_name', name, { shouldDirty: false });
 			}
 			if (avatarUrl && personalAssetsUrls.length === 0) {
@@ -238,8 +238,8 @@ export default function OnboardingPage() {
 	}, [brandType, linkedinProfile, appliedLinkedinPrefill, personalFullName, personalHeadline, clientName, personalAssetsUrls, setValue]);
 
 	useEffect(() => {
-		if (brandType === 'personal' && personalFullName) {
-			if (!clientName || clientName === '' || clientName === personalFullName) {
+		if (brandType === 'personal' && personalFullName.trim()) {
+			if (!clientName.trim()) {
 				setValue('client_name', personalFullName, { shouldDirty: false });
 			}
 		}
