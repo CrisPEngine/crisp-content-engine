@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FileUpload } from '@/components/FileUpload';
+import { SubmissionLoading } from '@/components/SubmissionLoading';
 import { TIMEZONES } from '@/lib/timezones';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { Linkedin } from 'lucide-react';
