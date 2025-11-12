@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { motion } from 'framer-motion';
-import { Check, X, Edit, Loader2 } from 'lucide-react';
+import { Check, Edit, Loader2 } from 'lucide-react';
 
 export default function StrategyReviewPage() {
 	const params = useParams();
@@ -13,7 +13,6 @@ export default function StrategyReviewPage() {
 	const [loading, setLoading] = useState(true);
 	const [strategy, setStrategy] = useState<any>(null);
 	const [approving, setApproving] = useState(false);
-	const [rejecting, setRejecting] = useState(false);
 	const [editing, setEditing] = useState(false);
 	const [editedContent, setEditedContent] = useState('');
 
@@ -69,24 +68,6 @@ export default function StrategyReviewPage() {
 			alert('Failed to approve strategy. Please try again.');
 		} finally {
 			setApproving(false);
-		}
-	}
-
-	async function rejectStrategy() {
-		if (!supabase || !strategy) return;
-		setRejecting(true);
-		try {
-			// TODO: Replace with actual API call
-			// await fetch(`/api/strategy/${strategy.id}/reject`, { method: 'POST' });
-			
-			// Update status in Airtable to "Needs Strategy"
-			alert('Strategy rejected. Status will be updated to "Needs Strategy".');
-			router.push('/dashboard');
-		} catch (error) {
-			console.error('Failed to reject strategy:', error);
-			alert('Failed to reject strategy. Please try again.');
-		} finally {
-			setRejecting(false);
 		}
 	}
 
@@ -210,7 +191,7 @@ export default function StrategyReviewPage() {
 				</div>
 
 				{!editing && (
-					<div className="flex gap-3 pt-4 border-t border-edge/60">
+					<div className="flex pt-4 border-t border-edge/60">
 						<button
 							onClick={approveStrategy}
 							disabled={approving}
@@ -222,18 +203,6 @@ export default function StrategyReviewPage() {
 								<Check className="w-5 h-5" />
 							)}
 							Approve & Continue
-						</button>
-						<button
-							onClick={rejectStrategy}
-							disabled={rejecting}
-							className="flex-1 px-6 py-3 rounded-xl2 border border-danger/40 bg-danger/10 hover:bg-danger/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-						>
-							{rejecting ? (
-								<Loader2 className="w-5 h-5 animate-spin" />
-							) : (
-								<X className="w-5 h-5" />
-							)}
-							Request Update
 						</button>
 					</div>
 				)}
