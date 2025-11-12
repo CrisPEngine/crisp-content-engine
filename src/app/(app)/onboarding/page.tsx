@@ -716,6 +716,7 @@ export default function OnboardingPage() {
 								</div>
 							</div>
 						)}
+						</div>
 					</motion.div>
 				</AnimatePresence>
 
