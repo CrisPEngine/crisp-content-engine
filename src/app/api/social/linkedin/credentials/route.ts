@@ -65,22 +65,24 @@ export async function GET(request: Request) {
 		return NextResponse.json({ error: 'LinkedIn connection not found' }, { status: 404 });
 	}
 
-	let accessToken = decryptToken(data.access_token);
+	const decryptedAccessToken = decryptToken(data.access_token);
 	let refreshToken = decryptToken(data.refresh_token);
 
-	if (!accessToken) {
+	if (!decryptedAccessToken) {
 		return NextResponse.json({ error: 'Access token missing' }, { status: 400 });
 	}
 
+	let accessToken: string = decryptedAccessToken;
 	let expiresAt = data.expires_at ? new Date(data.expires_at).getTime() : null;
 	const now = Date.now();
 
 	if (expiresAt && expiresAt - now < 5 * 60 * 1000 && refreshToken) {
 		try {
 			const refreshResponse = await refreshAccessToken(refreshToken);
-			accessToken = refreshResponse.access_token;
 			expiresAt = refreshResponse.expires_in ? now + refreshResponse.expires_in * 1000 : null;
 			const newRefresh = refreshResponse.refresh_token || refreshToken;
+
+			accessToken = refreshResponse.access_token as string;
 
 			await admin
 				.from('social_connections')
