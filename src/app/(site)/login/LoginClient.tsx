@@ -5,6 +5,7 @@ import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
+import { Linkedin } from 'lucide-react';
 
 export function LoginClient() {
 	const supabase = useSupabase();
@@ -13,6 +14,20 @@ export function LoginClient() {
 	useEffect(() => {
 		setMounted(true);
 	}, []);
+
+	const handleLinkedInSignIn = async () => {
+		if (!supabase) return;
+		try {
+			await supabase.auth.signInWithOAuth({
+				provider: 'linkedin_oidc',
+				options: {
+					redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://app.crispdigital.io/auth/callback',
+				},
+			});
+		} catch (error) {
+			console.error('LinkedIn sign-in failed', error);
+		}
+	};
 	
 	// Fallback if Supabase isn't ready yet or not mounted
 	if (!mounted || !supabase) {
@@ -44,7 +59,7 @@ export function LoginClient() {
 				<Auth
 					supabaseClient={supabase}
 					view="sign_in"
-					providers={["google", "linkedin_oidc"]}
+					providers={["google"]}
 					redirectTo={typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://app.crispdigital.io/auth/callback'}
 					appearance={{
 						theme: ThemeSupa,
@@ -72,6 +87,14 @@ export function LoginClient() {
 						},
 					}}
 				/>
+				<button
+					onClick={handleLinkedInSignIn}
+					type="button"
+					className="mt-4 w-full flex items-center justify-center gap-2 rounded-xl2 border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-text hover:bg-primary/20 transition"
+				>
+					<Linkedin className="w-4 h-4" />
+					Sign in with LinkedIn
+				</button>
 			</motion.section>
 			<p className="mt-6 text-center text-xs text-text-dim">By continuing you agree to our Terms & Privacy.</p>
 		</div>
