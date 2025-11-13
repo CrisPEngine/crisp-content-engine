@@ -199,7 +199,7 @@ export default function OnboardingPage() {
 		() => [
 			{
 				id: 1,
-				title: 'Brand Basics',
+				title: isPersonal ? 'Personal Profile' : 'Brand Basics',
 				fields: isPersonal ? baseStepFields.personalBasics : baseStepFields.companyBasics,
 			},
 			{ id: 2, title: 'Audience & Value', fields: baseStepFields.audience },
@@ -310,9 +310,14 @@ export default function OnboardingPage() {
 			return true;
 		});
 		const isValid = await trigger(filteredFields as any);
-		if (isValid) {
-			setCurrentStep(Math.min(currentStep + 1, steps.length));
+		if (!isValid) return;
+
+		if (isPersonal) {
+			await handleSubmit(onSubmit)();
+			return;
 		}
+
+		setCurrentStep(Math.min(currentStep + 1, steps.length));
 	};
 
 	const prevStep = () => {
@@ -630,161 +635,161 @@ export default function OnboardingPage() {
 										</div>
 									)}
 
-								<div>
-									<label className="block text-sm font-medium mb-2">Language / Region *</label>
-									<select
-										{...register('language_region')}
-										className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-									>
-										<option value="US English">US English</option>
-										<option value="UK English">UK English</option>
-										<option value="AU English">AU English</option>
-									</select>
-								</div>
-							</div>
-						)}
-
-						{currentStep === 2 && (
-							<div className="space-y-6">
-								<div>
-									<h2 className="text-2xl font-semibold mb-2">Audience & Value</h2>
-									<p className="text-text-dim">Who you serve and what you offer.</p>
-								</div>
-
-								<div>
-									<label className="block text-sm font-medium mb-2">Audience *</label>
-									<textarea
-										{...register('audience')}
-										rows={4}
-										className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-										placeholder="Describe your target audience, demographics, pain points..."
-									/>
-									{errors.audience && <p className="mt-1 text-sm text-danger">{errors.audience.message}</p>}
-								</div>
-
-								<div>
-									<label className="block text-sm font-medium mb-2">Unique Value Propositions *</label>
-									<textarea
-										{...register('value_props')}
-										rows={4}
-										className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-										placeholder="What makes your brand unique?"
-									/>
-									{errors.value_props && <p className="mt-1 text-sm text-danger">{errors.value_props.message}</p>}
-								</div>
-
-								<div>
-									<label className="block text-sm font-medium mb-2">Offers / Products *</label>
-									<textarea
-										{...register('offers')}
-										rows={3}
-										className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-										placeholder="List your main offers, services, or products"
-									/>
-									{errors.offers && <p className="mt-1 text-sm text-danger">{errors.offers.message}</p>}
-								</div>
-
-								<div>
-									<label className="block text-sm font-medium mb-2">Content Engine Objectives *</label>
-									<textarea
-										{...register('brand_goals')}
-										rows={3}
-										className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-										placeholder="Grow authority, attract clients, build community..."
-									/>
-									{errors.brand_goals && <p className="mt-1 text-sm text-danger">{errors.brand_goals.message}</p>}
-								</div>
-							</div>
-						)}
-
-						{currentStep === 3 && (
-							<div className="space-y-6">
-								<div>
-									<h2 className="text-2xl font-semibold mb-2">Voice & Content Rules</h2>
-									<p className="text-text-dim">Define guardrails for tone, language, and red flags.</p>
-								</div>
-
-								<div>
-									<label className="block text-sm font-medium mb-2">Voice Rules</label>
-									<textarea
-										{...register('voice_rules')}
-										rows={3}
-										className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-										placeholder="Tone, style, personality..."
-									/>
-								</div>
-
-								<div className="grid gap-4 md:grid-cols-2">
 									<div>
-										<label className="block text-sm font-medium mb-2">Preferred Keywords / Phrases</label>
+										<label className="block text-sm font-medium mb-2">Language / Region *</label>
+										<select
+											{...register('language_region')}
+											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+										>
+											<option value="US English">US English</option>
+											<option value="UK English">UK English</option>
+											<option value="AU English">AU English</option>
+										</select>
+									</div>
+								</div>
+							)}
+
+							{currentStep === 2 && (
+								<div className="space-y-6">
+									<div>
+										<h2 className="text-2xl font-semibold mb-2">Audience & Value</h2>
+										<p className="text-text-dim">Who you serve and what you offer.</p>
+									</div>
+
+									<div>
+										<label className="block text-sm font-medium mb-2">Audience *</label>
 										<textarea
-											{...register('brand_keywords')}
+											{...register('audience')}
+											rows={4}
+											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+											placeholder="Describe your target audience, demographics, pain points..."
+										/>
+										{errors.audience && <p className="mt-1 text-sm text-danger">{errors.audience.message}</p>}
+									</div>
+
+									<div>
+										<label className="block text-sm font-medium mb-2">Unique Value Propositions *</label>
+										<textarea
+											{...register('value_props')}
+											rows={4}
+											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+											placeholder="What makes your brand unique?"
+										/>
+										{errors.value_props && <p className="mt-1 text-sm text-danger">{errors.value_props.message}</p>}
+									</div>
+
+									<div>
+										<label className="block text-sm font-medium mb-2">Offers / Products *</label>
+										<textarea
+											{...register('offers')}
+											rows={3}
+											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+											placeholder="List your main offers, services, or products"
+										/>
+										{errors.offers && <p className="mt-1 text-sm text-danger">{errors.offers.message}</p>}
+									</div>
+
+									<div>
+										<label className="block text-sm font-medium mb-2">Content Engine Objectives *</label>
+										<textarea
+											{...register('brand_goals')}
+											rows={3}
+											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+											placeholder="Grow authority, attract clients, build community..."
+										/>
+										{errors.brand_goals && <p className="mt-1 text-sm text-danger">{errors.brand_goals.message}</p>}
+									</div>
+								</div>
+							)}
+
+							{currentStep === 3 && (
+								<div className="space-y-6">
+									<div>
+										<h2 className="text-2xl font-semibold mb-2">Voice & Content Rules</h2>
+										<p className="text-text-dim">Define guardrails for tone, language, and red flags.</p>
+									</div>
+
+									<div>
+										<label className="block text-sm font-medium mb-2">Voice Rules</label>
+										<textarea
+											{...register('voice_rules')}
+											rows={3}
+											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+											placeholder="Tone, style, personality..."
+										/>
+									</div>
+
+									<div className="grid gap-4 md:grid-cols-2">
+										<div>
+											<label className="block text-sm font-medium mb-2">Preferred Keywords / Phrases</label>
+											<textarea
+												{...register('brand_keywords')}
+												rows={2}
+												className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+												placeholder="Important words or phrases to use"
+											/>
+										</div>
+
+										<div>
+											<label className="block text-sm font-medium mb-2">Topics / Phrases to Avoid</label>
+											<textarea
+												{...register('exclude_keywords')}
+												rows={2}
+												className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+												placeholder="Topics, phrases, or words to avoid"
+											/>
+										</div>
+									</div>
+
+									<div>
+										<label className="block text-sm font-medium mb-2">Content Rules / Flags</label>
+										<textarea
+											{...register('content_rules')}
 											rows={2}
 											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-											placeholder="Important words or phrases to use"
+											placeholder="Any compliance notes or guidelines"
 										/>
 									</div>
 
 									<div>
-										<label className="block text-sm font-medium mb-2">Topics / Phrases to Avoid</label>
+										<label className="block text-sm font-medium mb-2">Additional Information</label>
 										<textarea
-											{...register('exclude_keywords')}
-											rows={2}
+											{...register('additional_info')}
+											rows={3}
 											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-											placeholder="Topics, phrases, or words to avoid"
+											placeholder="Any other notes, links, or context sources"
 										/>
 									</div>
 								</div>
+							)}
 
-								<div>
-									<label className="block text-sm font-medium mb-2">Content Rules / Flags</label>
-									<textarea
-										{...register('content_rules')}
-										rows={2}
-										className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-										placeholder="Any compliance notes or guidelines"
-									/>
-								</div>
+							{currentStep === 4 && (
+								<div className="space-y-6">
+									<div>
+										<h2 className="text-2xl font-semibold mb-2">Platforms & Assets</h2>
+										<p className="text-text-dim">Select platforms and upload assets.</p>
+									</div>
 
-								<div>
-									<label className="block text-sm font-medium mb-2">Additional Information</label>
-									<textarea
-										{...register('additional_info')}
-										rows={3}
-										className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-										placeholder="Any other notes, links, or context sources"
-									/>
-								</div>
-							</div>
-						)}
-
-						{currentStep === 4 && (
-							<div className="space-y-6">
-								<div>
-									<h2 className="text-2xl font-semibold mb-2">Platforms & Assets</h2>
-									<p className="text-text-dim">Select platforms and upload assets.</p>
-								</div>
-
-								<div>
-									<label className="block text-sm font-medium mb-3">Platforms *</label>
-									<div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-										{PlatformsEnum.options.map((platform) => {
-											const isSelected = watchedPlatforms.includes(platform);
-											return (
-												<label
-													key={platform}
-													className={`
-														flex items-center gap-2 p-3 rounded-xl2 border cursor-pointer transition
-														${isSelected ? 'bg-primary/15 border-primary/50 text-primary' : 'bg-surface/30 border-edge/60 hover:border-edge/80'}
-													`}
-												>
-													<input
-														 type="checkbox"
-														 checked={isSelected}
-														 onChange={() => {
-															const current = watchedPlatforms || [];
-															const next = isSelected ? current.filter((p) => p !== platform) : [...current, platform];
-															setValue('platforms_requested', next as FormData['platforms_requested'], { shouldDirty: true });
+									<div>
+										<label className="block text-sm font-medium mb-3">Platforms *</label>
+										<div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+											{PlatformsEnum.options.map((platform) => {
+												const isSelected = watchedPlatforms.includes(platform);
+												return (
+													<label
+														key={platform}
+														className={`
+															flex items-center gap-2 p-3 rounded-xl2 border cursor-pointer transition
+															${isSelected ? 'bg-primary/15 border-primary/50 text-primary' : 'bg-surface/30 border-edge/60 hover:border-edge/80'}
+														`}
+													>
+														<input
+															 type="checkbox"
+															 checked={isSelected}
+															 onChange={() => {
+																const current = watchedPlatforms || [];
+																const next = isSelected ? current.filter((p) => p !== platform) : [...current, platform];
+																setValue('platforms_requested', next as FormData['platforms_requested'], { shouldDirty: true });
 														}}
 														className="sr-only"
 													/>
