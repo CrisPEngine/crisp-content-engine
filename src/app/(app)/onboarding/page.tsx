@@ -620,32 +620,22 @@ export default function OnboardingPage() {
 													</select>
 												</div>
 											</div>
-
-											<div>
-												<label className="block text-sm font-medium mb-2">Language / Region *</label>
-												<select
-													{...register('language_region')}
-													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-												>
-													<option value="US English">US English</option>
-													<option value="UK English">UK English</option>
-													<option value="AU English">AU English</option>
-												</select>
-											</div>
 										</div>
 									)}
 
-									<div>
-										<label className="block text-sm font-medium mb-2">Language / Region *</label>
-										<select
-											{...register('language_region')}
-											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-										>
-											<option value="US English">US English</option>
-											<option value="UK English">UK English</option>
-											<option value="AU English">AU English</option>
-										</select>
-									</div>
+									{!isPersonal && (
+										<div>
+											<label className="block text-sm font-medium mb-2">Language / Region *</label>
+											<select
+												{...register('language_region')}
+												className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+											>
+												<option value="US English">US English</option>
+												<option value="UK English">UK English</option>
+												<option value="AU English">AU English</option>
+											</select>
+										</div>
+									)}
 								</div>
 							)}
 
