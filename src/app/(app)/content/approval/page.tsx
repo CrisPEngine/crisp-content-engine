@@ -12,9 +12,11 @@ type ContentItem = {
 	platform: string;
 	content: string;
 	status: string;
-	scheduled_date?: string;
-	created_at: string;
+	scheduled_date?: string | null;
+	created_time: string;
 	brand_name: string;
+	summary?: string;
+	call_to_action?: string;
 };
 
 export default function ContentApprovalPage() {
@@ -25,6 +27,7 @@ export default function ContentApprovalPage() {
 	const [selectedItem, setSelectedItem] = useState<ContentItem | null>(null);
 	const [approving, setApproving] = useState<string | null>(null);
 	const [rejecting, setRejecting] = useState<string | null>(null);
+	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (!supabase) return;
@@ -34,69 +37,72 @@ export default function ContentApprovalPage() {
 	async function loadContent() {
 		if (!supabase) return;
 		setLoading(true);
+		setError(null);
 		try {
-			const { data: { user } } = await supabase.auth.getUser();
-			if (!user) {
+			const {
+				data: { user },
+				error: userErr,
+			} = await supabase.auth.getUser();
+			if (userErr || !user) {
 				router.push('/login');
 				return;
 			}
 
-			// TODO: Replace with actual API call
-			// const res = await fetch('/api/content/approval');
-			// const data = await res.json();
-			// setContentItems(data.items);
-
-			// Placeholder data
-			setContentItems([
-				{
-					id: '1',
-					title: 'LinkedIn Post - Product Launch',
-					platform: 'LinkedIn',
-					content: 'Excited to announce our new product...',
-					status: 'Needs Approval',
-					scheduled_date: '2025-01-15T10:00:00Z',
-					created_at: new Date().toISOString(),
-					brand_name: 'Example Brand',
-				},
-			]);
-		} catch (error) {
-			console.error('Failed to load content:', error);
+			const res = await fetch('/api/content/queue?stage=approval', { cache: 'no-store' });
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				throw new Error(data?.error || 'Failed to load content queue');
+			}
+			const data = await res.json();
+			setContentItems(Array.isArray(data.items) ? data.items : []);
+		} catch (err: any) {
+			console.error('Failed to load content:', err);
+			setError(err.message || 'Failed to load content');
 		} finally {
 			setLoading(false);
 		}
 	}
 
 	async function approveContent(id: string) {
-		if (!supabase) return;
 		setApproving(id);
+		setError(null);
 		try {
-			// TODO: Replace with actual API call
-			// await fetch(`/api/content/${id}/approve`, { method: 'POST' });
-			
-			// Update status in Airtable to "Approved" or "Ready To Publish"
-			setContentItems(items => items.filter(item => item.id !== id));
-			alert('Content approved!');
-		} catch (error) {
-			console.error('Failed to approve content:', error);
-			alert('Failed to approve content. Please try again.');
+			const res = await fetch(`/api/content/queue/${id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'approve' }),
+			});
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				throw new Error(data?.error || 'Failed to approve content');
+			}
+			setContentItems((items) => items.filter((item) => item.id !== id));
+		} catch (err: any) {
+			console.error('Failed to approve content:', err);
+			setError(err.message || 'Failed to approve content');
 		} finally {
 			setApproving(null);
 		}
 	}
 
 	async function rejectContent(id: string) {
-		if (!supabase) return;
+		const feedback = window.prompt('Share optional feedback for the rewrite (optional):') || '';
 		setRejecting(id);
+		setError(null);
 		try {
-			// TODO: Replace with actual API call
-			// await fetch(`/api/content/${id}/reject`, { method: 'POST' });
-			
-			// Update status in Airtable to "Needs Review" or "Needs Copy"
-			setContentItems(items => items.filter(item => item.id !== id));
-			alert('Content rejected. Status updated.');
-		} catch (error) {
-			console.error('Failed to reject content:', error);
-			alert('Failed to reject content. Please try again.');
+			const res = await fetch(`/api/content/queue/${id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'reject', feedback }),
+			});
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				throw new Error(data?.error || 'Failed to reject content');
+			}
+			setContentItems((items) => items.filter((item) => item.id !== id));
+		} catch (err: any) {
+			console.error('Failed to reject content:', err);
+			setError(err.message || 'Failed to reject content');
 		} finally {
 			setRejecting(null);
 		}
@@ -124,11 +130,16 @@ export default function ContentApprovalPage() {
 				</button>
 			</div>
 
-			<div className="mb-6">
+			<div className="mb-6 space-y-3">
 				<h1 className="text-3xl font-semibold mb-2">Content Approval Queue</h1>
 				<p className="text-text-dim">
 					Review and approve content before it's published
 				</p>
+				{error && (
+					<div className="border border-danger/30 bg-danger/10 text-danger text-sm rounded-xl2 p-3">
+						{error}
+					</div>
+				)}
 			</div>
 
 			{contentItems.length === 0 ? (
@@ -177,10 +188,20 @@ export default function ContentApprovalPage() {
 							</div>
 
 							{selectedItem?.id === item.id && (
-								<div className="rounded-xl2 border border-edge/60 bg-bg/80 p-4 mt-4">
+								<div className="rounded-xl2 border border-edge/60 bg-bg/80 p-4 mt-4 space-y-3">
+									{item.summary && (
+										<p className="text-sm text-text-soft whitespace-pre-wrap">
+											<strong>Summary:</strong> {item.summary}
+										</p>
+									)}
 									<div className="prose prose-invert max-w-none text-text whitespace-pre-wrap">
-										{item.content}
+										{item.content || 'No content provided'}
 									</div>
+									{item.call_to_action && (
+										<p className="text-sm text-text-soft">
+											<strong>Call to Action:</strong> {item.call_to_action}
+										</p>
+									)}
 								</div>
 							)}
 

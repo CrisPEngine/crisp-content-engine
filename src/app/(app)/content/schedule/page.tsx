@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
@@ -22,7 +22,8 @@ export default function SchedulingDashboard() {
 	const [loading, setLoading] = useState(true);
 	const [scheduledContent, setScheduledContent] = useState<ScheduledContent[]>([]);
 	const [filter, setFilter] = useState<'all' | 'scheduled' | 'published' | 'failed'>('all');
-	const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+	const [selectedDate, setSelectedDate] = useState<string>('');
+	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (!supabase) return;
@@ -32,57 +33,65 @@ export default function SchedulingDashboard() {
 	async function loadScheduledContent() {
 		if (!supabase) return;
 		setLoading(true);
+		setError(null);
 		try {
-			const { data: { user } } = await supabase.auth.getUser();
-			if (!user) {
+			const {
+				data: { user },
+				error: userErr,
+			} = await supabase.auth.getUser();
+			if (userErr || !user) {
 				router.push('/login');
 				return;
 			}
 
-			// TODO: Replace with actual API call
-			// const res = await fetch(`/api/content/schedule?filter=${filter}&date=${selectedDate}`);
-			// const data = await res.json();
-			// setScheduledContent(data.items);
-
-			// Placeholder data
-			setScheduledContent([
-				{
-					id: '1',
-					title: 'LinkedIn Post - Product Launch',
-					platform: 'LinkedIn',
-					scheduled_date: '2025-01-15T10:00:00Z',
-					status: 'Scheduled',
-					brand_name: 'Example Brand',
-					content_preview: 'Excited to announce our new product...',
-				},
-				{
-					id: '2',
-					title: 'Twitter Post - Industry News',
-					platform: 'X',
-					scheduled_date: '2025-01-16T14:00:00Z',
-					status: 'Published',
-					brand_name: 'Example Brand',
-					content_preview: 'Breaking news in our industry...',
-				},
-			]);
-		} catch (error) {
-			console.error('Failed to load scheduled content:', error);
+			const res = await fetch('/api/content/queue?stage=schedule', { cache: 'no-store' });
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				throw new Error(data?.error || 'Failed to load schedule');
+			}
+			const data = await res.json();
+			const items: ScheduledContent[] = (data.items || []).map((item: any) => ({
+				id: item.id,
+				title: item.title,
+				platform: item.platform,
+				scheduled_date: item.scheduled_date,
+				status: item.status,
+				brand_name: item.brand_name,
+				content_preview: item.summary || item.content || '',
+			}));
+			setScheduledContent(items);
+		} catch (err: any) {
+			console.error('Failed to load scheduled content:', err);
+			setError(err.message || 'Failed to load schedule');
 		} finally {
 			setLoading(false);
 		}
 	}
 
-	const filteredContent = scheduledContent.filter((item) => {
-		if (filter === 'all') return true;
-		if (filter === 'scheduled') return item.status === 'Scheduled';
-		if (filter === 'published') return item.status === 'Published';
-		if (filter === 'failed') return item.status === 'Failed';
-		return true;
-	});
+	const filteredContent = useMemo(() => {
+		return scheduledContent.filter((item) => {
+			const matchesStatus =
+				filter === 'all'
+					? true
+					: filter === 'scheduled'
+					? item.status === 'Scheduled' || item.status === 'Ready To Publish'
+					: filter === 'published'
+					? item.status === 'Published'
+					: item.status === 'Failed';
+
+			if (!matchesStatus) return false;
+
+			if (!selectedDate) return true;
+			if (!item.scheduled_date) return false;
+			const scheduledISO = new Date(item.scheduled_date).toISOString().split('T')[0];
+			return scheduledISO === selectedDate;
+		});
+	}, [scheduledContent, filter, selectedDate]);
 
 	const getStatusIcon = (status: string) => {
 		switch (status) {
 			case 'Scheduled':
+			case 'Ready To Publish':
 				return <Clock className="w-4 h-4 text-primary" />;
 			case 'Published':
 				return <CheckCircle className="w-4 h-4 text-accent" />;
@@ -115,7 +124,7 @@ export default function SchedulingDashboard() {
 				</button>
 			</div>
 
-			<div className="mb-6">
+			<div className="mb-6 space-y-3">
 				<div className="flex items-center justify-between mb-4">
 					<div>
 						<h1 className="text-3xl font-semibold mb-2">Scheduling Dashboard</h1>
@@ -132,6 +141,11 @@ export default function SchedulingDashboard() {
 					</button>
 				</div>
 
+				{error && (
+					<div className="border border-danger/30 bg-danger/10 text-danger text-sm rounded-xl2 p-3">
+						{error}
+					</div>
+				)}
 				<div className="flex gap-3 flex-wrap">
 					<button
 						onClick={() => setFilter('all')}
@@ -205,7 +219,7 @@ export default function SchedulingDashboard() {
 											{item.platform}
 										</span>
 										<span className={`px-2 py-1 rounded-full text-xs border ${
-											item.status === 'Scheduled'
+											item.status === 'Scheduled' || item.status === 'Ready To Publish'
 												? 'bg-primary/15 border-primary/30 text-primary'
 												: item.status === 'Published'
 												? 'bg-accent/15 border-accent/30 text-accent'

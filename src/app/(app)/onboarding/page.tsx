@@ -39,7 +39,12 @@ const schema = z
 				message: 'Invalid URL',
 			}),
 		brand_palette: z.string().default(''),
-		approval_contact_email: z.string().email('Invalid email address'),
+		approval_contact_email: z
+			.string()
+			.default('')
+			.refine((value) => value === '' || z.string().email().safeParse(value).success, {
+				message: 'Invalid email address',
+			}),
 		brand_assets_urls: z.array(z.string().url()).default([]),
 		personal_full_name: z.string().default(''),
 		personal_headline: z.string().default(''),
@@ -67,6 +72,12 @@ const schema = z
 					ctx.addIssue({ path: [field], code: z.ZodIssueCode.custom, message });
 				}
 			});
+		}
+
+		if (data.brand_type === 'company') {
+			if (!data.approval_contact_email || !data.approval_contact_email.trim()) {
+				ctx.addIssue({ path: ['approval_contact_email'], code: z.ZodIssueCode.custom, message: 'Approval contact email is required' });
+			}
 		}
 	});
 
@@ -486,16 +497,18 @@ export default function OnboardingPage() {
 
 											<div className="grid gap-4 md:grid-cols-2">
 												<div>
-													<label className="block text-sm font-medium mb-2">Approval Contact Email *</label>
+													<label className="block text-sm font-medium mb-2">
+														Approval Contact Email {isPersonal ? '(optional)' : '*'}
+													</label>
 													<input
 														{...register('approval_contact_email')}
 														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
 														placeholder="approver@example.com"
-												/>
-												{errors.approval_contact_email && (
-													<p className="mt-1 text-sm text-danger">{errors.approval_contact_email.message}</p>
-												)}
-											</div>
+													/>
+													{errors.approval_contact_email && (
+														<p className="mt-1 text-sm text-danger">{errors.approval_contact_email.message}</p>
+													)}
+												</div>
 
 												<div>
 													<label className="block text-sm font-medium mb-2">Preferred Image Source *</label>
