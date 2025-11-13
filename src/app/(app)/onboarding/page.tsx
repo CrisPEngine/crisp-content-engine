@@ -108,12 +108,11 @@ const baseStepFields = {
 		'personal_story',
 		'personal_links',
 		'personal_assets_urls',
-		'client_name',
-		'website',
 		'timezone',
-		'approval_contact_email',
 		'language_region',
 		'preferred_image_source',
+		'platforms_requested',
+		'brand_assets_urls',
 	] as const,
 	audience: ['audience', 'value_props', 'offers', 'brand_goals'] as const,
 	voice: ['voice_rules', 'brand_keywords', 'exclude_keywords', 'content_rules', 'additional_info'] as const,
@@ -195,19 +194,23 @@ export default function OnboardingPage() {
 		}
 	}, [isPersonal, personalFullName, personalBrandName, setValue]);
 
-	const steps = useMemo(
-		() => [
-			{
-				id: 1,
-				title: isPersonal ? 'Personal Profile' : 'Brand Basics',
-				fields: isPersonal ? baseStepFields.personalBasics : baseStepFields.companyBasics,
-			},
+	const steps = useMemo(() => {
+		if (isPersonal) {
+			return [
+				{
+					id: 1,
+					title: 'Personal Profile',
+					fields: baseStepFields.personalBasics,
+				},
+			];
+		}
+		return [
+			{ id: 1, title: 'Brand Basics', fields: baseStepFields.companyBasics },
 			{ id: 2, title: 'Audience & Value', fields: baseStepFields.audience },
 			{ id: 3, title: 'Voice & Content', fields: baseStepFields.voice },
 			{ id: 4, title: 'Platforms & Assets', fields: baseStepFields.platforms },
-		],
-		[isPersonal]
-	);
+		];
+	}, [isPersonal]);
 
 	const handleBrandTypeChange = (type: 'personal' | 'company') => {
 		setValue('brand_type', type, { shouldDirty: true });
@@ -234,6 +237,11 @@ export default function OnboardingPage() {
 			const normalisedData = {
 				...data,
 				client_name: inferredClientName,
+				// Pre-fill business-centric fields when personal to avoid downstream nulls
+				audience: data.audience || data.personal_audience || 'Audience details captured via personal onboarding.',
+				value_props: data.value_props || data.personal_headline || 'Personal brand value proposition provided in personal onboarding.',
+				offers: data.offers || 'Personal brand creator package.',
+				brand_goals: data.brand_goals || data.personal_goals || 'Personal brand objectives provided in personal onboarding.',
 			};
 
 			const res = await fetch('/api/onboarding', {
