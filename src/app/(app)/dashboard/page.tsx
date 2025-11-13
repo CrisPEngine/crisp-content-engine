@@ -54,7 +54,7 @@ export default async function Dashboard() {
 			<BrandProfilesList />
 
 			{/* Quick Actions */}
-			<div className="grid gap-4 md:grid-cols-2">
+			<div className="grid gap-4 md:grid-cols-3">
 				<a
 					href="/onboarding"
 					className="card p-6 hover:bg-surface/50 transition cursor-pointer border-2 border-dashed border-edge/60"
@@ -71,6 +71,15 @@ export default async function Dashboard() {
 					<h3 className="font-semibold mb-2">Connect Accounts</h3>
 					<p className="text-sm text-text-dim">
 						Connect your social media accounts for publishing
+					</p>
+				</a>
+				<a
+					href="/strategy/monthly-update"
+					className="card p-6 hover:bg-surface/50 transition cursor-pointer border-2 border-dashed border-edge/60"
+				>
+					<h3 className="font-semibold mb-2">Monthly Strategy Update</h3>
+					<p className="text-sm text-text-dim">
+						Share fresh objectives & themes so we can evolve next month’s plan
 					</p>
 				</a>
 			</div>

@@ -46,62 +46,79 @@ Make automations handle:
 
 ---
 
-### 2. Strategy Approval Webhook
+### 2. Strategy Generation Webhook (Initial + Monthly)
 
-**Trigger:** When user approves strategy
+**Trigger:** Shared webhook for both onboarding and monthly strategy refreshes
 
-**Endpoint:** `MAKE_STRATEGY_APPROVED_WEBHOOK_URL` (to be created)
+**Endpoint:** `MAKE_STRATEGY_WEBHOOK_URL`
 
-**Payload Sent:**
+**Payload Sent (Initial strategy):**
 ```json
 {
+  "mode": "initial",
   "brand_profile_id": "recXXXXXXXXXXXXXX",
   "user_id": "uuid-here",
-  "strategy_approved": true,
-  "approved_at": "2025-01-15T10:00:00Z"
+  "brand": { "name": "Brand", "website": "https://example.com" },
+  "audience": "Primary audience notes",
+  "value_props": "Unique value",
+  "offers": "Key offers",
+  "brand_goals": "Monthly goals",
+  "platforms_requested": ["LinkedIn", "X"],
+  "urls_to_scrape": ["https://example.com"],
+  "assets": [{ "url": "https://.../logo.png", "type": "image/png" }],
+  "strategy_context": {
+    "submitted_at": "2025-01-15T10:00:00Z"
+  }
 }
 ```
 
-**Make Scenario Should:**
-1. Receive webhook trigger
-2. Update Airtable record:
-   - Set `status` to "Strategy Approved"
-   - Set `strategy_approval` to `true`
-   - Set `strategy_approved_at` timestamp
-3. Begin content generation workflow:
-   - Generate initial content batch
-   - Create content records in Airtable
-   - Set content `status` to "Needs Approval"
-
----
-
-### 3. Content Generation Webhook
-
-**Trigger:** When content needs to be generated
-
-**Endpoint:** `MAKE_CONTENT_GENERATION_WEBHOOK_URL` (to be created)
-
-**Payload Sent:**
+**Payload Sent (Monthly update):**
 ```json
 {
+  "mode": "monthly_update",
+  "strategy_update_id": "recUpdate123",
   "brand_profile_id": "recXXXXXXXXXXXXXX",
-  "content_count": 10,
-  "platforms": ["LinkedIn", "X"],
-  "content_type": "posts"
+  "user_id": "uuid-here",
+  "monthly": {
+    "objective": "Launch v2 beta",
+    "themes_focus": "AI assistant, async workflows",
+    "key_dates": "Demo day 12 Feb, webinar 20 Feb",
+    "feedback_notes": "Leads loved testimonial posts, keep that tone",
+    "content_preferences": "CTA for new waitlist",
+    "monthly_cycle_start": "2025-02-01T00:00:00.000Z",
+    "cycle_label": "February 2025",
+    "attachments": ["https://res.cloudinary.com/.../campaign.pdf"]
+  }
 }
 ```
 
 **Make Scenario Should:**
-1. Fetch brand profile and strategy from Airtable
-2. Generate content using AI (OpenAI, Claude, etc.)
-3. Create content records in Airtable:
-   - `title`, `content`, `platform`, `scheduled_date`
-   - Set `status` to "Needs Approval"
-   - Link to `brand_profile_id`
+
+Route A — **Initial strategy (mode omitted or `initial`):**
+1. Fetch BrandProfiles record and any referenced assets/URLs
+2. Scrape websites, summarise text
+3. Generate strategy JSON via OpenAI/Claude
+4. Update BrandProfiles:
+   - `status` → "Strategy Ready"
+   - `strategy_payload`, `strategy_summary`, `strategy_meta`
+5. POST callback to `/api/strategy/webhook` with mode `initial`
+
+Route B — **Monthly update (mode = `monthly_update`):**
+1. Fetch StrategyUpdates record and linked BrandProfiles row
+2. Fetch latest approved strategy + ContentQueue history to avoid duplicates
+3. Generate refreshed calendar using monthly instructions
+4. Update StrategyUpdates:
+   - `status` → "Completed"
+   - `processed_at` (ISO)
+   - `result_payload` (full JSON)
+5. Upsert new entries in `ContentQueue` (or equivalent) and re-link to brand
+6. POST callback to `/api/strategy/webhook` with mode `monthly_update`
+
+Both flows can reuse the same scraping and AI modules—branch with a Router immediately after the webhook trigger using `{{1.mode}}`.
 
 ---
 
-### 4. Content Publishing Webhook
+### 3. Content Publishing Webhook
 
 **Trigger:** When content is approved and ready to publish
 
@@ -173,7 +190,25 @@ Make automations handle:
 - `created_time` (Automatic) - Created timestamp
 - `last_modified_time` (Automatic) - Last modified timestamp
 
-### ContentPosts Table (to be created)
+### StrategyUpdates Table
+
+**Fields:**
+- `brand_profile_id` (Link to BrandProfiles)
+- `user_id` (Single line text)
+- `status` (Single select) – Pending, Generating, Completed, Needs Follow-up
+- `cycle_label` (Single line text)
+- `monthly_cycle_start` (Date)
+- `objective` (Long text)
+- `themes_focus` (Long text)
+- `key_dates` (Long text)
+- `feedback_notes` (Long text)
+- `content_preferences` (Long text)
+- `attachments` (Attachment)
+- `result_payload` (Long text)
+- `processed_at` (Date)
+- `created_time` / `last_modified_time` (automatic)
+
+### ContentQueue Table
 
 **Suggested Fields:**
 - `title` (Single line text)
@@ -195,6 +230,16 @@ Add these to your Vercel project settings:
 ### Required:
 ```
 MAKE_ONBOARDING_WEBHOOK_URL=https://hook.make.com/your-webhook-id
+MAKE_STRATEGY_WEBHOOK_URL=https://hook.make.com/your-shared-strategy-webhook
+MAKE_STRATEGY_WEBHOOK_SECRET=optional-shared-secret
+MAKE_CALLBACK_SECRET=shared-secret-from-make
+MAKE_STRATEGY_COMPLETED_WEBHOOK_URL=https://app.crispdigital.io/api/strategy/webhook
+MAKE_API_KEY=optional-key-for-auth
+
+AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX
+AIRTABLE_BRANDPROFILES_TABLE=tblBrandProfiles
+AIRTABLE_STRATEGYUPDATES_TABLE=tblLA25egvUOUc9zT
+AIRTABLE_CONTENTQUEUE_TABLE=tblContentQueue
 ```
 
 ### Optional (for authentication):
@@ -251,20 +296,30 @@ MAKE_CONTENT_PUBLISH_WEBHOOK_URL=https://hook.make.com/...
    - Add `scraped_text` with website content
    - Add `brand_context` with summary
 
-### 2. Strategy Approval Scenario
+### 2. Strategy Scenario (shared webhook)
 
-1. **Webhook Trigger** (to be created)
-   - Receive approval notification
-   - Get `brand_profile_id` from payload
+1. **Webhook Trigger**
+   - Module: Custom Webhook (`MAKE_STRATEGY_WEBHOOK_URL`)
+   - Receives both onboarding and monthly update payloads
 
-2. **Airtable - Update Record**
-   - Update BrandProfiles record
-   - Set `status` to "Strategy Approved"
-   - Set `strategy_approval` to `true`
+2. **Router**
+   - Route A filter: `{{1.mode}}` is empty OR equals `initial`
+   - Route B filter: `{{1.mode}} = "monthly_update"`
 
-3. **Trigger Content Generation**
-   - Call content generation webhook
-   - Or start content generation workflow
+3. **Route A modules (initial)**
+   - Airtable: Get BrandProfiles record
+   - (Optional) HTTP scrape + summarise
+   - AI: Generate strategy JSON
+   - Airtable: Update BrandProfiles (`status = Strategy Ready`, store JSON)
+   - HTTP: POST to `/api/strategy/webhook` with mode `initial`
+
+4. **Route B modules (monthly update)**
+   - Airtable: Get StrategyUpdates record
+   - Airtable: Get linked BrandProfiles + recent content (ContentQueue)
+   - AI: Generate updated calendar referencing historic posts to avoid duplicates
+   - Airtable: Update StrategyUpdates (`status = Completed`, `processed_at`, `result_payload`)
+   - Airtable: Create/Update ContentQueue entries for new posts
+   - HTTP: POST to `/api/strategy/webhook` with mode `monthly_update`
 
 ### 3. Content Publishing Scenario
 
