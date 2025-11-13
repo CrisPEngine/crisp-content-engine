@@ -401,6 +401,7 @@ export default function OnboardingPage() {
 
 									{isPersonal ? (
 										<div className="space-y-5 border border-primary/30 rounded-xl2 p-5 bg-primary/5">
+											<input type="hidden" {...register('client_name')} />
 											<div>
 												<label className="block text-sm font-medium mb-2">What is your full name? *</label>
 												<input
@@ -487,9 +488,6 @@ export default function OnboardingPage() {
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
 													placeholder="Notable roles, results, awards, milestones"
 												/>
-												{errors.personal_story && (
-													<p className="mt-1 text-sm text-danger">{errors.personal_story.message}</p>
-												)}
 											</div>
 
 											<div>
@@ -506,6 +504,48 @@ export default function OnboardingPage() {
 												<label className="block text-sm font-medium mb-2">Upload a profile photo or assets (optional)</label>
 												<FileUpload onUpload={handlePersonalFileUpload} />
 												<p className="mt-2 text-xs text-text-dim">We’ll reference these in social content where appropriate.</p>
+											</div>
+
+											<div className="grid gap-4 md:grid-cols-2">
+												<div>
+													<label className="block text-sm font-medium mb-2">Timezone *</label>
+													<select
+														{...register('timezone')}
+														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+													>
+														<option value="">Select timezone...</option>
+														{TIMEZONES.map((tz) => (
+															<option key={tz} value={tz}>
+																{tz}
+															</option>
+														))}
+													</select>
+													{errors.timezone && <p className="mt-1 text-sm text-danger">{errors.timezone.message}</p>}
+												</div>
+
+												<div>
+													<label className="block text-sm font-medium mb-2">Preferred Image Source *</label>
+													<select
+														{...register('preferred_image_source')}
+														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+													>
+														<option value="AI Generated">AI Generated</option>
+														<option value="Stock">Stock</option>
+														<option value="Brand">Brand</option>
+													</select>
+												</div>
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">Language / Region *</label>
+												<select
+													{...register('language_region')}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+												>
+													<option value="US English">US English</option>
+													<option value="UK English">UK English</option>
+													<option value="AU English">AU English</option>
+												</select>
 											</div>
 										</div>
 									) : (
@@ -574,6 +614,18 @@ export default function OnboardingPage() {
 														<option value="Brand">Brand</option>
 													</select>
 												</div>
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">Language / Region *</label>
+												<select
+													{...register('language_region')}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+												>
+													<option value="US English">US English</option>
+													<option value="UK English">UK English</option>
+													<option value="AU English">AU English</option>
+												</select>
 											</div>
 										</div>
 									)}
