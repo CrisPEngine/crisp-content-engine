@@ -50,8 +50,6 @@ const schema = z
 		personal_story: z.string().default(''),
 		personal_links: z.string().default(''),
 		personal_assets_urls: z.array(z.string().url()).default([]),
-		assistants: z.string().default(''),
-		ghost_writer_preference: z.enum(['Yes', 'No', 'Sometimes']).default('Yes'),
 	})
 	.superRefine((data, ctx) => {
 		if (data.brand_type === 'personal') {
@@ -62,7 +60,6 @@ const schema = z
 				['personal_audience', 'Please describe your audience'],
 				['personal_goals', 'Please describe your goals'],
 				['personal_voice_traits', 'Please describe your voice traits'],
-				['personal_story', 'Please share your credibility highlights'],
 			];
 
 			requiredPersonal.forEach(([field, message]) => {
@@ -85,8 +82,6 @@ const personalFields = [
 	'personal_story',
 	'personal_links',
 	'personal_assets_urls',
-	'assistants',
-	'ghost_writer_preference',
 ] as const;
 
 const baseStepFields = {
@@ -102,8 +97,6 @@ const baseStepFields = {
 		'personal_story',
 		'personal_links',
 		'personal_assets_urls',
-		'assistants',
-		'ghost_writer_preference',
 		'client_name',
 		'website',
 		'timezone',
@@ -162,14 +155,14 @@ export default function OnboardingPage() {
 			personal_story: '',
 			personal_links: '',
 			personal_assets_urls: [],
-			assistants: '',
-			ghost_writer_preference: 'Yes',
 		},
 	});
 
 	const brandType = watch('brand_type');
 	const isPersonal = brandType === 'personal';
 	const watchedPlatforms = watch('platforms_requested') || [];
+	const personalFullName = watch('personal_full_name');
+	const personalBrandName = watch('client_name');
 
 	useEffect(() => {
 		setMounted(true);
@@ -181,6 +174,15 @@ export default function OnboardingPage() {
 			});
 		}
 	}, [supabase]);
+
+	useEffect(() => {
+		if (isPersonal) {
+			const trimmed = (personalFullName || '').trim();
+			if (trimmed && (!personalBrandName || personalBrandName === '' || personalBrandName === personalFullName)) {
+				setValue('client_name', trimmed, { shouldDirty: true });
+			}
+		}
+	}, [isPersonal, personalFullName, personalBrandName, setValue]);
 
 	const steps = useMemo(
 		() => [
@@ -414,7 +416,7 @@ export default function OnboardingPage() {
 											</div>
 
 											<div>
-												<label className="block text-sm font-medium mb-2">What experience or achievements should your audience know about? *</label>
+												<label className="block text-sm font-medium mb-2">What experience or achievements should your audience know about?</label>
 												<textarea
 													{...register('personal_story')}
 													rows={3}
@@ -440,29 +442,6 @@ export default function OnboardingPage() {
 												<label className="block text-sm font-medium mb-2">Upload a profile photo or assets (optional)</label>
 												<FileUpload onUpload={handlePersonalFileUpload} />
 												<p className="mt-2 text-xs text-text-dim">We’ll reference these in social content where appropriate.</p>
-											</div>
-
-											<div className="grid gap-4 md:grid-cols-2">
-												<div>
-													<label className="block text-sm font-medium mb-2">Should anyone else review content? (optional)</label>
-													<input
-														{...register('assistants')}
-														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-														placeholder="Names or emails"
-												/>
-											</div>
-
-												<div>
-													<label className="block text-sm font-medium mb-2">Ghost writing preference</label>
-													<select
-														{...register('ghost_writer_preference')}
-														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-													>
-														<option value="Yes">Yes – write fully in my voice</option>
-														<option value="No">No – I’ll draft my own pieces</option>
-														<option value="Sometimes">Sometimes – co-authored</option>
-													</select>
-												</div>
 											</div>
 										</div>
 									) : (

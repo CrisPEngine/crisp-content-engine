@@ -10,9 +10,14 @@ interface FileUploadProps {
 	maxSizeMB?: number;
 }
 
+type UploadedFile = {
+	url: string;
+	name: string;
+};
+
 export function FileUpload({ onUpload, acceptedTypes = ['image/*', 'application/pdf'], maxFiles = 5, maxSizeMB = 10 }: FileUploadProps) {
 	const [uploading, setUploading] = useState(false);
-	const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
+	const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
 	const [error, setError] = useState<string | null>(null);
 	const [isDragging, setIsDragging] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -20,7 +25,7 @@ export function FileUpload({ onUpload, acceptedTypes = ['image/*', 'application/
 	const processFiles = async (files: File[]) => {
 		if (files.length === 0) return;
 
-		if (files.length > maxFiles) {
+		if (files.length > maxFiles || uploadedFiles.length + files.length > maxFiles) {
 			setError(`Maximum ${maxFiles} files allowed`);
 			return;
 		}
@@ -37,10 +42,10 @@ export function FileUpload({ onUpload, acceptedTypes = ['image/*', 'application/
 		setError(null);
 
 		try {
-			const urls = await uploadToCloudinary(files);
-			const newFiles = [...uploadedFiles, ...urls];
-			setUploadedFiles(newFiles);
-			onUpload(newFiles);
+			const uploads = await uploadToCloudinary(files);
+			const merged = [...uploadedFiles, ...uploads];
+			setUploadedFiles(merged);
+			onUpload(merged.map((file) => file.url));
 		} catch (err: any) {
 			setError(err.message || 'Upload failed');
 		} finally {
@@ -97,8 +102,8 @@ export function FileUpload({ onUpload, acceptedTypes = ['image/*', 'application/
 		}
 	};
 
-	const uploadToCloudinary = async (files: File[]): Promise<string[]> => {
-		const urls: string[] = [];
+	const uploadToCloudinary = async (files: File[]): Promise<UploadedFile[]> => {
+		const uploads: UploadedFile[] = [];
 		const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || 'dr75zvtso';
 		const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'ml_default';
 
@@ -124,19 +129,30 @@ export function FileUpload({ onUpload, acceptedTypes = ['image/*', 'application/
 				}
 
 				const data = await res.json();
-				urls.push(data.secure_url || data.url);
+				const format: string | undefined = data.format || file.name.split('.').pop();
+				let displayName: string = data.original_filename || file.name;
+				if (format) {
+					const lowerFormat = format.toLowerCase();
+					if (!displayName.toLowerCase().endsWith(`.${lowerFormat}`)) {
+						displayName = `${displayName}.${lowerFormat}`;
+					}
+				}
+				uploads.push({
+					url: data.secure_url || data.url,
+					name: displayName,
+				});
 			} catch (err: any) {
 				throw new Error(err.message || `Failed to upload ${file.name}`);
 			}
 		}
 
-		return urls;
+		return uploads;
 	};
 
 	const removeFile = (index: number) => {
 		const newFiles = uploadedFiles.filter((_, i) => i !== index);
 		setUploadedFiles(newFiles);
-		onUpload(newFiles);
+		onUpload(newFiles.map((file) => file.url));
 	};
 
 	// Prevent browser from opening files when dropped outside the drop zone
@@ -221,15 +237,15 @@ export function FileUpload({ onUpload, acceptedTypes = ['image/*', 'application/
 				<div className="space-y-2">
 					<p className="text-sm text-text-soft">Uploaded files:</p>
 					<div className="space-y-2">
-						{uploadedFiles.map((url, index) => (
+						{uploadedFiles.map((file, index) => (
 							<div key={index} className="flex items-center justify-between p-2 rounded-lg border border-edge/60 bg-surface/30">
 								<a
-									href={url}
+									href={file.url}
 									target="_blank"
 									rel="noopener noreferrer"
 									className="text-sm text-primary hover:underline truncate flex-1"
 								>
-									{url.split('/').pop()}
+									{file.name}
 								</a>
 								<button
 									type="button"
