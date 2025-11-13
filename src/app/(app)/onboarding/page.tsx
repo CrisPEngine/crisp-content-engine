@@ -18,7 +18,7 @@ const BrandTypeEnum = z.enum(['company', 'personal']);
 const schema = z
 	.object({
 		brand_type: BrandTypeEnum,
-		client_name: z.string().min(2, 'Brand name must be at least 2 characters'),
+		client_name: z.string().default(''),
 		audience: z.string().min(10, 'Please describe your audience (at least 10 characters)'),
 		value_props: z.string().min(10, 'Please describe your value propositions (at least 10 characters)'),
 		offers: z.string().min(5, 'Please describe your offers/products (at least 5 characters)'),
@@ -213,6 +213,7 @@ export default function OnboardingPage() {
 		setValue('brand_type', type, { shouldDirty: true });
 		if (type === 'company') {
 			personalFields.forEach((field) => setValue(field, '', { shouldDirty: false }));
+			setValue('client_name', '', { shouldDirty: true });
 		}
 	};
 
@@ -227,10 +228,18 @@ export default function OnboardingPage() {
 	const onSubmit = async (data: FormData) => {
 		setSubmitting(true);
 		try {
+			const inferredClientName = isPersonal
+				? (data.personal_full_name?.trim() || 'Personal Brand')
+				: (data.client_name?.trim() || 'Brand');
+			const normalisedData = {
+				...data,
+				client_name: inferredClientName,
+			};
+
 			const res = await fetch('/api/onboarding', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(data),
+				body: JSON.stringify(normalisedData),
 			});
 
 			const result = await res.json();
@@ -239,9 +248,50 @@ export default function OnboardingPage() {
 				throw new Error(result.error || 'Failed to save brand profile');
 			}
 
-			setSubmittedBrandName(data.client_name || data.personal_full_name || 'Your brand');
+			const airtableId: string | undefined = result?.airtableId;
+			const brandName = inferredClientName;
+			setSubmittedBrandName(brandName);
 			setShowLoading(true);
+
+			if (airtableId) {
+				const combinedAssets = [...(normalisedData.brand_assets_urls || []), ...(normalisedData.personal_assets_urls || [])];
+				const additionalSegments: string[] = [];
+				if (normalisedData.personal_story) additionalSegments.push(`Personal Story: ${normalisedData.personal_story}`);
+				if (normalisedData.personal_links) additionalSegments.push(`Links: ${normalisedData.personal_links}`);
+				const additionalInfo = [normalisedData.additional_info, ...additionalSegments].filter(Boolean).join('\n\n');
+
+				const strategyPayload = {
+					airtableId,
+					client_name: brandName,
+					audience: normalisedData.audience,
+					value_props: normalisedData.value_props,
+					offers: normalisedData.offers,
+					brand_goals: normalisedData.brand_goals,
+					voice_rules: normalisedData.voice_rules,
+					brand_keywords: normalisedData.brand_keywords,
+					exclude_keywords: normalisedData.exclude_keywords,
+					content_rules: normalisedData.content_rules,
+					additional_info: additionalInfo,
+					platforms_requested: normalisedData.platforms_requested,
+					timezone: normalisedData.timezone,
+					language_region: normalisedData.language_region,
+					preferred_image_source: normalisedData.preferred_image_source,
+					website: normalisedData.website,
+					brand_palette: normalisedData.brand_palette,
+					approval_contact_email: normalisedData.approval_contact_email,
+					brand_assets_urls: combinedAssets,
+				};
+
+				await fetch('/api/strategy/generate', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(strategyPayload),
+				}).catch((hookError) => {
+					console.error('strategy generation trigger failed', hookError);
+				});
+			}
 		} catch (err: any) {
+			setShowLoading(false);
 			alert(err.message || 'Failed to save. Please try again.');
 		} finally {
 			setSubmitting(false);
@@ -253,6 +303,9 @@ export default function OnboardingPage() {
 		const filteredFields = currentFields.filter((field) => {
 			if ((personalFields as readonly string[]).includes(field)) {
 				return isPersonal;
+			}
+			if (field === 'client_name') {
+				return !isPersonal;
 			}
 			return true;
 		});
