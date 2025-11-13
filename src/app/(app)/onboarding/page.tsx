@@ -310,14 +310,9 @@ export default function OnboardingPage() {
 			return true;
 		});
 		const isValid = await trigger(filteredFields as any);
-		if (!isValid) return;
-
-		if (isPersonal) {
-			await handleSubmit(onSubmit)();
-			return;
+		if (isValid) {
+			setCurrentStep(Math.min(currentStep + 1, steps.length));
 		}
-
-		setCurrentStep(Math.min(currentStep + 1, steps.length));
 	};
 
 	const prevStep = () => {
@@ -818,7 +813,7 @@ export default function OnboardingPage() {
 						onClick={prevStep}
 						disabled={currentStep === 1}
 						className={`
-							px-6 py-3 rounded-xl2 border transition
+							px-6 py-3 rounded-xl2 border transition active:scale-[0.99] active:bg-surface/60
 							${currentStep === 1 ? 'border-edge/40 bg-surface/20 text-text-dim cursor-not-allowed' : 'border-edge/60 bg-surface/30 text-text hover:bg-surface/50'}
 						`}
 					>
@@ -829,7 +824,7 @@ export default function OnboardingPage() {
 						<button
 							type="button"
 							onClick={nextStep}
-							className="px-6 py-3 rounded-xl2 border border-primary/40 bg-primary/10 text-text hover:bg-primary/20"
+							className="px-6 py-3 rounded-xl2 border border-primary/40 bg-primary/10 text-text hover:bg-primary/20 transition active:bg-primary/30 active:scale-[0.99]"
 						>
 							Next →
 						</button>
@@ -837,7 +832,7 @@ export default function OnboardingPage() {
 						<button
 							type="submit"
 							disabled={submitting}
-							className="px-6 py-3 rounded-xl2 border border-primary/40 bg-primary/10 text-text hover:bg-primary/20 disabled:opacity-50"
+							className="px-6 py-3 rounded-xl2 border border-primary/40 bg-primary/10 text-text hover:bg-primary/20 disabled:opacity-50 transition active:bg-primary/30 active:scale-[0.99]"
 						>
 							{submitting ? 'Saving...' : 'Save Brand Profile'}
 						</button>
