@@ -19,10 +19,10 @@ const schema = z
 	.object({
 		brand_type: BrandTypeEnum,
 		client_name: z.string().default(''),
-		audience: z.string().min(10, 'Please describe your audience (at least 10 characters)'),
-		value_props: z.string().min(10, 'Please describe your value propositions (at least 10 characters)'),
-		offers: z.string().min(5, 'Please describe your offers/products (at least 5 characters)'),
-		brand_goals: z.string().min(10, 'Please describe your objectives'),
+		audience: z.string().default(''),
+		value_props: z.string().default(''),
+		offers: z.string().default(''),
+		brand_goals: z.string().default(''),
 		voice_rules: z.string().default(''),
 		brand_keywords: z.string().default(''),
 		exclude_keywords: z.string().default(''),
@@ -75,6 +75,21 @@ const schema = z
 		}
 
 		if (data.brand_type === 'company') {
+			if (!data.client_name || !data.client_name.trim() || data.client_name.trim().length < 2) {
+				ctx.addIssue({ path: ['client_name'], code: z.ZodIssueCode.custom, message: 'Brand name must be at least 2 characters' });
+			}
+			if (!data.audience || !data.audience.trim() || data.audience.trim().length < 10) {
+				ctx.addIssue({ path: ['audience'], code: z.ZodIssueCode.custom, message: 'Please describe your audience (at least 10 characters)' });
+			}
+			if (!data.value_props || !data.value_props.trim() || data.value_props.trim().length < 10) {
+				ctx.addIssue({ path: ['value_props'], code: z.ZodIssueCode.custom, message: 'Please describe your value propositions (at least 10 characters)' });
+			}
+			if (!data.offers || !data.offers.trim() || data.offers.trim().length < 5) {
+				ctx.addIssue({ path: ['offers'], code: z.ZodIssueCode.custom, message: 'Please describe your offers/products (at least 5 characters)' });
+			}
+			if (!data.brand_goals || !data.brand_goals.trim() || data.brand_goals.trim().length < 10) {
+				ctx.addIssue({ path: ['brand_goals'], code: z.ZodIssueCode.custom, message: 'Please describe your objectives' });
+			}
 			if (!data.approval_contact_email || !data.approval_contact_email.trim()) {
 				ctx.addIssue({ path: ['approval_contact_email'], code: z.ZodIssueCode.custom, message: 'Approval contact email is required' });
 			}
