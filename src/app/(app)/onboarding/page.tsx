@@ -72,6 +72,16 @@ const schema = z
 					ctx.addIssue({ path: [field], code: z.ZodIssueCode.custom, message });
 				}
 			});
+
+			// Validate platforms for personal brands
+			if (!data.platforms_requested || data.platforms_requested.length === 0) {
+				ctx.addIssue({ path: ['platforms_requested'], code: z.ZodIssueCode.custom, message: 'Select at least one platform' });
+			}
+
+			// Validate timezone for personal brands
+			if (!data.timezone || !data.timezone.trim()) {
+				ctx.addIssue({ path: ['timezone'], code: z.ZodIssueCode.custom, message: 'Please select a timezone' });
+			}
 		}
 
 		if (data.brand_type === 'company') {
@@ -891,14 +901,29 @@ export default function OnboardingPage() {
 							disabled={submitting}
 							onClick={(e) => {
 								e.preventDefault();
-								handleSubmit(onSubmit, (validationErrors) => {
-									console.log('Form validation failed:', validationErrors);
-									const firstErrorKey = Object.keys(validationErrors)[0];
-									if (firstErrorKey) {
-										const error = validationErrors[firstErrorKey as keyof typeof validationErrors];
-										alert(`Please fix: ${error?.message || 'Validation error'}`);
+								handleSubmit(
+									onSubmit,
+									(validationErrors) => {
+										console.log('Form validation failed:', JSON.stringify(validationErrors, null, 2));
+										// Find the first error with a message
+										for (const [fieldName, error] of Object.entries(validationErrors)) {
+											if (error) {
+												// Handle both single error object and array of errors
+												const errorArray = Array.isArray(error) ? error : [error];
+												for (const err of errorArray) {
+													const errorObj = err as { message?: string; type?: string };
+													if (errorObj?.message) {
+														alert(`Validation error: ${errorObj.message}`);
+														return;
+													}
+												}
+											}
+										}
+										// Fallback if no message found
+										const firstField = Object.keys(validationErrors)[0];
+										alert(`Validation error: Please fix the ${firstField || 'form'} field`);
 									}
-								})();
+								)();
 							}}
 							className="px-6 py-3 rounded-xl2 border border-primary/40 bg-primary/10 text-text hover:bg-primary/20 disabled:opacity-50 transition active:bg-primary/30 active:scale-[0.99]"
 						>
