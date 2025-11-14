@@ -1,12 +1,11 @@
 'use client';
 
 import { useEffect } from 'react';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 
 // Vercel Analytics (recommended for Vercel deployments)
 export function VercelAnalytics() {
 	const pathname = usePathname();
-	const searchParams = useSearchParams();
 
 	useEffect(() => {
 		// Check cookie consent
@@ -16,7 +15,7 @@ export function VercelAnalytics() {
 		// Vercel Analytics is automatically injected when @vercel/analytics is installed
 		// This component just ensures it respects cookie consent
 		// The actual tracking happens via the @vercel/analytics package
-	}, [pathname, searchParams]);
+	}, [pathname]);
 
 	return null;
 }
@@ -24,7 +23,6 @@ export function VercelAnalytics() {
 // Google Analytics 4
 export function GoogleAnalytics({ measurementId }: { measurementId?: string }) {
 	const pathname = usePathname();
-	const searchParams = useSearchParams();
 
 	useEffect(() => {
 		const initGA = () => {
@@ -46,7 +44,7 @@ export function GoogleAnalytics({ measurementId }: { measurementId?: string }) {
 					function gtag(){dataLayer.push(arguments);}
 					gtag('js', new Date());
 					gtag('config', '${measurementId}', {
-						page_path: window.location.pathname,
+						page_path: window.location.pathname + window.location.search,
 					});
 				`;
 				document.head.appendChild(script2);
@@ -63,16 +61,17 @@ export function GoogleAnalytics({ measurementId }: { measurementId?: string }) {
 		window.addEventListener('cookie-consent-accepted', handleConsent);
 
 		// Track page views when pathname changes (only if GA is initialized)
-		if ((window as any).gtag && localStorage.getItem('cookie-consent') === 'accepted') {
+		// Use window.location to get full path including search params (client-side only)
+		if (typeof window !== 'undefined' && (window as any).gtag && localStorage.getItem('cookie-consent') === 'accepted') {
 			(window as any).gtag('config', measurementId, {
-				page_path: pathname + (searchParams?.toString() ? `?${searchParams.toString()}` : ''),
+				page_path: window.location.pathname + window.location.search,
 			});
 		}
 
 		return () => {
 			window.removeEventListener('cookie-consent-accepted', handleConsent);
 		};
-	}, [pathname, searchParams, measurementId]);
+	}, [pathname, measurementId]);
 
 	return null;
 }
