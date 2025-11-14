@@ -13,11 +13,11 @@ const BrandTypeEnum = z.enum(['company', 'personal']);
 const schema = z
 	.object({
 		brand_type: BrandTypeEnum,
-		client_name: z.string().min(2),
-		audience: z.string().min(10),
-		value_props: z.string().min(10),
-		offers: z.string().min(5),
-		brand_goals: z.string().min(10),
+		client_name: z.string().default(''),
+		audience: z.string().default(''),
+		value_props: z.string().default(''),
+		offers: z.string().default(''),
+		brand_goals: z.string().default(''),
 		// Make these optional with empty-string defaults
 		voice_rules: z.string().default(''),
 		brand_keywords: z.string().default(''),
@@ -37,7 +37,12 @@ const schema = z
 				message: 'Invalid URL',
 			}),
 		brand_palette: z.string().default(''),
-		approval_contact_email: z.string().email(),
+		approval_contact_email: z
+			.string()
+			.default('')
+			.refine((value) => value === '' || z.string().email().safeParse(value).success, {
+				message: 'Invalid email address',
+			}),
 		brand_assets_urls: z.array(z.string().url()).default([]),
 		personal_full_name: z.string().default(''),
 		personal_headline: z.string().default(''),
@@ -73,6 +78,69 @@ const schema = z
 					});
 				}
 			});
+
+			// Validate platforms for personal brands
+			if (!data.platforms_requested || data.platforms_requested.length === 0) {
+				ctx.addIssue({
+					path: ['platforms_requested'],
+					code: z.ZodIssueCode.custom,
+					message: 'Select at least one platform',
+				});
+			}
+
+			// Validate timezone for personal brands
+			if (!data.timezone || !data.timezone.trim()) {
+				ctx.addIssue({
+					path: ['timezone'],
+					code: z.ZodIssueCode.custom,
+					message: 'Please select a timezone',
+				});
+			}
+		}
+
+		if (data.brand_type === 'company') {
+			if (!data.client_name || !data.client_name.trim() || data.client_name.trim().length < 2) {
+				ctx.addIssue({
+					path: ['client_name'],
+					code: z.ZodIssueCode.custom,
+					message: 'Brand name must be at least 2 characters',
+				});
+			}
+			if (!data.audience || !data.audience.trim() || data.audience.trim().length < 10) {
+				ctx.addIssue({
+					path: ['audience'],
+					code: z.ZodIssueCode.custom,
+					message: 'Please describe your audience (at least 10 characters)',
+				});
+			}
+			if (!data.value_props || !data.value_props.trim() || data.value_props.trim().length < 10) {
+				ctx.addIssue({
+					path: ['value_props'],
+					code: z.ZodIssueCode.custom,
+					message: 'Please describe your value propositions (at least 10 characters)',
+				});
+			}
+			if (!data.offers || !data.offers.trim() || data.offers.trim().length < 5) {
+				ctx.addIssue({
+					path: ['offers'],
+					code: z.ZodIssueCode.custom,
+					message: 'Please describe your offers/products (at least 5 characters)',
+				});
+			}
+			if (!data.brand_goals || !data.brand_goals.trim() || data.brand_goals.trim().length < 10) {
+				ctx.addIssue({
+					path: ['brand_goals'],
+					code: z.ZodIssueCode.custom,
+					message: 'Please describe your objectives',
+				});
+			}
+			if (!data.approval_contact_email || !data.approval_contact_email.trim()) {
+				ctx.addIssue({
+					path: ['approval_contact_email'],
+					code: z.ZodIssueCode.custom,
+					message: 'Approval contact email is required',
+				});
+			}
 		}
 	});
 
@@ -165,12 +233,22 @@ export async function POST(req: Request) {
 		} = {
 			fields: {
 				brand_type: data.brand_type,
-				client_name: data.client_name,
+				client_name: data.brand_type === 'personal' 
+					? String(data.personal_full_name || '') 
+					: String(data.client_name || ''),
 				website: (data.website && data.website.trim()) || '',
-				audience: data.audience,
-				value_props: data.value_props,
-				offers: data.offers,
-				brand_goals: String(data.brand_goals || ''), // Ensure it's always a string
+				audience: data.brand_type === 'personal' 
+					? String(data.personal_audience || '') 
+					: String(data.audience || ''),
+				value_props: data.brand_type === 'personal' 
+					? String(data.personal_expertise || '') 
+					: String(data.value_props || ''),
+				offers: data.brand_type === 'personal' 
+					? '' // Personal brands don't have "offers" in the same way
+					: String(data.offers || ''),
+				brand_goals: data.brand_type === 'personal' 
+					? String(data.personal_goals || '') 
+					: String(data.brand_goals || ''), // Ensure it's always a string
 				voice_rules: String(data.voice_rules || ''), // Ensure it's always a string
 				brand_keywords: String(data.brand_keywords || ''),
 				exclude_keywords: String(data.exclude_keywords || ''),
@@ -181,7 +259,9 @@ export async function POST(req: Request) {
 				language_region: data.language_region, // Single-select field
 				preferred_image_source: data.preferred_image_source, // Single-select field
 				brand_palette: data.brand_palette || '',
-				approval_contact_email: data.approval_contact_email,
+				approval_contact_email: data.brand_type === 'personal' 
+					? (data.approval_contact_email || user.email || '')
+					: data.approval_contact_email,
 				brand_assets: attachments.length > 0 ? attachments : undefined, // Attachment field
 				personal_full_name: String(data.personal_full_name || ''),
 				personal_headline: String(data.personal_headline || ''),
@@ -273,8 +353,11 @@ export async function POST(req: Request) {
 	} catch (e: any) {
 		console.error('Onboarding error:', e);
 		if (e instanceof z.ZodError) {
+			// Extract the first error message for better UX
+			const firstError = e.issues[0];
+			const errorMessage = firstError?.message || 'Validation error';
 			return NextResponse.json(
-				{ error: 'Validation error', details: e.issues },
+				{ error: errorMessage, details: e.issues },
 				{ status: 400 }
 			);
 		}
