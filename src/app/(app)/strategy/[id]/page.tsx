@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { motion } from 'framer-motion';
-import { Check, Edit, Loader2 } from 'lucide-react';
+import { Check, Edit, Loader2, AlertCircle } from 'lucide-react';
+import { ContentGenerationLoading } from '@/components/ContentGenerationLoading';
 
 export default function StrategyReviewPage() {
 	const params = useParams();
@@ -15,6 +16,8 @@ export default function StrategyReviewPage() {
 	const [approving, setApproving] = useState(false);
 	const [editing, setEditing] = useState(false);
 	const [editedContent, setEditedContent] = useState('');
+	const [showLoading, setShowLoading] = useState(false);
+	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (!supabase) return;
@@ -24,30 +27,24 @@ export default function StrategyReviewPage() {
 	async function loadStrategy() {
 		if (!supabase || !params.id) return;
 		setLoading(true);
+		setError(null);
 		try {
-			// In a real app, you'd fetch from Airtable or your API
-			// For now, this is a placeholder structure
 			const { data: { user } } = await supabase.auth.getUser();
 			if (!user) {
 				router.push('/login');
 				return;
 			}
 
-			// TODO: Replace with actual API call to fetch strategy
-			// const res = await fetch(`/api/strategy/${params.id}`);
-			// const data = await res.json();
-			// setStrategy(data);
-
-			// Placeholder data
-			setStrategy({
-				id: params.id,
-				brand_name: 'Example Brand',
-				status: 'Strategy Ready',
-				content: 'This is the generated strategy content...',
-				created_at: new Date().toISOString(),
-			});
-		} catch (error) {
-			console.error('Failed to load strategy:', error);
+			const res = await fetch(`/api/strategy/${params.id}`, { cache: 'no-store' });
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				throw new Error(data?.error || 'Failed to load strategy');
+			}
+			const data = await res.json();
+			setStrategy(data);
+		} catch (err: any) {
+			console.error('Failed to load strategy:', err);
+			setError(err.message || 'Failed to load strategy');
 		} finally {
 			setLoading(false);
 		}
@@ -56,17 +53,34 @@ export default function StrategyReviewPage() {
 	async function approveStrategy() {
 		if (!supabase || !strategy) return;
 		setApproving(true);
+		setError(null);
 		try {
-			// TODO: Replace with actual API call
-			// await fetch(`/api/strategy/${strategy.id}/approve`, { method: 'POST' });
-			
-			// Update status in Airtable
-			alert('Strategy approved! Status will be updated.');
-			router.push('/dashboard');
-		} catch (error) {
-			console.error('Failed to approve strategy:', error);
-			alert('Failed to approve strategy. Please try again.');
-		} finally {
+			const res = await fetch(`/api/strategy/${strategy.id}/approve`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					strategy_content: editedContent || strategy.content,
+				}),
+			});
+
+			const data = await res.json();
+
+			if (!res.ok) {
+				if (data.requiresConnection) {
+					setError('Please connect your LinkedIn account first. Redirecting...');
+					setTimeout(() => {
+						router.push('/connections');
+					}, 2000);
+					return;
+				}
+				throw new Error(data?.error || 'Failed to approve strategy');
+			}
+
+			// Show loading animation
+			setShowLoading(true);
+		} catch (err: any) {
+			console.error('Failed to approve strategy:', err);
+			setError(err.message || 'Failed to approve strategy. Please try again.');
 			setApproving(false);
 		}
 	}
@@ -74,19 +88,18 @@ export default function StrategyReviewPage() {
 	async function saveEdit() {
 		if (!strategy) return;
 		try {
-			// TODO: Replace with actual API call
-			// await fetch(`/api/strategy/${strategy.id}`, {
-			// 	method: 'PATCH',
-			// 	body: JSON.stringify({ content: editedContent }),
-			// });
-			
+			// For now, just update local state
+			// In the future, we could add a PATCH endpoint to update strategy
 			setStrategy({ ...strategy, content: editedContent });
 			setEditing(false);
-			alert('Strategy updated successfully!');
 		} catch (error) {
 			console.error('Failed to save edit:', error);
 			alert('Failed to save changes. Please try again.');
 		}
+	}
+
+	function handleContentGenerationComplete() {
+		router.push('/content/approval');
 	}
 
 	if (loading) {
@@ -116,6 +129,10 @@ export default function StrategyReviewPage() {
 		);
 	}
 
+	if (showLoading) {
+		return <ContentGenerationLoading onComplete={handleContentGenerationComplete} />;
+	}
+
 	return (
 		<div className="mx-auto max-w-4xl">
 			<div className="mb-6">
@@ -126,6 +143,16 @@ export default function StrategyReviewPage() {
 					← Back
 				</button>
 			</div>
+
+			{error && (
+				<div className="mb-6 card p-4 border-danger/40 bg-danger/10 flex items-start gap-3">
+					<AlertCircle className="w-5 h-5 text-danger flex-shrink-0 mt-0.5" />
+					<div className="flex-1">
+						<div className="font-medium text-danger mb-1">Error</div>
+						<div className="text-sm text-text-dim">{error}</div>
+					</div>
+				</div>
+			)}
 
 			<motion.div
 				initial={{ opacity: 0, y: 20 }}

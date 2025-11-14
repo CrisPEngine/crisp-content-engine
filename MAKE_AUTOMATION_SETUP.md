@@ -256,10 +256,10 @@ MAKE_CALLBACK_SECRET=shared-secret-from-make
 MAKE_STRATEGY_COMPLETED_WEBHOOK_URL=https://your-domain.com/api/strategy/webhook
 ```
 
-### Future Webhooks (to be created):
+### Content Generation & Publishing:
 ```
-MAKE_STRATEGY_APPROVED_WEBHOOK_URL=https://hook.make.com/...
 MAKE_CONTENT_GENERATION_WEBHOOK_URL=https://hook.make.com/...
+MAKE_CONTENT_REGENERATE_WEBHOOK_URL=https://hook.make.com/...
 MAKE_CONTENT_PUBLISH_WEBHOOK_URL=https://hook.make.com/...
 ```
 
@@ -321,30 +321,140 @@ MAKE_CONTENT_PUBLISH_WEBHOOK_URL=https://hook.make.com/...
    - Airtable: Create/Update ContentQueue entries for new posts
    - HTTP: POST to `/api/strategy/webhook` with mode `monthly_update`
 
-### 3. Content Publishing Scenario
+### 3. Content Generation Scenario
 
-1. **Webhook Trigger** (to be created)
-   - Receive content to publish
-   - Get platform, content, scheduled_date
+**Trigger:** When strategy is approved (`/api/strategy/[id]/approve`)
+
+**Endpoint:** `MAKE_CONTENT_GENERATION_WEBHOOK_URL`
+
+**Payload Received:**
+```json
+{
+  "brand_profile_id": "recXXXXXXXXXXXXXX",
+  "user_id": "uuid-here",
+  "person_urn": "urn:li:person:123456",
+  "triggered_at": "2025-01-15T10:00:00Z"
+}
+```
+
+**Make Scenario Should:**
+1. **Airtable - Get Brand Profile**
+   - Fetch BrandProfiles record using `brand_profile_id`
+   - Get approved strategy content
+   - Get user's plan/package limits
+
+2. **AI Content Generation**
+   - Generate content based on:
+     - Approved strategy
+     - User's package limits (e.g., Creator: 10 posts/month, 8 LinkedIn + 2 blog)
+     - Platform preferences
+     - Brand voice and guidelines
+   - Create multiple content items (posts/articles)
+
+3. **Airtable - Create Content Queue Records**
+   - Create ContentQueue records for each generated item
+   - Set `status` to "Needs Approval"
+   - Set `scheduled_date` based on content calendar
+   - Link to `brand_profile_id` and `user_id`
+
+4. **Status Update**
+   - Update BrandProfiles `status` to "Content Ready" (optional)
+
+**Note:** Content generation should respect package limits:
+- **Creator:** 10 posts/month (8 LinkedIn auto-posts, 2 blog deliverables)
+- **Growth+:** Higher limits as defined in entitlements
+
+---
+
+### 4. Content Regeneration Scenario
+
+**Trigger:** When content is rejected (`/api/content/queue/[contentId]` with `action: "reject"`)
+
+**Endpoint:** `MAKE_CONTENT_REGENERATE_WEBHOOK_URL`
+
+**Payload Received:**
+```json
+{
+  "content_id": "recRejected123",
+  "brand_profile_id": "recXXXXXXXXXXXXXX",
+  "user_id": "uuid-here",
+  "rejection_feedback": "Too promotional, needs more value",
+  "rejected_at": "2025-01-15T10:00:00Z"
+}
+```
+
+**Make Scenario Should:**
+1. **Airtable - Get Content Record**
+   - Fetch ContentQueue record using `content_id`
+   - Get original content details
+   - Get rejection feedback
+
+2. **Airtable - Get Brand Profile**
+   - Fetch BrandProfiles to get strategy and guidelines
+
+3. **AI Content Regeneration**
+   - Regenerate content incorporating:
+     - Rejection feedback
+     - Original requirements
+     - Strategy guidelines
+   - Ensure it still fits within package limits
+
+4. **Airtable - Update Content Queue**
+   - Update the rejected content record OR create new replacement
+   - Set `status` to "Needs Approval"
+   - Add `revision_notes` with feedback incorporation
+
+**Important:** Regeneration should not exceed package limits. If user has already used their quota, show appropriate message.
+
+---
+
+### 5. Content Publishing Scenario
+
+**Trigger:** When content is approved (`/api/content/queue/[contentId]` with `action: "approve"`)
+
+**Endpoint:** `MAKE_CONTENT_PUBLISH_WEBHOOK_URL` (optional - can be triggered directly from Make polling)
+
+**Payload Received (if webhook used):**
+```json
+{
+  "content_id": "recApproved123",
+  "brand_profile_id": "recXXXXXXXXXXXXXX",
+  "user_id": "uuid-here",
+  "platform": "LinkedIn",
+  "content": "Post content here...",
+  "scheduled_date": "2025-01-20T10:00:00Z",
+  "person_urn": "urn:li:person:123456"
+}
+```
+
+**Make Scenario Should:**
+1. **Get LinkedIn Credentials**
+   - HTTP: GET `/api/social/linkedin/credentials`
+   - Headers: `x-api-key: MAKE_API_KEY`
+   - Returns: `accessToken`, `personUrn`, `expiresAt`
 
 2. **Platform Publishing**
-   - Use platform-specific modules:
-     - LinkedIn API
+   - **LinkedIn:** Use LinkedIn Marketing API
+     - POST to `https://api.linkedin.com/v2/ugcPosts`
+     - Include access token, person URN, content
+   - **Other platforms:** Use respective APIs
      - X (Twitter) API
      - Instagram API
      - Facebook API
-     - Buffer API
+     - Buffer API (for multi-platform)
 
 3. **Airtable - Update Record**
-   - Update ContentPosts record
+   - Update ContentQueue record
    - Set `status` to "Published"
    - Set `published_at` timestamp
-   - Store `published_url`
+   - Store `published_url` from platform response
 
 4. **Usage Tracking**
    - HTTP module: POST to `/api/usage/increment`
-   - Include `x-api-key` header if configured
+   - Headers: `x-api-key: MAKE_API_KEY` (if configured)
    - Body: `{ userId, count: 1 }`
+
+**Note:** Publishing should respect scheduled dates. If `scheduled_date` is in the future, use a scheduler or delay execution.
 
 ---
 

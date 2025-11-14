@@ -91,9 +91,40 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 			fields.approved_at = nowISO;
 			fields.last_reviewed_at = nowISO;
 		} else {
+			// Reject action - trigger Make to regenerate content
 			fields.status = 'Needs Review';
 			fields.needs_revision = true;
 			fields.last_reviewed_at = nowISO;
+			fields.rejection_feedback = feedback;
+
+			// Trigger Make to regenerate content
+			const MAKE_CONTENT_REGENERATE_WEBHOOK_URL = process.env.MAKE_CONTENT_REGENERATE_WEBHOOK_URL;
+			if (MAKE_CONTENT_REGENERATE_WEBHOOK_URL) {
+				try {
+					// Get brand profile ID from the content record
+					const brandProfileId = record.fields?.brand_profile_id;
+					
+					await fetch(MAKE_CONTENT_REGENERATE_WEBHOOK_URL, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							...(process.env.MAKE_API_KEY && {
+								'x-api-key': process.env.MAKE_API_KEY,
+							}),
+						},
+						body: JSON.stringify({
+							content_id: contentId,
+							brand_profile_id: brandProfileId,
+							user_id: user.id,
+							rejection_feedback: feedback,
+							rejected_at: nowISO,
+						}),
+					});
+				} catch (webhookError) {
+					// Log but don't fail the request if webhook fails
+					console.error('Make content regeneration webhook error:', webhookError);
+				}
+			}
 		}
 
 		const patchRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${contentId}`, {
