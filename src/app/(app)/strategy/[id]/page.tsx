@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { motion } from 'framer-motion';
-import { Check, Edit, Loader2, AlertCircle } from 'lucide-react';
+import { Check, Edit, AlertCircle } from 'lucide-react';
 import { ContentGenerationLoading } from '@/components/ContentGenerationLoading';
+import { Skeleton } from '@/components/skeletons/Skeleton';
 
 export default function StrategyReviewPage() {
 	const params = useParams();
@@ -105,9 +106,22 @@ export default function StrategyReviewPage() {
 	if (loading) {
 		return (
 			<div className="mx-auto max-w-4xl">
-				<div className="card p-8 text-center">
-					<Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
-					<p className="text-text-soft">Loading strategy...</p>
+				<div className="mb-6">
+					<Skeleton height="20px" width="80px" />
+				</div>
+				<div className="card p-8 space-y-6">
+					<div className="space-y-3">
+						<Skeleton height="32px" width="250px" />
+						<Skeleton height="20px" width="200px" />
+						<Skeleton height="16px" width="150px" />
+					</div>
+					<div className="space-y-4">
+						<Skeleton height="20px" width="120px" />
+						<Skeleton height="400px" width="100%" />
+					</div>
+					<div className="pt-4 border-t border-edge/60">
+						<Skeleton height="48px" width="100%" className="rounded-xl2" />
+					</div>
 				</div>
 			</div>
 		);

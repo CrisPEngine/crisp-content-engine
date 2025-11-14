@@ -2,6 +2,7 @@
 
 import { useUsage } from '@/lib/useUsage';
 import { useEffect, useState } from 'react';
+import { UsageCardSkeleton } from '@/components/skeletons/Skeleton';
 
 export function PlanUsageCard() {
 	const { data, loading } = useUsage();
@@ -15,11 +16,7 @@ export function PlanUsageCard() {
 		})();
 	}, []);
 	if (loading || !planInfo) {
-		return (
-			<div className="card p-4">
-				<div className="text-text-soft">Loading plan usage…</div>
-			</div>
-		);
+		return <UsageCardSkeleton />;
 	}
 	const used = data?.usage?.posts ?? 0;
 	const cap = data?.caps?.posts_per_month ?? 999999;

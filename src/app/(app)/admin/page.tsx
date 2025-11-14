@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { PRICING, type PlanId } from '@/config/pricing';
 import Link from 'next/link';
+import { Skeleton } from '@/components/skeletons/Skeleton';
 
 type User = {
 	id: string;
@@ -128,11 +129,24 @@ export default function AdminPage() {
 		}
 	}
 
-	if (!isAdmin) {
+	if (loading || !isAdmin) {
 		return (
-			<div className="mx-auto max-w-2xl p-6">
-				<div className="card p-8 text-center">
-					<div className="text-text-soft">Loading...</div>
+			<div className="mx-auto max-w-6xl p-6 space-y-6">
+				<div className="flex items-center justify-between">
+					<Skeleton height="32px" width="200px" />
+					<Skeleton height="20px" width="80px" />
+				</div>
+				<div className="card p-6 space-y-4">
+					<Skeleton height="24px" width="150px" />
+					<div className="space-y-3">
+						{Array.from({ length: 5 }).map((_, i) => (
+							<div key={i} className="border border-edge/60 rounded-xl2 p-4 space-y-2">
+								<Skeleton height="20px" width="200px" />
+								<Skeleton height="16px" width="150px" />
+								<Skeleton height="16px" width="100px" />
+							</div>
+						))}
+					</div>
 				</div>
 			</div>
 		);

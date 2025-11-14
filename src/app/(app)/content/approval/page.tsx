@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Check, X, Eye, Loader2, Calendar } from 'lucide-react';
+import { Check, X, Eye, Calendar } from 'lucide-react';
+import { Skeleton, ContentItemSkeleton } from '@/components/skeletons/Skeleton';
 
 type ContentItem = {
 	id: string;
@@ -110,11 +111,14 @@ export default function ContentApprovalPage() {
 
 	if (loading) {
 		return (
-			<div className="mx-auto max-w-6xl">
-				<div className="card p-8 text-center">
-					<Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
-					<p className="text-text-soft">Loading content...</p>
+			<div className="mx-auto max-w-6xl space-y-4">
+				<div className="mb-6 space-y-3">
+					<Skeleton height="32px" width="250px" />
+					<Skeleton height="16px" width="300px" />
 				</div>
+				{Array.from({ length: 3 }).map((_, i) => (
+					<ContentItemSkeleton key={i} />
+				))}
 			</div>
 		);
 	}

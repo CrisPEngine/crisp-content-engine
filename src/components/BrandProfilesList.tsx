@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, Clock, CheckCircle, XCircle, Loader2, Plus } from 'lucide-react';
+import { FileText, Clock, CheckCircle, XCircle, Plus } from 'lucide-react';
 import Link from 'next/link';
+import { Skeleton } from '@/components/skeletons/Skeleton';
 
 type BrandProfile = {
 	id: string;
@@ -89,10 +90,25 @@ export function BrandProfilesList() {
 
 	if (loading) {
 		return (
-			<div className="card p-6">
-				<div className="flex items-center gap-3">
-					<Loader2 className="w-5 h-5 text-primary animate-spin" />
-					<p className="text-text-soft">Loading brand profiles...</p>
+			<div className="card p-6 space-y-4">
+				<div className="flex items-center justify-between">
+					<Skeleton height="24px" width="150px" />
+					<Skeleton height="36px" width="100px" className="rounded-xl2" />
+				</div>
+				<div className="space-y-3">
+					{Array.from({ length: 2 }).map((_, i) => (
+						<div key={i} className="border border-edge/60 rounded-xl2 p-4 space-y-3">
+							<div className="flex items-center gap-3">
+								<Skeleton height="20px" width="200px" />
+								<Skeleton height="24px" width="80px" className="rounded-full" />
+							</div>
+							<div className="flex gap-2">
+								<Skeleton height="20px" width="60px" className="rounded" />
+								<Skeleton height="20px" width="60px" className="rounded" />
+							</div>
+							<Skeleton height="14px" width="120px" />
+						</div>
+					))}
 				</div>
 			</div>
 		);
