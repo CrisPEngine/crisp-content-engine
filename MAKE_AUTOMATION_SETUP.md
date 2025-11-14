@@ -483,7 +483,7 @@ RLS can remain disabled for this table because all access flows through server-s
 ## App Flow
 
 - The `/connections` page now lets members connect or disconnect their LinkedIn account.
-- `/api/connections/linkedin/authorize` sends the member to the LinkedIn consent screen (scopes: `r_liteprofile`, `w_member_social`, `openid`, `profile`, `email`).
+- `/api/connections/linkedin/authorize` sends the member to the LinkedIn consent screen (scopes: `w_member_social`, `openid`, `profile`, `email`). Note: `r_liteprofile` is deprecated and has been removed.
 - `/api/connections/linkedin/callback` exchanges the code, encrypts tokens, fetches the member URN, and stores account metadata.
 - `/api/connections/linkedin/status` returns connection status for the signed-in member.
 - `/api/connections/linkedin/disconnect` removes stored tokens.

@@ -31,7 +31,10 @@ export async function GET() {
 		maxAge: 600,
 	});
 
-	const scope = ['r_liteprofile', 'w_member_social', 'openid', 'profile', 'email'].join('%20');
+	// LinkedIn Marketing Developer Platform scopes
+	// r_liteprofile is deprecated - removed
+	// w_member_social requires Marketing Developer Platform product to be enabled
+	const scope = ['w_member_social', 'openid', 'profile', 'email'].join(' ');
 	const authorizeUrl = new URL('https://www.linkedin.com/oauth/v2/authorization');
 	authorizeUrl.searchParams.set('response_type', 'code');
 	authorizeUrl.searchParams.set('client_id', clientId);
