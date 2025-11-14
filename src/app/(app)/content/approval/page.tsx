@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Check, X, Eye, Calendar } from 'lucide-react';
+import { Check, X, Eye, Calendar, Loader2 } from 'lucide-react';
 import { Skeleton, ContentItemSkeleton } from '@/components/skeletons/Skeleton';
 
 type ContentItem = {
