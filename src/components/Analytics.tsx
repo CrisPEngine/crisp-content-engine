@@ -1,23 +1,37 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { Analytics as VercelAnalyticsComponent } from '@vercel/analytics/react';
 
-// Vercel Analytics (recommended for Vercel deployments)
+// Vercel Analytics wrapper that respects cookie consent
 export function VercelAnalytics() {
-	const pathname = usePathname();
+	const [hasConsent, setHasConsent] = useState(false);
 
 	useEffect(() => {
-		// Check cookie consent
-		const consent = localStorage.getItem('cookie-consent');
-		if (consent !== 'accepted') return;
+		// Check initial consent
+		const checkConsent = () => {
+			const consent = localStorage.getItem('cookie-consent');
+			setHasConsent(consent === 'accepted');
+		};
 
-		// Vercel Analytics is automatically injected when @vercel/analytics is installed
-		// This component just ensures it respects cookie consent
-		// The actual tracking happens via the @vercel/analytics package
-	}, [pathname]);
+		checkConsent();
 
-	return null;
+		// Listen for cookie consent acceptance
+		const handleConsent = () => {
+			setHasConsent(true);
+		};
+		window.addEventListener('cookie-consent-accepted', handleConsent);
+
+		return () => {
+			window.removeEventListener('cookie-consent-accepted', handleConsent);
+		};
+	}, []);
+
+	// Only render Vercel Analytics if consent is given
+	if (!hasConsent) return null;
+
+	return <VercelAnalyticsComponent />;
 }
 
 // Google Analytics 4
