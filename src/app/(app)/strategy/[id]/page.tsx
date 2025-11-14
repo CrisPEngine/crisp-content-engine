@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { motion } from 'framer-motion';
-import { Check, Edit, AlertCircle } from 'lucide-react';
+import { Check, Edit, AlertCircle, Loader2 } from 'lucide-react';
 import { ContentGenerationLoading } from '@/components/ContentGenerationLoading';
 import { Skeleton } from '@/components/skeletons/Skeleton';
 
