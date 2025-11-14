@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 export function Skeleton({ className = '', width, height }: { className?: string; width?: string | number; height?: string | number }) {
 	return (
 		<motion.div
-			className={`rounded-xl2 bg-gradient-to-r from-surface/50 via-surface/30 to-surface/50 bg-[length:200%_100%] animate-shimmer ${className}`}
+			className={`skeleton-shimmer ${className}`}
 			style={{ width, height }}
 			initial={{ opacity: 0 }}
 			animate={{ opacity: 1 }}
