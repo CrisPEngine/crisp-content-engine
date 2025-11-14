@@ -229,6 +229,7 @@ export default function OnboardingPage() {
 	};
 
 	const onSubmit = async (data: FormData) => {
+		console.log('Form submitted with data:', { isPersonal, data });
 		setSubmitting(true);
 		try {
 			const inferredClientName = isPersonal
@@ -253,7 +254,8 @@ export default function OnboardingPage() {
 			const result = await res.json();
 
 			if (!res.ok) {
-				throw new Error(result.error || 'Failed to save brand profile');
+				console.error('Onboarding API error:', result);
+				throw new Error(result.error || result.details?.message || 'Failed to save brand profile');
 			}
 
 			const airtableId: string | undefined = result?.airtableId;
@@ -299,6 +301,7 @@ export default function OnboardingPage() {
 				});
 			}
 		} catch (err: any) {
+			console.error('Onboarding submission error:', err);
 			setShowLoading(false);
 			alert(err.message || 'Failed to save. Please try again.');
 		} finally {
@@ -544,19 +547,50 @@ export default function OnboardingPage() {
 												</div>
 											</div>
 
-											<div>
-												<label className="block text-sm font-medium mb-2">Language / Region *</label>
-												<select
-													{...register('language_region')}
-													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-												>
-													<option value="US English">US English</option>
-													<option value="UK English">UK English</option>
-													<option value="AU English">AU English</option>
-												</select>
-											</div>
+										<div>
+											<label className="block text-sm font-medium mb-2">Language / Region *</label>
+											<select
+												{...register('language_region')}
+												className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+											>
+												<option value="US English">US English</option>
+												<option value="UK English">UK English</option>
+												<option value="AU English">AU English</option>
+											</select>
 										</div>
-									) : (
+
+										<div>
+											<label className="block text-sm font-medium mb-3">Platforms *</label>
+											<div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+												{PlatformsEnum.options.map((platform) => {
+													const isSelected = watchedPlatforms.includes(platform);
+													return (
+														<label
+															key={platform}
+															className={`
+																flex items-center gap-2 p-3 rounded-xl2 border cursor-pointer transition
+																${isSelected ? 'bg-primary/15 border-primary/50 text-primary' : 'bg-surface/30 border-edge/60 hover:border-edge/80'}
+															`}
+														>
+															<input
+																type="checkbox"
+																checked={isSelected}
+																onChange={() => {
+																	const current = watchedPlatforms || [];
+																	const next = isSelected ? current.filter((p) => p !== platform) : [...current, platform];
+																	setValue('platforms_requested', next as FormData['platforms_requested'], { shouldDirty: true });
+																}}
+																className="sr-only"
+															/>
+															<span className="text-sm">{platform}</span>
+														</label>
+													);
+												})}
+											</div>
+											{errors.platforms_requested && <p className="mt-2 text-sm text-danger">{errors.platforms_requested.message}</p>}
+										</div>
+									</div>
+								) : (
 										<div className="space-y-5">
 											<div>
 												<label className="block text-sm font-medium mb-2">Brand Name *</label>
@@ -840,6 +874,17 @@ export default function OnboardingPage() {
 						<button
 							type="submit"
 							disabled={submitting}
+							onClick={(e) => {
+								e.preventDefault();
+								handleSubmit(onSubmit, (validationErrors) => {
+									console.log('Form validation failed:', validationErrors);
+									const firstErrorKey = Object.keys(validationErrors)[0];
+									if (firstErrorKey) {
+										const error = validationErrors[firstErrorKey as keyof typeof validationErrors];
+										alert(`Please fix: ${error?.message || 'Validation error'}`);
+									}
+								})();
+							}}
 							className="px-6 py-3 rounded-xl2 border border-primary/40 bg-primary/10 text-text hover:bg-primary/20 disabled:opacity-50 transition active:bg-primary/30 active:scale-[0.99]"
 						>
 							{submitting ? 'Saving...' : 'Save Brand Profile'}
