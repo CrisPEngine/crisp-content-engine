@@ -83,7 +83,7 @@ function LinkedInCard({
 	);
 }
 
-export default async function ConnectionsPage() {
+export default async function ConnectionsPage({ searchParams }: { searchParams: Promise<{ error?: string; details?: string; connected?: string }> }) {
 	const supabase = await createClient();
 	const {
 		data: { user },
@@ -92,6 +92,11 @@ export default async function ConnectionsPage() {
 	if (!user) {
 		redirect('/login');
 	}
+
+	const params = await searchParams;
+	const error = params?.error;
+	const errorDetails = params?.details;
+	const connected = params?.connected;
 
 	const admin = getSupabaseService();
 	const { data } = await admin
@@ -102,7 +107,7 @@ export default async function ConnectionsPage() {
 		.maybeSingle();
 
 	const linkedInStatus = {
-		connected: Boolean(data),
+		connected: Boolean(data) || connected === 'linkedin',
 		accountName: data?.account_name ?? null,
 		accountAvatar: data?.account_avatar ?? null,
 		personUrn: data?.person_urn ?? null,
@@ -121,6 +126,25 @@ export default async function ConnectionsPage() {
 					Connect your social accounts so the AI can publish content automatically on your behalf.
 				</p>
 			</header>
+
+			{error && (
+				<div className="card p-4 border-danger/40 bg-danger/10">
+					<div className="font-medium text-danger mb-1">Connection Error</div>
+					<div className="text-sm text-text-dim">
+						{error === 'linkedin_auth_failed' && 'Failed to connect LinkedIn account. Please try again.'}
+						{error === 'invalid_response' && 'Invalid response from LinkedIn. Please try again.'}
+						{error === 'state_mismatch' && 'Security validation failed. Please try again.'}
+						{errorDetails && <div className="mt-2 text-xs font-mono">{decodeURIComponent(errorDetails)}</div>}
+					</div>
+				</div>
+			)}
+
+			{connected === 'linkedin' && !error && (
+				<div className="card p-4 border-emerald-500/40 bg-emerald-500/10">
+					<div className="font-medium text-emerald-300 mb-1">Successfully Connected!</div>
+					<div className="text-sm text-text-dim">Your LinkedIn account has been connected.</div>
+				</div>
+			)}
 
 			<LinkedInCard {...linkedInStatus} />
 

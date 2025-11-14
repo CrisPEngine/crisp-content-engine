@@ -38,11 +38,21 @@ async function exchangeCodeForTokens(code: string, redirectUri: string) {
 }
 
 async function fetchLinkedInProfile(accessToken: string) {
-	const res = await fetch('https://api.linkedin.com/v2/me?projection=(id,localizedFirstName,localizedLastName,profilePicture(displayImage~:playableStreams))', {
+	// Try the new OIDC userinfo endpoint first (for openid, profile, email scopes)
+	let res = await fetch('https://api.linkedin.com/v2/userinfo', {
 		headers: {
 			Authorization: `Bearer ${accessToken}`,
 		},
 	});
+
+	// If that fails, fall back to the legacy v2/me endpoint
+	if (!res.ok) {
+		res = await fetch('https://api.linkedin.com/v2/me?projection=(id,localizedFirstName,localizedLastName,profilePicture(displayImage~:playableStreams))', {
+			headers: {
+				Authorization: `Bearer ${accessToken}`,
+			},
+		});
+	}
 
 	if (!res.ok) {
 		const errorText = await res.text();
@@ -53,6 +63,22 @@ async function fetchLinkedInProfile(accessToken: string) {
 }
 
 function extractProfileDetails(profile: any) {
+	// Handle OIDC userinfo format (new)
+	if (profile?.sub) {
+		// OIDC format: sub is the user ID, given_name/family_name for names, picture for avatar
+		const firstName = profile?.given_name ?? '';
+		const lastName = profile?.family_name ?? '';
+		const displayName = [firstName, lastName].filter(Boolean).join(' ').trim() || profile?.name || 'LinkedIn Member';
+		const personUrn = profile?.sub ? `urn:li:person:${profile.sub}` : null;
+		
+		return {
+			personUrn,
+			displayName,
+			avatarUrl: profile?.picture ?? null,
+		};
+	}
+
+	// Handle legacy v2/me format (fallback)
 	const firstName = profile?.localizedFirstName ?? '';
 	const lastName = profile?.localizedLastName ?? '';
 	const displayName = [firstName, lastName].filter(Boolean).join(' ').trim();
@@ -132,6 +158,13 @@ export async function GET(request: Request) {
 		return NextResponse.redirect(`${redirectBase}/connections?connected=linkedin`);
 	} catch (err: any) {
 		console.error('LinkedIn OAuth callback error:', err);
-		return NextResponse.redirect(`${redirectBase}/connections?error=linkedin_auth_failed`);
+		console.error('Error details:', {
+			message: err?.message,
+			stack: err?.stack,
+			name: err?.name,
+		});
+		// Include error message in URL for debugging (will be visible in browser console)
+		const errorMsg = err?.message ? encodeURIComponent(err.message.substring(0, 100)) : 'linkedin_auth_failed';
+		return NextResponse.redirect(`${redirectBase}/connections?error=linkedin_auth_failed&details=${errorMsg}`);
 	}
 }
