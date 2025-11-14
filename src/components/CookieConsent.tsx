@@ -16,6 +16,8 @@ export function CookieConsent() {
 	const accept = () => {
 		localStorage.setItem('cookie-consent', 'accepted');
 		setShow(false);
+		// Trigger analytics initialization by dispatching a custom event
+		window.dispatchEvent(new Event('cookie-consent-accepted'));
 	};
 
 	if (!show) return null;
