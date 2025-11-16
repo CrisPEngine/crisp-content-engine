@@ -25,7 +25,14 @@ const schema = z
 		content_rules: z.string().default(''),
 		additional_info: z.string().default(''),
 		// Platforms: require at least one
-		platforms_requested: z.array(PlatformsEnum).min(1),
+		platforms_requested: z.preprocess(
+			(val) => {
+				if (Array.isArray(val)) return val;
+				if (typeof val === 'string') return val.trim() ? [val] : [];
+				return [];
+			},
+			z.array(PlatformsEnum).min(1)
+		),
 		timezone: z.string().min(1),
 		language_region: LanguageRegionEnum,
 		preferred_image_source: PreferredImageSourceEnum,
@@ -43,7 +50,14 @@ const schema = z
 			.refine((value) => value === '' || z.string().email().safeParse(value).success, {
 				message: 'Invalid email address',
 			}),
-		brand_assets_urls: z.array(z.string().url()).default([]),
+		brand_assets_urls: z.preprocess(
+			(val) => {
+				if (Array.isArray(val)) return val;
+				if (typeof val === 'string') return val.trim() ? [val] : [];
+				return [];
+			},
+			z.array(z.string().url()).default([])
+		),
 		personal_full_name: z.string().default(''),
 		personal_headline: z.string().default(''),
 		personal_expertise: z.string().default(''),
@@ -52,7 +66,14 @@ const schema = z
 		personal_voice_traits: z.string().default(''),
 		personal_story: z.string().default(''),
 		personal_links: z.string().default(''),
-		personal_assets_urls: z.array(z.string().url()).default([]),
+		personal_assets_urls: z.preprocess(
+			(val) => {
+				if (Array.isArray(val)) return val;
+				if (typeof val === 'string') return val.trim() ? [val] : [];
+				return [];
+			},
+			z.array(z.string().url()).default([])
+		),
 		assistants: z.string().default(''),
 		ghost_writer_preference: z.enum(['Yes', 'No', 'Sometimes']).default('Yes'),
 	})

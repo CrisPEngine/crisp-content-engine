@@ -28,7 +28,14 @@ const schema = z
 		exclude_keywords: z.string().default(''),
 		content_rules: z.string().default(''),
 		additional_info: z.string().default(''),
-		platforms_requested: z.array(PlatformsEnum).min(1, 'Select at least one platform'),
+		platforms_requested: z.preprocess(
+			(val) => {
+				if (Array.isArray(val)) return val;
+				if (typeof val === 'string') return val.trim() ? [val] : [];
+				return [];
+			},
+			z.array(PlatformsEnum).min(1, 'Select at least one platform')
+		),
 		timezone: z.string().min(1, 'Please select a timezone'),
 		language_region: LanguageRegionEnum,
 		preferred_image_source: PreferredImageSourceEnum,
@@ -45,7 +52,14 @@ const schema = z
 			.refine((value) => value === '' || z.string().email().safeParse(value).success, {
 				message: 'Invalid email address',
 			}),
-		brand_assets_urls: z.array(z.string().url()).default([]),
+		brand_assets_urls: z.preprocess(
+			(val) => {
+				if (Array.isArray(val)) return val;
+				if (typeof val === 'string') return val.trim() ? [val] : [];
+				return [];
+			},
+			z.array(z.string().url()).default([])
+		),
 		personal_full_name: z.string().default(''),
 		personal_headline: z.string().default(''),
 		personal_expertise: z.string().default(''),
@@ -54,7 +68,14 @@ const schema = z
 		personal_voice_traits: z.string().default(''),
 		personal_story: z.string().default(''),
 		personal_links: z.string().default(''),
-		personal_assets_urls: z.array(z.string().url()).default([]),
+		personal_assets_urls: z.preprocess(
+			(val) => {
+				if (Array.isArray(val)) return val;
+				if (typeof val === 'string') return val.trim() ? [val] : [];
+				return [];
+			},
+			z.array(z.string().url()).default([])
+		),
 	})
 	.superRefine((data, ctx) => {
 		if (data.brand_type === 'personal') {
@@ -279,12 +300,32 @@ export default function OnboardingPage() {
 				return [];
 			};
 			
-			const payloadData = {
+			// Build payload - exclude personal fields for company brands
+			const basePayload = {
 				...normalisedData,
-				personal_assets_urls: ensureArray(normalisedData.personal_assets_urls),
 				brand_assets_urls: ensureArray(normalisedData.brand_assets_urls),
 				platforms_requested: ensureArray(normalisedData.platforms_requested),
 			};
+			
+			// Only include personal fields if it's a personal brand
+			const payloadData = isPersonal
+				? {
+						...basePayload,
+						personal_assets_urls: ensureArray(normalisedData.personal_assets_urls),
+					}
+				: {
+						...basePayload,
+						// For company brands, set personal fields to empty defaults
+						personal_full_name: '',
+						personal_headline: '',
+						personal_expertise: '',
+						personal_audience: '',
+						personal_goals: '',
+						personal_voice_traits: '',
+						personal_story: '',
+						personal_links: '',
+						personal_assets_urls: [],
+					};
 
 			// Debug logging
 			if (typeof payloadData.personal_assets_urls !== 'undefined' && !Array.isArray(payloadData.personal_assets_urls)) {
