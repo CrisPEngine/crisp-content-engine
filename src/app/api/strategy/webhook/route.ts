@@ -88,8 +88,34 @@ export async function POST(req: Request) {
 
 				if (!airtableRes.ok) {
 					const errorText = await airtableRes.text();
-					console.error('Airtable strategy update failed:', errorText);
-					return NextResponse.json({ ok: false, error: 'Failed to update Airtable' }, { status: 502 });
+					let errorData: any = {};
+					try {
+						errorData = JSON.parse(errorText);
+					} catch {
+						errorData = { message: errorText };
+					}
+					
+					console.error('Airtable strategy update failed:', {
+						error: errorData,
+						fieldsAttempted: Object.keys(sanitisedFields),
+						recordId,
+					});
+					
+					const errorMessage = errorData?.error?.message || errorData?.message || 'Failed to update Airtable';
+					const isFieldError = errorData?.error?.type === 'UNKNOWN_FIELD_NAME' || errorData?.error?.type === 'INVALID_VALUE_FOR_COLUMN';
+					
+					return NextResponse.json(
+						{ 
+							ok: false, 
+							error: errorMessage,
+							details: errorData,
+							fieldsAttempted: Object.keys(sanitisedFields),
+							hint: isFieldError 
+								? `Missing or invalid field in Airtable. Check that these fields exist: ${Object.keys(sanitisedFields).join(', ')}`
+								: undefined,
+						}, 
+						{ status: 502 }
+					);
 				}
 			} catch (error) {
 				console.error('Error updating Airtable strategy record:', error);
