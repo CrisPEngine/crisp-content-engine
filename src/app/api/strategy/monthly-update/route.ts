@@ -145,6 +145,16 @@ export async function POST(req: Request) {
 				cycle_label: cycleLabel,
 				attachments: data.attachments || [],
 			},
+			// Include initial strategy fields as null/empty for consistency (Router will ignore them)
+			brand: null,
+			audience: null,
+			value_props: null,
+			offers: null,
+			brand_goals: null,
+			platforms_requested: null,
+			urls_to_scrape: null,
+			assets: null,
+			strategy_context: null,
 		};
 
 		const makeRes = await fetch(webhookUrl, {

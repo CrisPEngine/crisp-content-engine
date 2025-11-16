@@ -123,6 +123,7 @@ export async function POST(req: Request) {
 		}));
 
 		const makePayload = {
+			mode: 'initial',
 			brand_profile_id: data.airtableId,
 			airtable_table: 'BrandProfiles',
 			user_id: user.id,
@@ -150,6 +151,9 @@ export async function POST(req: Request) {
 				submitted_at: new Date().toISOString(),
 				extra_instructions: additionalInfoText,
 			},
+			// Include monthly fields as null/empty for consistency (Router will ignore them)
+			strategy_update_id: null,
+			monthly: null,
 		};
 
 		const headers: Record<string, string> = {
