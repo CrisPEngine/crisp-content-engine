@@ -74,7 +74,16 @@ export default function StrategyReviewPage() {
 					}, 2000);
 					return;
 				}
-				throw new Error(data?.error || 'Failed to approve strategy');
+				
+				// Show detailed error with hint if available
+				let errorMessage = data?.error || 'Failed to approve strategy';
+				if (data?.hint) {
+					errorMessage += `\n\n${data.hint}`;
+				}
+				if (data?.details) {
+					console.error('Strategy approval error details:', data.details);
+				}
+				throw new Error(errorMessage);
 			}
 
 			// Show loading animation

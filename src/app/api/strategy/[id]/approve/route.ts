@@ -86,9 +86,28 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
 		if (!updateRes.ok) {
 			const errorText = await updateRes.text();
-			console.error('Airtable strategy approval update failed:', errorText);
+			let errorData: any = {};
+			try {
+				errorData = JSON.parse(errorText);
+			} catch {
+				errorData = { message: errorText };
+			}
+			
+			console.error('Airtable strategy approval update failed:', errorData);
+			
+			// Provide more specific error messages
+			const errorMessage = errorData?.error?.message || errorData?.message || 'Failed to update strategy status';
+			const isFieldError = errorData?.error?.type === 'INVALID_VALUE_FOR_COLUMN' || errorData?.error?.type === 'UNKNOWN_FIELD_NAME';
+			
 			return NextResponse.json(
-				{ error: 'Failed to update strategy status' },
+				{ 
+					error: errorMessage,
+					details: errorData,
+					isFieldError,
+					hint: isFieldError 
+						? 'Please check that the "status" field in Airtable has "Strategy Approved" as an option, and that "strategy_approved_at" field exists.'
+						: undefined,
+				},
 				{ status: 502 }
 			);
 		}

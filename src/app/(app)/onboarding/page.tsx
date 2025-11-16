@@ -270,16 +270,39 @@ export default function OnboardingPage() {
 				brand_goals: data.brand_goals || data.personal_goals || 'Personal brand objectives provided in personal onboarding.',
 			};
 
+			// Ensure arrays are properly formatted before sending
+			const payloadData = {
+				...normalisedData,
+				personal_assets_urls: Array.isArray(normalisedData.personal_assets_urls) 
+					? normalisedData.personal_assets_urls 
+					: (normalisedData.personal_assets_urls ? [normalisedData.personal_assets_urls] : []),
+				brand_assets_urls: Array.isArray(normalisedData.brand_assets_urls) 
+					? normalisedData.brand_assets_urls 
+					: (normalisedData.brand_assets_urls ? [normalisedData.brand_assets_urls] : []),
+				platforms_requested: Array.isArray(normalisedData.platforms_requested) 
+					? normalisedData.platforms_requested 
+					: (normalisedData.platforms_requested ? [normalisedData.platforms_requested] : []),
+			};
+
 			const res = await fetch('/api/onboarding', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(normalisedData),
+				body: JSON.stringify(payloadData),
 			});
 
 			const result = await res.json();
 
 			if (!res.ok) {
 				console.error('Onboarding API error:', result);
+				
+				// Display field-specific errors if available
+				if (result.fieldErrors) {
+					const fieldErrorMessages = Object.entries(result.fieldErrors)
+						.map(([field, err]: [string, any]) => `${field}: ${err.message}`)
+						.join('\n');
+					throw new Error(`Form validation failed:\n${JSON.stringify(result.fieldErrors, null, 2)}`);
+				}
+				
 				throw new Error(result.error || result.details?.message || 'Failed to save brand profile');
 			}
 

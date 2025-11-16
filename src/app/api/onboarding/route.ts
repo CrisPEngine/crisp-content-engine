@@ -147,6 +147,23 @@ const schema = z
 export async function POST(req: Request) {
 	try {
 		const body = await req.json();
+		
+		// Pre-process arrays to ensure they're always arrays (not strings)
+		if (body.personal_assets_urls && typeof body.personal_assets_urls === 'string') {
+			body.personal_assets_urls = body.personal_assets_urls ? [body.personal_assets_urls] : [];
+		}
+		if (body.brand_assets_urls && typeof body.brand_assets_urls === 'string') {
+			body.brand_assets_urls = body.brand_assets_urls ? [body.brand_assets_urls] : [];
+		}
+		if (body.platforms_requested && typeof body.platforms_requested === 'string') {
+			body.platforms_requested = body.platforms_requested ? [body.platforms_requested] : [];
+		}
+		
+		// Ensure arrays default to empty arrays if undefined/null
+		body.personal_assets_urls = body.personal_assets_urls || [];
+		body.brand_assets_urls = body.brand_assets_urls || [];
+		body.platforms_requested = body.platforms_requested || [];
+		
 		const data = schema.parse(body);
 
 		// Authenticate user
@@ -353,11 +370,26 @@ export async function POST(req: Request) {
 	} catch (e: any) {
 		console.error('Onboarding error:', e);
 		if (e instanceof z.ZodError) {
-			// Extract the first error message for better UX
+			// Format validation errors for better UX
+			const fieldErrors: Record<string, { message: string; type: string }> = {};
+			e.issues.forEach((issue) => {
+				const path = issue.path.join('.');
+				fieldErrors[path] = {
+					message: issue.message,
+					type: issue.code,
+				};
+			});
+			
+			// Extract the first error message for alert
 			const firstError = e.issues[0];
 			const errorMessage = firstError?.message || 'Validation error';
+			
 			return NextResponse.json(
-				{ error: errorMessage, details: e.issues },
+				{ 
+					error: errorMessage, 
+					details: e.issues,
+					fieldErrors,
+				},
 				{ status: 400 }
 			);
 		}
