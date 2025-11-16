@@ -271,18 +271,26 @@ export default function OnboardingPage() {
 			};
 
 			// Ensure arrays are properly formatted before sending
+			// Helper function to safely convert to array
+			const ensureArray = (value: any): string[] => {
+				if (Array.isArray(value)) return value;
+				if (typeof value === 'string') return value.trim() ? [value] : [];
+				if (value === null || value === undefined) return [];
+				return [];
+			};
+			
 			const payloadData = {
 				...normalisedData,
-				personal_assets_urls: Array.isArray(normalisedData.personal_assets_urls) 
-					? normalisedData.personal_assets_urls 
-					: (normalisedData.personal_assets_urls ? [normalisedData.personal_assets_urls] : []),
-				brand_assets_urls: Array.isArray(normalisedData.brand_assets_urls) 
-					? normalisedData.brand_assets_urls 
-					: (normalisedData.brand_assets_urls ? [normalisedData.brand_assets_urls] : []),
-				platforms_requested: Array.isArray(normalisedData.platforms_requested) 
-					? normalisedData.platforms_requested 
-					: (normalisedData.platforms_requested ? [normalisedData.platforms_requested] : []),
+				personal_assets_urls: ensureArray(normalisedData.personal_assets_urls),
+				brand_assets_urls: ensureArray(normalisedData.brand_assets_urls),
+				platforms_requested: ensureArray(normalisedData.platforms_requested),
 			};
+
+			// Debug logging
+			if (typeof payloadData.personal_assets_urls !== 'undefined' && !Array.isArray(payloadData.personal_assets_urls)) {
+				console.error('[Onboarding Form] personal_assets_urls is not an array before sending:', typeof payloadData.personal_assets_urls, payloadData.personal_assets_urls);
+			}
+			console.log('[Onboarding Form] Sending payload with personal_assets_urls:', Array.isArray(payloadData.personal_assets_urls) ? 'array' : typeof payloadData.personal_assets_urls, payloadData.personal_assets_urls);
 
 			const res = await fetch('/api/onboarding', {
 				method: 'POST',

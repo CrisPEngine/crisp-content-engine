@@ -148,21 +148,37 @@ export async function POST(req: Request) {
 	try {
 		const body = await req.json();
 		
-		// Pre-process arrays to ensure they're always arrays (not strings)
-		if (body.personal_assets_urls && typeof body.personal_assets_urls === 'string') {
-			body.personal_assets_urls = body.personal_assets_urls ? [body.personal_assets_urls] : [];
-		}
-		if (body.brand_assets_urls && typeof body.brand_assets_urls === 'string') {
-			body.brand_assets_urls = body.brand_assets_urls ? [body.brand_assets_urls] : [];
-		}
-		if (body.platforms_requested && typeof body.platforms_requested === 'string') {
-			body.platforms_requested = body.platforms_requested ? [body.platforms_requested] : [];
+		// Debug logging (remove in production if needed)
+		if (typeof body.personal_assets_urls !== 'undefined' && !Array.isArray(body.personal_assets_urls)) {
+			console.log('[Onboarding API] personal_assets_urls is not an array:', typeof body.personal_assets_urls, body.personal_assets_urls);
 		}
 		
-		// Ensure arrays default to empty arrays if undefined/null
-		body.personal_assets_urls = body.personal_assets_urls || [];
-		body.brand_assets_urls = body.brand_assets_urls || [];
-		body.platforms_requested = body.platforms_requested || [];
+		// Pre-process arrays to ensure they're always arrays (not strings, null, or undefined)
+		// Handle personal_assets_urls
+		if (typeof body.personal_assets_urls === 'string') {
+			body.personal_assets_urls = body.personal_assets_urls.trim() ? [body.personal_assets_urls] : [];
+		} else if (!Array.isArray(body.personal_assets_urls)) {
+			body.personal_assets_urls = [];
+		}
+		
+		// Handle brand_assets_urls
+		if (typeof body.brand_assets_urls === 'string') {
+			body.brand_assets_urls = body.brand_assets_urls.trim() ? [body.brand_assets_urls] : [];
+		} else if (!Array.isArray(body.brand_assets_urls)) {
+			body.brand_assets_urls = [];
+		}
+		
+		// Handle platforms_requested
+		if (typeof body.platforms_requested === 'string') {
+			body.platforms_requested = body.platforms_requested.trim() ? [body.platforms_requested] : [];
+		} else if (!Array.isArray(body.platforms_requested)) {
+			body.platforms_requested = [];
+		}
+		
+		// Final safety check - ensure they're arrays (handle null/undefined)
+		body.personal_assets_urls = Array.isArray(body.personal_assets_urls) ? body.personal_assets_urls : [];
+		body.brand_assets_urls = Array.isArray(body.brand_assets_urls) ? body.brand_assets_urls : [];
+		body.platforms_requested = Array.isArray(body.platforms_requested) ? body.platforms_requested : [];
 		
 		const data = schema.parse(body);
 
