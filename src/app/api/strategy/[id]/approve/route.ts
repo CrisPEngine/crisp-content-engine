@@ -69,6 +69,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 		}
 
 		// Update strategy status to "Strategy Approved"
+		// Note: strategy_approved_at is optional - only include if field exists in Airtable
+		const updateFields: Record<string, any> = {
+			status: 'Strategy Approved',
+			...(strategyContent && { strategy_payload: String(strategyContent) }),
+		};
+		
+		// Only include strategy_approved_at if you've added this field to Airtable
+		// Uncomment the line below after adding the field:
+		// updateFields.strategy_approved_at = new Date().toISOString();
+		
 		const updateRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${brandProfileId}`, {
 			method: 'PATCH',
 			headers: {
@@ -76,11 +86,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 				'Content-Type': 'application/json',
 			},
 			body: JSON.stringify({
-				fields: {
-					status: 'Strategy Approved',
-					strategy_approved_at: new Date().toISOString(),
-					...(strategyContent && { strategy_payload: String(strategyContent) }),
-				},
+				fields: updateFields,
 			}),
 		});
 

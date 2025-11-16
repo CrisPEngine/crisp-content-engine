@@ -275,8 +275,8 @@ export async function POST(req: Request) {
 				personal_voice_traits: string;
 				personal_story: string;
 				personal_links: string;
-				assistants: string;
-				ghost_writer_preference: typeof data.ghost_writer_preference;
+				// assistants: string; // Optional - only include if field exists in Airtable
+				// ghost_writer_preference: typeof data.ghost_writer_preference; // Optional - only include if field exists in Airtable
 				personal_assets?: { url: string }[];
 				status: string;
 				strategy_approval: boolean;
@@ -325,8 +325,9 @@ export async function POST(req: Request) {
 				personal_voice_traits: String(data.personal_voice_traits || ''),
 				personal_story: String(data.personal_story || ''),
 				personal_links: String(data.personal_links || ''),
-				assistants: String(data.assistants || ''),
-				ghost_writer_preference: data.ghost_writer_preference,
+				// Only include these fields if they exist in Airtable (optional fields)
+				// assistants: String(data.assistants || ''),
+				// ghost_writer_preference: data.ghost_writer_preference,
 				status: 'New Brief', // Initial status - matches Airtable options
 				strategy_approval: false,
 				user_id: user.id, // Link to Supabase user
