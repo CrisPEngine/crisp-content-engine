@@ -57,20 +57,24 @@ export async function POST(req: Request) {
 				payload?.strategy_sections ||
 				payload?.strategy_content;
 			if (strategyPayload) {
-				fields.strategy_payload = serialiseField(strategyPayload);
+				// Use strategy_json as the field name in Airtable
+				fields.strategy_json = serialiseField(strategyPayload);
 			}
 
-			if (payload?.meta) {
-				fields.strategy_meta = serialiseField(payload.meta);
-			}
-
-			if (payload?.pages_scraped) {
-				fields.strategy_pages_scraped = payload.pages_scraped;
-			}
-
-			if (payload?.text_chars) {
-				fields.strategy_text_chars = payload.text_chars;
-			}
+			// Optional fields - only include if they exist in Airtable
+			// Uncomment these if you add the corresponding fields to Airtable:
+			
+			// if (payload?.meta) {
+			// 	fields.strategy_meta = serialiseField(payload.meta);
+			// }
+			
+			// if (payload?.pages_scraped) {
+			// 	fields.strategy_pages_scraped = payload.pages_scraped;
+			// }
+			
+			// if (payload?.text_chars) {
+			// 	fields.strategy_text_chars = payload.text_chars;
+			// }
 
 			const sanitisedFields = Object.fromEntries(
 				Object.entries(fields).filter(([, value]) => value !== undefined)
