@@ -96,15 +96,29 @@ export default function StrategyReviewPage() {
 	}
 
 	async function saveEdit() {
-		if (!strategy) return;
+		if (!strategy || !supabase) return;
 		try {
-			// For now, just update local state
-			// In the future, we could add a PATCH endpoint to update strategy
-			setStrategy({ ...strategy, content: editedContent });
+			// Save the edited summary to Airtable
+			const res = await fetch(`/api/strategy/${strategy.id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					strategy_summary: editedContent,
+				}),
+			});
+
+			const data = await res.json();
+
+			if (!res.ok) {
+				throw new Error(data?.error || 'Failed to save strategy');
+			}
+
+			// Update local state
+			setStrategy({ ...strategy, content: editedContent, strategy_summary: editedContent });
 			setEditing(false);
-		} catch (error) {
+		} catch (error: any) {
 			console.error('Failed to save edit:', error);
-			alert('Failed to save changes. Please try again.');
+			setError(error.message || 'Failed to save changes. Please try again.');
 		}
 	}
 

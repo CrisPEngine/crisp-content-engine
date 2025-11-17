@@ -72,7 +72,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 		// Note: strategy_approved_at is optional - only include if field exists in Airtable
 		const updateFields: Record<string, any> = {
 			status: 'Strategy Approved',
-			...(strategyContent && { strategy_payload: String(strategyContent) }),
+			// If strategy content was edited, update strategy_summary (not strategy_json - that's the source of truth)
+			...(strategyContent && { strategy_summary: String(strategyContent) }),
 		};
 		
 		// Only include strategy_approved_at if you've added this field to Airtable
