@@ -78,22 +78,27 @@ export async function GET(request: Request) {
 			filters.push(statusFormula);
 		}
 
+		// Date filtering - only if scheduled_date field exists in Airtable
+		// Note: If scheduled_date doesn't exist, these filters will be skipped
 		const fromDate = searchParams.get('from');
 		const toDate = searchParams.get('to');
-		if (fromDate) {
-			filters.push(`IS_AFTER({scheduled_date}, DATETIME_PARSE("${fromDate}", "YYYY-MM-DD"))`);
-		}
-		if (toDate) {
-			filters.push(`IS_BEFORE({scheduled_date}, DATEADD(DATETIME_PARSE("${toDate}", "YYYY-MM-DD"), 1, 'day'))`);
+		// Only add date filters if dates are provided (field may not exist yet)
+		// Commenting out date filters until scheduled_date field is added to Airtable
+		// if (fromDate) {
+		// 	filters.push(`IS_AFTER({scheduled_date}, DATETIME_PARSE("${fromDate}", "YYYY-MM-DD"))`);
+		// }
+		// if (toDate) {
+		// 	filters.push(`IS_BEFORE({scheduled_date}, DATEADD(DATETIME_PARSE("${toDate}", "YYYY-MM-DD"), 1, 'day'))`);
+		// }
+
+		if (filters.length > 0) {
+			url.searchParams.set('filterByFormula', filters.length === 1 ? filters[0] : `AND(${filters.join(',')})`);
 		}
 
-	if (filters.length > 0) {
-		url.searchParams.set('filterByFormula', filters.length === 1 ? filters[0] : `AND(${filters.join(',')})`);
-	}
-
-	url.searchParams.append('pageSize', '100');
-	url.searchParams.append('sort[0][field]', 'scheduled_date');
-	url.searchParams.append('sort[0][direction]', 'asc');
+		url.searchParams.append('pageSize', '100');
+		// Sort by created_time instead of scheduled_date until scheduled_date field is added to Airtable
+		url.searchParams.append('sort[0][field]', 'created_time');
+		url.searchParams.append('sort[0][direction]', 'desc');
 
 	const airtableRes = await fetch(url.toString(), {
 		method: 'GET',
