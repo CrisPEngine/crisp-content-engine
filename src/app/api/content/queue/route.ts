@@ -143,7 +143,23 @@ export async function GET(request: Request) {
 		);
 	}
 
-	let items = (airtableResult.records || []).map((record: any) => {
+	type ContentItem = {
+		id: string;
+		title: string;
+		platform: string;
+		status: string;
+		scheduled_date: string | null;
+		published_at: string | null;
+		brand_profile_id: string | null;
+		brand_name: string;
+		content: string;
+		summary: string;
+		call_to_action: string;
+		created_time: string;
+		updated_time: string | null;
+	};
+
+	let items: ContentItem[] = (airtableResult.records || []).map((record: any) => {
 		const fields = record.fields || {};
 		// Extract brand_profile_id - could be a link field (array) or string
 		let brandProfileId: string | null = null;
@@ -176,7 +192,7 @@ export async function GET(request: Request) {
 	// Filter by user's brand profiles in code (since brand_profile_id field may not exist in Airtable yet)
 	// If user has brand profiles, only show content linked to those brands
 	if (brandProfileIds.length > 0) {
-		items = items.filter((item) => {
+		items = items.filter((item: ContentItem) => {
 			// If item has no brand_profile_id, exclude it (safety measure)
 			if (!item.brand_profile_id) return false;
 			// Only include items linked to user's brand profiles
