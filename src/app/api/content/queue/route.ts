@@ -155,6 +155,9 @@ export async function GET(request: Request) {
 		content: string;
 		summary: string;
 		call_to_action: string;
+		hashtags?: string;
+		image_prompt?: string;
+		image_generation_source?: string;
 		created_time: string;
 		updated_time: string | null;
 	};
@@ -174,16 +177,19 @@ export async function GET(request: Request) {
 
 		return {
 			id: record.id,
-			title: fields.title || fields.post_title || 'Untitled',
+			title: fields.hook || fields.title || fields.post_title || 'Untitled',
 			platform: fields.platform || 'Unknown',
 			status: fields.status || 'Draft',
-			scheduled_date: fields.scheduled_date || null,
+			scheduled_date: fields.scheduled_time || fields.scheduled_date || null,
 			published_at: fields.published_at || null,
 			brand_profile_id: brandProfileId,
 			brand_name: fields.brand_name || fields.client_name || '',
-			content: fields.content || fields.post_body || '',
+			content: fields.post_content || fields.content || fields.post_body || '',
 			summary: fields.summary || fields.content_summary || '',
 			call_to_action: fields.call_to_action || '',
+			hashtags: fields.hashtags || '',
+			image_prompt: fields.image_prompt || '',
+			image_generation_source: fields.image_generation_source || '',
 			created_time: fields.created_time || record.createdTime,
 			updated_time: fields.last_modified_time || fields.updated_time || null,
 		};

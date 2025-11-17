@@ -18,6 +18,9 @@ type ContentItem = {
 	brand_name: string;
 	summary?: string;
 	call_to_action?: string;
+	hashtags?: string;
+	image_prompt?: string;
+	image_generation_source?: string;
 };
 
 export default function ContentApprovalPage() {
