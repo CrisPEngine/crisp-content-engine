@@ -122,11 +122,38 @@ export async function POST(req: Request) {
 			type: inferMimeType(url),
 		}));
 
+		// Fetch brand_type from Airtable to include in payload
+		let brandType = 'company'; // default
+		try {
+			const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
+			const BASE_ID = process.env.AIRTABLE_BASE_ID;
+			const TABLE_ID = process.env.AIRTABLE_BRANDPROFILES_TABLE;
+			
+			if (AIRTABLE_TOKEN && BASE_ID && TABLE_ID) {
+				const brandRes = await fetch(
+					`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${data.airtableId}`,
+					{
+						headers: {
+							Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+							'Content-Type': 'application/json',
+						},
+					}
+				);
+				if (brandRes.ok) {
+					const brandRecord = await brandRes.json();
+					brandType = brandRecord.fields?.brand_type || 'company';
+				}
+			}
+		} catch (error) {
+			console.warn('Failed to fetch brand_type, defaulting to company:', error);
+		}
+
 		const makePayload = {
 			mode: 'initial',
 			brand_profile_id: data.airtableId,
 			airtable_table: 'BrandProfiles',
 			user_id: user.id,
+			brand_type: brandType, // Include brand type for AI strategy crafting
 			brand: {
 				name: data.client_name,
 				website: data.website,

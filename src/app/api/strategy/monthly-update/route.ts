@@ -130,11 +130,34 @@ export async function POST(req: Request) {
 			headers['x-make-secret'] = outboundSecret;
 		}
 
+		// Fetch brand_type from Airtable to include in payload
+		let brandType = 'company'; // default
+		try {
+			if (AIRTABLE_TOKEN && BASE_ID && TABLE_ID) {
+				const brandRes = await fetch(
+					`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${data.brand_profile_id}`,
+					{
+						headers: {
+							Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+							'Content-Type': 'application/json',
+						},
+					}
+				);
+				if (brandRes.ok) {
+					const brandRecord = await brandRes.json();
+					brandType = brandRecord.fields?.brand_type || 'company';
+				}
+			}
+		} catch (error) {
+			console.warn('Failed to fetch brand_type, defaulting to company:', error);
+		}
+
 		const makePayload = {
 			mode: 'monthly_update',
 			strategy_update_id: airtableResult.id,
 			brand_profile_id: data.brand_profile_id,
 			user_id: user.id,
+			brand_type: brandType, // Include brand type for AI strategy crafting
 			monthly: {
 				objective: data.objective,
 				themes_focus: data.themes_focus,

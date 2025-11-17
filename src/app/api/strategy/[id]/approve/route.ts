@@ -119,10 +119,43 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 			);
 		}
 
+		// Fetch brand profile details for content generation
+		let brandType = 'company';
+		let strategyJson = null;
+		let strategySummary = null;
+		try {
+			const brandRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${brandProfileId}`, {
+				method: 'GET',
+				headers: {
+					Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+					'Content-Type': 'application/json',
+				},
+			});
+			
+			if (brandRes.ok) {
+				const brandRecord = await brandRes.json();
+				brandType = brandRecord.fields?.brand_type || 'company';
+				strategyJson = brandRecord.fields?.strategy_json || null;
+				strategySummary = brandRecord.fields?.strategy_summary || null;
+			}
+		} catch (error) {
+			console.warn('Failed to fetch brand profile details:', error);
+		}
+
 		// Trigger content generation in Make
 		const MAKE_CONTENT_WEBHOOK_URL = process.env.MAKE_CONTENT_GENERATION_WEBHOOK_URL;
 		if (MAKE_CONTENT_WEBHOOK_URL) {
 			try {
+				const contentPayload = {
+					brand_profile_id: brandProfileId,
+					user_id: user.id,
+					person_urn: linkedInConnection.person_urn,
+					brand_type: brandType,
+					strategy_json: strategyJson,
+					strategy_summary: strategySummary,
+					triggered_at: new Date().toISOString(),
+				};
+
 				await fetch(MAKE_CONTENT_WEBHOOK_URL, {
 					method: 'POST',
 					headers: {
@@ -130,13 +163,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 						...(process.env.MAKE_API_KEY && {
 							'x-api-key': process.env.MAKE_API_KEY,
 						}),
+						...(process.env.MAKE_CONTENT_WEBHOOK_SECRET && {
+							'x-make-secret': process.env.MAKE_CONTENT_WEBHOOK_SECRET,
+						}),
 					},
-					body: JSON.stringify({
-						brand_profile_id: brandProfileId,
-						user_id: user.id,
-						person_urn: linkedInConnection.person_urn,
-						triggered_at: new Date().toISOString(),
-					}),
+					body: JSON.stringify(contentPayload),
 				});
 			} catch (webhookError) {
 				// Log but don't fail the request if webhook fails
