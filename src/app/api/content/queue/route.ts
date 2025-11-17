@@ -55,12 +55,40 @@ export async function GET(request: Request) {
 		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
 		const BASE_ID = process.env.AIRTABLE_BASE_ID;
 		const TABLE_ID = process.env.AIRTABLE_CONTENTQUEUE_TABLE;
+		const BRANDPROFILES_TABLE = process.env.AIRTABLE_BRANDPROFILES_TABLE;
 
-		if (!AIRTABLE_TOKEN || !BASE_ID || !TABLE_ID) {
+		if (!AIRTABLE_TOKEN || !BASE_ID || !TABLE_ID || !BRANDPROFILES_TABLE) {
 			return NextResponse.json(
 				{ error: 'Airtable configuration missing. Please contact support.' },
 				{ status: 500 }
 			);
+		}
+
+		// First, fetch all brand profiles for this user to get their record IDs
+		// ContentQueue doesn't have user_id, so we filter through brand_profile_id
+		const brandProfilesUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}`);
+		brandProfilesUrl.searchParams.set('filterByFormula', `{user_id} = "${user.id}"`);
+		brandProfilesUrl.searchParams.set('maxRecords', '100'); // Reasonable limit
+
+		const brandProfilesRes = await fetch(brandProfilesUrl.toString(), {
+			headers: {
+				Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+				'Content-Type': 'application/json',
+			},
+		});
+
+		let brandProfileIds: string[] = [];
+		if (brandProfilesRes.ok) {
+			const brandProfilesData = await brandProfilesRes.json();
+			brandProfileIds = (brandProfilesData.records || []).map((r: any) => r.id);
+		} else {
+			const errorText = await brandProfilesRes.text();
+			console.warn('Failed to fetch brand profiles for user filtering:', errorText);
+		}
+
+		// If user has no brand profiles, return empty array
+		if (brandProfileIds.length === 0) {
+			return NextResponse.json({ items: [] });
 		}
 
 		const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
@@ -69,7 +97,14 @@ export async function GET(request: Request) {
 		const statusParam = searchParams.get('status');
 		const statuses = mapStatuses(stage, statusParam);
 
-		const filters: string[] = [`{user_id} = "${user.id}"`];
+		// Filter by brand_profile_id instead of user_id (since user_id doesn't exist in ContentQueue)
+		// Create a formula that checks if brand_profile_id is in the list of user's brand profiles
+		const brandProfileFilter =
+			brandProfileIds.length === 1
+				? `{brand_profile_id} = "${brandProfileIds[0]}"`
+				: `OR(${brandProfileIds.map((id) => `{brand_profile_id} = "${id}"`).join(',')})`;
+
+		const filters: string[] = [brandProfileFilter];
 		if (statuses && statuses.length > 0) {
 			const statusFormula =
 				statuses.length === 1
