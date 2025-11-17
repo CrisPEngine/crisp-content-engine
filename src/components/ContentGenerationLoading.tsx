@@ -14,7 +14,7 @@ const steps: Step[] = [
 	{ id: 'approve', label: 'Approving strategy...', status: 'pending' },
 	{ id: 'generate', label: 'AI generating content...', status: 'pending' },
 	{ id: 'schedule', label: 'Scheduling posts...', status: 'pending' },
-	{ id: 'complete', label: 'Content ready for review!', status: 'pending' },
+	{ id: 'complete', label: 'Content generation has started', status: 'pending' },
 ];
 
 export function ContentGenerationLoading({ onComplete }: { onComplete?: () => void }) {

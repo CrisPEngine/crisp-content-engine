@@ -144,35 +144,56 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
 		// Trigger content generation in Make
 		const MAKE_CONTENT_WEBHOOK_URL = process.env.MAKE_CONTENT_GENERATION_WEBHOOK_URL;
-		if (MAKE_CONTENT_WEBHOOK_URL) {
-			try {
-				const contentPayload = {
-					brand_profile_id: brandProfileId,
-					user_id: user.id,
-					person_urn: linkedInConnection.person_urn,
-					brand_type: brandType,
-					strategy_json: strategyJson,
-					strategy_summary: strategySummary,
-					triggered_at: new Date().toISOString(),
-				};
+		if (!MAKE_CONTENT_WEBHOOK_URL) {
+			console.warn('MAKE_CONTENT_GENERATION_WEBHOOK_URL is not configured');
+			return NextResponse.json(
+				{ error: 'Content generation webhook not configured', ok: false },
+				{ status: 500 }
+			);
+		}
 
-				await fetch(MAKE_CONTENT_WEBHOOK_URL, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						...(process.env.MAKE_API_KEY && {
-							'x-api-key': process.env.MAKE_API_KEY,
-						}),
-						...(process.env.MAKE_CONTENT_WEBHOOK_SECRET && {
-							'x-make-secret': process.env.MAKE_CONTENT_WEBHOOK_SECRET,
-						}),
-					},
-					body: JSON.stringify(contentPayload),
+		try {
+			const contentPayload = {
+				brand_profile_id: brandProfileId,
+				user_id: user.id,
+				person_urn: linkedInConnection.person_urn,
+				brand_type: brandType,
+				strategy_json: strategyJson,
+				strategy_summary: strategySummary,
+				triggered_at: new Date().toISOString(),
+			};
+
+			const webhookRes = await fetch(MAKE_CONTENT_WEBHOOK_URL, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					...(process.env.MAKE_API_KEY && {
+						'x-api-key': process.env.MAKE_API_KEY,
+					}),
+					...(process.env.MAKE_CONTENT_WEBHOOK_SECRET || process.env.MAKE_SHARED_SECRET ? {
+						'x-make-secret': process.env.MAKE_CONTENT_WEBHOOK_SECRET || process.env.MAKE_SHARED_SECRET,
+					} : {}),
+				},
+				body: JSON.stringify(contentPayload),
+			});
+
+			if (!webhookRes.ok) {
+				const errorText = await webhookRes.text();
+				console.error('Make content generation webhook failed:', {
+					status: webhookRes.status,
+					statusText: webhookRes.statusText,
+					error: errorText,
+					payload: contentPayload,
 				});
-			} catch (webhookError) {
-				// Log but don't fail the request if webhook fails
-				console.error('Make content generation webhook error:', webhookError);
+				// Still return success to user, but log the error
+				// The webhook might be processing asynchronously
+			} else {
+				console.log('Content generation webhook triggered successfully');
 			}
+		} catch (webhookError: any) {
+			console.error('Make content generation webhook error:', webhookError);
+			// Log but don't fail the request if webhook fails
+			// The webhook might be processing asynchronously
 		}
 
 		return NextResponse.json({

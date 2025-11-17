@@ -88,6 +88,10 @@ export default function StrategyReviewPage() {
 
 			// Show loading animation
 			setShowLoading(true);
+			// Redirect to content approval with generating flag after loading completes
+			setTimeout(() => {
+				router.push('/content/approval?generating=true');
+			}, 6000); // After loading animation completes
 		} catch (err: any) {
 			console.error('Failed to approve strategy:', err);
 			setError(err.message || 'Failed to approve strategy. Please try again.');

@@ -29,11 +29,23 @@ export default function ContentApprovalPage() {
 	const [approving, setApproving] = useState<string | null>(null);
 	const [rejecting, setRejecting] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [isGenerating, setIsGenerating] = useState(false);
 
 	useEffect(() => {
 		if (!supabase) return;
 		loadContent();
 	}, [supabase]);
+
+	// Poll for content if generating
+	useEffect(() => {
+		if (!isGenerating || !supabase) return;
+		
+		const pollInterval = setInterval(() => {
+			loadContent();
+		}, 5000); // Poll every 5 seconds
+
+		return () => clearInterval(pollInterval);
+	}, [isGenerating, supabase]);
 
 	async function loadContent() {
 		if (!supabase) return;
@@ -55,7 +67,19 @@ export default function ContentApprovalPage() {
 				throw new Error(data?.error || 'Failed to load content queue');
 			}
 			const data = await res.json();
-			setContentItems(Array.isArray(data.items) ? data.items : []);
+			const items = Array.isArray(data.items) ? data.items : [];
+			setContentItems(items);
+			
+			// If no items and we just approved a strategy, show loading state
+			if (items.length === 0) {
+				// Check if we're coming from strategy approval by checking URL params or session
+				const urlParams = new URLSearchParams(window.location.search);
+				if (urlParams.get('generating') === 'true') {
+					setIsGenerating(true);
+				}
+			} else {
+				setIsGenerating(false);
+			}
 		} catch (err: any) {
 			console.error('Failed to load content:', err);
 			setError(err.message || 'Failed to load content');
@@ -147,9 +171,22 @@ export default function ContentApprovalPage() {
 			</div>
 
 			{contentItems.length === 0 ? (
-				<div className="card p-8 text-center">
-					<p className="text-text-soft">No content pending approval</p>
-				</div>
+				isGenerating ? (
+					<div className="space-y-4">
+						<div className="card p-6 text-center">
+							<Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
+							<p className="text-text-soft mb-2">Generating content...</p>
+							<p className="text-sm text-text-dim">This may take a few moments</p>
+						</div>
+						{Array.from({ length: 3 }).map((_, i) => (
+							<ContentItemSkeleton key={i} />
+						))}
+					</div>
+				) : (
+					<div className="card p-8 text-center">
+						<p className="text-text-soft">No content pending approval</p>
+					</div>
+				)
 			) : (
 				<div className="space-y-4">
 					{contentItems.map((item) => (
