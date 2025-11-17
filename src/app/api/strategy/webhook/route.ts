@@ -40,10 +40,29 @@ export async function POST(req: Request) {
 			const recordId = payload?.airtable_record_id || brandProfileId;
 			const status = normaliseStatus(payload?.strategy_status);
 
+			// Parse and validate updated_at date
+			let updatedAt: string;
+			if (payload?.updated_at) {
+				try {
+					// Try to parse the date and convert to ISO string
+					const date = new Date(payload.updated_at);
+					if (isNaN(date.getTime())) {
+						// Invalid date, use current time
+						updatedAt = new Date().toISOString();
+					} else {
+						updatedAt = date.toISOString();
+					}
+				} catch {
+					updatedAt = new Date().toISOString();
+				}
+			} else {
+				updatedAt = new Date().toISOString();
+			}
+
 			const fields: Record<string, any> = {
 				status,
 				strategy_status: status,
-				strategy_updated_at: payload?.updated_at || new Date().toISOString(),
+				strategy_updated_at: updatedAt,
 			};
 
 			const summary = payload?.strategy_summary || payload?.summary;
@@ -61,20 +80,18 @@ export async function POST(req: Request) {
 				fields.strategy_json = serialiseField(strategyPayload);
 			}
 
-			// Optional fields - only include if they exist in Airtable
-			// Uncomment these if you add the corresponding fields to Airtable:
+			// Optional fields - include if provided
+			if (payload?.meta) {
+				fields.strategy_meta = serialiseField(payload.meta);
+			}
 			
-			// if (payload?.meta) {
-			// 	fields.strategy_meta = serialiseField(payload.meta);
-			// }
+			if (payload?.pages_scraped !== undefined) {
+				fields.strategy_pages_scraped = payload.pages_scraped;
+			}
 			
-			// if (payload?.pages_scraped) {
-			// 	fields.strategy_pages_scraped = payload.pages_scraped;
-			// }
-			
-			// if (payload?.text_chars) {
-			// 	fields.strategy_text_chars = payload.text_chars;
-			// }
+			if (payload?.text_chars !== undefined) {
+				fields.strategy_text_chars = payload.text_chars;
+			}
 
 			const sanitisedFields = Object.fromEntries(
 				Object.entries(fields).filter(([, value]) => value !== undefined)
@@ -102,7 +119,13 @@ export async function POST(req: Request) {
 					console.error('Airtable strategy update failed:', {
 						error: errorData,
 						fieldsAttempted: Object.keys(sanitisedFields),
+						fieldValues: sanitisedFields,
 						recordId,
+						payload: {
+							brand_profile_id: payload?.brand_profile_id,
+							strategy_status: payload?.strategy_status,
+							has_strategy: !!strategyPayload,
+						},
 					});
 					
 					const errorMessage = errorData?.error?.message || errorData?.message || 'Failed to update Airtable';
