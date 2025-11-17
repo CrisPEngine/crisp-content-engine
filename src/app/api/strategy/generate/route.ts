@@ -122,8 +122,20 @@ export async function POST(req: Request) {
 			type: inferMimeType(url),
 		}));
 
-		// Fetch brand_type from Airtable to include in payload
+		// Fetch brand_type and personal brand details from Airtable to include in payload
 		let brandType = 'company'; // default
+		let personalBrandData: {
+			personal_full_name?: string;
+			personal_headline?: string;
+			personal_expertise?: string;
+			personal_audience?: string;
+			personal_goals?: string;
+			personal_voice_traits?: string;
+			personal_story?: string;
+			personal_links?: string;
+			personal_assets_urls?: string[];
+		} = {};
+		
 		try {
 			const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
 			const BASE_ID = process.env.AIRTABLE_BASE_ID;
@@ -142,10 +154,31 @@ export async function POST(req: Request) {
 				if (brandRes.ok) {
 					const brandRecord = await brandRes.json();
 					brandType = brandRecord.fields?.brand_type || 'company';
+					
+					// Fetch personal brand fields if this is a personal brand
+					if (brandType === 'personal') {
+						personalBrandData = {
+							personal_full_name: String(brandRecord.fields?.personal_full_name || ''),
+							personal_headline: String(brandRecord.fields?.personal_headline || ''),
+							personal_expertise: String(brandRecord.fields?.personal_expertise || ''),
+							personal_audience: String(brandRecord.fields?.personal_audience || ''),
+							personal_goals: String(brandRecord.fields?.personal_goals || ''),
+							personal_voice_traits: String(brandRecord.fields?.personal_voice_traits || ''),
+							personal_story: String(brandRecord.fields?.personal_story || ''),
+							personal_links: String(brandRecord.fields?.personal_links || ''),
+							// Handle personal_assets_urls - could be string or array
+							personal_assets_urls: (() => {
+								const assets = brandRecord.fields?.personal_assets_urls;
+								if (Array.isArray(assets)) return assets;
+								if (typeof assets === 'string' && assets.trim()) return [assets];
+								return [];
+							})(),
+						};
+					}
 				}
 			}
 		} catch (error) {
-			console.warn('Failed to fetch brand_type, defaulting to company:', error);
+			console.warn('Failed to fetch brand details from Airtable, defaulting to company:', error);
 		}
 
 		const makePayload = {
@@ -174,6 +207,8 @@ export async function POST(req: Request) {
 			platforms_requested: data.platforms_requested,
 			urls_to_scrape: urlsToScrape,
 			assets,
+			// Include personal brand details for better AI strategy crafting
+			personal: brandType === 'personal' ? personalBrandData : null,
 			strategy_context: {
 				submitted_at: new Date().toISOString(),
 				extra_instructions: additionalInfoText,
