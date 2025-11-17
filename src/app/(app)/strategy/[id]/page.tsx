@@ -234,7 +234,62 @@ export default function StrategyReviewPage() {
 					) : (
 						<div className="rounded-xl2 border border-edge/60 bg-bg/80 p-6">
 							<div className="prose prose-invert max-w-none text-text whitespace-pre-wrap">
-								{strategy.content}
+								{strategy.content.split('\n').map((line: string, idx: number) => {
+									// Simple markdown-like rendering
+									if (line.startsWith('## ')) {
+										return (
+											<h2 key={idx} className="text-xl font-semibold mt-6 mb-3 text-text">
+												{line.replace('## ', '')}
+											</h2>
+										);
+									}
+									if (line.startsWith('📌 ')) {
+										return (
+											<p key={idx} className="text-lg font-medium mb-2 text-primary">
+												{line}
+											</p>
+										);
+									}
+									if (line.startsWith('**') && line.endsWith('**')) {
+										return (
+											<p key={idx} className="font-semibold mb-2">
+												{line.replace(/\*\*/g, '')}
+											</p>
+										);
+									}
+									if (line.startsWith('- **')) {
+										const parts = line.match(/- \*\*(.*?)\*\*: (.*)/);
+										if (parts) {
+											return (
+												<p key={idx} className="ml-4 mb-1">
+													<span className="font-semibold">{parts[1]}:</span> {parts[2]}
+												</p>
+											);
+										}
+									}
+									if (line.startsWith('- ')) {
+										return (
+											<p key={idx} className="ml-4 mb-1">
+												{line}
+											</p>
+										);
+									}
+									if (line.match(/^\d+\./)) {
+										return (
+											<p key={idx} className="ml-2 mb-2">
+												{line}
+											</p>
+										);
+									}
+									if (line.trim() === '') {
+										return <br key={idx} />;
+									}
+									return (
+										<p key={idx} className="mb-2">
+											{line}
+										</p>
+									);
+								})}
 							</div>
 						</div>
 					)}

@@ -76,20 +76,23 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 			return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
 		}
 
-		// Parse strategy content
-		// Check both strategy_json (new) and strategy_payload (legacy) field names
+		// Parse strategy content - prefer human-readable summary over raw JSON
 		let strategyContent = '';
-		const strategyData = record.fields.strategy_json || record.fields.strategy_payload;
 		
-		if (strategyData) {
-			try {
-				const parsed = typeof strategyData === 'string' ? JSON.parse(strategyData) : strategyData;
-				strategyContent = typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2);
-			} catch {
-				strategyContent = String(strategyData || '');
-			}
-		} else if (record.fields.strategy_summary) {
+		// First, try to use the human-readable summary
+		if (record.fields.strategy_summary) {
 			strategyContent = String(record.fields.strategy_summary);
+		} else {
+			// Fallback to formatted JSON if no summary available
+			const strategyData = record.fields.strategy_json || record.fields.strategy_payload;
+			if (strategyData) {
+				try {
+					const parsed = typeof strategyData === 'string' ? JSON.parse(strategyData) : strategyData;
+					strategyContent = typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2);
+				} catch {
+					strategyContent = String(strategyData || '');
+				}
+			}
 		}
 
 		return NextResponse.json({
