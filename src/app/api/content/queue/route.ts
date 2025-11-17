@@ -86,25 +86,15 @@ export async function GET(request: Request) {
 			console.warn('Failed to fetch brand profiles for user filtering:', errorText);
 		}
 
-		// If user has no brand profiles, return empty array
-		if (brandProfileIds.length === 0) {
-			return NextResponse.json({ items: [] });
-		}
-
 		const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
 		const { searchParams } = new URL(request.url);
 		const stage = searchParams.get('stage');
 		const statusParam = searchParams.get('status');
 		const statuses = mapStatuses(stage, statusParam);
 
-		// Filter by brand_profile_id instead of user_id (since user_id doesn't exist in ContentQueue)
-		// Create a formula that checks if brand_profile_id is in the list of user's brand profiles
-		const brandProfileFilter =
-			brandProfileIds.length === 1
-				? `{brand_profile_id} = "${brandProfileIds[0]}"`
-				: `OR(${brandProfileIds.map((id) => `{brand_profile_id} = "${id}"`).join(',')})`;
-
-		const filters: string[] = [brandProfileFilter];
+		// Note: brand_profile_id field may not exist in ContentQueue yet
+		// We'll filter by status only in Airtable, then filter by brand_profile_id in code
+		const filters: string[] = [];
 		if (statuses && statuses.length > 0) {
 			const statusFormula =
 				statuses.length === 1
@@ -153,8 +143,19 @@ export async function GET(request: Request) {
 		);
 	}
 
-	const items = (airtableResult.records || []).map((record: any) => {
+	let items = (airtableResult.records || []).map((record: any) => {
 		const fields = record.fields || {};
+		// Extract brand_profile_id - could be a link field (array) or string
+		let brandProfileId: string | null = null;
+		if (fields.brand_profile_id) {
+			if (Array.isArray(fields.brand_profile_id)) {
+				// Link field returns array of record IDs
+				brandProfileId = fields.brand_profile_id[0] || null;
+			} else if (typeof fields.brand_profile_id === 'string') {
+				brandProfileId = fields.brand_profile_id;
+			}
+		}
+
 		return {
 			id: record.id,
 			title: fields.title || fields.post_title || 'Untitled',
@@ -162,7 +163,7 @@ export async function GET(request: Request) {
 			status: fields.status || 'Draft',
 			scheduled_date: fields.scheduled_date || null,
 			published_at: fields.published_at || null,
-			brand_profile_id: Array.isArray(fields.brand_profile_id) ? fields.brand_profile_id[0] : fields.brand_profile_id || null,
+			brand_profile_id: brandProfileId,
 			brand_name: fields.brand_name || fields.client_name || '',
 			content: fields.content || fields.post_body || '',
 			summary: fields.summary || fields.content_summary || '',
@@ -171,6 +172,20 @@ export async function GET(request: Request) {
 			updated_time: fields.last_modified_time || fields.updated_time || null,
 		};
 	});
+
+	// Filter by user's brand profiles in code (since brand_profile_id field may not exist in Airtable yet)
+	// If user has brand profiles, only show content linked to those brands
+	if (brandProfileIds.length > 0) {
+		items = items.filter((item) => {
+			// If item has no brand_profile_id, exclude it (safety measure)
+			if (!item.brand_profile_id) return false;
+			// Only include items linked to user's brand profiles
+			return brandProfileIds.includes(item.brand_profile_id);
+		});
+	} else {
+		// If user has no brand profiles, return empty array
+		items = [];
+	}
 
 	return NextResponse.json({ items });
 	} catch (error: any) {
