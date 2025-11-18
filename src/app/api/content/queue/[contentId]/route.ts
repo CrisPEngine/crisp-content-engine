@@ -230,6 +230,60 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 			);
 		}
 
+		// If content was approved, trigger Make.com publishing webhook
+		if (action === 'approve') {
+			const MAKE_CONTENT_PUBLISH_WEBHOOK_URL = process.env.MAKE_CONTENT_PUBLISH_WEBHOOK_URL;
+			if (MAKE_CONTENT_PUBLISH_WEBHOOK_URL) {
+				try {
+					// Get all content details from the updated record (use patchResult which has latest data)
+					const updatedFields = patchResult.fields || record.fields || {};
+					// Handle brand_profile_id which might be an array (link field) or string
+					const brandProfileId = Array.isArray(updatedFields.brand_profile_id)
+						? updatedFields.brand_profile_id[0]
+						: updatedFields.brand_profile_id;
+					const platform = updatedFields.platform || 'LinkedIn';
+					const title = updatedFields.hook || updatedFields.title || updatedFields.post_title || '';
+					const content = updatedFields.post_content || updatedFields.content || updatedFields.post_body || '';
+					const hashtags = updatedFields.hashtags || '';
+					const scheduledTime = updatedFields.scheduled_time || updatedFields.scheduled_date || null;
+					const imagePrompt = updatedFields.image_prompt || '';
+					const imageSource = updatedFields.image_generation_source || '';
+
+					await fetch(MAKE_CONTENT_PUBLISH_WEBHOOK_URL, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							...(process.env.MAKE_API_KEY && {
+								'x-api-key': process.env.MAKE_API_KEY,
+							}),
+						},
+						body: JSON.stringify({
+							content_id: contentId,
+							brand_profile_id: brandProfileId,
+							user_id: user.id,
+							platform: platform,
+							content_type: platform === 'Blog' ? 'Article' : 'Post', // Determine if article or post
+							title: title,
+							content: content,
+							hook: title, // Alias for title
+							hashtags: hashtags,
+							image_prompt: imagePrompt,
+							image_generation_source: imageSource,
+							scheduled_time: scheduledTime,
+							approved_at: nowISO,
+						}),
+					});
+					console.log('Make content publishing webhook triggered successfully');
+				} catch (webhookError) {
+					// Log but don't fail the request if webhook fails
+					// The content is already approved in Airtable, so we don't want to rollback
+					console.error('Make content publishing webhook error:', webhookError);
+				}
+			} else {
+				console.warn('MAKE_CONTENT_PUBLISH_WEBHOOK_URL not configured. Content approved but publishing webhook not triggered.');
+			}
+		}
+
 		return NextResponse.json({ ok: true, record: patchResult });
 	} catch (error: any) {
 		console.error('content queue PATCH error:', error);
