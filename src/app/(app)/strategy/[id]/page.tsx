@@ -1,7 +1,7 @@
 'use client';
 
 // Strategy Review Page - Redesigned with header card and snapshot
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { motion } from 'framer-motion';
@@ -189,11 +189,30 @@ export default function StrategyReviewPage() {
 		);
 	}
 
-	// Parse strategy_json to extract snapshot data
-	const strategyJsonString = strategy?.strategy_json 
-		? (typeof strategy.strategy_json === 'string' ? strategy.strategy_json : JSON.stringify(strategy.strategy_json))
-		: null;
+	// Use ref to track previous strategy_json value and only update when it actually changes
+	const prevStrategyJsonRef = useRef<string | null>(null);
+	const strategyJsonString = useMemo(() => {
+		if (!strategy?.strategy_json) {
+			prevStrategyJsonRef.current = null;
+			return null;
+		}
+		try {
+			const current = typeof strategy.strategy_json === 'string' 
+				? strategy.strategy_json 
+				: JSON.stringify(strategy.strategy_json);
+			// Only update if the string value actually changed
+			if (prevStrategyJsonRef.current === current) {
+				return prevStrategyJsonRef.current;
+			}
+			prevStrategyJsonRef.current = current;
+			return current;
+		} catch {
+			prevStrategyJsonRef.current = null;
+			return null;
+		}
+	}, [strategy?.strategy_json]);
 	
+	// Parse strategy_json to extract snapshot data
 	const strategySnapshot = useMemo(() => {
 		if (!strategyJsonString) return null;
 		try {
@@ -210,16 +229,19 @@ export default function StrategyReviewPage() {
 		}
 	}, [strategyJsonString]);
 
+	// Extract created_at as string for stable dependency
+	const createdAtString = strategy?.created_at ? String(strategy.created_at) : null;
+	
 	// Format last updated date
 	const lastUpdated = useMemo(() => {
-		if (!strategy?.created_at) return null;
+		if (!createdAtString) return null;
 		try {
-			const date = new Date(strategy.created_at);
+			const date = new Date(createdAtString);
 			return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 		} catch {
 			return null;
 		}
-	}, [strategy?.created_at]);
+	}, [createdAtString]);
 
 	// Get status color
 	const getStatusColor = (status: string) => {
