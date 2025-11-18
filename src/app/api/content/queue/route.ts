@@ -162,6 +162,58 @@ export async function GET(request: Request) {
 		updated_time: string | null;
 	};
 
+	// Fetch brand names for all linked brand profiles
+	const brandProfileIdSet = new Set<string>();
+	(airtableResult.records || []).forEach((record: any) => {
+		const fields = record.fields || {};
+		if (fields.brand_profile_id) {
+			if (Array.isArray(fields.brand_profile_id)) {
+				fields.brand_profile_id.forEach((id: string) => brandProfileIdSet.add(id));
+			} else if (typeof fields.brand_profile_id === 'string') {
+				brandProfileIdSet.add(fields.brand_profile_id);
+			}
+		}
+	});
+
+	// Fetch brand names from BrandProfiles
+	const brandNamesMap = new Map<string, string>();
+	if (brandProfileIdSet.size > 0 && BRANDPROFILES_TABLE) {
+		const brandIds = Array.from(brandProfileIdSet);
+		// Airtable allows up to 10 IDs in OR formula, so batch if needed
+		for (let i = 0; i < brandIds.length; i += 10) {
+			const batch = brandIds.slice(i, i + 10);
+			const brandFilter = batch.length === 1
+				? `RECORD_ID() = "${batch[0]}"`
+				: `OR(${batch.map((id) => `RECORD_ID() = "${id}"`).join(',')})`;
+			
+			const brandUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}`);
+			brandUrl.searchParams.set('filterByFormula', brandFilter);
+			brandUrl.searchParams.set('fields[]', 'client_name');
+			brandUrl.searchParams.set('fields[]', 'personal_full_name');
+			
+			try {
+				const brandRes = await fetch(brandUrl.toString(), {
+					headers: {
+						Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+						'Content-Type': 'application/json',
+					},
+				});
+				
+				if (brandRes.ok) {
+					const brandData = await brandRes.json();
+					(brandData.records || []).forEach((brandRecord: any) => {
+						const brandName = brandRecord.fields?.client_name || 
+						                  brandRecord.fields?.personal_full_name || 
+						                  'Unknown Brand';
+						brandNamesMap.set(brandRecord.id, brandName);
+					});
+				}
+			} catch (error) {
+				console.warn('Failed to fetch brand names:', error);
+			}
+		}
+	}
+
 	let items: ContentItem[] = (airtableResult.records || []).map((record: any) => {
 		const fields = record.fields || {};
 		// Extract brand_profile_id - could be a link field (array) or string
@@ -175,6 +227,11 @@ export async function GET(request: Request) {
 			}
 		}
 
+		// Get brand name from map or fallback
+		const brandName = brandProfileId 
+			? (brandNamesMap.get(brandProfileId) || fields.brand_name || fields.client_name || brandProfileId)
+			: (fields.brand_name || fields.client_name || 'Unknown Brand');
+
 		return {
 			id: record.id,
 			title: fields.hook || fields.title || fields.post_title || 'Untitled',
@@ -183,7 +240,7 @@ export async function GET(request: Request) {
 			scheduled_date: fields.scheduled_time || fields.scheduled_date || null,
 			published_at: fields.published_at || null,
 			brand_profile_id: brandProfileId,
-			brand_name: fields.brand_name || fields.client_name || '',
+			brand_name: brandName,
 			content: fields.post_content || fields.content || fields.post_body || '',
 			summary: fields.summary || fields.content_summary || '',
 			call_to_action: fields.call_to_action || '',
@@ -193,6 +250,16 @@ export async function GET(request: Request) {
 			created_time: fields.created_time || record.createdTime,
 			updated_time: fields.last_modified_time || fields.updated_time || null,
 		};
+	});
+
+	// Sort by scheduled_date (earliest first), then by created_time
+	items.sort((a, b) => {
+		if (a.scheduled_date && b.scheduled_date) {
+			return new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime();
+		}
+		if (a.scheduled_date) return -1;
+		if (b.scheduled_date) return 1;
+		return new Date(b.created_time).getTime() - new Date(a.created_time).getTime();
 	});
 
 	// Filter by user's brand profiles in code (since brand_profile_id field may not exist in Airtable yet)

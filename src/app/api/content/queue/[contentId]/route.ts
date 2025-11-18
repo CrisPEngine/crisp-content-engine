@@ -76,9 +76,42 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 		const body = await request.json().catch(() => ({}));
 		const action = body?.action;
 		const feedback: string = body?.feedback || '';
+		const contentUpdate = body?.content; // For editing content
+		const scheduledTime = body?.scheduled_time; // For updating scheduled time
 
-		if (!['approve', 'reject'].includes(action)) {
-			return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+		// Handle content editing or scheduled time update
+		if (contentUpdate !== undefined || scheduledTime !== undefined) {
+			const updateFields: Record<string, any> = {};
+			if (contentUpdate !== undefined) {
+				updateFields.post_content = String(contentUpdate);
+			}
+			if (scheduledTime !== undefined) {
+				updateFields.scheduled_time = scheduledTime ? String(scheduledTime) : null;
+			}
+
+			const patchRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${contentId}`, {
+				method: 'PATCH',
+				headers: {
+					Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ fields: updateFields }),
+			});
+
+			if (!patchRes.ok) {
+				const patchResult = await patchRes.json();
+				return NextResponse.json(
+					{ error: patchResult?.error?.message || 'Failed to update content' },
+					{ status: 502 }
+				);
+			}
+
+			return NextResponse.json({ ok: true, message: 'Content updated successfully' });
+		}
+
+		// Handle approve/reject actions
+		if (!action || !['approve', 'reject'].includes(action)) {
+			return NextResponse.json({ error: 'Invalid action or missing action' }, { status: 400 });
 		}
 
 		const nowISO = new Date().toISOString();
