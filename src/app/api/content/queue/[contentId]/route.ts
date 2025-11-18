@@ -4,26 +4,65 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
 export const runtime = 'nodejs';
 
-const fetchRecordForUser = async (contentId: string, userId: string, baseId: string, tableId: string, token: string) => {
-	const url = new URL(`https://api.airtable.com/v0/${baseId}/${tableId}`);
-	const filter = `AND(RECORD_ID() = "${contentId}", {user_id} = "${userId}")`;
-	url.searchParams.set('filterByFormula', filter);
-	url.searchParams.set('pageSize', '1');
+const fetchRecordForUser = async (
+	contentId: string,
+	userId: string,
+	baseId: string,
+	tableId: string,
+	brandProfilesTable: string,
+	token: string
+) => {
+	// First, get user's brand profiles
+	const brandProfilesUrl = new URL(`https://api.airtable.com/v0/${baseId}/${brandProfilesTable}`);
+	brandProfilesUrl.searchParams.set('filterByFormula', `{user_id} = "${userId}"`);
+	brandProfilesUrl.searchParams.set('maxRecords', '100');
 
-	const res = await fetch(url.toString(), {
-		method: 'GET',
+	const brandProfilesRes = await fetch(brandProfilesUrl.toString(), {
 		headers: {
 			Authorization: `Bearer ${token}`,
 			'Content-Type': 'application/json',
 		},
 	});
 
-	const data = await res.json();
-	if (!res.ok) {
+	let brandProfileIds: string[] = [];
+	if (brandProfilesRes.ok) {
+		const brandProfilesData = await brandProfilesRes.json();
+		brandProfileIds = (brandProfilesData.records || []).map((r: any) => r.id);
+	}
+
+	if (brandProfileIds.length === 0) {
+		return null; // User has no brand profiles
+	}
+
+	// Fetch the content record directly
+	const contentUrl = new URL(`https://api.airtable.com/v0/${baseId}/${tableId}/${contentId}`);
+	const contentRes = await fetch(contentUrl.toString(), {
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json',
+		},
+	});
+
+	if (!contentRes.ok) {
+		const data = await contentRes.json();
 		throw new Error(data?.error?.message || 'Failed to load content item');
 	}
 
-	return data.records?.[0] ?? null;
+	const record = await contentRes.json();
+	if (!record) {
+		return null;
+	}
+
+	// Verify ownership via brand_profile_id
+	const recordBrandProfileId = Array.isArray(record.fields?.brand_profile_id)
+		? record.fields.brand_profile_id[0]
+		: record.fields?.brand_profile_id;
+
+	if (!recordBrandProfileId || !brandProfileIds.includes(recordBrandProfileId)) {
+		return null; // User doesn't own this content
+	}
+
+	return record;
 };
 
 export async function PATCH(request: Request, context: { params: Promise<{ contentId: string }> }) {
@@ -59,8 +98,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
 		const BASE_ID = process.env.AIRTABLE_BASE_ID;
 		const TABLE_ID = process.env.AIRTABLE_CONTENTQUEUE_TABLE;
+		const BRANDPROFILES_TABLE = process.env.AIRTABLE_BRANDPROFILES_TABLE;
 
-		if (!AIRTABLE_TOKEN || !BASE_ID || !TABLE_ID) {
+		if (!AIRTABLE_TOKEN || !BASE_ID || !TABLE_ID || !BRANDPROFILES_TABLE) {
 			return NextResponse.json(
 				{ error: 'Airtable configuration missing. Please contact support.' },
 				{ status: 500 }
@@ -68,22 +108,30 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 		}
 
 		const { contentId } = await context.params;
-		const record = await fetchRecordForUser(contentId, user.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN);
+		const record = await fetchRecordForUser(contentId, user.id, BASE_ID, TABLE_ID, BRANDPROFILES_TABLE, AIRTABLE_TOKEN);
 		if (!record) {
-			return NextResponse.json({ error: 'Content item not found' }, { status: 404 });
+			return NextResponse.json({ error: 'Content item not found or unauthorized' }, { status: 404 });
 		}
 
 		const body = await request.json().catch(() => ({}));
 		const action = body?.action;
 		const feedback: string = body?.feedback || '';
 		const contentUpdate = body?.content; // For editing content
+		const titleUpdate = body?.title; // For editing title (hook field)
+		const hashtagsUpdate = body?.hashtags; // For editing hashtags
 		const scheduledTime = body?.scheduled_time; // For updating scheduled time
 
 		// Handle content editing or scheduled time update
-		if (contentUpdate !== undefined || scheduledTime !== undefined) {
+		if (contentUpdate !== undefined || titleUpdate !== undefined || hashtagsUpdate !== undefined || scheduledTime !== undefined) {
 			const updateFields: Record<string, any> = {};
 			if (contentUpdate !== undefined) {
 				updateFields.post_content = String(contentUpdate);
+			}
+			if (titleUpdate !== undefined) {
+				updateFields.hook = String(titleUpdate);
+			}
+			if (hashtagsUpdate !== undefined) {
+				updateFields.hashtags = String(hashtagsUpdate);
 			}
 			if (scheduledTime !== undefined) {
 				updateFields.scheduled_time = scheduledTime ? String(scheduledTime) : null;

@@ -235,7 +235,7 @@ export async function GET(request: Request) {
 		return {
 			id: record.id,
 			title: fields.hook || fields.title || fields.post_title || 'Untitled',
-			platform: fields.platform || 'Unknown',
+			platform: fields.platform || 'Blog',
 			status: fields.status || 'Draft',
 			scheduled_date: fields.scheduled_time || fields.scheduled_date || null,
 			published_at: fields.published_at || null,

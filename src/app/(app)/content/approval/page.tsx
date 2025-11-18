@@ -30,7 +30,9 @@ export default function ContentApprovalPage() {
 	const [contentItems, setContentItems] = useState<ContentItem[]>([]);
 	const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 	const [editingItem, setEditingItem] = useState<string | null>(null);
+	const [editingTitle, setEditingTitle] = useState<string>('');
 	const [editingContent, setEditingContent] = useState<string>('');
+	const [editingHashtags, setEditingHashtags] = useState<string>('');
 	const [editingScheduledTimeId, setEditingScheduledTimeId] = useState<string | null>(null);
 	const [editingScheduledTime, setEditingScheduledTime] = useState<string>('');
 	const [approving, setApproving] = useState<string | null>(null);
@@ -182,10 +184,16 @@ export default function ContentApprovalPage() {
 		setSaving(id);
 		setError(null);
 		try {
+			const payload: any = {
+				content: editingContent,
+				title: editingTitle,
+				hashtags: editingHashtags,
+			};
+
 			const res = await fetch(`/api/content/queue/${id}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ content: editingContent }),
+				body: JSON.stringify(payload),
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
@@ -193,11 +201,20 @@ export default function ContentApprovalPage() {
 			}
 			setContentItems((items) =>
 				items.map((item) =>
-					item.id === id ? { ...item, content: editingContent } : item
+					item.id === id
+						? {
+								...item,
+								content: editingContent,
+								title: editingTitle,
+								hashtags: editingHashtags,
+							}
+						: item
 				)
 			);
 			setEditingItem(null);
 			setEditingContent('');
+			setEditingTitle('');
+			setEditingHashtags('');
 		} catch (err: any) {
 			console.error('Failed to save content:', err);
 			setError(err.message || 'Failed to save content');
@@ -241,7 +258,9 @@ export default function ContentApprovalPage() {
 
 	function startEdit(item: ContentItem) {
 		setEditingItem(item.id);
+		setEditingTitle(item.title);
 		setEditingContent(item.content);
+		setEditingHashtags(item.hashtags || '');
 	}
 
 	function startEditScheduledTime(item: ContentItem) {
@@ -411,10 +430,18 @@ export default function ContentApprovalPage() {
 								<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 									{/* Left Column - Content Summary */}
 									<div className="lg:col-span-2 space-y-4">
-										{/* Title */}
-										<h3 className="text-xl font-bold text-text leading-tight">
-											{item.title}
-										</h3>
+										{/* Title with Checkbox */}
+										<div className="flex items-start gap-3">
+											<input
+												type="checkbox"
+												checked={selectedItems.has(item.id)}
+												onChange={() => toggleSelect(item.id)}
+												className="w-4 h-4 rounded border-edge/60 bg-surface/30 text-primary focus:ring-primary/20 mt-1 flex-shrink-0"
+											/>
+											<h3 className="text-xl font-bold text-text leading-tight flex-1">
+												{item.title}
+											</h3>
+										</div>
 
 										{/* Platform + Brand - Inline badges */}
 										<div className="flex items-center gap-2 flex-wrap">
@@ -426,8 +453,15 @@ export default function ContentApprovalPage() {
 											</span>
 										</div>
 
-										{/* Body Preview - 3 lines with fade */}
-										<div className="relative">
+										{/* Body Preview - 3 lines with fade - Clickable */}
+										<div 
+											className="relative cursor-pointer hover:opacity-80 transition-opacity"
+											onClick={() => {
+												if (editingItem !== item.id) {
+													startEdit(item);
+												}
+											}}
+										>
 											<div 
 												className="text-sm text-text-soft leading-relaxed"
 												style={{
@@ -503,69 +537,62 @@ export default function ContentApprovalPage() {
 
 										{/* Actions */}
 										<div className="flex flex-col gap-2 mt-auto">
-											{/* View/Edit Button */}
-											<button
-												onClick={() => {
-													if (editingItem === item.id) {
-														setEditingItem(null);
-														setEditingContent('');
-													} else {
-														startEdit(item);
-													}
-												}}
-												className="w-full px-3 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 flex items-center justify-center gap-2 text-sm"
-											>
-												{editingItem === item.id ? (
-													<>
-														<Eye className="w-4 h-4" />
-														Close
-													</>
-												) : (
-													<>
-														<Edit2 className="w-4 h-4" />
-														View/Edit
-													</>
-												)}
-											</button>
+											{/* View/Edit Button - Right Aligned */}
+											<div className="flex justify-end">
+												<button
+													onClick={() => {
+														if (editingItem === item.id) {
+															setEditingItem(null);
+															setEditingContent('');
+															setEditingTitle('');
+															setEditingHashtags('');
+														} else {
+															startEdit(item);
+														}
+													}}
+													className="px-3 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 flex items-center gap-2 text-sm"
+												>
+													{editingItem === item.id ? (
+														<>
+															<Eye className="w-4 h-4" />
+															Close
+														</>
+													) : (
+														<>
+															<Edit2 className="w-4 h-4" />
+															View/Edit
+														</>
+													)}
+												</button>
+											</div>
 
 											{/* Approve/Reject Buttons */}
 											<div className="flex gap-2">
 												<button
 													onClick={() => approveContent(item.id)}
 													disabled={approving === item.id || rejecting === item.id}
-													className="flex-1 px-4 py-2.5 rounded-xl2 bg-gradient-to-r from-accent/90 to-accent/70 hover:from-accent hover:to-accent/90 text-white font-medium shadow-lg shadow-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
+													className="flex-1 px-3 py-2 rounded-xl2 bg-gradient-to-r from-accent/90 to-accent/70 hover:from-accent hover:to-accent/90 text-white text-sm font-medium shadow-lg shadow-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
 												>
 													{approving === item.id ? (
-														<Loader2 className="w-4 h-4 animate-spin" />
+														<Loader2 className="w-3.5 h-3.5 animate-spin" />
 													) : (
-														<Check className="w-4 h-4" />
+														<Check className="w-3.5 h-3.5" />
 													)}
 													Approve
 												</button>
 												<button
 													onClick={() => rejectContent(item.id)}
 													disabled={approving === item.id || rejecting === item.id}
-													className="px-4 py-2.5 rounded-xl2 border border-danger/40 bg-transparent hover:bg-danger/10 text-danger disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+													className="px-3 py-2 rounded-xl2 border border-danger/40 bg-transparent hover:bg-danger/10 text-danger text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
 												>
 													{rejecting === item.id ? (
-														<Loader2 className="w-4 h-4 animate-spin" />
+														<Loader2 className="w-3.5 h-3.5 animate-spin" />
 													) : (
-														<X className="w-4 h-4" />
+														<X className="w-3.5 h-3.5" />
 													)}
 													Reject
 												</button>
 											</div>
-
-											{/* Select Checkbox */}
-											<label className="flex items-center gap-2 text-sm text-text-dim cursor-pointer hover:text-text">
-												<input
-													type="checkbox"
-													checked={selectedItems.has(item.id)}
-													onChange={() => toggleSelect(item.id)}
-													className="w-4 h-4 rounded border-edge/60 bg-surface/30 text-primary focus:ring-primary/20"
-												/>
-												<span>Select for bulk approval</span>
-											</label>
 										</div>
 									</div>
 								</div>
@@ -579,16 +606,49 @@ export default function ContentApprovalPage() {
 											exit={{ opacity: 0, height: 0 }}
 											className="mt-6 pt-6 border-t border-edge/60"
 										>
-											<div className="space-y-3">
-												<label className="block text-sm font-medium text-text-soft">
-													Content
-												</label>
-												<textarea
-													value={editingContent}
-													onChange={(e) => setEditingContent(e.target.value)}
-													rows={12}
-													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-												/>
+											<div className="space-y-4">
+												{/* Title Editor */}
+												<div>
+													<label className="block text-sm font-medium text-text-soft mb-2">
+														Title (hook)
+													</label>
+													<input
+														type="text"
+														value={editingTitle}
+														onChange={(e) => setEditingTitle(e.target.value)}
+														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+														placeholder="Enter post title..."
+													/>
+												</div>
+
+												{/* Content Editor */}
+												<div>
+													<label className="block text-sm font-medium text-text-soft mb-2">
+														Content
+													</label>
+													<textarea
+														value={editingContent}
+														onChange={(e) => setEditingContent(e.target.value)}
+														rows={12}
+														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+														placeholder="Enter post content..."
+													/>
+												</div>
+
+												{/* Hashtags Editor */}
+												<div>
+													<label className="block text-sm font-medium text-text-soft mb-2">
+														Hashtags
+													</label>
+													<input
+														type="text"
+														value={editingHashtags}
+														onChange={(e) => setEditingHashtags(e.target.value)}
+														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+														placeholder="Enter hashtags (comma-separated)..."
+													/>
+												</div>
+
 												<div className="flex gap-2">
 													<button
 														onClick={() => saveContentEdit(item.id)}
@@ -606,6 +666,8 @@ export default function ContentApprovalPage() {
 														onClick={() => {
 															setEditingItem(null);
 															setEditingContent('');
+															setEditingTitle('');
+															setEditingHashtags('');
 														}}
 														className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50"
 													>
