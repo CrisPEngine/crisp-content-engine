@@ -162,8 +162,8 @@ export function BrandProfilesList() {
 
 						if (isContentReview) {
 							href = '/content/approval';
-						} else if (isStrategyApproved && hasPendingContent) {
-							// Strategy approved but content pending - show button to review content
+						} else if (isStrategyApproved) {
+							// Strategy approved - always show Review Content button (content may exist even if detection failed)
 							actionButton = (
 								<Link
 									href="/content/approval"
