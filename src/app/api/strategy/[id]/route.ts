@@ -177,6 +177,17 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 			return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
 		}
 
+		// Check if strategy is already approved - prevent editing
+		const strategyStatus = strategyRecord.fields?.status;
+		if (strategyStatus === 'Strategy Approved') {
+			return NextResponse.json(
+				{ 
+					error: 'This strategy has been approved and cannot be edited. Please use the Monthly Strategy Update process to make changes.',
+				},
+				{ status: 403 }
+			);
+		}
+
 		// Build update fields
 		const updateFields: Record<string, any> = {};
 		

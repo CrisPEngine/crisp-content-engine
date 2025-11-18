@@ -209,8 +209,14 @@ export default function StrategyReviewPage() {
 						<p className="text-sm text-text-dim mt-1">
 							Status: <span className="font-medium">{strategy.status}</span>
 						</p>
+						{strategy.status === 'Strategy Approved' && (
+							<div className="mt-3 p-3 rounded-xl2 border border-warning/30 bg-warning/10 text-sm text-text-soft">
+								<AlertCircle className="w-4 h-4 inline mr-2 text-warning" />
+								This strategy has been approved. To update it, please use the Monthly Strategy Update process.
+							</div>
+						)}
 					</div>
-					{!editing && (
+					{!editing && strategy.status !== 'Strategy Approved' && (
 						<button
 							onClick={() => {
 								setEditedContent(strategy.content);
@@ -313,7 +319,7 @@ export default function StrategyReviewPage() {
 					)}
 				</div>
 
-				{!editing && (
+				{!editing && strategy.status !== 'Strategy Approved' && (
 					<div className="flex pt-4 border-t border-edge/60">
 						<button
 							onClick={approveStrategy}
@@ -326,6 +332,22 @@ export default function StrategyReviewPage() {
 								<Check className="w-5 h-5" />
 							)}
 							Approve & Continue
+						</button>
+					</div>
+				)}
+				{!editing && strategy.status === 'Strategy Approved' && (
+					<div className="flex pt-4 border-t border-edge/60 gap-3">
+						<button
+							onClick={() => router.push('/content/approval')}
+							className="flex-1 px-6 py-3 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 flex items-center justify-center gap-2"
+						>
+							Review Content
+						</button>
+						<button
+							onClick={() => router.push('/strategy/monthly-update')}
+							className="px-6 py-3 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 flex items-center justify-center gap-2"
+						>
+							Monthly Strategy Update
 						</button>
 					</div>
 				)}

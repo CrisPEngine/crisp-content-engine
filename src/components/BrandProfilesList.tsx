@@ -153,55 +153,76 @@ export function BrandProfilesList() {
 						const normalisedStatus = normaliseStatus(profile.status);
 						const isContentReview = normalisedStatus === 'Content Review';
 						const isStrategyReady = normalisedStatus === 'Strategy Ready';
-						const href = isContentReview ? '/content/approval' : `/strategy/${profile.id}`;
+						const isStrategyApproved = profile.original_status === 'Strategy Approved' || normalisedStatus === 'Strategy Approved';
+						const hasPendingContent = profile.has_pending_content || isContentReview;
+						
+						// Determine href and action button
+						let href = `/strategy/${profile.id}`;
+						let actionButton = null;
+
+						if (isContentReview) {
+							href = '/content/approval';
+						} else if (isStrategyApproved && hasPendingContent) {
+							// Strategy approved but content pending - show button to review content
+							actionButton = (
+								<Link
+									href="/content/approval"
+									onClick={(e) => e.stopPropagation()}
+									className="px-3 py-1.5 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm text-accent flex items-center gap-2"
+								>
+									Content Pending Approval →
+								</Link>
+							);
+						}
 
 						return (
 							<motion.div
 								key={profile.id}
 								initial={{ opacity: 0, y: 10 }}
 								animate={{ opacity: 1, y: 0 }}
-								className="border border-edge/60 rounded-xl2 p-4 hover:bg-surface/30 transition cursor-pointer"
+								className="border border-edge/60 rounded-xl2 p-4 hover:bg-surface/30 transition"
 							>
-								<Link href={href}>
-									<div className="flex items-start justify-between">
-										<div className="flex-1">
-											<div className="flex items-center gap-3 mb-2">
-												<h3 className="font-semibold text-lg">{profile.client_name}</h3>
-												{getStatusIcon(profile.status)}
-												<span
-													className={`px-2 py-1 rounded-full text-xs border ${getStatusColor(profile.status)}`}
-												>
-													{normalisedStatus}
-												</span>
-											</div>
-											{profile.platforms_requested && profile.platforms_requested.length > 0 && (
-												<div className="flex items-center gap-2 mb-2">
-													<span className="text-xs text-text-dim">Platforms:</span>
-													<div className="flex gap-1 flex-wrap">
-														{profile.platforms_requested.map((platform) => (
-															<span
-																key={platform}
-																className="px-2 py-0.5 rounded text-xs bg-surface/50 border border-edge/60 text-text-soft"
-															>
-																{platform}
-															</span>
-														))}
-													</div>
-												</div>
-											)}
-											{profile.created_time && (
-												<p className="text-xs text-text-dim">
-													Created: {new Date(profile.created_time).toLocaleDateString()}
-												</p>
-											)}
+								<div className="flex items-start justify-between">
+									<Link href={href} className="flex-1">
+										<div className="flex items-center gap-3 mb-2">
+											<h3 className="font-semibold text-lg">{profile.client_name}</h3>
+											{getStatusIcon(profile.status)}
+											<span
+												className={`px-2 py-1 rounded-full text-xs border ${getStatusColor(profile.status)}`}
+											>
+												{normalisedStatus}
+											</span>
 										</div>
-										{(isStrategyReady || isContentReview) && (
+										{profile.platforms_requested && profile.platforms_requested.length > 0 && (
+											<div className="flex items-center gap-2 mb-2">
+												<span className="text-xs text-text-dim">Platforms:</span>
+												<div className="flex gap-1 flex-wrap">
+													{profile.platforms_requested.map((platform) => (
+														<span
+															key={platform}
+															className="px-2 py-0.5 rounded text-xs bg-surface/50 border border-edge/60 text-text-soft"
+														>
+															{platform}
+														</span>
+													))}
+												</div>
+											</div>
+										)}
+										{profile.created_time && (
+											<p className="text-xs text-text-dim">
+												Created: {new Date(profile.created_time).toLocaleDateString()}
+											</p>
+										)}
+									</Link>
+									<div className="flex items-center gap-2">
+										{actionButton}
+										{(isStrategyReady || isContentReview) && !actionButton && (
 											<span className={`text-sm ${isContentReview ? 'text-accent' : 'text-primary'}`}>
 												{isContentReview ? 'Review Content →' : 'Review →'}
 											</span>
 										)}
 									</div>
-								</Link>
+								</div>
 							</motion.div>
 						);
 					})}
