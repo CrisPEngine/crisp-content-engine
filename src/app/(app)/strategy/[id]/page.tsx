@@ -149,6 +149,45 @@ export default function StrategyReviewPage() {
 		router.push('/content/approval');
 	}
 
+	// ALL HOOKS MUST BE CALLED BEFORE ANY EARLY RETURNS
+	// Create stable key from strategy for useMemo dependencies
+	const strategyKey = strategy?.id ? String(strategy.id) : null;
+	const strategyJsonKey = strategy?.strategy_json 
+		? (typeof strategy.strategy_json === 'string' ? strategy.strategy_json : JSON.stringify(strategy.strategy_json))
+		: null;
+	const createdAtKey = strategy?.created_at ? String(strategy.created_at) : null;
+	
+	// Parse strategy_json to extract snapshot data - use stable string key
+	const strategySnapshot = useMemo(() => {
+		if (!strategyJsonKey || !strategy?.strategy_json) return null;
+		try {
+			const json = typeof strategy.strategy_json === 'string' 
+				? JSON.parse(strategy.strategy_json) 
+				: strategy.strategy_json;
+			
+			return {
+				pillarsCount: json.pillars?.length || 0,
+				audience: json.brand_understanding?.perceived_audience || json.brand_summary?.positioning || 'Not specified',
+				voiceSummary: json.voice?.summary || 'Not specified',
+				cadence: json.cadence || {},
+			};
+		} catch {
+			return null;
+		}
+	}, [strategyJsonKey, strategyKey]);
+	
+	// Format last updated date - use stable string key
+	const lastUpdated = useMemo(() => {
+		if (!createdAtKey) return null;
+		try {
+			const date = new Date(createdAtKey);
+			return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+		} catch {
+			return null;
+		}
+	}, [createdAtKey]);
+
+	// NOW we can do early returns after all hooks
 	if (loading) {
 		return (
 			<div className="mx-auto max-w-4xl">
@@ -188,43 +227,6 @@ export default function StrategyReviewPage() {
 			</div>
 		);
 	}
-
-	// Create stable key from strategy for useMemo dependencies
-	const strategyKey = strategy?.id ? String(strategy.id) : null;
-	const strategyJsonKey = strategy?.strategy_json 
-		? (typeof strategy.strategy_json === 'string' ? strategy.strategy_json : JSON.stringify(strategy.strategy_json))
-		: null;
-	const createdAtKey = strategy?.created_at ? String(strategy.created_at) : null;
-	
-	// Parse strategy_json to extract snapshot data - use stable string key
-	const strategySnapshot = useMemo(() => {
-		if (!strategyJsonKey || !strategy?.strategy_json) return null;
-		try {
-			const json = typeof strategy.strategy_json === 'string' 
-				? JSON.parse(strategy.strategy_json) 
-				: strategy.strategy_json;
-			
-			return {
-				pillarsCount: json.pillars?.length || 0,
-				audience: json.brand_understanding?.perceived_audience || json.brand_summary?.positioning || 'Not specified',
-				voiceSummary: json.voice?.summary || 'Not specified',
-				cadence: json.cadence || {},
-			};
-		} catch {
-			return null;
-		}
-	}, [strategyJsonKey, strategyKey]);
-	
-	// Format last updated date - use stable string key
-	const lastUpdated = useMemo(() => {
-		if (!createdAtKey) return null;
-		try {
-			const date = new Date(createdAtKey);
-			return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-		} catch {
-			return null;
-		}
-	}, [createdAtKey]);
 
 	// Get status color
 	const getStatusColor = (status: string) => {
