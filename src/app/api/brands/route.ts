@@ -81,9 +81,11 @@ export async function GET(req: Request) {
 			// Airtable allows up to 10 IDs in OR formula, so batch if needed
 			for (let i = 0; i < brandProfileIds.length; i += 10) {
 				const batch = brandProfileIds.slice(i, i + 10);
+				// Check for any content that's not published/approved - more inclusive check
+				// Also check if brand_profile_id field exists (might be empty string or link field)
 				const contentFilter = batch.length === 1
-					? `AND({brand_profile_id} = "${batch[0]}", OR({status} = "Draft", {status} = "Pending Approval"))`
-					: `AND(OR(${batch.map((id: string) => `{brand_profile_id} = "${id}"`).join(',')}), OR({status} = "Draft", {status} = "Pending Approval"))`;
+					? `AND({brand_profile_id} = "${batch[0]}", OR({status} = "Draft", {status} = "Pending Approval", {status} = "Needs Review", {status} = "", {status} != "Published", {status} != "Approved"))`
+					: `AND(OR(${batch.map((id: string) => `{brand_profile_id} = "${id}"`).join(',')}), OR({status} = "Draft", {status} = "Pending Approval", {status} = "Needs Review", {status} = "", {status} != "Published", {status} != "Approved"))`;
 
 				const contentUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTQUEUE_TABLE}`);
 				contentUrl.searchParams.set('filterByFormula', contentFilter);
@@ -119,10 +121,9 @@ export async function GET(req: Request) {
 			const hasPendingContent = contentStatusMap.has(record.id);
 			const normalisedStatus = normaliseStatus(record.fields.status);
 			
-			// If strategy is approved and content exists, show "Content Review" status
-			const displayStatus = normalisedStatus === 'Strategy Approved' && hasPendingContent
-				? 'Content Review'
-				: normalisedStatus;
+			// Keep original status - don't change it to "Content Review"
+			// The frontend will show the button based on has_pending_content flag
+			const displayStatus = normalisedStatus;
 
 			return {
 				id: record.id,

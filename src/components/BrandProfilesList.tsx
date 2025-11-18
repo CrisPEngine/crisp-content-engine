@@ -154,7 +154,7 @@ export function BrandProfilesList() {
 						const isContentReview = normalisedStatus === 'Content Review';
 						const isStrategyReady = normalisedStatus === 'Strategy Ready';
 						const isStrategyApproved = profile.original_status === 'Strategy Approved' || normalisedStatus === 'Strategy Approved';
-						const hasPendingContent = profile.has_pending_content || isContentReview;
+						const hasPendingContent = profile.has_pending_content === true;
 						
 						// Determine href and action button
 						let href = `/strategy/${profile.id}`;
