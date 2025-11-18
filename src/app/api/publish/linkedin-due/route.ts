@@ -1,7 +1,8 @@
 /**
  * Scheduled Job: Publish Due LinkedIn Content
  * 
- * This endpoint is called by a cron job every 15 minutes to publish content that is ready.
+ * This endpoint is called by a cron job daily (9 AM UTC) to publish content that is ready.
+ * Note: Hobby plan limits cron jobs to once per day. For more frequent publishing, upgrade to Pro plan.
  * 
  * Uses Airtable view "ReadyToPublish_LinkedIn" which filters:
  * - platform = "LinkedIn"
