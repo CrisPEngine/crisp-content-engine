@@ -83,7 +83,7 @@ export async function GET(req: Request) {
 				const batch = brandProfileIds.slice(i, i + 10);
 				const contentFilter = batch.length === 1
 					? `AND({brand_profile_id} = "${batch[0]}", OR({status} = "Draft", {status} = "Pending Approval"))`
-					: `AND(OR(${batch.map((id) => `{brand_profile_id} = "${id}"`).join(',')}), OR({status} = "Draft", {status} = "Pending Approval"))`;
+					: `AND(OR(${batch.map((id: string) => `{brand_profile_id} = "${id}"`).join(',')}), OR({status} = "Draft", {status} = "Pending Approval"))`;
 
 				const contentUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTQUEUE_TABLE}`);
 				contentUrl.searchParams.set('filterByFormula', contentFilter);
