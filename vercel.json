@@ -7,7 +7,7 @@
   "crons": [
     {
       "path": "/api/publish/linkedin-due",
-      "schedule": "*/5 * * * *"
+      "schedule": "*/15 * * * *"
     }
   ]
 }

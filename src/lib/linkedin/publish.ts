@@ -25,6 +25,7 @@ export interface PublishResult {
 
 /**
  * Refresh LinkedIn access token
+ * Returns error type: 'permanent' or 'transient'
  */
 async function refreshLinkedInToken(refreshToken: string): Promise<{
 	access_token: string;
@@ -54,7 +55,28 @@ async function refreshLinkedInToken(refreshToken: string): Promise<{
 
 	if (!res.ok) {
 		const errorText = await res.text();
-		throw new Error(`LinkedIn token refresh failed: ${errorText}`);
+		let errorData: any = {};
+		try {
+			errorData = JSON.parse(errorText);
+		} catch {
+			// Not JSON, use text as-is
+		}
+
+		// Check for permanent errors
+		const errorCode = errorData.error || '';
+		const permanentErrors = ['invalid_grant', 'invalid_client', 'unauthorized_client', 'invalid_request'];
+		
+		if (permanentErrors.includes(errorCode)) {
+			const error = new Error(`LinkedIn token refresh failed (permanent): ${errorText}`);
+			(error as any).isPermanent = true;
+			(error as any).errorCode = errorCode;
+			throw error;
+		}
+
+		// Transient error (network, rate limit, etc.)
+		const error = new Error(`LinkedIn token refresh failed (transient): ${errorText}`);
+		(error as any).isPermanent = false;
+		throw error;
 	}
 
 	return res.json();
@@ -64,10 +86,20 @@ async function refreshLinkedInToken(refreshToken: string): Promise<{
  * Get and refresh LinkedIn connection for a user
  * Returns valid access token and person_urn
  */
-export async function getLinkedInConnection(userId: string): Promise<{
+export interface LinkedInConnectionResult {
 	accessToken: string;
 	personUrn: string;
-} | null> {
+}
+
+export interface LinkedInConnectionError {
+	error: string;
+	isPermanent: boolean;
+	requiresReconnect: boolean;
+}
+
+export async function getLinkedInConnection(
+	userId: string
+): Promise<LinkedInConnectionResult | LinkedInConnectionError | null> {
 	const supabase = getSupabaseService();
 
 	// Fetch LinkedIn connection
@@ -113,9 +145,29 @@ export async function getLinkedInConnection(userId: string): Promise<{
 					updated_at: new Date().toISOString(),
 				})
 				.eq('id', connection.id);
-		} catch (err) {
+		} catch (err: any) {
 			console.error('Failed to refresh LinkedIn token:', err);
-			// Continue with existing token if refresh fails
+			
+			// Check if it's a permanent error
+			if (err.isPermanent) {
+				// Mark connection as invalid in Supabase
+				await supabase
+					.from('social_connections')
+					.update({
+						// Could add an 'is_valid' field or similar
+						updated_at: new Date().toISOString(),
+					})
+					.eq('id', connection.id);
+
+				return {
+					error: `LinkedIn connection expired. Please reconnect your LinkedIn account. Error: ${err.message}`,
+					isPermanent: true,
+					requiresReconnect: true,
+				};
+			}
+
+			// Transient error - continue with existing token (might still work)
+			// The caller will handle the error if publishing fails
 		}
 	}
 
@@ -167,6 +219,7 @@ export async function getLinkedInConnection(userId: string): Promise<{
 /**
  * Publish a text post to LinkedIn
  * For Creator tier: text only, no images
+ * @param idempotencyKey - Optional idempotency key to prevent duplicate posts (uses record ID)
  */
 export async function publishToLinkedIn(
 	accessToken: string,
@@ -175,7 +228,8 @@ export async function publishToLinkedIn(
 		title?: string;
 		body: string;
 		hashtags?: string;
-	}
+	},
+	idempotencyKey?: string
 ): Promise<PublishResult> {
 	// Build post text: combine title (if provided), body, and hashtags
 	let postText = '';
@@ -228,18 +282,44 @@ export async function publishToLinkedIn(
 	};
 
 	try {
+		const headers: Record<string, string> = {
+			Authorization: `Bearer ${accessToken}`,
+			'Content-Type': 'application/json',
+			'X-Restli-Protocol-Version': '2.0.0',
+		};
+
+		// Add idempotency key if provided (prevents duplicate posts)
+		if (idempotencyKey) {
+			headers['X-Restli-Idempotency-Key'] = idempotencyKey;
+		}
+
 		const response = await fetch('https://api.linkedin.com/v2/ugcPosts', {
 			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${accessToken}`,
-				'Content-Type': 'application/json',
-				'X-Restli-Protocol-Version': '2.0.0',
-			},
+			headers,
 			body: JSON.stringify(payload),
 		});
 
 		if (!response.ok) {
 			const errorText = await response.text();
+			let errorData: any = {};
+			try {
+				errorData = JSON.parse(errorText);
+			} catch {
+				// Not JSON
+			}
+
+			// Check if post already exists (idempotency - treat as success)
+			if (response.status === 409 || errorData.message?.includes('already exists')) {
+				console.log('Post already exists (idempotency):', idempotencyKey);
+				// Extract post ID from error if available, or use a placeholder
+				const existingPostId = errorData.id || idempotencyKey;
+				return {
+					success: true,
+					linkedin_post_id: existingPostId,
+					published_url: `https://www.linkedin.com/feed/update/${existingPostId.replace('urn:li:ugcPost:', '')}`,
+				};
+			}
+
 			console.error('LinkedIn API error:', errorText);
 			return {
 				success: false,

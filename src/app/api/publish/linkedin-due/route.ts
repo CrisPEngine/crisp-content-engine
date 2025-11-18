@@ -1,15 +1,17 @@
 /**
  * Scheduled Job: Publish Due LinkedIn Content
  * 
- * This endpoint should be called by a cron job (Vercel Cron or external service)
- * every 5-10 minutes to publish content that is ready and scheduled.
+ * This endpoint is called by a cron job every 15 minutes to publish content that is ready.
  * 
- * Query: Find all ContentQueue records where:
+ * Uses Airtable view "ReadyToPublish_LinkedIn" which filters:
  * - platform = "LinkedIn"
  * - status = "Ready To Publish"
- * - scheduled_time <= now (with timezone consideration)
+ * 
+ * Additional filters applied:
+ * - scheduled_time <= now (UTC) OR scheduled_time is null
  * - publish_attempts < 3
- * - OR scheduled_time is null (publish immediately)
+ * 
+ * Note: scheduled_time is stored in UTC in Airtable. No timezone conversion needed.
  */
 
 import { NextResponse } from 'next/server';
@@ -123,27 +125,21 @@ async function incrementUsage(userId: string): Promise<void> {
 
 /**
  * Check if content is due to be published
- * Considers scheduled_time and scheduled_timezone
+ * scheduled_time is stored in UTC, compare directly with UTC now
  */
-function isContentDue(
-	scheduledTime: string | null | undefined,
-	scheduledTimezone: string | null | undefined
-): boolean {
+function isContentDue(scheduledTime: string | null | undefined): boolean {
 	// If no scheduled_time, treat as "publish immediately"
 	if (!scheduledTime) {
 		return true;
 	}
 
 	try {
-		// Parse scheduled_time (Airtable returns ISO string)
+		// Parse scheduled_time (Airtable returns ISO string in UTC)
 		const scheduledDate = new Date(scheduledTime);
 		const now = new Date();
 
-		// Add 2 minute buffer to account for cron timing
-		const bufferMs = 2 * 60 * 1000;
-		const dueTime = new Date(scheduledDate.getTime() - bufferMs);
-
-		return now >= dueTime;
+		// scheduled_time is in UTC, now is also UTC, direct comparison
+		return now >= scheduledDate;
 	} catch (error) {
 		console.error('Error parsing scheduled_time:', error);
 		// If we can't parse, treat as due
@@ -176,17 +172,38 @@ async function publishDueContent(): Promise<{
 		errors: [] as string[],
 	};
 
-	// Query Airtable for due LinkedIn content
-	// Filter: platform = "LinkedIn", status = "Ready To Publish", publish_attempts < 3
+	// Query Airtable view "ReadyToPublish_LinkedIn" which pre-filters:
+	// - platform = "LinkedIn"
+	// - status = "Ready To Publish"
+	// Then apply additional filters for scheduled_time and publish_attempts
+	const viewName = 'ReadyToPublish_LinkedIn';
 	const filterFormula = `AND(
-		{platform} = "LinkedIn",
-		{status} = "Ready To Publish",
+		OR({scheduled_time} <= NOW(), {scheduled_time} = BLANK()),
 		OR({publish_attempts} < 3, {publish_attempts} = BLANK())
 	)`;
 
+	// Use view endpoint for better performance
 	const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
+	url.searchParams.set('view', viewName);
 	url.searchParams.set('filterByFormula', filterFormula);
 	url.searchParams.set('maxRecords', '100'); // Process up to 100 records per run
+	
+	// Only request fields we need for publishing
+	// Airtable requires each field as a separate query param
+	const fields = [
+		'id',
+		'platform',
+		'status',
+		'post_title',
+		'post_content',
+		'hashtags',
+		'scheduled_time',
+		'brand_profile_id',
+		'publish_attempts',
+	];
+	fields.forEach((field) => {
+		url.searchParams.append('fields[]', field);
+	});
 
 	const response = await fetch(url.toString(), {
 		headers: {
@@ -210,8 +227,8 @@ async function publishDueContent(): Promise<{
 		try {
 			const fields = record.fields;
 
-			// Check if content is due (considering scheduled_time and timezone)
-			if (!isContentDue(fields.scheduled_time, fields.scheduled_timezone)) {
+			// Check if content is due (scheduled_time is in UTC)
+			if (!isContentDue(fields.scheduled_time)) {
 				continue; // Skip if not due yet
 			}
 
@@ -245,8 +262,8 @@ async function publishDueContent(): Promise<{
 			}
 
 			// Get LinkedIn connection
-			const connection = await getLinkedInConnection(userId);
-			if (!connection) {
+			const connectionResult = await getLinkedInConnection(userId);
+			if (!connectionResult) {
 				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
 					status: 'Failed',
 					publish_error: 'No LinkedIn connection found for user',
@@ -256,6 +273,24 @@ async function publishDueContent(): Promise<{
 				stats.errors.push(`Record ${record.id}: No LinkedIn connection`);
 				continue;
 			}
+
+			// Check if connection result is an error (permanent failure)
+			if ('error' in connectionResult) {
+				const attempts = (fields.publish_attempts || 0) + 1;
+				const newStatus = connectionResult.isPermanent ? 'Failed' : 'Ready To Publish';
+
+				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
+					status: newStatus,
+					publish_error: connectionResult.error,
+					publish_attempts: attempts,
+				});
+
+				stats.failed++;
+				stats.errors.push(`Record ${record.id}: ${connectionResult.error}`);
+				continue;
+			}
+
+			const connection = connectionResult; // TypeScript now knows it's LinkedInConnectionResult
 
 			// Build content
 			const title = fields.post_title || '';
@@ -273,15 +308,21 @@ async function publishDueContent(): Promise<{
 				continue;
 			}
 
-			// Publish to LinkedIn
-			const publishResult = await publishToLinkedIn(connection.accessToken, connection.personUrn, {
-				title,
-				body,
-				hashtags,
-			});
+			// Publish to LinkedIn with idempotency key (record ID)
+			const publishResult = await publishToLinkedIn(
+				connection.accessToken,
+				connection.personUrn,
+				{
+					title,
+					body,
+					hashtags,
+				},
+				record.id // Idempotency key
+			);
 
 			if (publishResult.success) {
-				// Success: Update Airtable
+				// Success: Update Airtable IMMEDIATELY to prevent duplicate processing
+				// Do this before any other network calls
 				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
 					status: 'Published',
 					published_at: new Date().toISOString(),
@@ -289,8 +330,11 @@ async function publishDueContent(): Promise<{
 					publish_attempts: (fields.publish_attempts || 0) + 1,
 				});
 
-				// Increment usage
-				await incrementUsage(userId);
+				// Increment usage (non-blocking - don't fail if this errors)
+				incrementUsage(userId).catch((err) => {
+					console.error(`Failed to increment usage for user ${userId}:`, err);
+					// Status is already Published, so we don't rollback
+				});
 
 				stats.success++;
 			} else {
