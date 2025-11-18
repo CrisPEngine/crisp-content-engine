@@ -13,7 +13,9 @@ type ContentItem = {
 	platform: string;
 	content: string;
 	status: string;
+	content_type?: string;
 	scheduled_date?: string | null;
+	published_at?: string | null;
 	created_time: string;
 	brand_name: string;
 	summary?: string;
@@ -366,7 +368,7 @@ export default function ContentApprovalPage() {
 			<div className="mb-6 space-y-3">
 				<h1 className="text-3xl font-semibold mb-2">Content Approval Queue</h1>
 				<p className="text-text-dim">
-					Review and approve content before it's published
+					Review and approve content before it's published. Approved content will be published automatically at the scheduled time.
 				</p>
 				{error && (
 					<div className="border border-danger/30 bg-danger/10 text-danger text-sm rounded-xl2 p-3">
@@ -374,6 +376,34 @@ export default function ContentApprovalPage() {
 					</div>
 				)}
 			</div>
+
+			{/* Status Summary */}
+			{contentItems.length > 0 && (
+				<div className="card p-4 mb-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+					<div>
+						<div className="text-2xl font-bold text-text">{contentItems.length}</div>
+						<div className="text-xs text-text-dim">Total Items</div>
+					</div>
+					<div>
+						<div className="text-2xl font-bold text-accent">
+							{contentItems.filter((item) => item.status === 'Ready To Publish').length}
+						</div>
+						<div className="text-xs text-text-dim">Ready To Publish</div>
+					</div>
+					<div>
+						<div className="text-2xl font-bold text-primary">
+							{contentItems.filter((item) => item.status === 'Published').length}
+						</div>
+						<div className="text-xs text-text-dim">Published</div>
+					</div>
+					<div>
+						<div className="text-2xl font-bold text-warning">
+							{contentItems.filter((item) => item.scheduled_date && new Date(item.scheduled_date) > new Date()).length}
+						</div>
+						<div className="text-xs text-text-dim">Scheduled</div>
+					</div>
+				</div>
+			)}
 
 			{contentItems.length === 0 ? (
 				isGenerating ? (
@@ -453,15 +483,52 @@ export default function ContentApprovalPage() {
 											</h3>
 										</div>
 
-										{/* Platform + Brand - Inline badges */}
+										{/* Platform + Brand + Content Type - Inline badges */}
 										<div className="flex items-center gap-2 flex-wrap">
 											<span className="px-2.5 py-1 rounded-full text-xs font-medium bg-primary/15 border border-primary/30 text-primary">
 												{item.platform}
 											</span>
+											{item.content_type && (
+												<span className="px-2.5 py-1 rounded-full text-xs font-medium bg-surface/50 border border-edge/60 text-text-soft">
+													{item.content_type}
+												</span>
+											)}
 											<span className="text-sm text-text-dim">
 												{item.brand_name}
 											</span>
 										</div>
+
+										{/* Status Badge - Show prominently if Ready To Publish or Published */}
+										{item.status === 'Ready To Publish' && (
+											<div className="flex items-center gap-2">
+												<span className="px-3 py-1.5 rounded-full text-xs font-semibold bg-accent/20 border border-accent/40 text-accent flex items-center gap-1.5">
+													<Check className="w-3 h-3" />
+													Approved
+												</span>
+												{item.scheduled_date ? (
+													<span className="px-3 py-1.5 rounded-full text-xs font-medium bg-primary/10 border border-primary/30 text-primary flex items-center gap-1.5">
+														<Clock className="w-3 h-3" />
+														Scheduled: {formatScheduledDate(item.scheduled_date)}
+													</span>
+												) : (
+													<span className="px-3 py-1.5 rounded-full text-xs font-medium bg-warning/10 border border-warning/30 text-warning flex items-center gap-1.5">
+														<Clock className="w-3 h-3" />
+														Publishing soon
+													</span>
+												)}
+											</div>
+										)}
+										{item.status === 'Published' && item.published_at && (
+											<div className="flex items-center gap-2">
+												<span className="px-3 py-1.5 rounded-full text-xs font-semibold bg-primary/20 border border-primary/40 text-primary flex items-center gap-1.5">
+													<Check className="w-3 h-3" />
+													Published
+												</span>
+												<span className="text-xs text-text-dim">
+													{new Date(item.published_at).toLocaleString()}
+												</span>
+											</div>
+										)}
 
 										{/* Body Preview - 3 lines with fade - Clickable */}
 										<div 

@@ -148,6 +148,7 @@ export async function GET(request: Request) {
 		title: string;
 		platform: string;
 		status: string;
+		content_type?: string;
 		scheduled_date: string | null;
 		published_at: string | null;
 		brand_profile_id: string | null;
@@ -237,6 +238,7 @@ export async function GET(request: Request) {
 			title: fields.hook || fields.title || fields.post_title || 'Untitled',
 			platform: fields.platform || 'Blog',
 			status: fields.status || 'Draft',
+			content_type: fields.content_type || 'Post',
 			scheduled_date: fields.scheduled_time || fields.scheduled_date || null,
 			published_at: fields.published_at || null,
 			brand_profile_id: brandProfileId,
