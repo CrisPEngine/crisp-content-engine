@@ -1,5 +1,6 @@
 'use client';
 
+// Strategy Review Page - Redesigned with header card and snapshot
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
