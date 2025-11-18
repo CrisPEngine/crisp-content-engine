@@ -111,7 +111,12 @@ export default function ContentApprovalPage() {
 				const data = await res.json().catch(() => ({}));
 				throw new Error(data?.error || 'Failed to approve content');
 			}
-			setContentItems((items) => items.filter((item) => item.id !== id));
+			// Update item status to show approved state instead of removing
+			setContentItems((items) =>
+				items.map((item) =>
+					item.id === id ? { ...item, status: 'Ready To Publish' } : item
+				)
+			);
 			setSelectedItems((prev) => {
 				const next = new Set(prev);
 				next.delete(id);
@@ -139,7 +144,12 @@ export default function ContentApprovalPage() {
 				const data = await res.json().catch(() => ({}));
 				throw new Error(data?.error || 'Failed to reject content');
 			}
-			setContentItems((items) => items.filter((item) => item.id !== id));
+			// Update item status to show rejected state instead of removing
+			setContentItems((items) =>
+				items.map((item) =>
+					item.id === id ? { ...item, status: 'Needs Review' } : item
+				)
+			);
 			setSelectedItems((prev) => {
 				const next = new Set(prev);
 				next.delete(id);
@@ -567,32 +577,39 @@ export default function ContentApprovalPage() {
 											</div>
 
 											{/* Approve/Reject Buttons */}
-											<div className="flex gap-2">
-												<button
-													onClick={() => approveContent(item.id)}
-													disabled={approving === item.id || rejecting === item.id}
-													className="flex-1 px-3 py-2 rounded-xl2 bg-gradient-to-r from-accent/90 to-accent/70 hover:from-accent hover:to-accent/90 text-white text-sm font-medium shadow-lg shadow-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
-												>
-													{approving === item.id ? (
-														<Loader2 className="w-3.5 h-3.5 animate-spin" />
-													) : (
-														<Check className="w-3.5 h-3.5" />
-													)}
-													Approve
-												</button>
-												<button
-													onClick={() => rejectContent(item.id)}
-													disabled={approving === item.id || rejecting === item.id}
-													className="px-3 py-2 rounded-xl2 border border-danger/40 bg-transparent hover:bg-danger/10 text-danger text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-												>
-													{rejecting === item.id ? (
-														<Loader2 className="w-3.5 h-3.5 animate-spin" />
-													) : (
-														<X className="w-3.5 h-3.5" />
-													)}
-													Reject
-												</button>
-											</div>
+											{item.status === 'Ready To Publish' ? (
+												<div className="flex-1 px-3 py-2 rounded-xl2 bg-gradient-to-r from-accent/90 to-accent/70 text-white text-sm font-medium shadow-lg shadow-accent/20 flex items-center justify-center gap-2">
+													<Check className="w-3.5 h-3.5" />
+													Approved
+												</div>
+											) : (
+												<div className="flex gap-2">
+													<button
+														onClick={() => approveContent(item.id)}
+														disabled={approving === item.id || rejecting === item.id || saving === item.id}
+														className="flex-1 px-3 py-2 rounded-xl2 bg-gradient-to-r from-accent/90 to-accent/70 hover:from-accent hover:to-accent/90 text-white text-sm font-medium shadow-lg shadow-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
+													>
+														{approving === item.id ? (
+															<Loader2 className="w-3.5 h-3.5 animate-spin" />
+														) : (
+															<Check className="w-3.5 h-3.5" />
+														)}
+														Approve
+													</button>
+													<button
+														onClick={() => rejectContent(item.id)}
+														disabled={approving === item.id || rejecting === item.id || saving === item.id}
+														className="px-3 py-2 rounded-xl2 border border-danger/40 bg-transparent hover:bg-danger/10 text-danger text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+													>
+														{rejecting === item.id ? (
+															<Loader2 className="w-3.5 h-3.5 animate-spin" />
+														) : (
+															<X className="w-3.5 h-3.5" />
+														)}
+														Reject
+													</button>
+												</div>
+											)}
 										</div>
 									</div>
 								</div>

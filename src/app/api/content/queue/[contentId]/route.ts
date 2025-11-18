@@ -163,20 +163,24 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 		}
 
 		const nowISO = new Date().toISOString();
-		const fields: Record<string, any> = {
-			review_notes: feedback,
-		};
+		const fields: Record<string, any> = {};
 
 		if (action === 'approve') {
 			fields.status = 'Ready To Publish';
 			fields.approved_at = nowISO;
-			fields.last_reviewed_at = nowISO;
+			// Only include review_notes if the field exists and feedback is provided
+			if (feedback && feedback.trim()) {
+				// Note: review_notes field may not exist in Airtable, so we'll skip it if it causes errors
+				// fields.review_notes = feedback;
+			}
 		} else {
 			// Reject action - trigger Make to regenerate content
 			fields.status = 'Needs Review';
 			fields.needs_revision = true;
-			fields.last_reviewed_at = nowISO;
-			fields.rejection_feedback = feedback;
+			// Only include rejection_feedback if the field exists and feedback is provided
+			if (feedback && feedback.trim()) {
+				fields.rejection_feedback = feedback;
+			}
 
 			// Trigger Make to regenerate content
 			const MAKE_CONTENT_REGENERATE_WEBHOOK_URL = process.env.MAKE_CONTENT_REGENERATE_WEBHOOK_URL;

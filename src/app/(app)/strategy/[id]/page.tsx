@@ -232,50 +232,48 @@ export default function StrategyReviewPage() {
 							</div>
 						)}
 					</div>
-					<div className="flex items-center gap-3">
+					<div className="flex flex-col items-end gap-2">
 						{!editing && strategy.status !== 'Strategy Approved' && (
-							<button
-								onClick={() => {
-									setEditedContent(strategy.content);
-									setEditing(true);
-								}}
-								className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 flex items-center gap-2"
-							>
-								<Edit className="w-4 h-4" />
-								Edit
-							</button>
-						)}
-						{!editing && strategy.status !== 'Strategy Approved' && (
-							<button
-								onClick={approveStrategy}
-								disabled={approving}
-								className="px-6 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-							>
-								{approving ? (
-									<Loader2 className="w-4 h-4 animate-spin" />
-								) : (
-									<Check className="w-4 h-4" />
-								)}
-								Approve & Continue
-							</button>
+							<div className="flex items-center gap-3">
+								<button
+									onClick={() => {
+										setEditedContent(strategy.content);
+										setEditing(true);
+									}}
+									className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 flex items-center gap-2"
+								>
+									<Edit className="w-4 h-4" />
+									Edit
+								</button>
+								<button
+									onClick={approveStrategy}
+									disabled={approving}
+									className="px-6 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+								>
+									{approving ? (
+										<Loader2 className="w-4 h-4 animate-spin" />
+									) : (
+										<Check className="w-4 h-4" />
+									)}
+									Approve & Continue
+								</button>
+							</div>
 						)}
 						{!editing && strategy.status === 'Strategy Approved' && (
-							<>
-								{hasPendingContent && (
-									<button
-										onClick={() => router.push('/content/approval')}
-										className="px-6 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 flex items-center gap-2"
-									>
-										Review Content
-									</button>
-								)}
+							<div className="flex flex-col items-end gap-2">
 								<button
 									onClick={() => router.push('/strategy/monthly-update')}
 									className="px-6 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 flex items-center gap-2"
 								>
 									Monthly Strategy Update
 								</button>
-							</>
+								<button
+									onClick={() => router.push('/content/approval')}
+									className="px-6 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 flex items-center gap-2"
+								>
+									Review Content
+								</button>
+							</div>
 						)}
 					</div>
 				</div>
