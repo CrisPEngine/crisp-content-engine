@@ -22,18 +22,20 @@ export default function StrategyReviewPage() {
 	const [error, setError] = useState<string | null>(null);
 	const [hasPendingContent, setHasPendingContent] = useState(false);
 
+	const strategyId = typeof params.id === 'string' ? params.id : String(params.id);
+	
 	const loadStrategy = useCallback(async () => {
-		if (!supabase || !params.id) return;
+		if (!supabase || !strategyId) return;
 		setLoading(true);
 		setError(null);
 		try {
 			const { data: { user } } = await supabase.auth.getUser();
 			if (!user) {
-				router.push('/login');
+				window.location.href = '/login';
 				return;
 			}
 
-			const res = await fetch(`/api/strategy/${params.id}`, { cache: 'no-store' });
+			const res = await fetch(`/api/strategy/${strategyId}`, { cache: 'no-store' });
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
 				throw new Error(data?.error || 'Failed to load strategy');
@@ -48,7 +50,7 @@ export default function StrategyReviewPage() {
 					if (contentRes.ok) {
 						const contentData = await contentRes.json();
 						// Check if any content belongs to this brand
-						const brandHasContent = contentData.items?.some((item: any) => item.brand_profile_id === params.id);
+						const brandHasContent = contentData.items?.some((item: any) => item.brand_profile_id === strategyId);
 						setHasPendingContent(brandHasContent || false);
 					}
 				} catch (err) {
@@ -61,7 +63,7 @@ export default function StrategyReviewPage() {
 		} finally {
 			setLoading(false);
 		}
-	}, [supabase, params.id, router]);
+	}, [supabase, strategyId]);
 
 	useEffect(() => {
 		if (!supabase) return;
@@ -188,12 +190,14 @@ export default function StrategyReviewPage() {
 	}
 
 	// Parse strategy_json to extract snapshot data
+	const strategyJsonString = strategy?.strategy_json 
+		? (typeof strategy.strategy_json === 'string' ? strategy.strategy_json : JSON.stringify(strategy.strategy_json))
+		: null;
+	
 	const strategySnapshot = useMemo(() => {
-		if (!strategy?.strategy_json) return null;
+		if (!strategyJsonString) return null;
 		try {
-			const json = typeof strategy.strategy_json === 'string' 
-				? JSON.parse(strategy.strategy_json) 
-				: strategy.strategy_json;
+			const json = JSON.parse(strategyJsonString);
 			
 			return {
 				pillarsCount: json.pillars?.length || 0,
@@ -204,7 +208,7 @@ export default function StrategyReviewPage() {
 		} catch {
 			return null;
 		}
-	}, [strategy?.strategy_json]);
+	}, [strategyJsonString]);
 
 	// Format last updated date
 	const lastUpdated = useMemo(() => {
