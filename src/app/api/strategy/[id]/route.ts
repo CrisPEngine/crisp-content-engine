@@ -178,7 +178,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 		}
 
 		// Check if strategy is already approved - prevent editing
-		const strategyStatus = strategyRecord.fields?.status;
+		const strategyStatus = verifyRecord.fields?.status;
 		if (strategyStatus === 'Strategy Approved') {
 			return NextResponse.json(
 				{ 
