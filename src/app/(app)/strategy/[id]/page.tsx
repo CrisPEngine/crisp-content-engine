@@ -189,34 +189,20 @@ export default function StrategyReviewPage() {
 		);
 	}
 
-	// Use ref to track previous strategy_json value and only update when it actually changes
-	const prevStrategyJsonRef = useRef<string | null>(null);
-	const strategyJsonString = useMemo(() => {
-		if (!strategy?.strategy_json) {
-			prevStrategyJsonRef.current = null;
-			return null;
-		}
-		try {
-			const current = typeof strategy.strategy_json === 'string' 
-				? strategy.strategy_json 
-				: JSON.stringify(strategy.strategy_json);
-			// Only update if the string value actually changed
-			if (prevStrategyJsonRef.current === current) {
-				return prevStrategyJsonRef.current;
-			}
-			prevStrategyJsonRef.current = current;
-			return current;
-		} catch {
-			prevStrategyJsonRef.current = null;
-			return null;
-		}
-	}, [strategy?.strategy_json]);
+	// Create stable key from strategy for useMemo dependencies
+	const strategyKey = strategy?.id ? String(strategy.id) : null;
+	const strategyJsonKey = strategy?.strategy_json 
+		? (typeof strategy.strategy_json === 'string' ? strategy.strategy_json : JSON.stringify(strategy.strategy_json))
+		: null;
+	const createdAtKey = strategy?.created_at ? String(strategy.created_at) : null;
 	
-	// Parse strategy_json to extract snapshot data
+	// Parse strategy_json to extract snapshot data - use stable string key
 	const strategySnapshot = useMemo(() => {
-		if (!strategyJsonString) return null;
+		if (!strategyJsonKey || !strategy?.strategy_json) return null;
 		try {
-			const json = JSON.parse(strategyJsonString);
+			const json = typeof strategy.strategy_json === 'string' 
+				? JSON.parse(strategy.strategy_json) 
+				: strategy.strategy_json;
 			
 			return {
 				pillarsCount: json.pillars?.length || 0,
@@ -227,21 +213,18 @@ export default function StrategyReviewPage() {
 		} catch {
 			return null;
 		}
-	}, [strategyJsonString]);
-
-	// Extract created_at as string for stable dependency
-	const createdAtString = strategy?.created_at ? String(strategy.created_at) : null;
+	}, [strategyJsonKey, strategyKey]);
 	
-	// Format last updated date
+	// Format last updated date - use stable string key
 	const lastUpdated = useMemo(() => {
-		if (!createdAtString) return null;
+		if (!createdAtKey) return null;
 		try {
-			const date = new Date(createdAtString);
+			const date = new Date(createdAtKey);
 			return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 		} catch {
 			return null;
 		}
-	}, [createdAtString]);
+	}, [createdAtKey]);
 
 	// Get status color
 	const getStatusColor = (status: string) => {
