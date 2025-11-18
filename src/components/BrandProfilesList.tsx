@@ -168,9 +168,9 @@ export function BrandProfilesList() {
 								<Link
 									href="/content/approval"
 									onClick={(e) => e.stopPropagation()}
-									className="px-3 py-1.5 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm text-accent flex items-center gap-2"
+									className="px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm text-accent font-medium flex items-center gap-2"
 								>
-									Content Pending Approval →
+									Review Content
 								</Link>
 							);
 						}

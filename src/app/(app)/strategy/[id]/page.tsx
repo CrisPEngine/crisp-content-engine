@@ -19,6 +19,7 @@ export default function StrategyReviewPage() {
 	const [editedContent, setEditedContent] = useState('');
 	const [showLoading, setShowLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [hasPendingContent, setHasPendingContent] = useState(false);
 
 	useEffect(() => {
 		if (!supabase) return;
@@ -43,6 +44,21 @@ export default function StrategyReviewPage() {
 			}
 			const data = await res.json();
 			setStrategy(data);
+			
+			// Check if content is pending for this brand
+			if (data.status === 'Strategy Approved') {
+				try {
+					const contentRes = await fetch('/api/content/queue?status=Draft,Pending Approval,Needs Review', { cache: 'no-store' });
+					if (contentRes.ok) {
+						const contentData = await contentRes.json();
+						// Check if any content belongs to this brand
+						const brandHasContent = contentData.items?.some((item: any) => item.brand_profile_id === params.id);
+						setHasPendingContent(brandHasContent || false);
+					}
+				} catch (err) {
+					console.warn('Failed to check pending content:', err);
+				}
+			}
 		} catch (err: any) {
 			console.error('Failed to load strategy:', err);
 			setError(err.message || 'Failed to load strategy');
@@ -216,18 +232,52 @@ export default function StrategyReviewPage() {
 							</div>
 						)}
 					</div>
-					{!editing && strategy.status !== 'Strategy Approved' && (
-						<button
-							onClick={() => {
-								setEditedContent(strategy.content);
-								setEditing(true);
-							}}
-							className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 flex items-center gap-2"
-						>
-							<Edit className="w-4 h-4" />
-							Edit
-						</button>
-					)}
+					<div className="flex items-center gap-3">
+						{!editing && strategy.status !== 'Strategy Approved' && (
+							<button
+								onClick={() => {
+									setEditedContent(strategy.content);
+									setEditing(true);
+								}}
+								className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 flex items-center gap-2"
+							>
+								<Edit className="w-4 h-4" />
+								Edit
+							</button>
+						)}
+						{!editing && strategy.status !== 'Strategy Approved' && (
+							<button
+								onClick={approveStrategy}
+								disabled={approving}
+								className="px-6 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+							>
+								{approving ? (
+									<Loader2 className="w-4 h-4 animate-spin" />
+								) : (
+									<Check className="w-4 h-4" />
+								)}
+								Approve & Continue
+							</button>
+						)}
+						{!editing && strategy.status === 'Strategy Approved' && (
+							<>
+								{hasPendingContent && (
+									<button
+										onClick={() => router.push('/content/approval')}
+										className="px-6 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 flex items-center gap-2"
+									>
+										Review Content
+									</button>
+								)}
+								<button
+									onClick={() => router.push('/strategy/monthly-update')}
+									className="px-6 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 flex items-center gap-2"
+								>
+									Monthly Strategy Update
+								</button>
+							</>
+						)}
+					</div>
 				</div>
 
 				<div>
