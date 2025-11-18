@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { motion } from 'framer-motion';
-import { Check, Edit, AlertCircle, Loader2 } from 'lucide-react';
+import { Check, Edit, AlertCircle, Loader2, Info, Calendar } from 'lucide-react';
 import { ContentGenerationLoading } from '@/components/ContentGenerationLoading';
 import { Skeleton } from '@/components/skeletons/Skeleton';
 
@@ -186,6 +186,50 @@ export default function StrategyReviewPage() {
 		);
 	}
 
+	// Parse strategy_json to extract snapshot data
+	const strategySnapshot = useMemo(() => {
+		if (!strategy?.strategy_json) return null;
+		try {
+			const json = typeof strategy.strategy_json === 'string' 
+				? JSON.parse(strategy.strategy_json) 
+				: strategy.strategy_json;
+			
+			return {
+				pillarsCount: json.pillars?.length || 0,
+				audience: json.brand_understanding?.perceived_audience || json.brand_summary?.positioning || 'Not specified',
+				voiceSummary: json.voice?.summary || 'Not specified',
+				cadence: json.cadence || {},
+			};
+		} catch {
+			return null;
+		}
+	}, [strategy?.strategy_json]);
+
+	// Format last updated date
+	const lastUpdated = useMemo(() => {
+		if (!strategy?.created_at) return null;
+		try {
+			const date = new Date(strategy.created_at);
+			return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+		} catch {
+			return null;
+		}
+	}, [strategy?.created_at]);
+
+	// Get status color
+	const getStatusColor = (status: string) => {
+		if (status === 'Strategy Approved') return 'text-accent';
+		if (status === 'Strategy Ready (Awaiting Approval)') return 'text-primary';
+		return 'text-text-dim';
+	};
+
+	// Get status dot color
+	const getStatusDotColor = (status: string) => {
+		if (status === 'Strategy Approved') return 'bg-accent';
+		if (status === 'Strategy Ready (Awaiting Approval)') return 'bg-primary';
+		return 'bg-text-dim';
+	};
+
 	if (showLoading) {
 		return <ContentGenerationLoading onComplete={handleContentGenerationComplete} />;
 	}
@@ -211,75 +255,172 @@ export default function StrategyReviewPage() {
 				</div>
 			)}
 
+			{/* Strategy Header Card */}
 			<motion.div
 				initial={{ opacity: 0, y: 20 }}
 				animate={{ opacity: 1, y: 0 }}
-				className="card p-8 space-y-6"
+				className="relative rounded-2xl p-6 mb-6 bg-gradient-to-br from-surface/80 to-surface/40 border border-primary/30 shadow-lg shadow-primary/10"
+				style={{
+					boxShadow: '0 0 20px rgba(99, 102, 241, 0.1), 0 0 40px rgba(99, 102, 241, 0.05)',
+				}}
 			>
-				<div className="flex items-center justify-between">
-					<div>
-						<h1 className="text-3xl font-semibold mb-2">Strategy Review</h1>
-						<p className="text-text-dim">
-							Brand: <span className="font-medium text-text">{strategy.brand_name}</span>
-						</p>
-						<p className="text-sm text-text-dim mt-1">
-							Status: <span className="font-medium">{strategy.status}</span>
-						</p>
-						{strategy.status === 'Strategy Approved' && (
-							<div className="mt-3 p-3 rounded-xl2 border border-warning/30 bg-warning/10 text-sm text-text-soft">
-								<AlertCircle className="w-4 h-4 inline mr-2 text-warning" />
-								This strategy has been approved. To update it, please use the Monthly Strategy Update process.
+				<div className="flex items-start justify-between gap-6">
+					{/* Left: Brand name, status, last updated */}
+					<div className="flex-1">
+						<h1 className="text-3xl font-bold text-text mb-3">{strategy.brand_name}</h1>
+						<div className="flex items-center gap-3 mb-2">
+							<div className="flex items-center gap-2">
+								<div className={`w-2 h-2 rounded-full ${getStatusDotColor(strategy.status)}`} />
+								<span className={`text-sm font-medium ${getStatusColor(strategy.status)}`}>
+									{strategy.status}
+								</span>
 							</div>
-						)}
+							{lastUpdated && (
+								<span className="text-xs text-text-dim flex items-center gap-1">
+									<Calendar className="w-3 h-3" />
+									Updated {lastUpdated}
+								</span>
+							)}
+						</div>
 					</div>
-					<div className="flex flex-col items-end gap-2">
-						{!editing && strategy.status !== 'Strategy Approved' && (
-							<div className="flex items-center gap-3">
-								<button
-									onClick={() => {
-										setEditedContent(strategy.content);
-										setEditing(true);
-									}}
-									className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 flex items-center gap-2"
-								>
-									<Edit className="w-4 h-4" />
-									Edit
-								</button>
-								<button
-									onClick={approveStrategy}
-									disabled={approving}
-									className="px-6 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-								>
-									{approving ? (
-										<Loader2 className="w-4 h-4 animate-spin" />
-									) : (
-										<Check className="w-4 h-4" />
-									)}
-									Approve & Continue
-								</button>
-							</div>
-						)}
-						{!editing && strategy.status === 'Strategy Approved' && (
-							<div className="flex flex-col items-end gap-2">
-								<button
-									onClick={() => router.push('/strategy/monthly-update')}
-									className="px-6 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 flex items-center gap-2"
-								>
-									Monthly Strategy Update
-								</button>
-								<button
-									onClick={() => router.push('/content/approval')}
-									className="px-6 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 flex items-center gap-2"
-								>
-									Review Content
-								</button>
-							</div>
-						)}
+
+					{/* Right: Action buttons */}
+					{!editing && strategy.status === 'Strategy Approved' && (
+						<div className="flex items-center gap-3">
+							<button
+								onClick={() => router.push('/content/approval')}
+								className="px-6 py-3 rounded-xl2 bg-gradient-to-r from-accent/90 to-accent/70 hover:from-accent hover:to-accent/90 text-white font-medium shadow-lg shadow-accent/20 flex items-center gap-2 transition-all"
+							>
+								<Check className="w-4 h-4" />
+								Review Content
+							</button>
+							<button
+								onClick={() => router.push('/strategy/monthly-update')}
+								className="px-6 py-3 rounded-xl2 border-2 border-primary/50 bg-transparent hover:bg-primary/10 text-primary font-medium flex items-center gap-2 transition-all"
+							>
+								Monthly Strategy Update
+							</button>
+						</div>
+					)}
+					{!editing && strategy.status !== 'Strategy Approved' && (
+						<div className="flex items-center gap-3">
+							<button
+								onClick={() => {
+									setEditedContent(strategy.content);
+									setEditing(true);
+								}}
+								className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 flex items-center gap-2"
+							>
+								<Edit className="w-4 h-4" />
+								Edit
+							</button>
+							<button
+								onClick={approveStrategy}
+								disabled={approving}
+								className="px-6 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+							>
+								{approving ? (
+									<Loader2 className="w-4 h-4 animate-spin" />
+								) : (
+									<Check className="w-4 h-4" />
+								)}
+								Approve & Continue
+							</button>
+						</div>
+					)}
+				</div>
+			</motion.div>
+
+			{/* Info Banner - Centered, smaller */}
+			{strategy.status === 'Strategy Approved' && (
+				<motion.div
+					initial={{ opacity: 0, y: 10 }}
+					animate={{ opacity: 1, y: 0 }}
+					className="mx-auto mb-6 max-w-[700px]"
+				>
+					<div className="card p-3 border-primary/20 bg-primary/5 flex items-center justify-center gap-2">
+						<Info className="w-4 h-4 text-primary flex-shrink-0" />
+						<p className="text-sm text-text-soft text-center">
+							This strategy has been approved. To update it, please use the Monthly Strategy Update process.
+						</p>
 					</div>
+				</motion.div>
+			)}
+
+			{/* Strategy Snapshot Card */}
+			{strategySnapshot && (
+				<motion.div
+					initial={{ opacity: 0, y: 10 }}
+					animate={{ opacity: 1, y: 0 }}
+					transition={{ delay: 0.1 }}
+					className="card p-6 mb-6 border-edge/60 bg-surface/30"
+					style={{
+						boxShadow: '0 0 10px rgba(99, 102, 241, 0.05)',
+					}}
+				>
+					<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+						{/* Pillars Count */}
+						<div>
+							<div className="text-xs text-text-dim mb-1">Content Pillars</div>
+							<div className="text-2xl font-bold text-text">{strategySnapshot.pillarsCount}</div>
+						</div>
+
+						{/* Audience Summary */}
+						<div>
+							<div className="text-xs text-text-dim mb-1">Target Audience</div>
+							<div className="text-sm font-medium text-text line-clamp-2">
+								{strategySnapshot.audience.length > 60 
+									? `${strategySnapshot.audience.substring(0, 60)}...`
+									: strategySnapshot.audience}
+							</div>
+						</div>
+
+						{/* Voice Traits */}
+						<div>
+							<div className="text-xs text-text-dim mb-1">Voice</div>
+							<div className="text-sm font-medium text-text line-clamp-2">
+								{strategySnapshot.voiceSummary.length > 60
+									? `${strategySnapshot.voiceSummary.substring(0, 60)}...`
+									: strategySnapshot.voiceSummary}
+							</div>
+						</div>
+
+						{/* Cadence Summary */}
+						<div>
+							<div className="text-xs text-text-dim mb-1">Posting Cadence</div>
+							<div className="text-sm font-medium text-text space-y-1">
+								{Object.entries(strategySnapshot.cadence)
+									.filter(([_, freq]) => freq && String(freq).trim())
+									.slice(0, 2)
+									.map(([platform, frequency]) => (
+										<div key={platform}>
+											{platform}: <span className="text-text-soft">{String(frequency)}</span>
+										</div>
+									))}
+								{Object.keys(strategySnapshot.cadence).filter((k) => strategySnapshot.cadence[k]).length === 0 && (
+									<span className="text-text-soft">Not specified</span>
+								)}
+							</div>
+						</div>
+					</div>
+				</motion.div>
+			)}
+
+			{/* Strategy Content Section */}
+			<motion.div
+				initial={{ opacity: 0, y: 10 }}
+				animate={{ opacity: 1, y: 0 }}
+				transition={{ delay: 0.2 }}
+				className="space-y-4"
+			>
+				{/* Section Header */}
+				<div className="space-y-2">
+					<h2 className="text-2xl font-semibold text-text">Strategy Content</h2>
+					<div className="h-px bg-gradient-to-r from-transparent via-edge/60 to-transparent" />
 				</div>
 
-				<div>
-					<label className="block text-sm font-medium mb-2">Strategy Content</label>
+				{/* Content Card */}
+				<div className="card p-8 space-y-6">
 					{editing ? (
 						<div className="space-y-3">
 							<textarea
@@ -365,40 +506,25 @@ export default function StrategyReviewPage() {
 							</div>
 						</div>
 					)}
-				</div>
 
-				{!editing && strategy.status !== 'Strategy Approved' && (
-					<div className="flex pt-4 border-t border-edge/60">
-						<button
-							onClick={approveStrategy}
-							disabled={approving}
-							className="flex-1 px-6 py-3 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-						>
-							{approving ? (
-								<Loader2 className="w-5 h-5 animate-spin" />
-							) : (
-								<Check className="w-5 h-5" />
-							)}
-							Approve & Continue
-						</button>
-					</div>
-				)}
-				{!editing && strategy.status === 'Strategy Approved' && (
-					<div className="flex pt-4 border-t border-edge/60 gap-3">
-						<button
-							onClick={() => router.push('/content/approval')}
-							className="flex-1 px-6 py-3 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 flex items-center justify-center gap-2"
-						>
-							Review Content
-						</button>
-						<button
-							onClick={() => router.push('/strategy/monthly-update')}
-							className="px-6 py-3 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 flex items-center justify-center gap-2"
-						>
-							Monthly Strategy Update
-						</button>
-					</div>
-				)}
+					{/* Bottom Action Buttons - Only show for non-approved strategies */}
+					{!editing && strategy.status !== 'Strategy Approved' && (
+						<div className="flex pt-4 border-t border-edge/60">
+							<button
+								onClick={approveStrategy}
+								disabled={approving}
+								className="flex-1 px-6 py-3 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+							>
+								{approving ? (
+									<Loader2 className="w-5 h-5 animate-spin" />
+								) : (
+									<Check className="w-5 h-5" />
+								)}
+								Approve & Continue
+							</button>
+						</div>
+					)}
+				</div>
 			</motion.div>
 		</div>
 	);
