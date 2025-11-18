@@ -81,37 +81,55 @@ export async function GET(req: Request) {
 			// Airtable allows up to 10 IDs in OR formula, so batch if needed
 			for (let i = 0; i < brandProfileIds.length; i += 10) {
 				const batch = brandProfileIds.slice(i, i + 10);
-				// Check for any content that's pending approval
-				// Check multiple possible status values that indicate pending content
-				const contentFilter = batch.length === 1
-					? `AND({brand_profile_id} = "${batch[0]}", OR({status} = "Draft", {status} = "Pending Approval", {status} = "Needs Review"))`
-					: `AND(OR(${batch.map((id: string) => `{brand_profile_id} = "${id}"`).join(',')}), OR({status} = "Draft", {status} = "Pending Approval", {status} = "Needs Review"))`;
+				// Check for any content linked to these brands
+				// First try with status filter, then fallback to just checking brand_profile_id
+				const contentFilters = [
+					// Try with status filter first
+					batch.length === 1
+						? `AND({brand_profile_id} = "${batch[0]}", OR({status} = "Draft", {status} = "Pending Approval", {status} = "Needs Review"))`
+						: `AND(OR(${batch.map((id: string) => `{brand_profile_id} = "${id}"`).join(',')}), OR({status} = "Draft", {status} = "Pending Approval", {status} = "Needs Review"))`,
+					// Fallback: just check if any content exists for these brands
+					batch.length === 1
+						? `{brand_profile_id} = "${batch[0]}"`
+						: `OR(${batch.map((id: string) => `{brand_profile_id} = "${id}"`).join(',')})`,
+				];
 
-				const contentUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTQUEUE_TABLE}`);
-				contentUrl.searchParams.set('filterByFormula', contentFilter);
-				contentUrl.searchParams.set('maxRecords', '1'); // Just need to know if any exist
+				for (const contentFilter of contentFilters) {
+					const contentUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTQUEUE_TABLE}`);
+					contentUrl.searchParams.set('filterByFormula', contentFilter);
+					contentUrl.searchParams.set('maxRecords', '10'); // Get a few records to check status
 
-				try {
-					const contentRes = await fetch(contentUrl.toString(), {
-						headers: {
-							Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-							'Content-Type': 'application/json',
-						},
-					});
-
-					if (contentRes.ok) {
-						const contentData = await contentRes.json();
-						const foundBrandIds = new Set<string>();
-						(contentData.records || []).forEach((record: any) => {
-							const brandId = Array.isArray(record.fields?.brand_profile_id)
-								? record.fields.brand_profile_id[0]
-								: record.fields?.brand_profile_id;
-							if (brandId) foundBrandIds.add(brandId);
+					try {
+						const contentRes = await fetch(contentUrl.toString(), {
+							headers: {
+								Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+								'Content-Type': 'application/json',
+							},
 						});
-						foundBrandIds.forEach((id) => contentStatusMap.set(id, true));
+
+						if (contentRes.ok) {
+							const contentData = await contentRes.json();
+							(contentData.records || []).forEach((record: any) => {
+								const brandId = Array.isArray(record.fields?.brand_profile_id)
+									? record.fields.brand_profile_id[0]
+									: record.fields?.brand_profile_id;
+								const contentStatus = record.fields?.status || '';
+								// Only mark as pending if status indicates it's not published/approved
+								if (brandId && contentStatus && 
+									contentStatus !== 'Published' && 
+									contentStatus !== 'Approved' &&
+									contentStatus !== 'Ready To Publish') {
+									contentStatusMap.set(brandId, true);
+								}
+							});
+							// If we found content, break out of filter loop
+							if (contentData.records && contentData.records.length > 0) {
+								break;
+							}
+						}
+					} catch (error) {
+						console.warn('Failed to check content status:', error);
 					}
-				} catch (error) {
-					console.warn('Failed to check content status:', error);
 				}
 			}
 		}
