@@ -243,78 +243,78 @@ export default function MonthlyUpdatePage() {
 					{form.update_mode === 'update' && (
 						<>
 							<div className="grid gap-4 md:grid-cols-2">
-						<div className="space-y-2">
-							<label className="block text-sm font-medium">Cycle start date *</label>
-							<input
-								type="date"
-								value={form.monthly_cycle_start}
-								onChange={(e) => updateField('monthly_cycle_start', e.target.value)}
-								className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-							/>
-						</div>
-						<div className="text-sm text-text-dim bg-surface/30 border border-edge/60 rounded-xl2 p-4 flex items-start gap-3">
-							<Calendar className="w-4 h-4 mt-0.5 text-primary" />
-							<span>
-								Pick the date you’d like the new schedule to start from. We’ll use this for reporting and cadence.
-							</span>
-						</div>
-					</div>
+								<div className="space-y-2">
+									<label className="block text-sm font-medium">Cycle start date *</label>
+									<input
+										type="date"
+										value={form.monthly_cycle_start}
+										onChange={(e) => updateField('monthly_cycle_start', e.target.value)}
+										className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+									/>
+								</div>
+								<div className="text-sm text-text-dim bg-surface/30 border border-edge/60 rounded-xl2 p-4 flex items-start gap-3">
+									<Calendar className="w-4 h-4 mt-0.5 text-primary" />
+									<span>
+										Pick the date you'd like the new schedule to start from. We'll use this for reporting and cadence.
+									</span>
+								</div>
+							</div>
 
-					<div className="space-y-2">
-						<label className="block text-sm font-medium">Objective *</label>
-						<textarea
-							rows={4}
-							value={form.objective}
-							onChange={(e) => updateField('objective', e.target.value)}
-							placeholder="e.g. Promote our new AI feature launch, grow waitlist by 500 leads, nurture audience ahead of conference."
-							className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-						/>
-					</div>
+							<div className="space-y-2">
+								<label className="block text-sm font-medium">Objective *</label>
+								<textarea
+									rows={4}
+									value={form.objective}
+									onChange={(e) => updateField('objective', e.target.value)}
+									placeholder="e.g. Promote our new AI feature launch, grow waitlist by 500 leads, nurture audience ahead of conference."
+									className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+								/>
+							</div>
 
-					<div className="space-y-2">
-						<label className="block text-sm font-medium">Priority themes & campaigns *</label>
-						<textarea
-							rows={4}
-							value={form.themes_focus}
-							onChange={(e) => updateField('themes_focus', e.target.value)}
-							placeholder="List topics we should emphasise this month. Bullet points are perfect."
-							className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-						/>
-					</div>
+							<div className="space-y-2">
+								<label className="block text-sm font-medium">Priority themes & campaigns *</label>
+								<textarea
+									rows={4}
+									value={form.themes_focus}
+									onChange={(e) => updateField('themes_focus', e.target.value)}
+									placeholder="List topics we should emphasise this month. Bullet points are perfect."
+									className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+								/>
+							</div>
 
-					<div className="grid gap-4 md:grid-cols-2">
-						<div className="space-y-2">
-							<label className="block text-sm font-medium">Key launches or dates</label>
-							<textarea
-								rows={3}
-								value={form.key_dates}
-								onChange={(e) => updateField('key_dates', e.target.value)}
-								placeholder="Product drops, events, campaigns, newsletter dates, etc."
-								className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-							/>
-						</div>
-						<div className="space-y-2">
-							<label className="block text-sm font-medium">Feedback or notes</label>
-							<textarea
-								rows={3}
-								value={form.feedback_notes}
-								onChange={(e) => updateField('feedback_notes', e.target.value)}
-								placeholder="What worked last month? Anything to avoid or double down on?"
-								className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-							/>
-						</div>
-					</div>
+							<div className="grid gap-4 md:grid-cols-2">
+								<div className="space-y-2">
+									<label className="block text-sm font-medium">Key launches or dates</label>
+									<textarea
+										rows={3}
+										value={form.key_dates}
+										onChange={(e) => updateField('key_dates', e.target.value)}
+										placeholder="Product drops, events, campaigns, newsletter dates, etc."
+										className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+									/>
+								</div>
+								<div className="space-y-2">
+									<label className="block text-sm font-medium">Feedback or notes</label>
+									<textarea
+										rows={3}
+										value={form.feedback_notes}
+										onChange={(e) => updateField('feedback_notes', e.target.value)}
+										placeholder="What worked last month? Anything to avoid or double down on?"
+										className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+									/>
+								</div>
+							</div>
 
-					<div className="space-y-2">
-						<label className="block text-sm font-medium">Content preferences</label>
-						<textarea
-							rows={3}
-							value={form.content_preferences}
-							onChange={(e) => updateField('content_preferences', e.target.value)}
-							placeholder="Call-to-action focus, time of day, formats, tone adjustments, etc."
-							className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-						/>
-					</div>
+							<div className="space-y-2">
+								<label className="block text-sm font-medium">Content preferences</label>
+								<textarea
+									rows={3}
+									value={form.content_preferences}
+									onChange={(e) => updateField('content_preferences', e.target.value)}
+									placeholder="Call-to-action focus, time of day, formats, tone adjustments, etc."
+									className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+								/>
+							</div>
 
 							<div className="space-y-2">
 								<label className="block text-sm font-medium">Supporting files (optional)</label>
