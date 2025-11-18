@@ -17,6 +17,9 @@ const mapStatuses = (stage: string | null, statusParam: string | null) => {
 			return ['Needs Approval', 'Needs Copy', 'Needs Review'];
 		case 'schedule':
 			return ['Scheduled', 'Ready To Publish', 'Published', 'Failed'];
+		case 'all':
+			// Return all statuses for dashboard overview
+			return ['Ready To Publish', 'Published', 'Scheduled', 'Needs Approval', 'Needs Copy', 'Needs Review', 'Draft'];
 		default:
 			return undefined;
 	}
