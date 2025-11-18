@@ -13,6 +13,7 @@ type BrandProfile = {
 
 type FormState = {
 	brand_profile_id: string;
+	update_mode: 'continue' | 'update'; // 'continue' = auto-generate content, 'update' = new strategy
 	monthly_cycle_start: string;
 	objective: string;
 	themes_focus: string;
@@ -27,6 +28,7 @@ const initialFormState = (): FormState => {
 	const iso = today.toISOString().split('T')[0];
 	return {
 		brand_profile_id: '',
+		update_mode: 'continue', // Default to continue existing strategy
 		monthly_cycle_start: iso,
 		objective: '',
 		themes_focus: '',
@@ -92,14 +94,17 @@ export default function MonthlyUpdatePage() {
 			return;
 		}
 
-		if (!form.objective.trim()) {
-			setError('Please add a clear objective for this cycle.');
-			return;
-		}
+		// Only validate form fields if updating strategy
+		if (form.update_mode === 'update') {
+			if (!form.objective.trim()) {
+				setError('Please add a clear objective for this cycle.');
+				return;
+			}
 
-		if (!form.themes_focus.trim()) {
-			setError('Share the themes or campaigns you want us to focus on.');
-			return;
+			if (!form.themes_focus.trim()) {
+				setError('Share the themes or campaigns you want us to focus on.');
+				return;
+			}
 		}
 
 		setSubmitting(true);
@@ -117,7 +122,11 @@ export default function MonthlyUpdatePage() {
 				throw new Error(data?.error || 'Failed to submit monthly update');
 			}
 
-			setSuccess('Monthly strategy update submitted. We will email you when the new plan is ready.');
+			if (form.update_mode === 'continue') {
+				setSuccess('Your preference has been saved. Content will automatically generate when your monthly usage renews.');
+			} else {
+				setSuccess('Monthly strategy update submitted. We will email you when the new plan is ready.');
+			}
 			resetForm();
 		} catch (err: any) {
 			console.error('Monthly update error:', err);
@@ -189,7 +198,51 @@ export default function MonthlyUpdatePage() {
 						</select>
 					</div>
 
-					<div className="grid gap-4 md:grid-cols-2">
+					{/* Update Mode Toggle */}
+					<div className="space-y-3 p-4 rounded-xl2 border border-edge/60 bg-surface/30">
+						<label className="block text-sm font-medium mb-3">Strategy Update Mode *</label>
+						<div className="flex items-center gap-4">
+							<label className="flex items-center gap-2 cursor-pointer">
+								<input
+									type="radio"
+									name="update_mode"
+									value="continue"
+									checked={form.update_mode === 'continue'}
+									onChange={(e) => updateField('update_mode', e.target.value as 'continue' | 'update')}
+									className="w-4 h-4 text-primary focus:ring-primary/20"
+								/>
+								<span className="text-sm">
+									<span className="font-medium">Continue existing strategy</span>
+									<span className="text-text-dim block text-xs mt-1">
+										Content will auto-generate when your monthly usage renews. No new strategy needed.
+									</span>
+								</span>
+							</label>
+						</div>
+						<div className="flex items-center gap-4 mt-3">
+							<label className="flex items-center gap-2 cursor-pointer">
+								<input
+									type="radio"
+									name="update_mode"
+									value="update"
+									checked={form.update_mode === 'update'}
+									onChange={(e) => updateField('update_mode', e.target.value as 'continue' | 'update')}
+									className="w-4 h-4 text-primary focus:ring-primary/20"
+								/>
+								<span className="text-sm">
+									<span className="font-medium">Update next month's strategy</span>
+									<span className="text-text-dim block text-xs mt-1">
+										Submit new objectives and themes. A new strategy will be generated and require approval.
+									</span>
+								</span>
+							</label>
+						</div>
+					</div>
+
+					{/* Only show form fields if updating strategy */}
+					{form.update_mode === 'update' && (
+						<>
+							<div className="grid gap-4 md:grid-cols-2">
 						<div className="space-y-2">
 							<label className="block text-sm font-medium">Cycle start date *</label>
 							<input
@@ -263,14 +316,16 @@ export default function MonthlyUpdatePage() {
 						/>
 					</div>
 
-					<div className="space-y-2">
-						<label className="block text-sm font-medium">Supporting files (optional)</label>
-						<FileUpload onUpload={(urls) => updateField('attachments', urls)} maxFiles={6} maxSizeMB={20} />
-						<p className="text-xs text-text-dim flex items-center gap-2">
-							<ClipboardList className="w-3 h-3" />
-							Upload campaign decks, messaging docs, creative inspiration, or anything else that helps.
-						</p>
-					</div>
+							<div className="space-y-2">
+								<label className="block text-sm font-medium">Supporting files (optional)</label>
+								<FileUpload onUpload={(urls) => updateField('attachments', urls)} maxFiles={6} maxSizeMB={20} />
+								<p className="text-xs text-text-dim flex items-center gap-2">
+									<ClipboardList className="w-3 h-3" />
+									Upload campaign decks, messaging docs, creative inspiration, or anything else that helps.
+								</p>
+							</div>
+						</>
+					)}
 				</div>
 
 				{selectedProfile && (

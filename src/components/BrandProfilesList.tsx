@@ -10,6 +10,8 @@ type BrandProfile = {
 	id: string;
 	client_name: string;
 	status: string;
+	original_status?: string;
+	has_pending_content?: boolean;
 	created_time: string;
 	platforms_requested?: string[];
 	strategy_summary?: string;
@@ -56,6 +58,8 @@ export function BrandProfilesList() {
 				return <Clock className="w-4 h-4 text-warning" />;
 			case 'Strategy Ready':
 				return <FileText className="w-4 h-4 text-primary" />;
+			case 'Content Review':
+				return <FileText className="w-4 h-4 text-accent" />;
 			case 'Strategy Approved':
 			case 'Ready To Publish':
 			case 'Published':
@@ -76,6 +80,8 @@ export function BrandProfilesList() {
 				return 'bg-warning/15 border-warning/30 text-warning';
 			case 'Strategy Ready':
 				return 'bg-primary/15 border-primary/30 text-primary';
+			case 'Content Review':
+				return 'bg-accent/15 border-accent/30 text-accent';
 			case 'Strategy Approved':
 			case 'Ready To Publish':
 			case 'Published':
@@ -143,53 +149,62 @@ export function BrandProfilesList() {
 				</div>
 			) : (
 				<div className="space-y-3">
-					{profiles.map((profile) => (
-						<motion.div
-							key={profile.id}
-							initial={{ opacity: 0, y: 10 }}
-							animate={{ opacity: 1, y: 0 }}
-							className="border border-edge/60 rounded-xl2 p-4 hover:bg-surface/30 transition cursor-pointer"
-						>
-							<Link href={`/strategy/${profile.id}`}>
-								<div className="flex items-start justify-between">
-									<div className="flex-1">
-										<div className="flex items-center gap-3 mb-2">
-											<h3 className="font-semibold text-lg">{profile.client_name}</h3>
-											{getStatusIcon(profile.status)}
-											<span
-												className={`px-2 py-1 rounded-full text-xs border ${getStatusColor(profile.status)}`}
-											>
-												{normaliseStatus(profile.status)}
-											</span>
-										</div>
-										{profile.platforms_requested && profile.platforms_requested.length > 0 && (
-											<div className="flex items-center gap-2 mb-2">
-												<span className="text-xs text-text-dim">Platforms:</span>
-												<div className="flex gap-1 flex-wrap">
-													{profile.platforms_requested.map((platform) => (
-														<span
-															key={platform}
-															className="px-2 py-0.5 rounded text-xs bg-surface/50 border border-edge/60 text-text-soft"
-														>
-															{platform}
-														</span>
-													))}
-												</div>
+					{profiles.map((profile) => {
+						const normalisedStatus = normaliseStatus(profile.status);
+						const isContentReview = normalisedStatus === 'Content Review';
+						const isStrategyReady = normalisedStatus === 'Strategy Ready';
+						const href = isContentReview ? '/content/approval' : `/strategy/${profile.id}`;
+
+						return (
+							<motion.div
+								key={profile.id}
+								initial={{ opacity: 0, y: 10 }}
+								animate={{ opacity: 1, y: 0 }}
+								className="border border-edge/60 rounded-xl2 p-4 hover:bg-surface/30 transition cursor-pointer"
+							>
+								<Link href={href}>
+									<div className="flex items-start justify-between">
+										<div className="flex-1">
+											<div className="flex items-center gap-3 mb-2">
+												<h3 className="font-semibold text-lg">{profile.client_name}</h3>
+												{getStatusIcon(profile.status)}
+												<span
+													className={`px-2 py-1 rounded-full text-xs border ${getStatusColor(profile.status)}`}
+												>
+													{normalisedStatus}
+												</span>
 											</div>
-										)}
-										{profile.created_time && (
-											<p className="text-xs text-text-dim">
-												Created: {new Date(profile.created_time).toLocaleDateString()}
-											</p>
+											{profile.platforms_requested && profile.platforms_requested.length > 0 && (
+												<div className="flex items-center gap-2 mb-2">
+													<span className="text-xs text-text-dim">Platforms:</span>
+													<div className="flex gap-1 flex-wrap">
+														{profile.platforms_requested.map((platform) => (
+															<span
+																key={platform}
+																className="px-2 py-0.5 rounded text-xs bg-surface/50 border border-edge/60 text-text-soft"
+															>
+																{platform}
+															</span>
+														))}
+													</div>
+												</div>
+											)}
+											{profile.created_time && (
+												<p className="text-xs text-text-dim">
+													Created: {new Date(profile.created_time).toLocaleDateString()}
+												</p>
+											)}
+										</div>
+										{(isStrategyReady || isContentReview) && (
+											<span className={`text-sm ${isContentReview ? 'text-accent' : 'text-primary'}`}>
+												{isContentReview ? 'Review Content →' : 'Review →'}
+											</span>
 										)}
 									</div>
-									{normaliseStatus(profile.status) === 'Strategy Ready' && (
-										<span className="text-primary text-sm">Review →</span>
-									)}
-								</div>
-							</Link>
-						</motion.div>
-					))}
+								</Link>
+							</motion.div>
+						);
+					})}
 				</div>
 			)}
 		</div>

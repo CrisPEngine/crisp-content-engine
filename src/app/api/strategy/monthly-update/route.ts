@@ -7,13 +7,32 @@ export const runtime = 'nodejs';
 
 const schema = z.object({
 	brand_profile_id: z.string().min(1, 'Select a brand profile'),
+	update_mode: z.enum(['continue', 'update']).default('continue'),
 	monthly_cycle_start: z.string().optional(),
-	objective: z.string().min(5, 'Tell us the objective for this month'),
-	themes_focus: z.string().min(5, 'List the priority themes for this cycle'),
+	objective: z.string().optional(),
+	themes_focus: z.string().optional(),
 	key_dates: z.string().optional().default(''),
 	feedback_notes: z.string().optional().default(''),
 	content_preferences: z.string().optional().default(''),
 	attachments: z.array(z.string().url()).optional().default([]),
+}).superRefine((data, ctx) => {
+	// If updating strategy, require objective and themes_focus
+	if (data.update_mode === 'update') {
+		if (!data.objective || data.objective.trim().length < 5) {
+			ctx.addIssue({
+				path: ['objective'],
+				code: z.ZodIssueCode.custom,
+				message: 'Tell us the objective for this month',
+			});
+		}
+		if (!data.themes_focus || data.themes_focus.trim().length < 5) {
+			ctx.addIssue({
+				path: ['themes_focus'],
+				code: z.ZodIssueCode.custom,
+				message: 'List the priority themes for this cycle',
+			});
+		}
+	}
 });
 
 const formatCycleLabel = (date: Date) =>
@@ -55,14 +74,57 @@ export async function POST(req: Request) {
 		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
 		const BASE_ID = process.env.AIRTABLE_BASE_ID;
 		const TABLE_ID = process.env.AIRTABLE_STRATEGYUPDATES_TABLE;
+		const BRANDPROFILES_TABLE = process.env.AIRTABLE_BRANDPROFILES_TABLE;
 
-		if (!AIRTABLE_TOKEN || !BASE_ID || !TABLE_ID) {
+		if (!AIRTABLE_TOKEN || !BASE_ID || !TABLE_ID || !BRANDPROFILES_TABLE) {
 			return NextResponse.json(
 				{ error: 'Airtable configuration missing. Please contact support.' },
 				{ status: 500 }
 			);
 		}
 
+		// If mode is 'continue', just save preference to BrandProfiles and return
+		if (data.update_mode === 'continue') {
+			try {
+				// Update BrandProfiles to mark that this brand should auto-generate content on renewal
+				const updateRes = await fetch(
+					`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}/${data.brand_profile_id}`,
+					{
+						method: 'PATCH',
+						headers: {
+							Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify({
+							fields: {
+								auto_generate_content: true, // Flag to indicate auto-generation on renewal
+								last_monthly_update_mode: 'continue',
+								last_monthly_update_at: new Date().toISOString(),
+							},
+						}),
+					}
+				);
+
+				if (!updateRes.ok) {
+					const errorData = await updateRes.json();
+					console.error('Failed to save continue preference:', errorData);
+					// Don't fail the request, just log
+				}
+
+				return NextResponse.json({
+					ok: true,
+					message: 'Preference saved. Content will auto-generate when your monthly usage renews.',
+				});
+			} catch (error: any) {
+				console.error('Error saving continue preference:', error);
+				return NextResponse.json(
+					{ error: 'Failed to save preference', details: error?.message },
+					{ status: 500 }
+				);
+			}
+		}
+
+		// If mode is 'update', proceed with strategy update flow
 		const cycleStart = data.monthly_cycle_start
 			? new Date(data.monthly_cycle_start)
 			: new Date();
@@ -133,20 +195,18 @@ export async function POST(req: Request) {
 		// Fetch brand_type from Airtable to include in payload
 		let brandType = 'company'; // default
 		try {
-			if (AIRTABLE_TOKEN && BASE_ID && TABLE_ID) {
-				const brandRes = await fetch(
-					`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${data.brand_profile_id}`,
-					{
-						headers: {
-							Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-							'Content-Type': 'application/json',
-						},
-					}
-				);
-				if (brandRes.ok) {
-					const brandRecord = await brandRes.json();
-					brandType = brandRecord.fields?.brand_type || 'company';
+			const brandRes = await fetch(
+				`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}/${data.brand_profile_id}`,
+				{
+					headers: {
+						Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+						'Content-Type': 'application/json',
+					},
 				}
+			);
+			if (brandRes.ok) {
+				const brandRecord = await brandRes.json();
+				brandType = brandRecord.fields?.brand_type || 'company';
 			}
 		} catch (error) {
 			console.warn('Failed to fetch brand_type, defaulting to company:', error);

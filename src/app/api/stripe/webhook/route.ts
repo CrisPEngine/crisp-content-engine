@@ -23,11 +23,11 @@ export async function POST(request: Request) {
 	}
 
 	// Handle relevant events
-		switch (event.type) {
+	switch (event.type) {
 		case 'checkout.session.completed':
 		case 'invoice.paid':
 		case 'customer.subscription.updated': {
-				const obj = event.data.object as any;
+			const obj = event.data.object as any;
 			let priceId: string | undefined;
 			if (obj?.lines?.data?.[0]?.price?.id) priceId = obj.lines.data[0].price.id;
 			if (!priceId && obj?.subscription) {
@@ -36,20 +36,39 @@ export async function POST(request: Request) {
 			}
 			if (!priceId && obj?.items?.data?.[0]?.price?.id) priceId = obj.items.data[0].price.id;
 			const mapping = priceId ? PRICE_TO_PLAN[priceId] : undefined;
-				if (!mapping) return NextResponse.json({ ignored: true });
-				const { customerId, customerEmail } = extractCustomerAndEmail(obj);
-				const profile = await upsertUserFromStripe(customerId, customerEmail);
-				const userId = (obj?.metadata?.user_id as string) || (obj?.client_reference_id as string) || profile?.id;
-				if (!userId) return NextResponse.json({ ok: true });
-				await upsertSubscriptionAndEntitlements({
-					userId,
-					plan: mapping.plan,
-					cycle: mapping.cycle,
-					stripeCustomerId: customerId,
-					stripeSubscriptionId: typeof obj?.subscription === 'string' ? obj.subscription : obj?.subscription?.id,
-					priceId,
-					currentPeriodEnd: (obj?.current_period_end as number | undefined),
-				});
+			if (!mapping) return NextResponse.json({ ignored: true });
+			const { customerId, customerEmail } = extractCustomerAndEmail(obj);
+			const profile = await upsertUserFromStripe(customerId, customerEmail);
+			const userId = (obj?.metadata?.user_id as string) || (obj?.client_reference_id as string) || profile?.id;
+			if (!userId) return NextResponse.json({ ok: true });
+			await upsertSubscriptionAndEntitlements({
+				userId,
+				plan: mapping.plan,
+				cycle: mapping.cycle,
+				stripeCustomerId: customerId,
+				stripeSubscriptionId: typeof obj?.subscription === 'string' ? obj.subscription : obj?.subscription?.id,
+				priceId,
+				currentPeriodEnd: (obj?.current_period_end as number | undefined),
+			});
+
+			// If this is an invoice.paid event (renewal), trigger auto-content generation
+			if (event.type === 'invoice.paid' && mapping.cycle === 'monthly') {
+				try {
+					// Call auto-generate endpoint asynchronously (don't wait for it)
+					fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/content/auto-generate`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ userId }),
+					}).catch((err) => {
+						console.error('Failed to trigger auto-content generation:', err);
+						// Don't fail the webhook if this fails
+					});
+				} catch (error) {
+					console.error('Error triggering auto-content generation:', error);
+					// Don't fail the webhook if this fails
+				}
+			}
+
 			break;
 		}
 		default:
