@@ -1,7 +1,7 @@
 'use client';
 
 // Strategy Review Page - Redesigned with header card and snapshot
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { motion } from 'framer-motion';
@@ -22,12 +22,7 @@ export default function StrategyReviewPage() {
 	const [error, setError] = useState<string | null>(null);
 	const [hasPendingContent, setHasPendingContent] = useState(false);
 
-	useEffect(() => {
-		if (!supabase) return;
-		loadStrategy();
-	}, [supabase, params.id]);
-
-	async function loadStrategy() {
+	const loadStrategy = useCallback(async () => {
 		if (!supabase || !params.id) return;
 		setLoading(true);
 		setError(null);
@@ -66,7 +61,12 @@ export default function StrategyReviewPage() {
 		} finally {
 			setLoading(false);
 		}
-	}
+	}, [supabase, params.id, router]);
+
+	useEffect(() => {
+		if (!supabase) return;
+		loadStrategy();
+	}, [supabase, loadStrategy]);
 
 	async function approveStrategy() {
 		if (!supabase || !strategy) return;
