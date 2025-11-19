@@ -556,8 +556,8 @@ export default function ContentApprovalPage() {
 
 										{/* Hashtags */}
 										{item.hashtags && (
-											<div className="text-xs text-text-dim">
-												<span className="font-medium">Hashtags:</span> {item.hashtags}
+											<div className="text-xs text-text-dim break-words">
+												<span className="font-medium">Hashtags:</span> <span className="break-all">{item.hashtags}</span>
 											</div>
 										)}
 									</div>

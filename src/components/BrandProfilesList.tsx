@@ -188,7 +188,7 @@ export function BrandProfilesList() {
 											<h3 className="font-semibold text-lg">{profile.client_name}</h3>
 											{getStatusIcon(profile.status)}
 											<span
-												className={`px-2 py-1 rounded-full text-xs border ${getStatusColor(profile.status)}`}
+												className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center justify-center min-w-[100px] text-center ${getStatusColor(profile.status)}`}
 											>
 												{normalisedStatus}
 											</span>

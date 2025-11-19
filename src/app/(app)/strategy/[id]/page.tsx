@@ -276,11 +276,11 @@ export default function StrategyReviewPage() {
 					boxShadow: '0 0 20px rgba(99, 102, 241, 0.1), 0 0 40px rgba(99, 102, 241, 0.05)',
 				}}
 			>
-				<div className="flex items-start justify-between gap-6">
+				<div className="flex flex-col md:flex-row items-start justify-between gap-4 md:gap-6">
 					{/* Left: Brand name, status, last updated */}
-					<div className="flex-1">
-						<h1 className="text-3xl font-bold text-text mb-3">{strategy.brand_name}</h1>
-						<div className="flex items-center gap-3 mb-2">
+					<div className="flex-1 w-full">
+						<h1 className="text-2xl md:text-3xl font-bold text-text mb-3">{strategy.brand_name}</h1>
+						<div className="flex flex-wrap items-center gap-3 mb-2">
 							<div className="flex items-center gap-2">
 								<div className={`w-2 h-2 rounded-full ${getStatusDotColor(strategy.status)}`} />
 								<span className={`text-sm font-medium ${getStatusColor(strategy.status)}`}>
@@ -296,32 +296,32 @@ export default function StrategyReviewPage() {
 						</div>
 					</div>
 
-					{/* Right: Action buttons */}
+					{/* Right: Action buttons - Stack on mobile */}
 					{!editing && strategy.status === 'Strategy Approved' && (
-						<div className="flex items-center gap-3">
+						<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
 							<button
 								onClick={() => router.push('/content/approval')}
-								className="px-6 py-3 rounded-xl2 bg-gradient-to-r from-accent/90 to-accent/70 hover:from-accent hover:to-accent/90 text-white font-medium shadow-lg shadow-accent/20 flex items-center gap-2 transition-all"
+								className="px-6 py-3 rounded-xl2 bg-gradient-to-r from-accent/90 to-accent/70 hover:from-accent hover:to-accent/90 text-white font-medium shadow-lg shadow-accent/20 flex items-center justify-center gap-2 transition-all"
 							>
 								<Check className="w-4 h-4" />
 								Review Content
 							</button>
 							<button
 								onClick={() => router.push('/strategy/monthly-update')}
-								className="px-6 py-3 rounded-xl2 border-2 border-primary/50 bg-transparent hover:bg-primary/10 text-primary font-medium flex items-center gap-2 transition-all"
+								className="px-6 py-3 rounded-xl2 border-2 border-primary/50 bg-transparent hover:bg-primary/10 text-primary font-medium flex items-center justify-center gap-2 transition-all"
 							>
 								Monthly Strategy Update
 							</button>
 						</div>
 					)}
 					{!editing && strategy.status !== 'Strategy Approved' && (
-						<div className="flex items-center gap-3">
+						<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
 							<button
 								onClick={() => {
 									setEditedContent(strategy.content);
 									setEditing(true);
 								}}
-								className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 flex items-center gap-2"
+								className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 flex items-center justify-center gap-2"
 							>
 								<Edit className="w-4 h-4" />
 								Edit
@@ -329,7 +329,7 @@ export default function StrategyReviewPage() {
 							<button
 								onClick={approveStrategy}
 								disabled={approving}
-								className="px-6 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+								className="px-6 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
 							>
 								{approving ? (
 									<Loader2 className="w-4 h-4 animate-spin" />
@@ -370,7 +370,7 @@ export default function StrategyReviewPage() {
 						boxShadow: '0 0 10px rgba(99, 102, 241, 0.05)',
 					}}
 				>
-					<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+					<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 						{/* Pillars Count */}
 						<div>
 							<div className="text-xs text-text-dim mb-1">Content Pillars</div>
@@ -394,24 +394,6 @@ export default function StrategyReviewPage() {
 								{strategySnapshot.voiceSummary.length > 60
 									? `${strategySnapshot.voiceSummary.substring(0, 60)}...`
 									: strategySnapshot.voiceSummary}
-							</div>
-						</div>
-
-						{/* Cadence Summary */}
-						<div>
-							<div className="text-xs text-text-dim mb-1">Posting Cadence</div>
-							<div className="text-sm font-medium text-text space-y-1">
-								{Object.entries(strategySnapshot.cadence)
-									.filter(([_, freq]) => freq && String(freq).trim())
-									.slice(0, 2)
-									.map(([platform, frequency]) => (
-										<div key={platform}>
-											{platform}: <span className="text-text-soft">{String(frequency)}</span>
-										</div>
-									))}
-								{Object.keys(strategySnapshot.cadence).filter((k) => strategySnapshot.cadence[k]).length === 0 && (
-									<span className="text-text-soft">Not specified</span>
-								)}
 							</div>
 						</div>
 					</div>
