@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Calendar, FileText, Clock, Check, X, Loader2 } from 'lucide-react';
+import { Calendar, FileText, Clock, Check, X, Loader2, Edit2, Trash2 } from 'lucide-react';
 import Link from 'next/link';
+import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
 type ContentItem = {
 	id: string;
@@ -53,6 +54,9 @@ export function DashboardTabs({ activeTab, contentItems: initialContentItems = [
 	const router = useRouter();
 	const [contentItems, setContentItems] = useState<ContentItem[]>(initialContentItems);
 	const [loading, setLoading] = useState(initialLoading);
+	const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+	const [itemToDelete, setItemToDelete] = useState<ContentItem | null>(null);
+	const [isDeleting, setIsDeleting] = useState(false);
 
 	// Fetch content when Content tab is active
 	useEffect(() => {
@@ -77,6 +81,43 @@ export function DashboardTabs({ activeTab, contentItems: initialContentItems = [
 	const scheduled = contentItems.filter(
 		(item) => item.scheduled_date && new Date(item.scheduled_date) > new Date()
 	);
+
+	const handleDeleteClick = (item: ContentItem) => {
+		setItemToDelete(item);
+		setDeleteModalOpen(true);
+	};
+
+	const handleDeleteConfirm = async () => {
+		if (!itemToDelete) return;
+
+		setIsDeleting(true);
+		try {
+			const res = await fetch(`/api/content/queue/${itemToDelete.id}`, {
+				method: 'DELETE',
+			});
+
+			if (!res.ok) {
+				const data = await res.json();
+				throw new Error(data?.error || 'Failed to delete content');
+			}
+
+			// Remove item from local state
+			setContentItems((prev) => prev.filter((item) => item.id !== itemToDelete.id));
+			setDeleteModalOpen(false);
+			setItemToDelete(null);
+		} catch (error: any) {
+			console.error('Delete error:', error);
+			alert(error?.message || 'Failed to delete content. Please try again.');
+		} finally {
+			setIsDeleting(false);
+		}
+	};
+
+	const handleDeleteCancel = () => {
+		if (isDeleting) return;
+		setDeleteModalOpen(false);
+		setItemToDelete(null);
+	};
 
 	return (
 		<div className="space-y-6">
@@ -200,12 +241,22 @@ export function DashboardTabs({ activeTab, contentItems: initialContentItems = [
 															)}
 														</div>
 													</div>
-													<Link
-														href="/content/approval"
-														className="px-3 py-1.5 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 text-sm whitespace-nowrap"
-													>
-														View
-													</Link>
+													<div className="flex items-center gap-2">
+														<Link
+															href="/content/approval"
+															className="p-2 rounded-lg border border-edge/60 bg-surface/30 hover:bg-surface/50 transition-colors"
+															title="Edit"
+														>
+															<Edit2 className="w-4 h-4 text-text-dim hover:text-primary" />
+														</Link>
+														<button
+															onClick={() => handleDeleteClick(item)}
+															className="p-2 rounded-lg border border-edge/60 bg-surface/30 hover:bg-surface/50 hover:border-warning/50 transition-colors"
+															title="Delete"
+														>
+															<Trash2 className="w-4 h-4 text-text-dim hover:text-warning" />
+														</button>
+													</div>
 												</div>
 											</div>
 										))}
@@ -285,6 +336,16 @@ export function DashboardTabs({ activeTab, contentItems: initialContentItems = [
 					</div>
 				</div>
 			)}
+
+			{/* Delete Confirmation Modal */}
+			<DeleteConfirmationModal
+				isOpen={deleteModalOpen}
+				onClose={handleDeleteCancel}
+				onConfirm={handleDeleteConfirm}
+				title="Delete Post?"
+				itemName={itemToDelete?.title}
+				isDeleting={isDeleting}
+			/>
 		</div>
 	);
 }

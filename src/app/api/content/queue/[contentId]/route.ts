@@ -240,3 +240,78 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 		return NextResponse.json({ error: error?.message || 'Server error' }, { status: 500 });
 	}
 }
+
+export async function DELETE(request: Request, context: { params: Promise<{ contentId: string }> }) {
+	try {
+		const cookieStore = await cookies();
+		const supabase = createServerClient(
+			process.env.NEXT_PUBLIC_SUPABASE_URL!,
+			process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+			{
+				cookies: {
+					get(name: string) {
+						return cookieStore.get(name)?.value;
+					},
+					set(name: string, value: string, options: CookieOptions) {
+						cookieStore.set({ name, value, ...options });
+					},
+					remove(name: string, options: CookieOptions) {
+						cookieStore.set({ name, value: '', ...options });
+					},
+				},
+			}
+		);
+
+		const {
+			data: { user },
+			error: userError,
+		} = await supabase.auth.getUser();
+
+		if (userError || !user) {
+			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+		}
+
+		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
+		const BASE_ID = process.env.AIRTABLE_BASE_ID;
+		const TABLE_ID = process.env.AIRTABLE_CONTENTQUEUE_TABLE;
+		const BRANDPROFILES_TABLE = process.env.AIRTABLE_BRANDPROFILES_TABLE;
+
+		if (!AIRTABLE_TOKEN || !BASE_ID || !TABLE_ID || !BRANDPROFILES_TABLE) {
+			return NextResponse.json(
+				{ error: 'Airtable configuration missing. Please contact support.' },
+				{ status: 500 }
+			);
+		}
+
+		const { contentId } = await context.params;
+		
+		// Verify user owns this content before deleting
+		const record = await fetchRecordForUser(contentId, user.id, BASE_ID, TABLE_ID, BRANDPROFILES_TABLE, AIRTABLE_TOKEN);
+		if (!record) {
+			return NextResponse.json({ error: 'Content item not found or unauthorized' }, { status: 404 });
+		}
+
+		// Delete the record from Airtable
+		const deleteRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${contentId}`, {
+			method: 'DELETE',
+			headers: {
+				Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+				'Content-Type': 'application/json',
+			},
+		});
+
+		if (!deleteRes.ok) {
+			const deleteResult = await deleteRes.json();
+			console.error('Airtable delete error:', deleteResult);
+			return NextResponse.json(
+				{ error: deleteResult?.error?.message || 'Failed to delete content item' },
+				{ status: 502 }
+			);
+		}
+
+		return NextResponse.json({ ok: true, message: 'Content deleted successfully' });
+	} catch (error: any) {
+		console.error('content queue DELETE error:', error);
+		return NextResponse.json({ error: error?.message || 'Server error' }, { status: 500 });
+	}
+}
