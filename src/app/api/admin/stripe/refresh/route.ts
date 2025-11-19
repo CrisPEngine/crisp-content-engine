@@ -151,7 +151,23 @@ export async function POST(req: Request) {
 			currentPeriodEnd: (subscription as any).current_period_end,
 		});
 
-		return NextResponse.json({ success: true, subscription: mapping });
+		// Fetch the created subscription to return full details
+		const { data: createdSubscription } = await admin
+			.from('subscriptions')
+			.select('*')
+			.eq('user_id', targetUserId)
+			.single();
+
+		return NextResponse.json({ 
+			success: true, 
+			subscription: createdSubscription || {
+				plan: mapping.plan,
+				cycle: mapping.cycle,
+				status: 'active',
+				stripe_customer_id: customerId,
+				stripe_subscription_id: subscription.id,
+			}
+		});
 	} catch (e: any) {
 		return NextResponse.json({ error: e?.message ?? 'Server error' }, { status: 500 });
 	}

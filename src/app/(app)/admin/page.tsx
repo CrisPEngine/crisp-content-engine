@@ -119,8 +119,21 @@ export default function AdminPage() {
 				const error = await res.json();
 				throw new Error(error.error || 'Failed to refresh Stripe');
 			}
+			const data = await res.json();
 			alert('Stripe data refreshed successfully');
-			loadUserDetails(userId);
+			
+			// Update the UI immediately with the returned subscription data
+			if (data.subscription && selectedUser) {
+				setSelectedUser({
+					...selectedUser,
+					subscription: data.subscription,
+				});
+			}
+			
+			// Also reload full details to ensure everything is in sync
+			setTimeout(() => {
+				loadUserDetails(userId);
+			}, 300);
 		} catch (error: any) {
 			console.error('Error refreshing Stripe:', error);
 			alert(error.message || 'Failed to refresh Stripe');
