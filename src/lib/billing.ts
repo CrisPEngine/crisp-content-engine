@@ -61,12 +61,14 @@ export async function upsertSubscriptionAndEntitlements(params: {
 		user_id: params.userId,
 		provider: 'stripe',
 		plan: params.plan,
+		cycle: params.cycle,
 		status: 'active',
 		metadata: { priceId: params.priceId },
 		current_period_end: currentPeriodEndIso,
 		// optional columns if present in schema
 		stripe_customer_id: params.stripeCustomerId,
 		stripe_subscription_id: params.stripeSubscriptionId ?? null,
+		updated_at: new Date().toISOString(),
 	});
 
 	await admin.from('entitlements').upsert({
