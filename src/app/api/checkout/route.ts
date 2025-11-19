@@ -47,7 +47,13 @@ export async function POST(req: Request) {
             allow_promotion_codes: true,
             billing_address_collection: 'auto',
             client_reference_id: user.id,
-            subscription_data: { metadata: { user_id: user.id } },
+            subscription_data: { 
+                metadata: { user_id: user.id },
+            },
+            customer_creation: 'always', // Ensure customer is created
+            customer_update: {
+                metadata: { user_id: user.id }, // Set user_id on customer metadata
+            },
             metadata: { user_id: user.id },
         });
         return NextResponse.json({ url: session.url });

@@ -72,6 +72,8 @@ export async function POST(request: Request) {
 			let priceId: string | undefined;
 			let subscriptionId: string | undefined;
 			let currentPeriodEnd: number | undefined;
+			let customerId: string | undefined;
+			let customerEmail: string | undefined;
 
 			// Handle different event types
 			if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
@@ -79,10 +81,24 @@ export async function POST(request: Request) {
 				subscriptionId = obj.id;
 				priceId = obj.items?.data?.[0]?.price?.id;
 				currentPeriodEnd = obj.current_period_end;
+				customerId = typeof obj.customer === 'string' ? obj.customer : obj.customer?.id;
+				
+				// For subscription.created, we need to get customer email from Stripe
+				if (customerId && !customerEmail) {
+					try {
+						const customer = await stripe.customers.retrieve(customerId) as any;
+						customerEmail = customer.email;
+					} catch (err) {
+						console.warn(`Failed to retrieve customer ${customerId}:`, err);
+					}
+				}
 			} else if (event.type === 'invoice.paid') {
 				// Invoice object
 				subscriptionId = typeof obj.subscription === 'string' ? obj.subscription : obj.subscription?.id;
 				priceId = obj.lines?.data?.[0]?.price?.id;
+				customerId = typeof obj.customer === 'string' ? obj.customer : obj.customer?.id;
+				customerEmail = obj.customer_email;
+				
 				if (!priceId && subscriptionId) {
 					const sub = await stripe.subscriptions.retrieve(subscriptionId) as any;
 					priceId = sub.items.data[0]?.price?.id;
@@ -101,12 +117,37 @@ export async function POST(request: Request) {
 				return NextResponse.json({ ignored: true, message: 'Unknown price ID' });
 			}
 
-			const { customerId, customerEmail } = extractCustomerAndEmail(obj);
-			const profile = await upsertUserFromStripe(customerId, customerEmail);
-			const userId = (obj?.metadata?.user_id as string) || (obj?.client_reference_id as string) || profile?.id;
+			// Try multiple methods to get user ID
+			let userId: string | undefined;
+			
+			// Method 1: From subscription metadata (set in checkout)
+			if (obj?.metadata?.user_id) {
+				userId = obj.metadata.user_id;
+			}
+			
+			// Method 2: From customer metadata (if subscription doesn't have it)
+			if (!userId && customerId) {
+				try {
+					const customer = await stripe.customers.retrieve(customerId) as any;
+					userId = customer.metadata?.user_id;
+				} catch (err) {
+					console.warn(`Failed to retrieve customer for user ID:`, err);
+				}
+			}
+			
+			// Method 3: From profile lookup by email
+			if (!userId && customerEmail) {
+				const profile = await upsertUserFromStripe(customerId, customerEmail);
+				userId = profile?.id;
+			}
 			
 			if (!userId) {
-				console.warn(`${event.type}: No user ID found`, { customerId, customerEmail, metadata: obj.metadata });
+				console.warn(`${event.type}: No user ID found`, { 
+					customerId, 
+					customerEmail, 
+					subscriptionMetadata: obj?.metadata,
+					subscriptionId 
+				});
 				return NextResponse.json({ ok: true, message: 'No user ID found' });
 			}
 

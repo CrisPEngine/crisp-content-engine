@@ -4,12 +4,12 @@ import { PRICE_TO_PLAN } from '@/config/pricing';
 import { upsertSubscriptionAndEntitlements } from '@/lib/billing';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { supabaseAdmin } from '@/lib/supabaseService';
+import { getSupabaseService } from '@/lib/supabaseService';
 
 export const runtime = 'nodejs';
 
 async function checkAdmin(userId: string) {
-	const admin = supabaseAdmin();
+	const admin = getSupabaseService();
 	const { data: profile } = await admin
 		.from('profiles')
 		.select('is_admin')
