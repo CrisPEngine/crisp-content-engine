@@ -40,23 +40,61 @@ export async function POST(req: Request) {
 		const admin = getSupabaseService();
 		const stripe = getStripe();
 
-		// If userId provided, get customer ID from subscription
+		// If userId provided, get customer ID from subscription OR search by email
 		let customerId = stripeCustomerId;
+		let targetUserId = userId;
+		
 		if (!customerId && userId) {
+			// First, try to get from existing subscription
 			const { data: sub } = await admin
 				.from('subscriptions')
 				.select('stripe_customer_id')
 				.eq('user_id', userId)
 				.maybeSingle();
 			customerId = sub?.stripe_customer_id;
+
+			// If no subscription record exists, search Stripe by user email
+			if (!customerId) {
+				const { data: profile } = await admin
+					.from('profiles')
+					.select('email')
+					.eq('id', userId)
+					.single();
+
+				if (profile?.email) {
+					// Search Stripe for customers with this email
+					const customers = await stripe.customers.list({
+						email: profile.email,
+						limit: 10,
+					});
+
+					// Find the first customer with an active subscription
+					for (const customer of customers.data) {
+						if (customer.deleted) continue;
+						
+						const subscriptions = await stripe.subscriptions.list({
+							customer: customer.id,
+							limit: 1,
+							status: 'active',
+						});
+
+						if (subscriptions.data.length > 0) {
+							customerId = customer.id;
+							break;
+						}
+					}
+				}
+			}
 		}
 
 		if (!customerId) {
-			return NextResponse.json({ error: 'No Stripe customer found' }, { status: 404 });
+			return NextResponse.json({ 
+				error: 'No Stripe customer found. Make sure the user has completed checkout in Stripe.' 
+			}, { status: 404 });
 		}
 
 		// Fetch customer and subscriptions from Stripe
-		const customer = await stripe.customers.retrieve(customerId);
+		const customer = await stripe.customers.retrieve(customerId) as any;
 		if (customer.deleted) {
 			return NextResponse.json({ error: 'Customer deleted' }, { status: 404 });
 		}
@@ -83,19 +121,23 @@ export async function POST(req: Request) {
 			return NextResponse.json({ error: 'Unknown price ID' }, { status: 400 });
 		}
 
-		// Get user ID from customer metadata or profile
-		let targetUserId = userId;
+		// Get user ID - use provided userId, or look up by customer email
 		if (!targetUserId) {
-			const { data: profile } = await admin
-				.from('profiles')
-				.select('id')
-				.eq('email', (customer as any).email)
-				.maybeSingle();
-			targetUserId = profile?.id;
+			const customerEmail = (customer as any).email;
+			if (customerEmail) {
+				const { data: profile } = await admin
+					.from('profiles')
+					.select('id')
+					.eq('email', customerEmail)
+					.maybeSingle();
+				targetUserId = profile?.id;
+			}
 		}
 
 		if (!targetUserId) {
-			return NextResponse.json({ error: 'User not found' }, { status: 404 });
+			return NextResponse.json({ 
+				error: 'User not found. Make sure the customer email in Stripe matches a user email in the system.' 
+			}, { status: 404 });
 		}
 
 		// Update subscription and entitlements
