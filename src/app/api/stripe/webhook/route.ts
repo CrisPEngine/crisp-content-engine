@@ -24,31 +24,100 @@ export async function POST(request: Request) {
 
 	// Handle relevant events
 	switch (event.type) {
-		case 'checkout.session.completed':
-		case 'invoice.paid':
-		case 'customer.subscription.updated': {
-			const obj = event.data.object as any;
-			let priceId: string | undefined;
-			if (obj?.lines?.data?.[0]?.price?.id) priceId = obj.lines.data[0].price.id;
-			if (!priceId && obj?.subscription) {
-				const sub = await stripe.subscriptions.retrieve(typeof obj.subscription === 'string' ? obj.subscription : obj.subscription.id);
-				priceId = sub.items.data[0]?.price?.id;
+		case 'checkout.session.completed': {
+			// CheckoutSession object - need to get subscription and retrieve it
+			const session = event.data.object as any;
+			const subscriptionId = session.subscription;
+			const userId = (session.metadata?.user_id as string) || (session.client_reference_id as string);
+			
+			if (!subscriptionId || !userId) {
+				console.warn('checkout.session.completed: Missing subscription ID or user ID', { subscriptionId, userId });
+				return NextResponse.json({ ok: true, message: 'Missing subscription or user ID' });
 			}
-			if (!priceId && obj?.items?.data?.[0]?.price?.id) priceId = obj.items.data[0].price.id;
-			const mapping = priceId ? PRICE_TO_PLAN[priceId] : undefined;
-			if (!mapping) return NextResponse.json({ ignored: true });
-			const { customerId, customerEmail } = extractCustomerAndEmail(obj);
-			const profile = await upsertUserFromStripe(customerId, customerEmail);
-			const userId = (obj?.metadata?.user_id as string) || (obj?.client_reference_id as string) || profile?.id;
-			if (!userId) return NextResponse.json({ ok: true });
+
+			// Retrieve the subscription to get price and details
+			const subId = typeof subscriptionId === 'string' ? subscriptionId : subscriptionId.id;
+			const subscription = await stripe.subscriptions.retrieve(subId) as any;
+			const priceId = subscription.items.data[0]?.price?.id;
+			if (!priceId) {
+				console.warn('checkout.session.completed: No price ID found in subscription');
+				return NextResponse.json({ ok: true, message: 'No price ID found' });
+			}
+
+			const mapping = PRICE_TO_PLAN[priceId];
+			if (!mapping) {
+				console.warn('checkout.session.completed: Unknown price ID', priceId);
+				return NextResponse.json({ ignored: true, message: 'Unknown price ID' });
+			}
+
+			const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id;
+			const customerEmail = session.customer_details?.email || session.customer_email;
+
 			await upsertSubscriptionAndEntitlements({
 				userId,
 				plan: mapping.plan,
 				cycle: mapping.cycle,
 				stripeCustomerId: customerId,
-				stripeSubscriptionId: typeof obj?.subscription === 'string' ? obj.subscription : obj?.subscription?.id,
+				stripeSubscriptionId: subId,
 				priceId,
-				currentPeriodEnd: (obj?.current_period_end as number | undefined),
+				currentPeriodEnd: subscription.current_period_end as number | undefined,
+			});
+
+			break;
+		}
+		case 'customer.subscription.created':
+		case 'customer.subscription.updated':
+		case 'invoice.paid': {
+			const obj = event.data.object as any;
+			let priceId: string | undefined;
+			let subscriptionId: string | undefined;
+			let currentPeriodEnd: number | undefined;
+
+			// Handle different event types
+			if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
+				// Subscription object
+				subscriptionId = obj.id;
+				priceId = obj.items?.data?.[0]?.price?.id;
+				currentPeriodEnd = obj.current_period_end;
+			} else if (event.type === 'invoice.paid') {
+				// Invoice object
+				subscriptionId = typeof obj.subscription === 'string' ? obj.subscription : obj.subscription?.id;
+				priceId = obj.lines?.data?.[0]?.price?.id;
+				if (!priceId && subscriptionId) {
+					const sub = await stripe.subscriptions.retrieve(subscriptionId) as any;
+					priceId = sub.items.data[0]?.price?.id;
+					currentPeriodEnd = sub.current_period_end as number | undefined;
+				}
+			}
+
+			if (!priceId) {
+				console.warn(`${event.type}: No price ID found`);
+				return NextResponse.json({ ignored: true, message: 'No price ID found' });
+			}
+
+			const mapping = PRICE_TO_PLAN[priceId];
+			if (!mapping) {
+				console.warn(`${event.type}: Unknown price ID`, priceId);
+				return NextResponse.json({ ignored: true, message: 'Unknown price ID' });
+			}
+
+			const { customerId, customerEmail } = extractCustomerAndEmail(obj);
+			const profile = await upsertUserFromStripe(customerId, customerEmail);
+			const userId = (obj?.metadata?.user_id as string) || (obj?.client_reference_id as string) || profile?.id;
+			
+			if (!userId) {
+				console.warn(`${event.type}: No user ID found`, { customerId, customerEmail, metadata: obj.metadata });
+				return NextResponse.json({ ok: true, message: 'No user ID found' });
+			}
+
+			await upsertSubscriptionAndEntitlements({
+				userId,
+				plan: mapping.plan,
+				cycle: mapping.cycle,
+				stripeCustomerId: customerId,
+				stripeSubscriptionId: subscriptionId,
+				priceId,
+				currentPeriodEnd,
 			});
 
 			// If this is an invoice.paid event (renewal), trigger auto-content generation
