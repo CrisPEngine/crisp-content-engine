@@ -10,12 +10,36 @@ Supabase Auth can check user passwords against the HaveIBeenPwned.org database t
 
 ### Option 1: Via Supabase Dashboard (Recommended)
 
+The location of this setting may vary depending on your Supabase project version. Try these locations:
+
+**Location A: Authentication → Email Templates**
+1. Open your Supabase Dashboard
+2. Navigate to **Authentication** → **Email Templates**
+3. Look for **"Password"** or **"Security"** settings
+4. Find the toggle for **"Check for leaked passwords"** or **"HaveIBeenPwned"**
+5. Enable the toggle
+6. Save the changes
+
+**Location B: Authentication → Settings → Password**
 1. Open your Supabase Dashboard
 2. Navigate to **Authentication** → **Settings**
 3. Scroll down to the **Password** section
 4. Find the toggle for **"Check for leaked passwords"** or **"HaveIBeenPwned"**
 5. Enable the toggle
 6. Save the changes
+
+**Location C: Project Settings → Auth**
+1. Open your Supabase Dashboard
+2. Navigate to **Project Settings** → **Auth**
+3. Look for **"Password"** or **"Security"** settings
+4. Find the toggle for **"Check for leaked passwords"**
+5. Enable the toggle
+6. Save the changes
+
+**If you still can't find it:**
+- This feature may not be available in your Supabase plan/version
+- Contact Supabase support to enable it
+- Or use the Management API method below
 
 ### Option 2: Via Supabase CLI
 

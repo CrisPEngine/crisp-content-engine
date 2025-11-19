@@ -119,88 +119,98 @@ USING (
 -- Service role can manage waitlist entries if needed
 
 -- ============================================
--- 4. brands table (if it exists and is used)
+-- 4. brands table
 -- ============================================
--- Note: Based on codebase analysis, brands appear to be stored in Airtable, not Supabase
--- If this table exists but is unused, you may want to either:
--- 1. Drop the table if it's not needed
--- 2. Enable RLS if it is used
+-- Enable RLS for brands table (required by Supabase security advisor)
 
--- Uncomment below if brands table is actually used:
---
--- ALTER TABLE public.brands ENABLE ROW LEVEL SECURITY;
---
--- CREATE POLICY "Users can view their own brands"
--- ON public.brands
--- FOR SELECT
--- USING (
---   user_id = (select auth.uid())
--- );
---
--- CREATE POLICY "Users can insert their own brands"
--- ON public.brands
--- FOR INSERT
--- WITH CHECK (
---   user_id = (select auth.uid())
--- );
---
--- CREATE POLICY "Users can update their own brands"
--- ON public.brands
--- FOR UPDATE
--- USING (
---   user_id = (select auth.uid())
--- )
--- WITH CHECK (
---   user_id = (select auth.uid())
--- );
---
--- CREATE POLICY "Users can delete their own brands"
--- ON public.brands
--- FOR DELETE
--- USING (
---   user_id = (select auth.uid())
--- );
+ALTER TABLE public.brands ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies if they exist (idempotent)
+DROP POLICY IF EXISTS "Users can view their own brands" ON public.brands;
+DROP POLICY IF EXISTS "Users can insert their own brands" ON public.brands;
+DROP POLICY IF EXISTS "Users can update their own brands" ON public.brands;
+DROP POLICY IF EXISTS "Users can delete their own brands" ON public.brands;
+
+-- Users can view their own brands
+CREATE POLICY "Users can view their own brands"
+ON public.brands
+FOR SELECT
+USING (
+  user_id = (select auth.uid())
+);
+
+-- Users can insert their own brands
+CREATE POLICY "Users can insert their own brands"
+ON public.brands
+FOR INSERT
+WITH CHECK (
+  user_id = (select auth.uid())
+);
+
+-- Users can update their own brands
+CREATE POLICY "Users can update their own brands"
+ON public.brands
+FOR UPDATE
+USING (
+  user_id = (select auth.uid())
+)
+WITH CHECK (
+  user_id = (select auth.uid())
+);
+
+-- Users can delete their own brands
+CREATE POLICY "Users can delete their own brands"
+ON public.brands
+FOR DELETE
+USING (
+  user_id = (select auth.uid())
+);
 
 -- ============================================
--- 5. channels table (if it exists and is used)
+-- 5. channels table
 -- ============================================
--- Note: channels table was not found in codebase usage
--- If this table exists but is unused, you may want to either:
--- 1. Drop the table if it's not needed
--- 2. Enable RLS if it is used
+-- Enable RLS for channels table (required by Supabase security advisor)
 
--- Uncomment below if channels table is actually used:
---
--- ALTER TABLE public.channels ENABLE ROW LEVEL SECURITY;
---
--- CREATE POLICY "Users can view their own channels"
--- ON public.channels
--- FOR SELECT
--- USING (
---   user_id = (select auth.uid())
--- );
---
--- CREATE POLICY "Users can insert their own channels"
--- ON public.channels
--- FOR INSERT
--- WITH CHECK (
---   user_id = (select auth.uid())
--- );
---
--- CREATE POLICY "Users can update their own channels"
--- ON public.channels
--- FOR UPDATE
--- USING (
---   user_id = (select auth.uid())
--- )
--- WITH CHECK (
---   user_id = (select auth.uid())
--- );
---
--- CREATE POLICY "Users can delete their own channels"
--- ON public.channels
--- FOR DELETE
--- USING (
---   user_id = (select auth.uid())
--- );
+ALTER TABLE public.channels ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies if they exist (idempotent)
+DROP POLICY IF EXISTS "Users can view their own channels" ON public.channels;
+DROP POLICY IF EXISTS "Users can insert their own channels" ON public.channels;
+DROP POLICY IF EXISTS "Users can update their own channels" ON public.channels;
+DROP POLICY IF EXISTS "Users can delete their own channels" ON public.channels;
+
+-- Users can view their own channels
+CREATE POLICY "Users can view their own channels"
+ON public.channels
+FOR SELECT
+USING (
+  user_id = (select auth.uid())
+);
+
+-- Users can insert their own channels
+CREATE POLICY "Users can insert their own channels"
+ON public.channels
+FOR INSERT
+WITH CHECK (
+  user_id = (select auth.uid())
+);
+
+-- Users can update their own channels
+CREATE POLICY "Users can update their own channels"
+ON public.channels
+FOR UPDATE
+USING (
+  user_id = (select auth.uid())
+)
+WITH CHECK (
+  user_id = (select auth.uid())
+);
+
+-- Users can delete their own channels
+CREATE POLICY "Users can delete their own channels"
+ON public.channels
+FOR DELETE
+USING (
+  user_id = (select auth.uid())
+);
 
