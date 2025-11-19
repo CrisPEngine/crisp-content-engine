@@ -36,6 +36,7 @@ interface ContentRecord {
 		status?: string;
 		scheduled_time?: string;
 		scheduled_timezone?: string;
+		hook?: string; // Title/hook field in Airtable
 		post_title?: string;
 		post_content?: string;
 		content?: string;
@@ -200,7 +201,7 @@ async function publishDueContent(): Promise<{
 	const fields = [
 		'platform',
 		'status',
-		'post_title',
+		'hook', // Title/hook field in Airtable
 		'post_content',
 		'hashtags',
 		'scheduled_time',
@@ -299,7 +300,8 @@ async function publishDueContent(): Promise<{
 			const connection = connectionResult; // TypeScript now knows it's LinkedInConnectionResult
 
 			// Build content
-			const title = fields.post_title || '';
+			// Use 'hook' field for title (this is the Airtable field name)
+			const title = fields.hook || fields.post_title || '';
 			const body = fields.post_content || fields.content || fields.post_body || '';
 			const hashtags = fields.hashtags || '';
 

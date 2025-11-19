@@ -166,7 +166,15 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 		const fields: Record<string, any> = {};
 
 		if (action === 'approve') {
-			fields.status = 'Ready To Publish';
+			// Check if this is a Blog article - if so, mark as Published directly
+			// LinkedIn and other social platforms go to "Ready To Publish" for scheduled publishing
+			const platform = record.fields?.platform || '';
+			if (platform === 'Blog') {
+				fields.status = 'Published';
+				fields.published_at = nowISO;
+			} else {
+				fields.status = 'Ready To Publish';
+			}
 			fields.approved_at = nowISO;
 			// Only include review_notes if the field exists and feedback is provided
 			if (feedback && feedback.trim()) {

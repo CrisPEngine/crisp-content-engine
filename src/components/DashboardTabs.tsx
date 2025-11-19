@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Calendar, FileText, Clock, Check, X, Loader2, Edit2, Trash2 } from 'lucide-react';
+import { Calendar, FileText, Clock, Check, X, Loader2, Edit2, Trash2, ChevronDown, ChevronUp, Save } from 'lucide-react';
 import Link from 'next/link';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
@@ -15,6 +15,8 @@ type ContentItem = {
 	scheduled_date?: string | null;
 	published_at?: string | null;
 	brand_name: string;
+	content?: string;
+	hashtags?: string;
 };
 
 type Tab = 'overview' | 'content';
@@ -57,10 +59,20 @@ export function DashboardTabs({ activeTab, contentItems: initialContentItems = [
 	const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 	const [itemToDelete, setItemToDelete] = useState<ContentItem | null>(null);
 	const [isDeleting, setIsDeleting] = useState(false);
+	
+	// Accordion state for published posts
+	const [expandedPublished, setExpandedPublished] = useState<Set<string>>(new Set());
+	
+	// Inline editing state for Ready To Publish
+	const [editingItem, setEditingItem] = useState<string | null>(null);
+	const [editingTitle, setEditingTitle] = useState<string>('');
+	const [editingContent, setEditingContent] = useState<string>('');
+	const [editingHashtags, setEditingHashtags] = useState<string>('');
+	const [saving, setSaving] = useState(false);
 
 	// Fetch content when Content tab is active
 	useEffect(() => {
-		if (activeTab === 'content' && contentItems.length === 0 && !loading) {
+		if (activeTab === 'content') {
 			setLoading(true);
 			fetch('/api/content/queue?stage=all', { cache: 'no-store' })
 				.then((res) => res.json())
@@ -74,11 +86,15 @@ export function DashboardTabs({ activeTab, contentItems: initialContentItems = [
 					setLoading(false);
 				});
 		}
-	}, [activeTab, contentItems.length, loading]);
+	}, [activeTab]);
 
+	// Fix counts: 
+	// - Ready To Publish: status === 'Ready To Publish'
+	// - Scheduled: Ready To Publish items with scheduled_date in the future
+	// - Published: status === 'Published'
 	const readyToPublish = contentItems.filter((item) => item.status === 'Ready To Publish');
 	const published = contentItems.filter((item) => item.status === 'Published');
-	const scheduled = contentItems.filter(
+	const scheduled = readyToPublish.filter(
 		(item) => item.scheduled_date && new Date(item.scheduled_date) > new Date()
 	);
 
@@ -117,6 +133,68 @@ export function DashboardTabs({ activeTab, contentItems: initialContentItems = [
 		if (isDeleting) return;
 		setDeleteModalOpen(false);
 		setItemToDelete(null);
+	};
+
+	const togglePublishedExpanded = (itemId: string) => {
+		setExpandedPublished((prev) => {
+			const next = new Set(prev);
+			if (next.has(itemId)) {
+				next.delete(itemId);
+			} else {
+				next.add(itemId);
+			}
+			return next;
+		});
+	};
+
+	const startEdit = (item: ContentItem) => {
+		setEditingItem(item.id);
+		setEditingTitle(item.title || '');
+		setEditingContent(item.content || '');
+		setEditingHashtags(item.hashtags || '');
+	};
+
+	const cancelEdit = () => {
+		setEditingItem(null);
+		setEditingTitle('');
+		setEditingContent('');
+		setEditingHashtags('');
+	};
+
+	const saveEdit = async (itemId: string) => {
+		setSaving(true);
+		try {
+			const res = await fetch(`/api/content/queue/${itemId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					title: editingTitle,
+					content: editingContent,
+					hashtags: editingHashtags,
+				}),
+			});
+
+			if (!res.ok) {
+				const data = await res.json();
+				throw new Error(data?.error || 'Failed to save changes');
+			}
+
+			// Update local state
+			setContentItems((prev) =>
+				prev.map((item) =>
+					item.id === itemId
+						? { ...item, title: editingTitle, content: editingContent, hashtags: editingHashtags }
+						: item
+				)
+			);
+
+			cancelEdit();
+		} catch (error: any) {
+			console.error('Save error:', error);
+			alert(error?.message || 'Failed to save changes. Please try again.');
+		} finally {
+			setSaving(false);
+		}
 	};
 
 	return (
@@ -216,48 +294,111 @@ export function DashboardTabs({ activeTab, contentItems: initialContentItems = [
 									<div className="space-y-3">
 										{readyToPublish.map((item) => (
 											<div key={item.id} className="card p-4 hover:bg-surface/50 transition">
-												<div className="flex items-start justify-between gap-4">
-													<div className="flex-1 min-w-0">
-														<div className="flex items-center gap-2 mb-2 flex-wrap">
-															<h4 className="font-semibold text-text truncate">{item.title}</h4>
-															<span className="px-2 py-0.5 rounded text-xs bg-primary/15 text-primary">
-																{item.platform}
-															</span>
-															{item.content_type && (
-																<span className="px-2 py-0.5 rounded text-xs bg-surface/50 text-text-soft">
-																	{item.content_type}
-																</span>
-															)}
+												{editingItem === item.id ? (
+													// Edit mode
+													<div className="space-y-4">
+														<div>
+															<label className="block text-sm font-medium text-text-dim mb-1">Title (Hook)</label>
+															<input
+																type="text"
+																value={editingTitle}
+																onChange={(e) => setEditingTitle(e.target.value)}
+																className="w-full px-3 py-2 rounded-lg border border-edge/60 bg-surface/30 text-text focus:outline-none focus:ring-2 focus:ring-primary/50"
+																placeholder="Enter post title..."
+															/>
 														</div>
-														<div className="flex items-center gap-3 text-sm text-text-dim">
-															<span>{item.brand_name}</span>
-															{item.scheduled_date ? (
-																<span className="flex items-center gap-1">
-																	<Clock className="w-3 h-3" />
-																	{formatScheduledDate(item.scheduled_date)}
-																</span>
-															) : (
-																<span className="text-warning">Publishing soon</span>
-															)}
+														<div>
+															<label className="block text-sm font-medium text-text-dim mb-1">Content</label>
+															<textarea
+																value={editingContent}
+																onChange={(e) => setEditingContent(e.target.value)}
+																rows={6}
+																className="w-full px-3 py-2 rounded-lg border border-edge/60 bg-surface/30 text-text focus:outline-none focus:ring-2 focus:ring-primary/50 resize-y"
+																placeholder="Enter post content..."
+															/>
+														</div>
+														<div>
+															<label className="block text-sm font-medium text-text-dim mb-1">Hashtags</label>
+															<input
+																type="text"
+																value={editingHashtags}
+																onChange={(e) => setEditingHashtags(e.target.value)}
+																className="w-full px-3 py-2 rounded-lg border border-edge/60 bg-surface/30 text-text focus:outline-none focus:ring-2 focus:ring-primary/50"
+																placeholder="#hashtag1 #hashtag2"
+															/>
+														</div>
+														<div className="flex gap-2 justify-end">
+															<button
+																onClick={cancelEdit}
+																disabled={saving}
+																className="px-4 py-2 rounded-lg border border-edge/60 bg-surface/30 hover:bg-surface/50 text-sm disabled:opacity-50"
+															>
+																Cancel
+															</button>
+															<button
+																onClick={() => saveEdit(item.id)}
+																disabled={saving}
+																className="px-4 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+															>
+																{saving ? (
+																	<>
+																		<Loader2 className="w-4 h-4 animate-spin" />
+																		Saving...
+																	</>
+																) : (
+																	<>
+																		<Save className="w-4 h-4" />
+																		Save
+																	</>
+																)}
+															</button>
 														</div>
 													</div>
-													<div className="flex items-center gap-2">
-														<Link
-															href="/content/approval"
-															className="p-2 rounded-lg border border-edge/60 bg-surface/30 hover:bg-surface/50 transition-colors"
-															title="Edit"
-														>
-															<Edit2 className="w-4 h-4 text-text-dim hover:text-primary" />
-														</Link>
-														<button
-															onClick={() => handleDeleteClick(item)}
-															className="p-2 rounded-lg border border-edge/60 bg-surface/30 hover:bg-surface/50 hover:border-warning/50 transition-colors"
-															title="Delete"
-														>
-															<Trash2 className="w-4 h-4 text-text-dim hover:text-warning" />
-														</button>
+												) : (
+													// View mode
+													<div className="flex items-start justify-between gap-4">
+														<div className="flex-1 min-w-0">
+															<div className="flex items-center gap-2 mb-2 flex-wrap">
+																<h4 className="font-semibold text-text truncate">{item.title}</h4>
+																<span className="px-2 py-0.5 rounded text-xs bg-primary/15 text-primary">
+																	{item.platform}
+																</span>
+																{item.content_type && (
+																	<span className="px-2 py-0.5 rounded text-xs bg-surface/50 text-text-soft">
+																		{item.content_type}
+																	</span>
+																)}
+															</div>
+															<div className="flex items-center gap-3 text-sm text-text-dim">
+																<span>{item.brand_name}</span>
+																{item.scheduled_date ? (
+																	<span className="flex items-center gap-1">
+																		<Clock className="w-3 h-3" />
+																		{formatScheduledDate(item.scheduled_date)}
+																	</span>
+																) : (
+																	<span className="text-warning">Publishing soon</span>
+																)}
+															</div>
+														</div>
+														<div className="flex items-center gap-2">
+															<button
+																onClick={() => startEdit(item)}
+																className="p-2 rounded-lg border border-edge/60 bg-surface/30 hover:bg-surface/50 transition-colors"
+																title="Edit"
+															>
+																<Edit2 className="w-4 h-4 text-text-dim hover:text-primary" />
+															</button>
+															<button
+																onClick={() => handleDeleteClick(item)}
+																className="p-2 rounded-lg border border-edge/60 bg-surface/30 hover:bg-surface/50 hover:border-warning/50 transition-colors"
+																title="Delete"
+															>
+																<Trash2 className="w-4 h-4 text-text-dim hover:text-warning" />
+															</button>
+														</div>
 													</div>
-												</div>
+												)}
 											</div>
 										))}
 									</div>
@@ -272,39 +413,68 @@ export function DashboardTabs({ activeTab, contentItems: initialContentItems = [
 										Published ({published.length})
 									</h3>
 									<div className="space-y-3">
-										{published.slice(0, 5).map((item) => (
-											<div key={item.id} className="card p-4 hover:bg-surface/50 transition">
-												<div className="flex items-start justify-between gap-4">
-													<div className="flex-1 min-w-0">
-														<div className="flex items-center gap-2 mb-2 flex-wrap">
-															<h4 className="font-semibold text-text truncate">{item.title}</h4>
-															<span className="px-2 py-0.5 rounded text-xs bg-primary/15 text-primary">
-																{item.platform}
-															</span>
-															{item.content_type && (
-																<span className="px-2 py-0.5 rounded text-xs bg-surface/50 text-text-soft">
-																	{item.content_type}
+										{published.slice(0, 5).map((item) => {
+											const isExpanded = expandedPublished.has(item.id);
+											return (
+												<div key={item.id} className="card p-4 hover:bg-surface/50 transition">
+													<div className="flex items-start justify-between gap-4">
+														<div className="flex-1 min-w-0">
+															<div className="flex items-center gap-2 mb-2 flex-wrap">
+																<h4 className="font-semibold text-text truncate">{item.title}</h4>
+																<span className="px-2 py-0.5 rounded text-xs bg-primary/15 text-primary">
+																	{item.platform}
 																</span>
-															)}
+																{item.content_type && (
+																	<span className="px-2 py-0.5 rounded text-xs bg-surface/50 text-text-soft">
+																		{item.content_type}
+																	</span>
+																)}
+															</div>
+															<div className="flex items-center gap-3 text-sm text-text-dim">
+																<span>{item.brand_name}</span>
+																{item.published_at && (
+																	<span>
+																		Published {new Date(item.published_at).toLocaleDateString()}
+																	</span>
+																)}
+															</div>
 														</div>
-														<div className="flex items-center gap-3 text-sm text-text-dim">
-															<span>{item.brand_name}</span>
-															{item.published_at && (
-																<span>
-																	Published {new Date(item.published_at).toLocaleDateString()}
-																</span>
+														<button
+															onClick={() => togglePublishedExpanded(item.id)}
+															className="px-3 py-1.5 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 text-sm whitespace-nowrap flex items-center gap-2"
+														>
+															{isExpanded ? (
+																<>
+																	<ChevronUp className="w-4 h-4" />
+																	Hide
+																</>
+															) : (
+																<>
+																	<ChevronDown className="w-4 h-4" />
+																	View
+																</>
 															)}
-														</div>
+														</button>
 													</div>
-													<Link
-														href="/content/approval"
-														className="px-3 py-1.5 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 text-sm whitespace-nowrap"
-													>
-														View
-													</Link>
+													{isExpanded && (
+														<div className="mt-4 pt-4 border-t border-edge/30 space-y-3">
+															{item.content && (
+																<div>
+																	<h5 className="text-sm font-medium text-text-dim mb-2">Content</h5>
+																	<p className="text-text-soft whitespace-pre-wrap">{item.content}</p>
+																</div>
+															)}
+															{item.hashtags && (
+																<div>
+																	<h5 className="text-sm font-medium text-text-dim mb-2">Hashtags</h5>
+																	<p className="text-text-soft break-words">{item.hashtags}</p>
+																</div>
+															)}
+														</div>
+													)}
 												</div>
-											</div>
-										))}
+											);
+										})}
 										{published.length > 5 && (
 											<Link
 												href="/content/approval"
@@ -349,4 +519,3 @@ export function DashboardTabs({ activeTab, contentItems: initialContentItems = [
 		</div>
 	);
 }
-
