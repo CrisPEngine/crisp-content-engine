@@ -9,6 +9,9 @@
 -- Enable RLS
 ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policy if it exists (idempotent)
+DROP POLICY IF EXISTS "Users can view their own subscriptions" ON public.subscriptions;
+
 -- Users can view their own subscriptions
 CREATE POLICY "Users can view their own subscriptions"
 ON public.subscriptions
@@ -42,6 +45,12 @@ USING (
 
 -- Enable RLS
 ALTER TABLE public.social_connections ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies if they exist (idempotent)
+DROP POLICY IF EXISTS "Users can view their own social connections" ON public.social_connections;
+DROP POLICY IF EXISTS "Users can insert their own social connections" ON public.social_connections;
+DROP POLICY IF EXISTS "Users can update their own social connections" ON public.social_connections;
+DROP POLICY IF EXISTS "Users can delete their own social connections" ON public.social_connections;
 
 -- Users can view their own social connections
 CREATE POLICY "Users can view their own social connections"
@@ -84,6 +93,10 @@ USING (
 
 -- Enable RLS
 ALTER TABLE public.plan_waitlist ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies if they exist (idempotent)
+DROP POLICY IF EXISTS "Anyone can join waitlist" ON public.plan_waitlist;
+DROP POLICY IF EXISTS "Users can view their own waitlist entries" ON public.plan_waitlist;
 
 -- Anyone (including anonymous) can insert into waitlist
 -- This allows the public waitlist form to work
