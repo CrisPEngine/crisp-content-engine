@@ -1,8 +1,13 @@
 /**
  * Scheduled Job: Publish Due LinkedIn Content
  * 
- * This endpoint is called by a cron job daily (9 AM UTC) to publish content that is ready.
- * Note: Hobby plan limits cron jobs to once per day. For more frequent publishing, upgrade to Pro plan.
+ * This endpoint can be called by:
+ * 1. Vercel cron (daily on Hobby plan, or more frequently on Pro)
+ * 2. External cron services (cron-job.org, EasyCron, etc.) for free frequent publishing
+ * 
+ * Security: Requires X-Cron-Secret header matching CRON_SECRET env variable
+ * 
+ * For setup instructions, see FREE_CRON_SETUP.md
  * 
  * Uses Airtable view "ReadyToPublish_LinkedIn" which filters:
  * - platform = "LinkedIn"
@@ -376,12 +381,19 @@ async function publishDueContent(): Promise<{
  * Can be called by Vercel Cron or external cron service
  */
 export async function GET(request: Request) {
-	// Optional: Add authentication for cron
-	const authHeader = request.headers.get('authorization');
-	const cronSecret = process.env.CRON_SECRET;
+	// Verify cron secret for external cron services
+	const cronSecret = request.headers.get('x-cron-secret');
+	const expectedSecret = process.env.CRON_SECRET;
 
-	if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+	// If CRON_SECRET is configured, require it
+	if (expectedSecret) {
+		if (!cronSecret || cronSecret !== expectedSecret) {
+			console.warn('Unauthorized cron job attempt - missing or invalid secret');
+			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+		}
+	} else {
+		// If not configured, log a warning but allow (for development/testing)
+		console.warn('CRON_SECRET not configured - endpoint is unsecured');
 	}
 
 	try {
