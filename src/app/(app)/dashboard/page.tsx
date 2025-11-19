@@ -60,6 +60,25 @@ export default async function Dashboard({
 
 	const params = await searchParams;
 	const activeTab: Tab = (params.tab === 'content' ? 'content' : 'overview') as Tab;
+	const subSuccess = (params as any).sub === 'success';
+	const error = (params as any).error;
+
+	// Check if user has brand profiles (using Airtable via API)
+	let hasBrandProfiles = false;
+	try {
+		const brandsRes = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/brands`, {
+			cache: 'no-store',
+			headers: {
+				// Auth handled by API
+			},
+		});
+		if (brandsRes.ok) {
+			const brandsData = await brandsRes.json();
+			hasBrandProfiles = brandsData.profiles && brandsData.profiles.length > 0;
+		}
+	} catch (error) {
+		console.error('Failed to check brand profiles:', error);
+	}
 
 	// For content tab, we'll fetch on client side since we need auth
 	// Server-side fetch would require passing cookies which is complex
@@ -80,6 +99,38 @@ export default async function Dashboard({
 			<p className="text-text-dim">
 				You're signed in as <span className="font-medium">{user.email}</span>.
 			</p>
+
+			{/* Success message after payment */}
+			{subSuccess && (
+				<div className="card p-4 bg-accent/10 border border-accent/30">
+					<p className="text-accent font-medium">Payment successful! Welcome to CRISP Content Engine.</p>
+				</div>
+			)}
+
+			{/* Error message */}
+			{error && (
+				<div className="card p-4 bg-warning/10 border border-warning/30">
+					<p className="text-warning font-medium">An error was encountered during strategy or content development. Please try again or contact support.</p>
+				</div>
+			)}
+
+			{/* Show onboarding button if user has no brand profiles */}
+			{!hasBrandProfiles && activeTab === 'overview' && (
+				<div className="card p-6 bg-primary/5 border border-primary/20">
+					<div className="flex items-center justify-between">
+						<div>
+							<h3 className="font-semibold mb-1">Get Started</h3>
+							<p className="text-sm text-text-dim">Complete your brand questionnaire to generate your content strategy</p>
+						</div>
+						<a
+							href="/onboarding"
+							className="px-6 py-3 rounded-xl2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium whitespace-nowrap"
+						>
+							Complete Your Brand Questionnaire
+						</a>
+					</div>
+				</div>
+			)}
 
 			<DashboardTabs activeTab={activeTab} />
 

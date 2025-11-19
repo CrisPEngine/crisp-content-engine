@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 export const runtime = 'nodejs';
 
-const PlatformsEnum = z.enum(['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog', 'Medium']);
+const PlatformsEnum = z.enum(['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog']);
 const LanguageRegionEnum = z.enum(['US English', 'UK English', 'AU English']);
 const PreferredImageSourceEnum = z.enum(['AI Generated', 'Stock', 'Brand']);
 const BrandTypeEnum = z.enum(['company', 'personal']);

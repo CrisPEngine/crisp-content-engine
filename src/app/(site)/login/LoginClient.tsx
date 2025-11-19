@@ -60,11 +60,11 @@ export function LoginClient() {
 				initial={{ opacity: 0, y: 8 }}
 				animate={{ opacity: 1, y: 0 }}
 				transition={{ duration: 0.4 }}
-				className="card p-8 mt-16"
+				className="card p-8 mt-8"
 			>
 				<div className="mb-8 rounded-xl2 border border-edge/60 p-6 bg-gradient-to-br from-surface/70 to-surface/30">
-					<h2 className="text-lg font-medium">Welcome back</h2>
-					<p className="text-sm text-text-dim mt-1">Generate, schedule, and publish high-performing content with AI.</p>
+					<h2 className="text-lg font-medium">CRISP Content Engine</h2>
+					<p className="text-sm text-text-dim mt-1">Your content workflow just leveled up. Create, schedule and automatically publish social & blog content with AI that understands your brand.</p>
 				</div>
 				<div className="mb-6">
 					<h1 className="text-2xl font-semibold">Sign in</h1>

@@ -10,7 +10,7 @@ import { SubmissionLoading } from '@/components/SubmissionLoading';
 import { TIMEZONES } from '@/lib/timezones';
 import { useSupabase } from '@/components/SupabaseProvider';
 
-const PlatformsEnum = z.enum(['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog', 'Medium']);
+const PlatformsEnum = z.enum(['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog']);
 const LanguageRegionEnum = z.enum(['US English', 'UK English', 'AU English']);
 const PreferredImageSourceEnum = z.enum(['AI Generated', 'Stock', 'Brand']);
 const BrandTypeEnum = z.enum(['company', 'personal']);
@@ -657,7 +657,7 @@ export default function OnboardingPage() {
 										</div>
 
 										<div>
-											<label className="block text-sm font-medium mb-3">Platforms *</label>
+											<label className="block text-sm font-medium mb-3">Platforms (select the channels you wish to publish to) *</label>
 											<div className="grid grid-cols-2 md:grid-cols-3 gap-3">
 												{PlatformsEnum.options.map((platform) => {
 													const isSelected = watchedPlatforms.includes(platform);
@@ -781,7 +781,7 @@ export default function OnboardingPage() {
 									</div>
 
 									<div>
-										<label className="block text-sm font-medium mb-2">Audience *</label>
+										<label className="block text-sm font-medium mb-2">Who do you want your content to reach or influence? (Your Audience) *</label>
 										<textarea
 											{...register('audience')}
 											rows={4}
