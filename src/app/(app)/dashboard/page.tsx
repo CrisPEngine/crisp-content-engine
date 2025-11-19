@@ -54,11 +54,14 @@ export default async function Dashboard({
 		.maybeSingle();
 
 	// Admins can bypass subscription requirement
-	if (!sub && !profile?.is_admin) {
+	// Also allow access if coming from Stripe success (subscription might not be processed yet)
+	const params = await searchParams;
+	const fromStripe = (params as any).sub === 'success';
+	
+	if (!sub && !profile?.is_admin && !fromStripe) {
 		redirect('/billing');
 	}
 
-	const params = await searchParams;
 	const activeTab: Tab = (params.tab === 'content' ? 'content' : 'overview') as Tab;
 	const subSuccess = (params as any).sub === 'success';
 	const error = (params as any).error;

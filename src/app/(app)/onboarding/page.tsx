@@ -548,7 +548,7 @@ export default function OnboardingPage() {
 											</div>
 
 											<div>
-												<label className="block text-sm font-medium mb-2">Who do you want your content to reach or influence? *</label>
+												<label className="block text-sm font-medium mb-2">Who do you want your content to reach or influence? (Your Audience) *</label>
 												<textarea
 													{...register('personal_audience')}
 													rows={3}

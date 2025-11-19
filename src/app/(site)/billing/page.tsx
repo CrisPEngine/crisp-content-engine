@@ -44,8 +44,12 @@ function PlanCard({
 			</div>
 			<button
 				onClick={() => onCheckout(plan.priceId)}
-				className="mt-6 w-full rounded-xl2 border border-primary/40 bg-primary/10 px-4 py-2 hover:bg-primary/20"
+				className="mt-6 w-full rounded-xl2 border border-primary/40 bg-primary/10 px-4 py-2 hover:bg-primary/20 relative group"
+				title="You will be redirected to Stripe for payment"
 			>
+				<span className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-surface border border-edge/60 text-text-soft text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+					You will be redirected to Stripe for payment
+				</span>
 				Choose {plan.name}
 			</button>
 		</div>
@@ -281,9 +285,14 @@ export default function BillingPage() {
 			</section>
 
 			{/* Footnotes */}
-			<p className="text-xs text-text-dim mt-6">
-				Taxes may apply. You can upgrade/downgrade anytime. By subscribing you agree to our Terms & Privacy.
-			</p>
+			<div className="text-xs text-text-dim mt-6 space-y-2">
+				<p>
+					Taxes may apply. You can upgrade/downgrade anytime. By subscribing you agree to our Terms & Privacy.
+				</p>
+				<p>
+					Payment is collected via Stripe using a credit or debit card, merchant name on your statement will be ABL International.
+				</p>
+			</div>
 		</div>
 	);
 }

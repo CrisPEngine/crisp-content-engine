@@ -30,7 +30,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} body-grid min-h-screen`}>
-        {/* Top bar */}
+        {/* Top bar - only for site pages, app pages use AppHeader */}
         <header className="sticky top-0 z-30 backdrop-blur-xs bg-bg/60 border-b border-edge/60 min-h-[90px] flex items-center">
           <div className="mx-auto max-w-5xl px-4 sm:px-6 w-full flex items-center">
             <a href="/" className="flex items-center">
