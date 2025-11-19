@@ -21,6 +21,9 @@ USING (
   user_id = (select auth.uid())
 );
 
+-- Drop existing policy if it exists (idempotent)
+DROP POLICY IF EXISTS "Users can insert their own usage" ON public.usage_posts;
+
 -- Create optimized INSERT policy (consolidated)
 -- Authenticated users can insert their own records
 -- Note: Service role (using service_role key) bypasses RLS entirely, so no need to check for it
@@ -30,6 +33,9 @@ FOR INSERT
 WITH CHECK (
   user_id = (select auth.uid())
 );
+
+-- Drop existing policy if it exists (idempotent)
+DROP POLICY IF EXISTS "Users can update their own usage" ON public.usage_posts;
 
 -- Create optimized UPDATE policy (consolidated)
 -- Authenticated users can update their own records
@@ -42,6 +48,9 @@ USING (
 WITH CHECK (
   user_id = (select auth.uid())
 );
+
+-- Drop existing policy if it exists (idempotent)
+DROP POLICY IF EXISTS "Users can delete their own usage" ON public.usage_posts;
 
 -- Create optimized DELETE policy (consolidated)
 -- Authenticated users can delete their own records
@@ -60,6 +69,9 @@ USING (
 DROP POLICY IF EXISTS "Users can view their own entitlements" ON public.entitlements;
 DROP POLICY IF EXISTS "Service role can update entitlements" ON public.entitlements;
 DROP POLICY IF EXISTS "Entitlements access" ON public.entitlements;
+
+-- Drop existing policy if it exists (idempotent)
+DROP POLICY IF EXISTS "Users can view their own entitlements" ON public.entitlements;
 
 -- Create optimized SELECT policy (consolidated)
 -- Users can view their own entitlements
