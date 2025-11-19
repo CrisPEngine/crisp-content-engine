@@ -196,8 +196,8 @@ async function publishDueContent(): Promise<{
 	
 	// Only request fields we need for publishing
 	// Airtable requires each field as a separate query param
+	// Note: 'id' is not a field - it's automatically returned as record.id
 	const fields = [
-		'id',
 		'platform',
 		'status',
 		'post_title',
