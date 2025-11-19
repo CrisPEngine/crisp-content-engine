@@ -51,11 +51,8 @@ export async function POST(req: Request) {
                 metadata: { user_id: user.id },
             },
             customer_creation: 'always', // Ensure customer is created
-            customer_update: {
-                metadata: { user_id: user.id }, // Set user_id on customer metadata
-            },
             metadata: { user_id: user.id },
-        });
+        } as any);
         return NextResponse.json({ url: session.url });
     } catch (e: any) {
         return NextResponse.json({ error: e?.message ?? 'Checkout failed' }, { status: 400 });
