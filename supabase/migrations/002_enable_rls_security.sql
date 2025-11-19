@@ -122,95 +122,132 @@ USING (
 -- 4. brands table
 -- ============================================
 -- Enable RLS for brands table (required by Supabase security advisor)
+-- Note: This table may not have a user_id column. Adjust policies based on actual schema.
 
-ALTER TABLE public.brands ENABLE ROW LEVEL SECURITY;
+-- First, check if table exists and enable RLS
+DO $$
+BEGIN
+  IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'brands') THEN
+    ALTER TABLE public.brands ENABLE ROW LEVEL SECURITY;
+    
+    -- Drop existing policies if they exist (idempotent)
+    DROP POLICY IF EXISTS "Users can view their own brands" ON public.brands;
+    DROP POLICY IF EXISTS "Users can insert their own brands" ON public.brands;
+    DROP POLICY IF EXISTS "Users can update their own brands" ON public.brands;
+    DROP POLICY IF EXISTS "Users can delete their own brands" ON public.brands;
+    
+    -- Check if user_id column exists, if so create user-based policies
+    IF EXISTS (SELECT FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'brands' AND column_name = 'user_id') THEN
+      -- Users can view their own brands
+      CREATE POLICY "Users can view their own brands"
+      ON public.brands
+      FOR SELECT
+      USING (
+        user_id = (select auth.uid())
+      );
 
--- Drop existing policies if they exist (idempotent)
-DROP POLICY IF EXISTS "Users can view their own brands" ON public.brands;
-DROP POLICY IF EXISTS "Users can insert their own brands" ON public.brands;
-DROP POLICY IF EXISTS "Users can update their own brands" ON public.brands;
-DROP POLICY IF EXISTS "Users can delete their own brands" ON public.brands;
+      -- Users can insert their own brands
+      CREATE POLICY "Users can insert their own brands"
+      ON public.brands
+      FOR INSERT
+      WITH CHECK (
+        user_id = (select auth.uid())
+      );
 
--- Users can view their own brands
-CREATE POLICY "Users can view their own brands"
-ON public.brands
-FOR SELECT
-USING (
-  user_id = (select auth.uid())
-);
+      -- Users can update their own brands
+      CREATE POLICY "Users can update their own brands"
+      ON public.brands
+      FOR UPDATE
+      USING (
+        user_id = (select auth.uid())
+      )
+      WITH CHECK (
+        user_id = (select auth.uid())
+      );
 
--- Users can insert their own brands
-CREATE POLICY "Users can insert their own brands"
-ON public.brands
-FOR INSERT
-WITH CHECK (
-  user_id = (select auth.uid())
-);
-
--- Users can update their own brands
-CREATE POLICY "Users can update their own brands"
-ON public.brands
-FOR UPDATE
-USING (
-  user_id = (select auth.uid())
-)
-WITH CHECK (
-  user_id = (select auth.uid())
-);
-
--- Users can delete their own brands
-CREATE POLICY "Users can delete their own brands"
-ON public.brands
-FOR DELETE
-USING (
-  user_id = (select auth.uid())
-);
+      -- Users can delete their own brands
+      CREATE POLICY "Users can delete their own brands"
+      ON public.brands
+      FOR DELETE
+      USING (
+        user_id = (select auth.uid())
+      );
+    ELSE
+      -- If no user_id column, restrict all access (only service role can access)
+      -- This is a safe default - adjust based on your actual schema
+      CREATE POLICY "Service role only - brands"
+      ON public.brands
+      FOR ALL
+      USING (false)
+      WITH CHECK (false);
+    END IF;
+  END IF;
+END $$;
 
 -- ============================================
 -- 5. channels table
 -- ============================================
 -- Enable RLS for channels table (required by Supabase security advisor)
+-- Note: This table may not have a user_id column. Adjust policies based on actual schema.
 
-ALTER TABLE public.channels ENABLE ROW LEVEL SECURITY;
+-- First, check if table exists and enable RLS
+DO $$
+BEGIN
+  IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'channels') THEN
+    ALTER TABLE public.channels ENABLE ROW LEVEL SECURITY;
+    
+    -- Drop existing policies if they exist (idempotent)
+    DROP POLICY IF EXISTS "Users can view their own channels" ON public.channels;
+    DROP POLICY IF EXISTS "Users can insert their own channels" ON public.channels;
+    DROP POLICY IF EXISTS "Users can update their own channels" ON public.channels;
+    DROP POLICY IF EXISTS "Users can delete their own channels" ON public.channels;
+    DROP POLICY IF EXISTS "Service role only - channels" ON public.channels;
+    
+    -- Check if user_id column exists, if so create user-based policies
+    IF EXISTS (SELECT FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'channels' AND column_name = 'user_id') THEN
+      -- Users can view their own channels
+      CREATE POLICY "Users can view their own channels"
+      ON public.channels
+      FOR SELECT
+      USING (
+        user_id = (select auth.uid())
+      );
 
--- Drop existing policies if they exist (idempotent)
-DROP POLICY IF EXISTS "Users can view their own channels" ON public.channels;
-DROP POLICY IF EXISTS "Users can insert their own channels" ON public.channels;
-DROP POLICY IF EXISTS "Users can update their own channels" ON public.channels;
-DROP POLICY IF EXISTS "Users can delete their own channels" ON public.channels;
+      -- Users can insert their own channels
+      CREATE POLICY "Users can insert their own channels"
+      ON public.channels
+      FOR INSERT
+      WITH CHECK (
+        user_id = (select auth.uid())
+      );
 
--- Users can view their own channels
-CREATE POLICY "Users can view their own channels"
-ON public.channels
-FOR SELECT
-USING (
-  user_id = (select auth.uid())
-);
+      -- Users can update their own channels
+      CREATE POLICY "Users can update their own channels"
+      ON public.channels
+      FOR UPDATE
+      USING (
+        user_id = (select auth.uid())
+      )
+      WITH CHECK (
+        user_id = (select auth.uid())
+      );
 
--- Users can insert their own channels
-CREATE POLICY "Users can insert their own channels"
-ON public.channels
-FOR INSERT
-WITH CHECK (
-  user_id = (select auth.uid())
-);
-
--- Users can update their own channels
-CREATE POLICY "Users can update their own channels"
-ON public.channels
-FOR UPDATE
-USING (
-  user_id = (select auth.uid())
-)
-WITH CHECK (
-  user_id = (select auth.uid())
-);
-
--- Users can delete their own channels
-CREATE POLICY "Users can delete their own channels"
-ON public.channels
-FOR DELETE
-USING (
-  user_id = (select auth.uid())
-);
+      -- Users can delete their own channels
+      CREATE POLICY "Users can delete their own channels"
+      ON public.channels
+      FOR DELETE
+      USING (
+        user_id = (select auth.uid())
+      );
+    ELSE
+      -- If no user_id column, restrict all access (only service role can access)
+      -- This is a safe default - adjust based on your actual schema
+      CREATE POLICY "Service role only - channels"
+      ON public.channels
+      FOR ALL
+      USING (false)
+      WITH CHECK (false);
+    END IF;
+  END IF;
+END $$;
 
