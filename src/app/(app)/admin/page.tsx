@@ -122,18 +122,41 @@ export default function AdminPage() {
 			const data = await res.json();
 			alert('Stripe data refreshed successfully');
 			
-			// Update the UI immediately with the returned subscription data
+			// Update UI immediately with the returned data
 			if (data.subscription && selectedUser) {
 				setSelectedUser({
 					...selectedUser,
 					subscription: data.subscription,
+					entitlements: data.entitlements || selectedUser.entitlements,
 				});
 			}
 			
-			// Also reload full details to ensure everything is in sync
-			setTimeout(() => {
-				loadUserDetails(userId);
-			}, 300);
+			// Reload full user details after a delay to ensure DB write is committed
+			// But preserve subscription data if the reload doesn't have it
+			setTimeout(async () => {
+				try {
+					const detailsRes = await fetch(`/api/admin/users/${userId}`);
+					if (detailsRes.ok) {
+						const detailsData = await detailsRes.json();
+						// Always preserve subscription if we have it from refresh, even if reload doesn't return it
+						setSelectedUser({
+							...detailsData,
+							subscription: detailsData.subscription || data.subscription || selectedUser?.subscription,
+							entitlements: detailsData.entitlements || data.entitlements || selectedUser?.entitlements,
+						});
+					}
+				} catch (err) {
+					console.error('Error reloading user details:', err);
+					// If reload fails, keep the subscription data we got from refresh
+					if (data.subscription && selectedUser) {
+						setSelectedUser({
+							...selectedUser,
+							subscription: data.subscription,
+							entitlements: data.entitlements || selectedUser.entitlements,
+						});
+					}
+				}
+			}, 1500);
 		} catch (error: any) {
 			console.error('Error refreshing Stripe:', error);
 			alert(error.message || 'Failed to refresh Stripe');

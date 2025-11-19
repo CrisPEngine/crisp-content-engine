@@ -151,22 +151,39 @@ export async function POST(req: Request) {
 			currentPeriodEnd: (subscription as any).current_period_end,
 		});
 
+		// Wait a moment for the database write to complete, then fetch the subscription
+		await new Promise(resolve => setTimeout(resolve, 200));
+
 		// Fetch the created subscription to return full details
-		const { data: createdSubscription } = await admin
+		const { data: createdSubscription, error: subError } = await admin
 			.from('subscriptions')
 			.select('*')
 			.eq('user_id', targetUserId)
 			.single();
 
+		if (subError) {
+			console.warn('Error fetching subscription after creation:', subError);
+		}
+
+		// Also fetch entitlements for completeness
+		const { data: entitlements } = await admin
+			.from('entitlements')
+			.select('*')
+			.eq('user_id', targetUserId)
+			.maybeSingle();
+
 		return NextResponse.json({ 
 			success: true, 
 			subscription: createdSubscription || {
+				user_id: targetUserId,
 				plan: mapping.plan,
 				cycle: mapping.cycle,
 				status: 'active',
+				provider: 'stripe',
 				stripe_customer_id: customerId,
 				stripe_subscription_id: subscription.id,
-			}
+			},
+			entitlements: entitlements || null,
 		});
 	} catch (e: any) {
 		return NextResponse.json({ error: e?.message ?? 'Server error' }, { status: 500 });
