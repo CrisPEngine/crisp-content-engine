@@ -101,13 +101,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ userId
 		const caps = capsFor(plan);
 
 		// Update subscription
+		// Only use columns that exist in schema: user_id, plan, cycle
 		await admin.from('subscriptions').upsert({
 			user_id: userId,
-			provider: 'stripe',
 			plan,
 			cycle,
-			status: 'active',
-			updated_at: new Date().toISOString(),
 		});
 
 		// Update entitlements

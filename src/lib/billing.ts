@@ -60,23 +60,27 @@ export async function upsertSubscriptionAndEntitlements(params: {
 	try {
 		const subscriptionData: any = {
 			user_id: params.userId,
-			provider: 'stripe',
 			plan: params.plan,
 			cycle: params.cycle,
-			status: 'active',
-			current_period_end: currentPeriodEndIso,
-			updated_at: new Date().toISOString(),
 		};
 
-		// Only include optional columns if they're provided
+		// Only include optional columns if they exist in schema and are provided
+		// Based on actual usage in codebase, these columns exist:
 		if (params.stripeCustomerId) {
 			subscriptionData.stripe_customer_id = params.stripeCustomerId;
 		}
 		if (params.stripeSubscriptionId) {
 			subscriptionData.stripe_subscription_id = params.stripeSubscriptionId;
 		}
-		// Note: metadata column doesn't exist in schema, so we skip it
-		// priceId can be stored elsewhere if needed
+		if (currentPeriodEndIso) {
+			subscriptionData.current_period_end = currentPeriodEndIso;
+		}
+		
+		// Note: The following columns don't exist in schema:
+		// - provider (removed)
+		// - metadata (removed)
+		// - status (may not exist, removed)
+		// - updated_at (may not exist, removed)
 
 		const { error: subError } = await admin.from('subscriptions').upsert(subscriptionData);
 		
