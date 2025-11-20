@@ -51,26 +51,12 @@ export async function GET(request: Request) {
 			await admin.from('profiles').update({ is_admin: true }).eq('id', user.id);
 		}
 		
-		// Check if user is admin - admins can bypass subscription requirement
-		const isAdmin = existing?.is_admin === true;
-		
-		// Check if user has entitlements (subscription)
-		const { data: sub } = await admin
-			.from('subscriptions')
-			.select('plan')
-			.eq('user_id', user.id)
-			.maybeSingle();
-		
-		// Determine redirect destination based on subscription status
+		// Always redirect to dashboard - dashboard will handle showing "Select Your Plan" for users without subscription
+		// This ensures:
+		// - New users see the dashboard with onboarding/payment options
+		// - Returning users without subscription see dashboard with "Select Your Plan" button
+		// - Users with subscription see their normal dashboard
 		const next = url.searchParams.get('next');
-		
-		// Admins can bypass subscription check
-		if (!sub && !isAdmin) {
-			// If no subscription and not admin, redirect to billing to select a plan
-			return NextResponse.redirect(new URL('/billing', url.origin));
-		}
-		
-		// If subscription exists or user is admin, redirect to dashboard or requested path
 		const redirectPath = next || '/dashboard';
 		return NextResponse.redirect(new URL(redirectPath, url.origin));
 	}

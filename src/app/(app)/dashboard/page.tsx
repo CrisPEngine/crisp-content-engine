@@ -53,14 +53,12 @@ export default async function Dashboard({
 		.eq('user_id', user.id)
 		.maybeSingle();
 
+	// Always allow access to dashboard - show "Select Your Plan" button if no subscription
 	// Admins can bypass subscription requirement
 	// Also allow access if coming from Stripe success (subscription might not be processed yet)
 	const params = await searchParams;
 	const fromStripe = (params as any).sub === 'success';
-	
-	if (!sub && !profile?.is_admin && !fromStripe) {
-		redirect('/billing');
-	}
+	const hasSubscription = !!sub || profile?.is_admin || fromStripe;
 
 	const activeTab: Tab = (params.tab === 'content' ? 'content' : 'overview') as Tab;
 	const subSuccess = (params as any).sub === 'success';
@@ -102,6 +100,26 @@ export default async function Dashboard({
 			<p className="text-text-dim">
 				You're signed in as <span className="font-medium">{user.email}</span>.
 			</p>
+
+			{/* Prominent "Select Your Plan" button for users without subscription */}
+			{!hasSubscription && (
+				<div className="card p-6 bg-gradient-to-br from-primary/20 to-primary/5 border-2 border-primary/40 shadow-lg">
+					<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+						<div className="flex-1">
+							<h2 className="text-xl font-semibold mb-2">Select Your Plan to Continue</h2>
+							<p className="text-text-dim">
+								Choose a plan to unlock AI-powered content generation, scheduling, and publishing for your brand.
+							</p>
+						</div>
+						<a
+							href="/billing"
+							className="px-8 py-3 rounded-xl2 bg-primary hover:bg-primary/90 text-white font-semibold whitespace-nowrap shadow-lg hover:shadow-xl transition-all transform hover:scale-105"
+						>
+							Select Your Plan
+						</a>
+					</div>
+				</div>
+			)}
 
 			{/* Success message after payment */}
 			{subSuccess && (
