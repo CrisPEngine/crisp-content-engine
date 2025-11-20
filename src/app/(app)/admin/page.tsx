@@ -110,17 +110,32 @@ export default function AdminPage() {
 	async function refreshStripe(userId: string, stripeCustomerId?: string) {
 		setRefreshLoading(true);
 		try {
-			const res = await fetch('/api/admin/stripe/refresh', {
+			// Try the new sync-user endpoint first (more robust)
+			let res = await fetch('/api/admin/stripe/sync-user', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ userId, stripeCustomerId }),
+				body: JSON.stringify({ targetUserId: userId }),
 			});
+			
+			// If sync-user fails, fall back to refresh endpoint
+			if (!res.ok) {
+				const errorData = await res.json();
+				console.warn('Sync-user failed, trying refresh endpoint:', errorData);
+				
+				res = await fetch('/api/admin/stripe/refresh', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ userId, stripeCustomerId }),
+				});
+			}
+			
 			if (!res.ok) {
 				const error = await res.json();
-				throw new Error(error.error || 'Failed to refresh Stripe');
+				throw new Error(error.error || 'Failed to sync Stripe subscription');
 			}
+			
 			const data = await res.json();
-			alert('Stripe data refreshed successfully');
+			alert('Stripe subscription synced successfully');
 			
 			// Update UI immediately with the returned data
 			if (data.subscription && selectedUser) {
@@ -159,7 +174,7 @@ export default function AdminPage() {
 			}, 1500);
 		} catch (error: any) {
 			console.error('Error refreshing Stripe:', error);
-			alert(error.message || 'Failed to refresh Stripe');
+			alert(error.message || 'Failed to refresh Stripe. Check console for details.');
 		} finally {
 			setRefreshLoading(false);
 		}

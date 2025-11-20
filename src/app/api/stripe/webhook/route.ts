@@ -53,15 +53,26 @@ export async function POST(request: Request) {
 			const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id;
 			const customerEmail = session.customer_details?.email || session.customer_email;
 
-			await upsertSubscriptionAndEntitlements({
-				userId,
-				plan: mapping.plan,
-				cycle: mapping.cycle,
-				stripeCustomerId: customerId,
-				stripeSubscriptionId: subId,
-				priceId,
-				currentPeriodEnd: subscription.current_period_end as number | undefined,
-			});
+			try {
+				await upsertSubscriptionAndEntitlements({
+					userId,
+					plan: mapping.plan,
+					cycle: mapping.cycle,
+					stripeCustomerId: customerId,
+					stripeSubscriptionId: subId,
+					priceId,
+					currentPeriodEnd: subscription.current_period_end as number | undefined,
+				});
+				console.log('checkout.session.completed: Successfully created subscription', { userId, plan: mapping.plan, subscriptionId: subId });
+			} catch (err: any) {
+				console.error('checkout.session.completed: Failed to create subscription', { 
+					userId, 
+					subscriptionId: subId,
+					error: err.message, 
+					stack: process.env.NODE_ENV === 'development' ? err.stack : undefined 
+				});
+				// Don't throw - webhook should still return 200 to Stripe to avoid retries
+			}
 
 			break;
 		}
