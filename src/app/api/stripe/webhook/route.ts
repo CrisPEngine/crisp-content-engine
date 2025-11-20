@@ -162,15 +162,26 @@ export async function POST(request: Request) {
 				return NextResponse.json({ ok: true, message: 'No user ID found' });
 			}
 
-			await upsertSubscriptionAndEntitlements({
-				userId,
-				plan: mapping.plan,
-				cycle: mapping.cycle,
-				stripeCustomerId: customerId,
-				stripeSubscriptionId: subscriptionId,
-				priceId,
-				currentPeriodEnd,
-			});
+			try {
+				await upsertSubscriptionAndEntitlements({
+					userId,
+					plan: mapping.plan,
+					cycle: mapping.cycle,
+					stripeCustomerId: customerId,
+					stripeSubscriptionId: subscriptionId,
+					priceId,
+					currentPeriodEnd,
+				});
+				console.log(`${event.type}: Successfully created/updated subscription`, { userId, plan: mapping.plan, subscriptionId });
+			} catch (err: any) {
+				console.error(`${event.type}: Failed to create/update subscription`, { 
+					userId,
+					subscriptionId,
+					error: err.message, 
+					stack: process.env.NODE_ENV === 'development' ? err.stack : undefined 
+				});
+				// Don't throw - webhook should still return 200 to Stripe to avoid retries
+			}
 
 			// If this is an invoice.paid event (renewal), trigger auto-content generation
 			if (event.type === 'invoice.paid' && mapping.cycle === 'monthly') {
