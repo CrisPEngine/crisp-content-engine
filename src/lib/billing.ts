@@ -58,19 +58,27 @@ export async function upsertSubscriptionAndEntitlements(params: {
 	const currentPeriodEndIso = params.currentPeriodEnd ? new Date(params.currentPeriodEnd * 1000).toISOString() : null;
 
 	try {
-		const { error: subError } = await admin.from('subscriptions').upsert({
+		const subscriptionData: any = {
 			user_id: params.userId,
 			provider: 'stripe',
 			plan: params.plan,
 			cycle: params.cycle,
 			status: 'active',
-			metadata: { priceId: params.priceId },
 			current_period_end: currentPeriodEndIso,
-			// optional columns if present in schema
-			stripe_customer_id: params.stripeCustomerId,
-			stripe_subscription_id: params.stripeSubscriptionId ?? null,
 			updated_at: new Date().toISOString(),
-		});
+		};
+
+		// Only include optional columns if they're provided
+		if (params.stripeCustomerId) {
+			subscriptionData.stripe_customer_id = params.stripeCustomerId;
+		}
+		if (params.stripeSubscriptionId) {
+			subscriptionData.stripe_subscription_id = params.stripeSubscriptionId;
+		}
+		// Note: metadata column doesn't exist in schema, so we skip it
+		// priceId can be stored elsewhere if needed
+
+		const { error: subError } = await admin.from('subscriptions').upsert(subscriptionData);
 		
 		if (subError) {
 			console.error('Error upserting subscription:', subError);
