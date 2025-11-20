@@ -89,6 +89,7 @@ async function updateAirtableRecord(
 		status?: string;
 		published_at?: string;
 		published_url?: string;
+		linkedin_post_id?: string;
 		publish_error?: string;
 		publish_attempts?: number;
 	}
@@ -97,6 +98,7 @@ async function updateAirtableRecord(
 	if (updates.status) fields.status = updates.status;
 	if (updates.published_at) fields.published_at = updates.published_at;
 	if (updates.published_url) fields.published_url = updates.published_url;
+	if (updates.linkedin_post_id) fields.linkedin_post_id = updates.linkedin_post_id;
 	if (updates.publish_error !== undefined) fields.publish_error = updates.publish_error;
 	if (updates.publish_attempts !== undefined) fields.publish_attempts = updates.publish_attempts;
 
@@ -335,6 +337,7 @@ async function publishDueContent(): Promise<{
 					status: 'Published',
 					published_at: new Date().toISOString(),
 					published_url: publishResult.published_url || undefined,
+					linkedin_post_id: publishResult.linkedin_post_id || undefined,
 					publish_attempts: (fields.publish_attempts || 0) + 1,
 				});
 

@@ -137,21 +137,17 @@ export default function ContentApprovalPage() {
 		setRejecting(id);
 		setError(null);
 		try {
+			// Delete the content item instead of just updating status
 			const res = await fetch(`/api/content/queue/${id}`, {
-				method: 'PATCH',
+				method: 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'reject', feedback }),
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
 				throw new Error(data?.error || 'Failed to reject content');
 			}
-			// Update item status to show rejected state instead of removing
-			setContentItems((items) =>
-				items.map((item) =>
-					item.id === id ? { ...item, status: 'Needs Review' } : item
-				)
-			);
+			// Remove item from list
+			setContentItems((items) => items.filter((item) => item.id !== id));
 			setSelectedItems((prev) => {
 				const next = new Set(prev);
 				next.delete(id);
@@ -296,6 +292,28 @@ export default function ContentApprovalPage() {
 			const minutes = String(now.getMinutes()).padStart(2, '0');
 			setEditingScheduledTime(`${year}-${month}-${day}T${hours}:${minutes}`);
 		}
+	}
+
+	// Get min and max dates for date picker (next 30 days)
+	function getMinDate(): string {
+		const now = new Date();
+		const year = now.getFullYear();
+		const month = String(now.getMonth() + 1).padStart(2, '0');
+		const day = String(now.getDate()).padStart(2, '0');
+		const hours = String(now.getHours()).padStart(2, '0');
+		const minutes = String(now.getMinutes()).padStart(2, '0');
+		return `${year}-${month}-${day}T${hours}:${minutes}`;
+	}
+
+	function getMaxDate(): string {
+		const maxDate = new Date();
+		maxDate.setDate(maxDate.getDate() + 30);
+		const year = maxDate.getFullYear();
+		const month = String(maxDate.getMonth() + 1).padStart(2, '0');
+		const day = String(maxDate.getDate()).padStart(2, '0');
+		const hours = '23';
+		const minutes = '59';
+		return `${year}-${month}-${day}T${hours}:${minutes}`;
 	}
 
 	function formatScheduledDate(dateString: string | null | undefined): string {
@@ -573,7 +591,10 @@ export default function ContentApprovalPage() {
 														type="datetime-local"
 														value={editingScheduledTime}
 														onChange={(e) => setEditingScheduledTime(e.target.value)}
+														min={getMinDate()}
+														max={getMaxDate()}
 														className="flex-1 px-2 py-1 text-sm rounded-lg border border-edge/60 bg-surface/30 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+														title="Select a date within the next 30 days"
 													/>
 													<button
 														onClick={() => saveScheduledTime(item.id)}
