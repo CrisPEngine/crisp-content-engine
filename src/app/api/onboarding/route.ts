@@ -59,13 +59,44 @@ const schema = z
 			z.array(z.string().url()).default([])
 		),
 		personal_full_name: z.string().default(''),
-		personal_headline: z.string().default(''),
-		personal_expertise: z.string().default(''),
-		personal_audience: z.string().default(''),
-		personal_goals: z.string().default(''),
-		personal_voice_traits: z.string().default(''),
-		personal_story: z.string().default(''),
+		personal_job_title: z.string().default(''),
+		personal_industry: z.string().default(''),
 		personal_links: z.string().default(''),
+		personal_headline: z.string().default(''),
+		personal_audience: z.string().default(''),
+		personal_expertise: z.string().default(''),
+		personal_goals: z.string().default(''),
+		personal_voice_traits: z.preprocess(
+			(val) => {
+				if (Array.isArray(val)) return val;
+				if (typeof val === 'string') return val.trim() ? [val] : [];
+				return [];
+			},
+			z.array(z.string()).default([])
+		),
+		personal_tone_avoid: z.preprocess(
+			(val) => {
+				if (Array.isArray(val)) return val;
+				if (typeof val === 'string') return val.trim() ? [val] : [];
+				return [];
+			},
+			z.array(z.string()).default([])
+		),
+		personal_risk_tolerance: z.enum([
+			'Low risk (safe, neutral, reputation-protected)',
+			'Medium risk (balanced, industry-relevant opinions)',
+			'High risk (strong viewpoints, controversial insights)'
+		]).optional(),
+		personal_content_style: z.preprocess(
+			(val) => {
+				if (Array.isArray(val)) return val;
+				if (typeof val === 'string') return val.trim() ? [val] : [];
+				return [];
+			},
+			z.array(z.string()).default([])
+		),
+		personal_exclude_keywords: z.string().default(''),
+		personal_story: z.string().default(''),
 		personal_assets_urls: z.preprocess(
 			(val) => {
 				if (Array.isArray(val)) return val;
@@ -81,12 +112,14 @@ const schema = z
 		if (data.brand_type === 'personal') {
 			const requiredPersonalFields: Array<[keyof typeof data, string]> = [
 				['personal_full_name', 'Please provide your full name'],
-				['personal_headline', 'Please provide a personal headline'],
-				['personal_expertise', 'Please describe your expertise'],
-				['personal_audience', 'Please describe your target audience'],
-				['personal_goals', 'Please describe your goals'],
-				['personal_voice_traits', 'Please describe your voice traits'],
-				['personal_story', 'Please share your credibility highlights'],
+				['personal_job_title', 'Please provide your job title/role'],
+				['personal_industry', 'Please provide your industry'],
+				['personal_links', 'Please provide your website'],
+				['personal_headline', 'Please describe yourself in one sentence'],
+				['personal_audience', 'Please describe your primary audience'],
+				['personal_expertise', 'Please describe what subjects or themes you want to post about'],
+				['personal_goals', 'Please describe what you want to achieve with your content'],
+				['personal_story', 'Please share your personal story, experiences, or achievements'],
 			];
 
 			requiredPersonalFields.forEach(([field, message]) => {
@@ -99,6 +132,42 @@ const schema = z
 					});
 				}
 			});
+
+			// Validate voice traits (must select 1-3)
+			if (!data.personal_voice_traits || (data.personal_voice_traits as string[]).length === 0) {
+				ctx.addIssue({
+					path: ['personal_voice_traits'],
+					code: z.ZodIssueCode.custom,
+					message: 'Please select at least 1 tone & style option (up to 3)',
+				});
+			}
+
+			// Validate tone avoid (must select at least 1)
+			if (!data.personal_tone_avoid || (data.personal_tone_avoid as string[]).length === 0) {
+				ctx.addIssue({
+					path: ['personal_tone_avoid'],
+					code: z.ZodIssueCode.custom,
+					message: 'Please select at least 1 tone to avoid',
+				});
+			}
+
+			// Validate risk tolerance
+			if (!data.personal_risk_tolerance) {
+				ctx.addIssue({
+					path: ['personal_risk_tolerance'],
+					code: z.ZodIssueCode.custom,
+					message: 'Please select your risk tolerance level',
+				});
+			}
+
+			// Validate content style (must select 1-4)
+			if (!data.personal_content_style || (data.personal_content_style as string[]).length === 0) {
+				ctx.addIssue({
+					path: ['personal_content_style'],
+					code: z.ZodIssueCode.custom,
+					message: 'Please select at least 1 content style preference (up to 4)',
+				});
+			}
 
 			// Validate platforms for personal brands
 			if (!data.platforms_requested || data.platforms_requested.length === 0) {
@@ -268,13 +337,19 @@ export async function POST(req: Request) {
 				approval_contact_email: string;
 				brand_assets?: { url: string }[];
 				personal_full_name: string;
-				personal_headline: string;
-				personal_expertise: string;
-				personal_audience: string;
-				personal_goals: string;
-				personal_voice_traits: string;
-				personal_story: string;
+				personal_job_title: string;
+				personal_industry: string;
 				personal_links: string;
+				personal_headline: string;
+				personal_audience: string;
+				personal_expertise: string;
+				personal_goals: string;
+				personal_voice_traits: string[]; // Multiple select - array of strings
+				personal_tone_avoid: string[]; // Multiple select - array of strings
+				personal_risk_tolerance?: string; // Single select
+				personal_content_style: string[]; // Multiple select - array of strings
+				personal_exclude_keywords: string;
+				personal_story: string;
 				// assistants: string; // Optional - only include if field exists in Airtable
 				// ghost_writer_preference: typeof data.ghost_writer_preference; // Optional - only include if field exists in Airtable
 				personal_assets?: { url: string }[];
@@ -318,13 +393,19 @@ export async function POST(req: Request) {
 					: data.approval_contact_email,
 				brand_assets: attachments.length > 0 ? attachments : undefined, // Attachment field
 				personal_full_name: String(data.personal_full_name || ''),
-				personal_headline: String(data.personal_headline || ''),
-				personal_expertise: String(data.personal_expertise || ''),
-				personal_audience: String(data.personal_audience || ''),
-				personal_goals: String(data.personal_goals || ''),
-				personal_voice_traits: String(data.personal_voice_traits || ''),
-				personal_story: String(data.personal_story || ''),
+				personal_job_title: String(data.personal_job_title || ''),
+				personal_industry: String(data.personal_industry || ''),
 				personal_links: String(data.personal_links || ''),
+				personal_headline: String(data.personal_headline || ''),
+				personal_audience: String(data.personal_audience || ''),
+				personal_expertise: String(data.personal_expertise || ''),
+				personal_goals: String(data.personal_goals || ''),
+				personal_voice_traits: Array.isArray(data.personal_voice_traits) ? data.personal_voice_traits : [],
+				personal_tone_avoid: Array.isArray(data.personal_tone_avoid) ? data.personal_tone_avoid : [],
+				personal_risk_tolerance: data.personal_risk_tolerance || undefined,
+				personal_content_style: Array.isArray(data.personal_content_style) ? data.personal_content_style : [],
+				personal_exclude_keywords: String(data.personal_exclude_keywords || ''),
+				personal_story: String(data.personal_story || ''),
 				// Only include these fields if they exist in Airtable (optional fields)
 				// assistants: String(data.assistants || ''),
 				// ghost_writer_preference: data.ghost_writer_preference,

@@ -61,13 +61,44 @@ const schema = z
 			z.array(z.string().url()).default([])
 		),
 		personal_full_name: z.string().default(''),
-		personal_headline: z.string().default(''),
-		personal_expertise: z.string().default(''),
-		personal_audience: z.string().default(''),
-		personal_goals: z.string().default(''),
-		personal_voice_traits: z.string().default(''),
-		personal_story: z.string().default(''),
+		personal_job_title: z.string().default(''),
+		personal_industry: z.string().default(''),
 		personal_links: z.string().default(''),
+		personal_headline: z.string().default(''),
+		personal_audience: z.string().default(''),
+		personal_expertise: z.string().default(''),
+		personal_goals: z.string().default(''),
+		personal_voice_traits: z.preprocess(
+			(val) => {
+				if (Array.isArray(val)) return val;
+				if (typeof val === 'string') return val.trim() ? [val] : [];
+				return [];
+			},
+			z.array(z.string()).max(3, 'Select up to 3 tone & style options').default([])
+		),
+		personal_tone_avoid: z.preprocess(
+			(val) => {
+				if (Array.isArray(val)) return val;
+				if (typeof val === 'string') return val.trim() ? [val] : [];
+				return [];
+			},
+			z.array(z.string()).default([])
+		),
+		personal_risk_tolerance: z.enum([
+			'Low risk (safe, neutral, reputation-protected)',
+			'Medium risk (balanced, industry-relevant opinions)',
+			'High risk (strong viewpoints, controversial insights)'
+		]).optional(),
+		personal_content_style: z.preprocess(
+			(val) => {
+				if (Array.isArray(val)) return val;
+				if (typeof val === 'string') return val.trim() ? [val] : [];
+				return [];
+			},
+			z.array(z.string()).max(4, 'Select up to 4 content style preferences').default([])
+		),
+		personal_exclude_keywords: z.string().default(''),
+		personal_story: z.string().default(''),
 		personal_assets_urls: z.preprocess(
 			(val) => {
 				if (Array.isArray(val)) return val;
@@ -81,11 +112,14 @@ const schema = z
 		if (data.brand_type === 'personal') {
 			const requiredPersonal: Array<[keyof typeof data, string]> = [
 				['personal_full_name', 'Please provide your full name'],
-				['personal_headline', 'Please provide your headline'],
-				['personal_expertise', 'Please describe your expertise'],
-				['personal_audience', 'Please describe your audience'],
-				['personal_goals', 'Please describe your goals'],
-				['personal_voice_traits', 'Please describe your voice traits'],
+				['personal_job_title', 'Please provide your job title/role'],
+				['personal_industry', 'Please provide your industry'],
+				['personal_links', 'Please provide your website'],
+				['personal_headline', 'Please describe yourself in one sentence'],
+				['personal_audience', 'Please describe your primary audience'],
+				['personal_expertise', 'Please describe what subjects or themes you want to post about'],
+				['personal_goals', 'Please describe what you want to achieve with your content'],
+				['personal_story', 'Please share your personal story, experiences, or achievements'],
 			];
 
 			requiredPersonal.forEach(([field, message]) => {
@@ -93,6 +127,42 @@ const schema = z
 					ctx.addIssue({ path: [field], code: z.ZodIssueCode.custom, message });
 				}
 			});
+
+			// Validate voice traits (must select 1-3)
+			if (!data.personal_voice_traits || (data.personal_voice_traits as string[]).length === 0) {
+				ctx.addIssue({ 
+					path: ['personal_voice_traits'], 
+					code: z.ZodIssueCode.custom, 
+					message: 'Please select at least 1 tone & style option (up to 3)' 
+				});
+			}
+
+			// Validate tone avoid (must select at least 1)
+			if (!data.personal_tone_avoid || (data.personal_tone_avoid as string[]).length === 0) {
+				ctx.addIssue({ 
+					path: ['personal_tone_avoid'], 
+					code: z.ZodIssueCode.custom, 
+					message: 'Please select at least 1 tone to avoid' 
+				});
+			}
+
+			// Validate risk tolerance
+			if (!data.personal_risk_tolerance) {
+				ctx.addIssue({ 
+					path: ['personal_risk_tolerance'], 
+					code: z.ZodIssueCode.custom, 
+					message: 'Please select your risk tolerance level' 
+				});
+			}
+
+			// Validate content style (must select 1-4)
+			if (!data.personal_content_style || (data.personal_content_style as string[]).length === 0) {
+				ctx.addIssue({ 
+					path: ['personal_content_style'], 
+					code: z.ZodIssueCode.custom, 
+					message: 'Please select at least 1 content style preference (up to 4)' 
+				});
+			}
 
 			// Validate platforms for personal brands
 			if (!data.platforms_requested || data.platforms_requested.length === 0) {
@@ -131,13 +201,19 @@ type FormData = z.infer<typeof schema>;
 
 const personalFields = [
 	'personal_full_name',
+	'personal_job_title',
+	'personal_industry',
+	'personal_links',
 	'personal_headline',
-	'personal_expertise',
 	'personal_audience',
+	'personal_expertise',
 	'personal_goals',
 	'personal_voice_traits',
+	'personal_tone_avoid',
+	'personal_risk_tolerance',
+	'personal_content_style',
+	'personal_exclude_keywords',
 	'personal_story',
-	'personal_links',
 	'personal_assets_urls',
 ] as const;
 
@@ -146,13 +222,19 @@ const baseStepFields = {
 	personalBasics: [
 		'brand_type',
 		'personal_full_name',
+		'personal_job_title',
+		'personal_industry',
+		'personal_links',
 		'personal_headline',
-		'personal_expertise',
 		'personal_audience',
+		'personal_expertise',
 		'personal_goals',
 		'personal_voice_traits',
+		'personal_tone_avoid',
+		'personal_risk_tolerance',
+		'personal_content_style',
+		'personal_exclude_keywords',
 		'personal_story',
-		'personal_links',
 		'personal_assets_urls',
 		'timezone',
 		'language_region',
@@ -203,13 +285,19 @@ export default function OnboardingPage() {
 			approval_contact_email: '',
 			brand_assets_urls: [],
 			personal_full_name: '',
-			personal_headline: '',
-			personal_expertise: '',
-			personal_audience: '',
-			personal_goals: '',
-			personal_voice_traits: '',
-			personal_story: '',
+			personal_job_title: '',
+			personal_industry: '',
 			personal_links: '',
+			personal_headline: '',
+			personal_audience: '',
+			personal_expertise: '',
+			personal_goals: '',
+			personal_voice_traits: [],
+			personal_tone_avoid: [],
+			personal_risk_tolerance: undefined,
+			personal_content_style: [],
+			personal_exclude_keywords: '',
+			personal_story: '',
 			personal_assets_urls: [],
 		},
 	});
@@ -350,13 +438,19 @@ export default function OnboardingPage() {
 						...basePayload,
 						// For company brands, set personal fields to empty defaults
 						personal_full_name: '',
-						personal_headline: '',
-						personal_expertise: '',
-						personal_audience: '',
-						personal_goals: '',
-						personal_voice_traits: '',
-						personal_story: '',
+						personal_job_title: '',
+						personal_industry: '',
 						personal_links: '',
+						personal_headline: '',
+						personal_audience: '',
+						personal_expertise: '',
+						personal_goals: '',
+						personal_voice_traits: [],
+						personal_tone_avoid: [],
+						personal_risk_tolerance: undefined,
+						personal_content_style: [],
+						personal_exclude_keywords: '',
+						personal_story: '',
 						personal_assets_urls: [],
 					};
 
@@ -543,8 +637,10 @@ export default function OnboardingPage() {
 									{isPersonal ? (
 										<div className="space-y-5 border border-primary/30 rounded-xl2 p-5 bg-primary/5">
 											<input type="hidden" {...register('client_name')} />
+											
+											{/* Basic Information */}
 											<div>
-												<label className="block text-sm font-medium mb-2">What is your full name? *</label>
+												<label className="block text-sm font-medium mb-2">Full name? *</label>
 												<input
 													{...register('personal_full_name')}
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
@@ -555,8 +651,48 @@ export default function OnboardingPage() {
 												)}
 											</div>
 
+											<div className="grid gap-4 md:grid-cols-2">
+												<div>
+													<label className="block text-sm font-medium mb-2">Job title/role *</label>
+													<input
+														{...register('personal_job_title')}
+														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+														placeholder="e.g. Marketing Director"
+													/>
+													{errors.personal_job_title && (
+														<p className="mt-1 text-sm text-danger">{errors.personal_job_title.message}</p>
+													)}
+												</div>
+
+												<div>
+													<label className="block text-sm font-medium mb-2">Industry *</label>
+													<input
+														{...register('personal_industry')}
+														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+														placeholder="e.g. Technology, Finance, Healthcare"
+													/>
+													{errors.personal_industry && (
+														<p className="mt-1 text-sm text-danger">{errors.personal_industry.message}</p>
+													)}
+												</div>
+											</div>
+
 											<div>
-												<label className="block text-sm font-medium mb-2">How do you describe yourself in one sentence? *</label>
+												<label className="block text-sm font-medium mb-2">Website *</label>
+												<input
+													type="url"
+													{...register('personal_links')}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+													placeholder="https://yourwebsite.com"
+												/>
+												{errors.personal_links && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_links.message}</p>
+												)}
+											</div>
+
+											{/* Content Strategy */}
+											<div>
+												<label className="block text-sm font-medium mb-2">Describe yourself in one sentence *</label>
 												<input
 													{...register('personal_headline')}
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
@@ -564,6 +700,19 @@ export default function OnboardingPage() {
 												/>
 												{errors.personal_headline && (
 													<p className="mt-1 text-sm text-danger">{errors.personal_headline.message}</p>
+												)}
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">Who is your primary audience? *</label>
+												<textarea
+													{...register('personal_audience')}
+													rows={3}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+													placeholder="Describe your ideal audience"
+												/>
+												{errors.personal_audience && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_audience.message}</p>
 												)}
 											</div>
 
@@ -581,72 +730,189 @@ export default function OnboardingPage() {
 											</div>
 
 											<div>
-												<label className="block text-sm font-medium mb-2">Who do you want your content to reach or influence? (Your Audience) *</label>
+												<label className="block text-sm font-medium mb-2">What do you want to achieve with your content? *</label>
 												<textarea
-													{...register('personal_audience')}
+													{...register('personal_goals')}
 													rows={3}
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-													placeholder="Describe your ideal audience"
+													placeholder="Grow authority, attract clients, build community..."
 												/>
-												{errors.personal_audience && (
-													<p className="mt-1 text-sm text-danger">{errors.personal_audience.message}</p>
+												{errors.personal_goals && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_goals.message}</p>
 												)}
 											</div>
 
-											<div className="grid gap-4 md:grid-cols-2">
-												<div>
-													<label className="block text-sm font-medium mb-2">What do you want to achieve with your content? *</label>
-													<textarea
-														{...register('personal_goals')}
-														rows={2}
-														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-														placeholder="Grow authority, attract clients, build community..."
-													/>
-													{errors.personal_goals && (
-														<p className="mt-1 text-sm text-danger">{errors.personal_goals.message}</p>
-													)}
+											{/* Voice & Tone */}
+											<div>
+												<label className="block text-sm font-medium mb-2">What is your Tone & Style? * (Select up to 3)</label>
+												<div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+													{['Optimistic', 'Warm', 'Helpful', 'Inspirational', 'Confident', 'Direct', 'Analytical', 'Corporate', 'Calm', 'Playful', 'Friendly', 'Expert-led'].map((trait) => {
+														const currentTraits = (watch('personal_voice_traits') as string[]) || [];
+														const isSelected = currentTraits.includes(trait);
+														const isMaxed = currentTraits.length >= 3 && !isSelected;
+														return (
+															<label
+																key={trait}
+																className={`
+																	flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-sm
+																	${isSelected ? 'bg-primary/15 border-primary/50 text-primary' : isMaxed ? 'opacity-50 cursor-not-allowed bg-surface/20 border-edge/40' : 'bg-surface/30 border-edge/60 hover:border-edge/80'}
+																`}
+															>
+																<input
+																	type="checkbox"
+																	checked={isSelected}
+																	disabled={isMaxed}
+																	onChange={() => {
+																		const current = currentTraits;
+																		const next = isSelected ? current.filter((t) => t !== trait) : [...current, trait].slice(0, 3);
+																		setValue('personal_voice_traits', next, { shouldDirty: true });
+																	}}
+																	className="sr-only"
+																/>
+																<span>{trait}</span>
+															</label>
+														);
+													})}
 												</div>
-
-												<div>
-													<label className="block text-sm font-medium mb-2">How would you describe your communication style? *</label>
-													<textarea
-														{...register('personal_voice_traits')}
-														rows={2}
-														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-														placeholder="Bold, analytical, witty, educational..."
-													/>
-													{errors.personal_voice_traits && (
-														<p className="mt-1 text-sm text-danger">{errors.personal_voice_traits.message}</p>
-													)}
-												</div>
+												<p className="mt-1 text-xs text-text-dim">Selected: {((watch('personal_voice_traits') as string[]) || []).length}/3</p>
+												{errors.personal_voice_traits && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_voice_traits.message}</p>
+												)}
 											</div>
 
 											<div>
-												<label className="block text-sm font-medium mb-2">What experience or achievements should your audience know about?</label>
+												<label className="block text-sm font-medium mb-2">What tone should we absolutely avoid? * (Select all that apply)</label>
+												<div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+													{['Negative', 'Critical', 'Confrontational', 'Cynical', 'Judgmental', 'Sarcastic', 'Too personal', 'Too emotional', 'Too corporate', 'Too verbose', 'rants'].map((tone) => {
+														const currentAvoid = (watch('personal_tone_avoid') as string[]) || [];
+														const isSelected = currentAvoid.includes(tone);
+														return (
+															<label
+																key={tone}
+																className={`
+																	flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-sm
+																	${isSelected ? 'bg-danger/15 border-danger/50 text-danger' : 'bg-surface/30 border-edge/60 hover:border-edge/80'}
+																`}
+															>
+																<input
+																	type="checkbox"
+																	checked={isSelected}
+																	onChange={() => {
+																		const current = currentAvoid;
+																		const next = isSelected ? current.filter((t) => t !== tone) : [...current, tone];
+																		setValue('personal_tone_avoid', next, { shouldDirty: true });
+																	}}
+																	className="sr-only"
+																/>
+																<span>{tone}</span>
+															</label>
+														);
+													})}
+												</div>
+												{errors.personal_tone_avoid && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_tone_avoid.message}</p>
+												)}
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">What is your Risk tolerance level? Select one *</label>
+												<div className="space-y-2">
+													{[
+														'Low risk (safe, neutral, reputation-protected)',
+														'Medium risk (balanced, industry-relevant opinions)',
+														'High risk (strong viewpoints, controversial insights)'
+													].map((option) => (
+														<label
+															key={option}
+															className={`
+																flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition
+																${watch('personal_risk_tolerance') === option ? 'bg-primary/15 border-primary/50 text-primary' : 'bg-surface/30 border-edge/60 hover:border-edge/80'}
+															`}
+														>
+															<input
+																type="radio"
+																{...register('personal_risk_tolerance')}
+																value={option}
+																className="sr-only"
+															/>
+															<span className="text-sm">{option}</span>
+														</label>
+													))}
+												</div>
+												{errors.personal_risk_tolerance && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_risk_tolerance.message}</p>
+												)}
+											</div>
+
+											{/* Content Style */}
+											<div>
+												<label className="block text-sm font-medium mb-2">Content Style Preference * (Select up to 4)</label>
+												<div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+													{['Story-based posts', 'Tactical how-to posts', 'Thought leadership', 'Short punchy posts', 'Case studies', 'Listicals', 'Analogy / metaphor style', 'Principle-based posts (rules, lessons, frameworks)', 'Founder/leader insights', 'Soft Corporate Tone', 'Data-driven Content', 'Conversational tone', 'Statistic based'].map((style) => {
+														const currentStyles = (watch('personal_content_style') as string[]) || [];
+														const isSelected = currentStyles.includes(style);
+														const isMaxed = currentStyles.length >= 4 && !isSelected;
+														return (
+															<label
+																key={style}
+																className={`
+																	flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-sm
+																	${isSelected ? 'bg-primary/15 border-primary/50 text-primary' : isMaxed ? 'opacity-50 cursor-not-allowed bg-surface/20 border-edge/40' : 'bg-surface/30 border-edge/60 hover:border-edge/80'}
+																`}
+															>
+																<input
+																	type="checkbox"
+																	checked={isSelected}
+																	disabled={isMaxed}
+																	onChange={() => {
+																		const current = currentStyles;
+																		const next = isSelected ? current.filter((s) => s !== style) : [...current, style].slice(0, 4);
+																		setValue('personal_content_style', next, { shouldDirty: true });
+																	}}
+																	className="sr-only"
+																/>
+																<span className="text-xs">{style}</span>
+															</label>
+														);
+													})}
+												</div>
+												<p className="mt-1 text-xs text-text-dim">Selected: {((watch('personal_content_style') as string[]) || []).length}/4</p>
+												{errors.personal_content_style && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_content_style.message}</p>
+												)}
+											</div>
+
+											<div>
+												<label className="block text-sm font-medium mb-2">Words, phrases your themes you want to avoid? (optional)</label>
+												<input
+													{...register('personal_exclude_keywords')}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+													placeholder="e.g. spam, clickbait, jargon"
+												/>
+											</div>
+
+											{/* Personal Story */}
+											<div>
+												<label className="block text-sm font-medium mb-2">What particular experiences or achievements would you like to highlight or center the content around ie. what's your personal story *</label>
 												<textarea
 													{...register('personal_story')}
-													rows={3}
+													rows={4}
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-													placeholder="Notable roles, results, awards, milestones"
+													placeholder="Notable roles, results, awards, milestones, experiences..."
 												/>
+												{errors.personal_story && (
+													<p className="mt-1 text-sm text-danger">{errors.personal_story.message}</p>
+												)}
 											</div>
 
+											{/* Assets */}
 											<div>
-												<label className="block text-sm font-medium mb-2">Add any links you’d like referenced (optional)</label>
-												<textarea
-													{...register('personal_links')}
-													rows={2}
-													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-													placeholder="Website, portfolio, podcast, Twitter, YouTube..."
-												/>
-											</div>
-
-											<div>
-												<label className="block text-sm font-medium mb-2">Upload a profile photo or assets (optional)</label>
+												<label className="block text-sm font-medium mb-2">Upload a profile photo, your CV or other assets (optional)</label>
 												<FileUpload onUpload={handlePersonalFileUpload} />
-												<p className="mt-2 text-xs text-text-dim">We’ll reference these in social content where appropriate.</p>
+												<p className="mt-2 text-xs text-text-dim">We'll reference these in social content where appropriate.</p>
 											</div>
 
+											{/* Settings */}
 											<div className="grid gap-4 md:grid-cols-2">
 												<div>
 													<label className="block text-sm font-medium mb-2">Timezone *</label>
@@ -677,49 +943,49 @@ export default function OnboardingPage() {
 												</div>
 											</div>
 
-										<div>
-											<label className="block text-sm font-medium mb-2">Language / Region *</label>
-											<select
-												{...register('language_region')}
-												className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-											>
-												<option value="US English">US English</option>
-												<option value="UK English">UK English</option>
-												<option value="AU English">AU English</option>
-											</select>
-										</div>
-
-										<div>
-											<label className="block text-sm font-medium mb-3">Platforms (select the channels you wish to publish to) *</label>
-											<div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-												{PlatformsEnum.options.map((platform) => {
-													const isSelected = watchedPlatforms.includes(platform);
-													return (
-														<label
-															key={platform}
-															className={`
-																flex items-center gap-2 p-3 rounded-xl2 border cursor-pointer transition
-																${isSelected ? 'bg-primary/15 border-primary/50 text-primary' : 'bg-surface/30 border-edge/60 hover:border-edge/80'}
-															`}
-														>
-															<input
-																type="checkbox"
-																checked={isSelected}
-																onChange={() => {
-																	const current = watchedPlatforms || [];
-																	const next = isSelected ? current.filter((p) => p !== platform) : [...current, platform];
-																	setValue('platforms_requested', next as FormData['platforms_requested'], { shouldDirty: true });
-																}}
-																className="sr-only"
-															/>
-															<span className="text-sm">{platform}</span>
-														</label>
-													);
-												})}
+											<div>
+												<label className="block text-sm font-medium mb-2">Language / Region *</label>
+												<select
+													{...register('language_region')}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+												>
+													<option value="US English">US English</option>
+													<option value="UK English">UK English</option>
+													<option value="AU English">AU English</option>
+												</select>
 											</div>
-											{errors.platforms_requested && <p className="mt-2 text-sm text-danger">{errors.platforms_requested.message}</p>}
+
+											<div>
+												<label className="block text-sm font-medium mb-3">Platforms (select the channels you wish to publish to) *</label>
+												<div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+													{PlatformsEnum.options.map((platform) => {
+														const isSelected = watchedPlatforms.includes(platform);
+														return (
+															<label
+																key={platform}
+																className={`
+																	flex items-center gap-2 p-3 rounded-xl2 border cursor-pointer transition
+																	${isSelected ? 'bg-primary/15 border-primary/50 text-primary' : 'bg-surface/30 border-edge/60 hover:border-edge/80'}
+																`}
+															>
+																<input
+																	type="checkbox"
+																	checked={isSelected}
+																	onChange={() => {
+																		const current = watchedPlatforms || [];
+																		const next = isSelected ? current.filter((p) => p !== platform) : [...current, platform];
+																		setValue('platforms_requested', next as FormData['platforms_requested'], { shouldDirty: true });
+																	}}
+																	className="sr-only"
+																/>
+																<span className="text-sm">{platform}</span>
+															</label>
+														);
+													})}
+												</div>
+												{errors.platforms_requested && <p className="mt-2 text-sm text-danger">{errors.platforms_requested.message}</p>}
+											</div>
 										</div>
-									</div>
 								) : (
 										<div className="space-y-5">
 											<div>

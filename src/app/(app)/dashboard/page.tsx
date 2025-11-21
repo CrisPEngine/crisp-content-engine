@@ -63,6 +63,7 @@ export default async function Dashboard({
 	const activeTab: Tab = (params.tab === 'content' ? 'content' : 'overview') as Tab;
 	const subSuccess = (params as any).sub === 'success';
 	const error = (params as any).error;
+	const disconnected = (params as any).disconnected;
 
 	// Check if user has brand profiles and strategies (using Airtable via API)
 	let hasBrandProfiles = false;
@@ -182,6 +183,17 @@ export default async function Dashboard({
 			{subSuccess && (
 				<div className="card p-4 bg-accent/10 border border-accent/30">
 					<p className="text-accent font-medium text-sm md:text-base">Payment successful! Welcome to CRISP Content Engine.</p>
+				</div>
+			)}
+
+			{/* Success message after disconnection */}
+			{disconnected && (
+				<div className="card p-4 bg-accent/10 border border-accent/30">
+					<p className="text-accent font-medium text-sm md:text-base">
+						{disconnected === 'linkedin' 
+							? 'LinkedIn account disconnected successfully. Please connect your accounts to enable publishing.'
+							: 'Account disconnected successfully.'}
+					</p>
 				</div>
 			)}
 

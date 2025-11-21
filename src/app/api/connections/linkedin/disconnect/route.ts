@@ -4,7 +4,7 @@ import { getSupabaseService } from '@/lib/supabaseService';
 
 export const runtime = 'nodejs';
 
-export async function POST() {
+export async function POST(request: Request) {
 	const supabase = await createClient();
 	const {
 		data: { user },
@@ -21,5 +21,8 @@ export async function POST() {
 		.eq('user_id', user.id)
 		.eq('provider', 'linkedin');
 
-	return NextResponse.json({ ok: true });
+	// Redirect to dashboard with success message
+	const url = new URL(request.url);
+	const origin = url.origin;
+	return NextResponse.redirect(new URL('/dashboard?disconnected=linkedin', origin));
 }

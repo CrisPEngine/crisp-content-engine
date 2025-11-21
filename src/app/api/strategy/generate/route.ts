@@ -126,13 +126,19 @@ export async function POST(req: Request) {
 		let brandType = 'company'; // default
 		let personalBrandData: {
 			personal_full_name?: string;
-			personal_headline?: string;
-			personal_expertise?: string;
-			personal_audience?: string;
-			personal_goals?: string;
-			personal_voice_traits?: string;
-			personal_story?: string;
+			personal_job_title?: string;
+			personal_industry?: string;
 			personal_links?: string;
+			personal_headline?: string;
+			personal_audience?: string;
+			personal_expertise?: string;
+			personal_goals?: string;
+			personal_voice_traits?: string[]; // Array for multiple select
+			personal_tone_avoid?: string[]; // Array for multiple select
+			personal_risk_tolerance?: string;
+			personal_content_style?: string[]; // Array for multiple select
+			personal_exclude_keywords?: string;
+			personal_story?: string;
 			personal_assets_urls?: string[];
 		} = {};
 		
@@ -157,15 +163,28 @@ export async function POST(req: Request) {
 					
 					// Fetch personal brand fields if this is a personal brand
 					if (brandType === 'personal') {
+						// Helper to handle arrays (could be string or array from Airtable)
+						const toArray = (val: any): string[] => {
+							if (Array.isArray(val)) return val;
+							if (typeof val === 'string' && val.trim()) return [val];
+							return [];
+						};
+
 						personalBrandData = {
 							personal_full_name: String(brandRecord.fields?.personal_full_name || ''),
-							personal_headline: String(brandRecord.fields?.personal_headline || ''),
-							personal_expertise: String(brandRecord.fields?.personal_expertise || ''),
-							personal_audience: String(brandRecord.fields?.personal_audience || ''),
-							personal_goals: String(brandRecord.fields?.personal_goals || ''),
-							personal_voice_traits: String(brandRecord.fields?.personal_voice_traits || ''),
-							personal_story: String(brandRecord.fields?.personal_story || ''),
+							personal_job_title: String(brandRecord.fields?.personal_job_title || ''),
+							personal_industry: String(brandRecord.fields?.personal_industry || ''),
 							personal_links: String(brandRecord.fields?.personal_links || ''),
+							personal_headline: String(brandRecord.fields?.personal_headline || ''),
+							personal_audience: String(brandRecord.fields?.personal_audience || ''),
+							personal_expertise: String(brandRecord.fields?.personal_expertise || ''),
+							personal_goals: String(brandRecord.fields?.personal_goals || ''),
+							personal_voice_traits: toArray(brandRecord.fields?.personal_voice_traits),
+							personal_tone_avoid: toArray(brandRecord.fields?.personal_tone_avoid),
+							personal_risk_tolerance: String(brandRecord.fields?.personal_risk_tolerance || ''),
+							personal_content_style: toArray(brandRecord.fields?.personal_content_style),
+							personal_exclude_keywords: String(brandRecord.fields?.personal_exclude_keywords || ''),
+							personal_story: String(brandRecord.fields?.personal_story || ''),
 							// Handle personal_assets_urls - could be string or array
 							personal_assets_urls: (() => {
 								const assets = brandRecord.fields?.personal_assets_urls;
