@@ -25,7 +25,26 @@ export async function GET(req: Request) {
 	const userId = await getUserId(req);
 	if (!userId) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 	const check = await enforceCaps(userId);
-	return NextResponse.json(check);
+	
+	// Also get max_brands from entitlements
+	let maxBrands = 999;
+	try {
+		const { getEntitlements } = await import('@/lib/enforceCaps');
+		const entitlements = await getEntitlements(userId);
+		if (entitlements?.max_brands) {
+			maxBrands = entitlements.max_brands;
+		}
+	} catch (error) {
+		console.error('Failed to get max_brands:', error);
+	}
+	
+	return NextResponse.json({
+		...check,
+		caps: {
+			...check.caps,
+			max_brands: maxBrands,
+		},
+	});
 }
 
 
