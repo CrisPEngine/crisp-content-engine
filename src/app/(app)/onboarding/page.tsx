@@ -276,6 +276,39 @@ export default function OnboardingPage() {
 
 	const onSubmit = async (data: FormData) => {
 		console.log('Form submitted with data:', { isPersonal, data });
+		
+		// Check brand limit before submitting
+		try {
+			const brandsRes = await fetch('/api/brands', { cache: 'no-store' });
+			const brandsData = await brandsRes.json();
+			const currentBrandCount = brandsData.profiles?.length || 0;
+			
+			// Get user's plan and max brands
+			const planRes = await fetch('/api/plan');
+			const planData = await planRes.json();
+			const plan = planData.planName?.toLowerCase() || 'free';
+			
+			// Get max brands from entitlements
+			let maxBrands = 999;
+			try {
+				const entsRes = await fetch('/api/usage/summary');
+				if (entsRes.ok) {
+					const entsData = await entsRes.json();
+					maxBrands = entsData.caps?.max_brands || 999;
+				}
+			} catch (err) {
+				console.warn('Failed to get entitlements:', err);
+			}
+			
+			if (currentBrandCount >= maxBrands) {
+				alert(`You've reached the maximum number of brands for your plan (${maxBrands} brand${maxBrands !== 1 ? 's' : ''}). Please upgrade your package or create a new account to add more brands.`);
+				return;
+			}
+		} catch (err) {
+			console.error('Failed to check brand limit:', err);
+			// Continue with submission if check fails
+		}
+		
 		setSubmitting(true);
 		try {
 			const inferredClientName = isPersonal

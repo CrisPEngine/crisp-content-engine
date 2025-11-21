@@ -70,7 +70,7 @@ export function DeleteConfirmationModal({
 
 					{/* Warning message */}
 					<p className="text-text-dim text-center mb-6">
-						This action cannot be undone. The post will be{' '}
+						This action cannot be undone. {title.includes('Brand') ? 'The brand profile' : 'The post'} will be{' '}
 						<span className="font-semibold text-warning">permanently deleted</span> and removed from Airtable.
 						{itemName && (
 							<>
@@ -81,12 +81,14 @@ export function DeleteConfirmationModal({
 						)}
 					</p>
 
-					{/* Note about usage */}
-					<div className="mb-6 p-3 rounded-lg bg-surface/50 border border-edge/30">
-						<p className="text-xs text-text-dim">
-							<strong>Note:</strong> This post will still count towards your monthly usage limit.
-						</p>
-					</div>
+					{/* Note about usage - only show for posts */}
+					{!title.includes('Brand') && (
+						<div className="mb-6 p-3 rounded-lg bg-surface/50 border border-edge/30">
+							<p className="text-xs text-text-dim">
+								<strong>Note:</strong> This post will still count towards your monthly usage limit.
+							</p>
+						</div>
+					)}
 
 					{/* Actions */}
 					<div className="flex gap-3">
