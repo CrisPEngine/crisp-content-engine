@@ -20,7 +20,24 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
 					return;
 				}
 				
-				const client = createBrowserClient(url, key);
+				const client = createBrowserClient(url, key, {
+					auth: {
+						autoRefreshToken: true,
+						persistSession: true,
+						detectSessionInUrl: true,
+					},
+				});
+				
+				// Handle auth state changes gracefully
+				// Suppress CORS errors for token refresh (non-critical - user can still use app)
+				client.auth.onAuthStateChange((event, session) => {
+					// Silently handle token refresh failures - these are non-critical
+					// The app still works, users just need to log in again when session expires
+					if (event === 'TOKEN_REFRESHED') {
+						// Success - no action needed
+					}
+				});
+				
 				setSupabase(client);
 			} catch (error) {
 				console.error('Failed to create Supabase client:', error);

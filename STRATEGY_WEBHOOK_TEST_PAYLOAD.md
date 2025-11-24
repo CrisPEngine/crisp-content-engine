@@ -40,13 +40,19 @@ The strategy webhook now receives the following payload structure:
   ],
   "personal": {
     "personal_full_name": "John Doe",
-    "personal_headline": "Digital Marketing Expert",
-    "personal_expertise": "AI and performance marketing",
-    "personal_audience": "Marketing professionals",
-    "personal_goals": "Establish thought leadership",
-    "personal_voice_traits": "Authoritative yet approachable",
-    "personal_story": "10+ years in digital marketing",
-    "personal_links": "https://linkedin.com/in/johndoe",
+    "personal_job_title": "Chief Marketing Officer",
+    "personal_industry": "Technology",
+    "personal_links": "https://johndoe.com",
+    "personal_headline": "Digital Marketing Expert | AI Strategist",
+    "personal_audience": "Marketing professionals, CMOs, business owners",
+    "personal_expertise": "AI and performance marketing, content strategy",
+    "personal_goals": "Establish thought leadership, grow audience",
+    "personal_voice_traits": ["Confident", "Insightful", "Knowledgeable"],
+    "personal_tone_avoid": ["Negative", "Too corporate", "Too verbose"],
+    "personal_risk_tolerance": "Medium risk (balanced, industry-relevant opinions)",
+    "personal_content_style": ["Thought leadership", "Tactical how-to posts", "Data-driven Content"],
+    "personal_exclude_keywords": "spam, clickbait, jargon",
+    "personal_story": "10+ years in digital marketing, helped 50+ companies",
     "personal_assets_urls": ["https://example.com/photo.jpg"]
   } | null,
   "strategy_context": {
@@ -345,14 +351,20 @@ curl -X POST https://hook.eu2.make.com/8c33utbuhdfu4j4clmdfeogg2ugzw89m \
 ### Personal Brand Fields (when `brand_type: "personal"`)
 
 - **`personal_full_name`**: Full name of the person
-- **`personal_headline`**: Professional headline/tagline
-- **`personal_expertise`**: Areas of expertise and experience
-- **`personal_audience`**: Target audience for personal brand
-- **`personal_goals`**: Personal branding goals and objectives
-- **`personal_voice_traits`**: Voice and tone characteristics
-- **`personal_story`**: Credibility highlights and background
-- **`personal_links`**: Social media and professional links
-- **`personal_assets_urls`**: URLs to personal photos/assets
+- **`personal_job_title`**: Job title/role (e.g., "Chief Marketing Officer")
+- **`personal_industry`**: Industry (e.g., "Technology", "Finance", "Healthcare")
+- **`personal_links`**: Website URL
+- **`personal_headline`**: Describe yourself in one sentence
+- **`personal_audience`**: Who is your primary audience?
+- **`personal_expertise`**: What subjects or themes do you want to post about regularly?
+- **`personal_goals`**: What do you want to achieve with your content?
+- **`personal_voice_traits`**: Array of selected tone & style options (up to 3): Optimistic, Warm, Helpful, Inspirational, Confident, Direct, Analytical, Corporate, Calm, Playful, Friendly, Expert-led, Conversational, Witty, Insightful, Knowledgeable, Trustworthy
+- **`personal_tone_avoid`**: Array of tones to avoid (all that apply): Negative, Critical, Confrontational, Cynical, Judgmental, Sarcastic, Too personal, Too emotional, Too corporate, Too verbose, rants
+- **`personal_risk_tolerance`**: Risk tolerance level (single select): "Low risk (safe, neutral, reputation-protected)", "Medium risk (balanced, industry-relevant opinions)", or "High risk (strong viewpoints, controversial insights)"
+- **`personal_content_style`**: Array of content style preferences (up to 4): Story-based posts, Tactical how-to posts, Thought leadership, Short punchy posts, Case studies, Listicals, Analogy / metaphor style, Principle-based posts (rules, lessons, frameworks), Founder/leader insights, Soft Corporate Tone, Data-driven Content, Conversational tone, Statistic based
+- **`personal_exclude_keywords`**: Words, phrases, or themes to avoid (optional, single line text)
+- **`personal_story`**: What particular experiences or achievements would you like to highlight or center the content around
+- **`personal_assets_urls`**: Array of URLs to personal photos/assets (profile photo, CV, etc.)
 
 ### Company Brand Fields (when `brand_type: "company"`)
 
