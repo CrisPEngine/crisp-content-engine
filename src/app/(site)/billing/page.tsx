@@ -9,11 +9,13 @@ function PlanCard({
 	billingCycle,
 	onCheckout,
 	highlight,
+	loading,
 }: {
 	tier: PlanId;
 	billingCycle: "monthly" | "annual";
 	onCheckout: (priceId: string) => Promise<void>;
 	highlight?: boolean;
+	loading?: string | null;
 }) {
 	const plan = PRICING[billingCycle][tier as keyof typeof PRICING["monthly"]] as any;
 	return (
@@ -216,6 +218,7 @@ export default function BillingPage() {
 						billingCycle={cycle}
 						onCheckout={goCheckout}
 						highlight
+						loading={loading}
 					/>
 				))}
 			</section>
