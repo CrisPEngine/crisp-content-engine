@@ -137,6 +137,11 @@
 - Playful
 - Friendly
 - Expert-led
+- Conversational
+- Witty
+- Insightful
+- Knowledgeable
+- Trustworthy
 
 ### personal_tone_avoid (Multiple select - all that apply):
 - Negative

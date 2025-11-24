@@ -640,7 +640,7 @@ export default function OnboardingPage() {
 											
 											{/* Basic Information */}
 											<div>
-												<label className="block text-sm font-medium mb-2">Full name? *</label>
+												<label className="block text-sm font-semibold mb-2">Full name? *</label>
 												<input
 													{...register('personal_full_name')}
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
@@ -653,7 +653,7 @@ export default function OnboardingPage() {
 
 											<div className="grid gap-4 md:grid-cols-2">
 												<div>
-													<label className="block text-sm font-medium mb-2">Job title/role *</label>
+													<label className="block text-sm font-semibold mb-2">Job title/role *</label>
 													<input
 														{...register('personal_job_title')}
 														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
@@ -665,7 +665,7 @@ export default function OnboardingPage() {
 												</div>
 
 												<div>
-													<label className="block text-sm font-medium mb-2">Industry *</label>
+													<label className="block text-sm font-semibold mb-2">Industry *</label>
 													<input
 														{...register('personal_industry')}
 														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
@@ -678,7 +678,7 @@ export default function OnboardingPage() {
 											</div>
 
 											<div>
-												<label className="block text-sm font-medium mb-2">Website *</label>
+												<label className="block text-sm font-semibold mb-2">Website *</label>
 												<input
 													type="url"
 													{...register('personal_links')}
@@ -692,7 +692,7 @@ export default function OnboardingPage() {
 
 											{/* Content Strategy */}
 											<div>
-												<label className="block text-sm font-medium mb-2">Describe yourself in one sentence *</label>
+												<label className="block text-sm font-semibold mb-2">Describe yourself in one sentence *</label>
 												<input
 													{...register('personal_headline')}
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
@@ -704,7 +704,7 @@ export default function OnboardingPage() {
 											</div>
 
 											<div>
-												<label className="block text-sm font-medium mb-2">Who is your primary audience? *</label>
+												<label className="block text-sm font-semibold mb-2">Who is your primary audience? *</label>
 												<textarea
 													{...register('personal_audience')}
 													rows={3}
@@ -717,7 +717,7 @@ export default function OnboardingPage() {
 											</div>
 
 											<div>
-												<label className="block text-sm font-medium mb-2">What subjects or themes do you want to post about regularly? *</label>
+												<label className="block text-sm font-semibold mb-2">What subjects or themes do you want to post about regularly? *</label>
 												<textarea
 													{...register('personal_expertise')}
 													rows={3}
@@ -730,7 +730,7 @@ export default function OnboardingPage() {
 											</div>
 
 											<div>
-												<label className="block text-sm font-medium mb-2">What do you want to achieve with your content? *</label>
+												<label className="block text-sm font-semibold mb-2">What do you want to achieve with your content? *</label>
 												<textarea
 													{...register('personal_goals')}
 													rows={3}
@@ -744,9 +744,9 @@ export default function OnboardingPage() {
 
 											{/* Voice & Tone */}
 											<div>
-												<label className="block text-sm font-medium mb-2">What is your Tone & Style? * (Select up to 3)</label>
+												<label className="block text-sm font-semibold mb-2">What is your Tone & Style? * (Select up to 3)</label>
 												<div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-													{['Optimistic', 'Warm', 'Helpful', 'Inspirational', 'Confident', 'Direct', 'Analytical', 'Corporate', 'Calm', 'Playful', 'Friendly', 'Expert-led'].map((trait) => {
+													{['Optimistic', 'Warm', 'Helpful', 'Inspirational', 'Confident', 'Direct', 'Analytical', 'Corporate', 'Calm', 'Playful', 'Friendly', 'Expert-led', 'Conversational', 'Witty', 'Insightful', 'Knowledgeable', 'Trustworthy'].map((trait) => {
 														const currentTraits = (watch('personal_voice_traits') as string[]) || [];
 														const isSelected = currentTraits.includes(trait);
 														const isMaxed = currentTraits.length >= 3 && !isSelected;
@@ -755,7 +755,7 @@ export default function OnboardingPage() {
 																key={trait}
 																className={`
 																	flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-sm
-																	${isSelected ? 'bg-primary/15 border-primary/50 text-primary' : isMaxed ? 'opacity-50 cursor-not-allowed bg-surface/20 border-edge/40' : 'bg-surface/30 border-edge/60 hover:border-edge/80'}
+																	${isSelected ? 'bg-primary/15 border-primary/50 text-primary' : isMaxed ? 'opacity-50 cursor-not-allowed bg-surface/70 border-edge/40' : 'bg-surface/70 border-edge/60 hover:bg-surface/80 hover:border-edge/80'}
 																`}
 															>
 																<input
@@ -781,7 +781,7 @@ export default function OnboardingPage() {
 											</div>
 
 											<div>
-												<label className="block text-sm font-medium mb-2">What tone should we absolutely avoid? * (Select all that apply)</label>
+												<label className="block text-sm font-semibold mb-2">What tone should we absolutely avoid? * (Select all that apply)</label>
 												<div className="grid grid-cols-2 md:grid-cols-3 gap-2">
 													{['Negative', 'Critical', 'Confrontational', 'Cynical', 'Judgmental', 'Sarcastic', 'Too personal', 'Too emotional', 'Too corporate', 'Too verbose', 'rants'].map((tone) => {
 														const currentAvoid = (watch('personal_tone_avoid') as string[]) || [];
@@ -791,7 +791,7 @@ export default function OnboardingPage() {
 																key={tone}
 																className={`
 																	flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-sm
-																	${isSelected ? 'bg-danger/15 border-danger/50 text-danger' : 'bg-surface/30 border-edge/60 hover:border-edge/80'}
+																	${isSelected ? 'bg-danger/15 border-danger/50 text-danger' : 'bg-surface/70 border-edge/60 hover:bg-surface/80 hover:border-edge/80'}
 																`}
 															>
 																<input
@@ -815,30 +815,16 @@ export default function OnboardingPage() {
 											</div>
 
 											<div>
-												<label className="block text-sm font-medium mb-2">What is your Risk tolerance level? Select one *</label>
-												<div className="space-y-2">
-													{[
-														'Low risk (safe, neutral, reputation-protected)',
-														'Medium risk (balanced, industry-relevant opinions)',
-														'High risk (strong viewpoints, controversial insights)'
-													].map((option) => (
-														<label
-															key={option}
-															className={`
-																flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition
-																${watch('personal_risk_tolerance') === option ? 'bg-primary/15 border-primary/50 text-primary' : 'bg-surface/30 border-edge/60 hover:border-edge/80'}
-															`}
-														>
-															<input
-																type="radio"
-																{...register('personal_risk_tolerance')}
-																value={option}
-																className="sr-only"
-															/>
-															<span className="text-sm">{option}</span>
-														</label>
-													))}
-												</div>
+												<label className="block text-sm font-semibold mb-2">What is your Risk tolerance level? Select one *</label>
+												<select
+													{...register('personal_risk_tolerance')}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+												>
+													<option value="">Select risk tolerance level...</option>
+													<option value="Low risk (safe, neutral, reputation-protected)">Low risk (safe, neutral, reputation-protected)</option>
+													<option value="Medium risk (balanced, industry-relevant opinions)">Medium risk (balanced, industry-relevant opinions)</option>
+													<option value="High risk (strong viewpoints, controversial insights)">High risk (strong viewpoints, controversial insights)</option>
+												</select>
 												{errors.personal_risk_tolerance && (
 													<p className="mt-1 text-sm text-danger">{errors.personal_risk_tolerance.message}</p>
 												)}
@@ -846,7 +832,7 @@ export default function OnboardingPage() {
 
 											{/* Content Style */}
 											<div>
-												<label className="block text-sm font-medium mb-2">Content Style Preference * (Select up to 4)</label>
+												<label className="block text-sm font-semibold mb-2">Content Style Preference * (Select up to 4)</label>
 												<div className="grid grid-cols-2 md:grid-cols-3 gap-2">
 													{['Story-based posts', 'Tactical how-to posts', 'Thought leadership', 'Short punchy posts', 'Case studies', 'Listicals', 'Analogy / metaphor style', 'Principle-based posts (rules, lessons, frameworks)', 'Founder/leader insights', 'Soft Corporate Tone', 'Data-driven Content', 'Conversational tone', 'Statistic based'].map((style) => {
 														const currentStyles = (watch('personal_content_style') as string[]) || [];
@@ -857,7 +843,7 @@ export default function OnboardingPage() {
 																key={style}
 																className={`
 																	flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-sm
-																	${isSelected ? 'bg-primary/15 border-primary/50 text-primary' : isMaxed ? 'opacity-50 cursor-not-allowed bg-surface/20 border-edge/40' : 'bg-surface/30 border-edge/60 hover:border-edge/80'}
+																	${isSelected ? 'bg-primary/15 border-primary/50 text-primary' : isMaxed ? 'opacity-50 cursor-not-allowed bg-surface/70 border-edge/40' : 'bg-surface/70 border-edge/60 hover:bg-surface/80 hover:border-edge/80'}
 																`}
 															>
 																<input
@@ -883,7 +869,7 @@ export default function OnboardingPage() {
 											</div>
 
 											<div>
-												<label className="block text-sm font-medium mb-2">Words, phrases your themes you want to avoid? (optional)</label>
+												<label className="block text-sm font-semibold mb-2">Words, phrases your themes you want to avoid? (optional)</label>
 												<input
 													{...register('personal_exclude_keywords')}
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
@@ -893,7 +879,7 @@ export default function OnboardingPage() {
 
 											{/* Personal Story */}
 											<div>
-												<label className="block text-sm font-medium mb-2">What particular experiences or achievements would you like to highlight or center the content around ie. what's your personal story *</label>
+												<label className="block text-sm font-semibold mb-2">What particular experiences or achievements would you like to highlight or center the content around ie. what's your personal story *</label>
 												<textarea
 													{...register('personal_story')}
 													rows={4}
@@ -907,7 +893,7 @@ export default function OnboardingPage() {
 
 											{/* Assets */}
 											<div>
-												<label className="block text-sm font-medium mb-2">Upload a profile photo, your CV or other assets (optional)</label>
+												<label className="block text-sm font-semibold mb-2">Upload a profile photo, your CV or other assets (optional)</label>
 												<FileUpload onUpload={handlePersonalFileUpload} />
 												<p className="mt-2 text-xs text-text-dim">We'll reference these in social content where appropriate.</p>
 											</div>
@@ -915,7 +901,7 @@ export default function OnboardingPage() {
 											{/* Settings */}
 											<div className="grid gap-4 md:grid-cols-2">
 												<div>
-													<label className="block text-sm font-medium mb-2">Timezone *</label>
+													<label className="block text-sm font-semibold mb-2">Timezone *</label>
 													<select
 														{...register('timezone')}
 														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
@@ -944,7 +930,7 @@ export default function OnboardingPage() {
 											</div>
 
 											<div>
-												<label className="block text-sm font-medium mb-2">Language / Region *</label>
+												<label className="block text-sm font-semibold mb-2">Language / Region *</label>
 												<select
 													{...register('language_region')}
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
@@ -956,7 +942,7 @@ export default function OnboardingPage() {
 											</div>
 
 											<div>
-												<label className="block text-sm font-medium mb-3">Platforms (select the channels you wish to publish to) *</label>
+												<label className="block text-sm font-semibold mb-3">Platforms (select the channels you wish to publish to) *</label>
 												<div className="grid grid-cols-2 md:grid-cols-3 gap-3">
 													{PlatformsEnum.options.map((platform) => {
 														const isSelected = watchedPlatforms.includes(platform);
@@ -1058,7 +1044,7 @@ export default function OnboardingPage() {
 
 									{!isPersonal && (
 										<div>
-											<label className="block text-sm font-medium mb-2">Language / Region *</label>
+											<label className="block text-sm font-semibold mb-2">Language / Region *</label>
 											<select
 												{...register('language_region')}
 												className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
