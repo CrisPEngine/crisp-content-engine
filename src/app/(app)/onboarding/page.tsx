@@ -7,6 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FileUpload } from '@/components/FileUpload';
 import { SubmissionLoading } from '@/components/SubmissionLoading';
+import { LoadingButton } from '@/components/LoadingButton';
 import { TIMEZONES } from '@/lib/timezones';
 import { useSupabase } from '@/components/SupabaseProvider';
 
@@ -363,10 +364,13 @@ export default function OnboardingPage() {
 	};
 
 	const onSubmit = async (data: FormData) => {
-		console.log('Form submitted with data:', { isPersonal, data });
+		// Set loading state immediately on button click
+		setSubmitting(true);
 		
-		// Check brand limit before submitting
 		try {
+			console.log('Form submitted with data:', { isPersonal, data });
+			
+			// Check brand limit before submitting
 			const brandsRes = await fetch('/api/brands', { cache: 'no-store' });
 			const brandsData = await brandsRes.json();
 			const currentBrandCount = brandsData.profiles?.length || 0;
@@ -389,6 +393,7 @@ export default function OnboardingPage() {
 			}
 			
 			if (currentBrandCount >= maxBrands) {
+				setSubmitting(false); // Reset loading state
 				alert(`You've reached the maximum number of brands for your plan (${maxBrands} brand${maxBrands !== 1 ? 's' : ''}). Please upgrade your package or create a new account to add more brands.`);
 				return;
 			}
@@ -397,7 +402,6 @@ export default function OnboardingPage() {
 			// Continue with submission if check fails
 		}
 		
-		setSubmitting(true);
 		try {
 			const inferredClientName = isPersonal
 				? (data.personal_full_name?.trim() || 'Personal Brand')
@@ -1245,22 +1249,23 @@ export default function OnboardingPage() {
 					</button>
 
 					{currentStep < steps.length ? (
-						<button
+						<LoadingButton
 							type="button"
 							onClick={nextStep}
-							className="px-6 py-3 rounded-xl2 border border-primary/40 bg-primary/10 text-text hover:bg-primary/20 transition active:bg-primary/30 active:scale-[0.99]"
 						>
 							Next →
-						</button>
+						</LoadingButton>
 					) : (
-						<button
+						<LoadingButton
 							type="submit"
-							disabled={submitting}
+							loading={submitting}
+							loadingText="Saving..."
 							onClick={(e) => {
 								e.preventDefault();
 								handleSubmit(
 									onSubmit,
 									(validationErrors) => {
+										setSubmitting(false); // Reset loading state on validation error
 										console.log('Form validation failed:', JSON.stringify(validationErrors, null, 2));
 										// Find the first error with a message
 										for (const [fieldName, error] of Object.entries(validationErrors)) {
@@ -1282,10 +1287,9 @@ export default function OnboardingPage() {
 									}
 								)();
 							}}
-							className="px-6 py-3 rounded-xl2 border border-primary/40 bg-primary/10 text-text hover:bg-primary/20 disabled:opacity-50 transition active:bg-primary/30 active:scale-[0.99]"
 						>
-							{submitting ? 'Saving...' : 'Save Brand Profile'}
-						</button>
+							Save Brand Profile
+						</LoadingButton>
 					)}
 				</div>
 			</form>

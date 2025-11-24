@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { PRICING, type PlanId } from "@/config/pricing";
+import { LoadingButton } from "@/components/LoadingButton";
 
 function PlanCard({
 	tier,
@@ -42,16 +43,18 @@ function PlanCard({
 					))}
 				</ul>
 			</div>
-			<button
+			<LoadingButton
 				onClick={() => onCheckout(plan.priceId)}
-				className="mt-6 w-full rounded-xl2 border border-primary/40 bg-primary/10 px-4 py-2 hover:bg-primary/20 relative group"
+				loading={loading === plan.priceId}
+				loadingText="Redirecting..."
+				className="mt-6 w-full relative group"
 				title="You will be redirected to Stripe for payment"
 			>
 				<span className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-surface border border-edge/60 text-text-soft text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
 					You will be redirected to Stripe for payment
 				</span>
 				Choose {plan.name}
-			</button>
+			</LoadingButton>
 		</div>
 	);
 }
