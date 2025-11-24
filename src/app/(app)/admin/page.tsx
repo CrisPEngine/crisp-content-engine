@@ -5,6 +5,7 @@ import { useSupabase } from '@/components/SupabaseProvider';
 import { PRICING, type PlanId } from '@/config/pricing';
 import Link from 'next/link';
 import { Skeleton } from '@/components/skeletons/Skeleton';
+import { LoadingButton } from '@/components/LoadingButton';
 
 type User = {
 	id: string;
@@ -30,6 +31,12 @@ export default function AdminPage() {
 	const [selectedPlan, setSelectedPlan] = useState<PlanId>('creator');
 	const [selectedCycle, setSelectedCycle] = useState<'monthly' | 'annual'>('monthly');
 	const [refreshLoading, setRefreshLoading] = useState(false);
+	const [showCreateUser, setShowCreateUser] = useState(false);
+	const [createUserEmail, setCreateUserEmail] = useState('');
+	const [createUserPlan, setCreateUserPlan] = useState<PlanId>('creator');
+	const [createUserCycle, setCreateUserCycle] = useState<'monthly' | 'annual'>('monthly');
+	const [createUserTrialDays, setCreateUserTrialDays] = useState(7);
+	const [creatingUser, setCreatingUser] = useState(false);
 
 	useEffect(() => {
 		if (!supabase) return;
@@ -87,6 +94,44 @@ export default function AdminPage() {
 			setSelectedUser(data);
 		} catch (error) {
 			console.error('Error loading user details:', error);
+		}
+	}
+
+	async function createUser() {
+		if (!createUserEmail.trim()) {
+			alert('Please enter an email address');
+			return;
+		}
+
+		setCreatingUser(true);
+		try {
+			const res = await fetch('/api/admin/users/create', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					email: createUserEmail.trim(),
+					plan: createUserPlan,
+					cycle: createUserCycle,
+					trialDays: createUserTrialDays,
+				}),
+			});
+
+			const data = await res.json();
+
+			if (!res.ok) {
+				throw new Error(data.error || 'Failed to create user');
+			}
+
+			alert(data.message || 'User created successfully!');
+			setShowCreateUser(false);
+			setCreateUserEmail('');
+			setCreateUserTrialDays(7);
+			loadUsers(); // Refresh user list
+		} catch (error: any) {
+			console.error('Error creating user:', error);
+			alert(error.message || 'Failed to create user');
+		} finally {
+			setCreatingUser(false);
 		}
 	}
 
@@ -207,13 +252,100 @@ export default function AdminPage() {
 		<div className="mx-auto max-w-6xl p-6 space-y-6">
 			<div className="flex items-center justify-between">
 				<h1 className="text-3xl font-semibold">Admin Dashboard</h1>
-				<button
-					onClick={() => window.history.back()}
-					className="text-text-soft hover:text-text text-sm"
-				>
-					← Back
-				</button>
+				<div className="flex items-center gap-3">
+					<LoadingButton
+						onClick={() => setShowCreateUser(!showCreateUser)}
+						variant="primary"
+						size="sm"
+					>
+						{showCreateUser ? 'Cancel' : '+ Create User'}
+					</LoadingButton>
+					<button
+						onClick={() => window.history.back()}
+						className="text-text-soft hover:text-text text-sm"
+					>
+						← Back
+					</button>
+				</div>
 			</div>
+
+			{/* Create User Form */}
+			{showCreateUser && (
+				<div className="card p-6 space-y-4">
+					<h2 className="text-xl font-medium">Create New User</h2>
+					<div className="grid gap-4 md:grid-cols-2">
+						<div>
+							<label className="block text-sm font-medium mb-2">Email Address *</label>
+							<input
+								type="email"
+								value={createUserEmail}
+								onChange={(e) => setCreateUserEmail(e.target.value)}
+								placeholder="user@example.com"
+								className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-2 text-text focus:border-primary/60 focus:outline-none"
+							/>
+						</div>
+						<div>
+							<label className="block text-sm font-medium mb-2">Free Access Period (Days)</label>
+							<input
+								type="number"
+								value={createUserTrialDays}
+								onChange={(e) => setCreateUserTrialDays(Math.max(0, Math.min(365, parseInt(e.target.value) || 0)))}
+								min="0"
+								max="365"
+								className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-2 text-text focus:border-primary/60 focus:outline-none"
+							/>
+							<p className="text-xs text-text-dim mt-1">
+								Set to 0 for no trial period (immediate paid access)
+							</p>
+						</div>
+						<div>
+							<label className="block text-sm font-medium mb-2">Plan Tier *</label>
+							<select
+								value={createUserPlan}
+								onChange={(e) => setCreateUserPlan(e.target.value as PlanId)}
+								className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-2 text-text focus:border-primary/60 focus:outline-none"
+							>
+								{PRICING.order.map((planId) => (
+									<option key={planId} value={planId}>
+										{PRICING.monthly[planId].name}
+									</option>
+								))}
+							</select>
+						</div>
+						<div>
+							<label className="block text-sm font-medium mb-2">Billing Cycle *</label>
+							<select
+								value={createUserCycle}
+								onChange={(e) => setCreateUserCycle(e.target.value as 'monthly' | 'annual')}
+								className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-2 text-text focus:border-primary/60 focus:outline-none"
+							>
+								<option value="monthly">Monthly</option>
+								<option value="annual">Annual</option>
+							</select>
+						</div>
+					</div>
+					<div className="flex gap-3 pt-2">
+						<LoadingButton
+							onClick={createUser}
+							loading={creatingUser}
+							loadingText="Creating..."
+						>
+							Create User
+						</LoadingButton>
+						<LoadingButton
+							onClick={() => {
+								setShowCreateUser(false);
+								setCreateUserEmail('');
+								setCreateUserTrialDays(7);
+							}}
+							variant="secondary"
+							disabled={creatingUser}
+						>
+							Cancel
+						</LoadingButton>
+					</div>
+				</div>
+			)}
 
 			{/* User Search */}
 			<div className="card p-6 space-y-4">
