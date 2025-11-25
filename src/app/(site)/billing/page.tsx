@@ -213,7 +213,7 @@ export default function BillingPage() {
 				throw new Error(data?.error || 'Failed to join the waitlist.');
 			}
 			setWaitlistStatus('success');
-			setWaitlistMessage('Thanks! We'll email you as soon as it's available.');
+			setWaitlistMessage("Thanks! We'll email you as soon as it's available.");
 		} catch (error: any) {
 			console.error('Waitlist submission error', error);
 			setWaitlistStatus('error');
