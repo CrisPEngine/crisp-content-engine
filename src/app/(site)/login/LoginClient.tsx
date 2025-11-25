@@ -133,9 +133,7 @@ export function LoginClient() {
 								input: 'bg-bg/80 border border-edge/80 focus:border-primary/60 focus:ring-0',
 								divider: 'text-text-soft',
 								label: 'text-text-soft',
-								message: 'bg-surface/80 border border-edge/60 text-text rounded-xl2 p-4',
-								messageSuccess: 'bg-primary/20 border border-primary/40 text-primary rounded-xl2 p-4',
-								messageDanger: 'bg-red-500/20 border border-red-500/40 text-red-400 rounded-xl2 p-4',
+								message: 'bg-surface/90 border border-edge/80 text-text font-medium rounded-xl2 p-4 shadow-sm',
 							},
 						}}
 					/>
