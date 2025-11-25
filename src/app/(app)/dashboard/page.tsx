@@ -242,96 +242,100 @@ export default async function Dashboard({
 				</div>
 			)}
 
-			{/* Progressive Onboarding Steps - Right aligned, smaller */}
-			{currentStep > 0 && activeTab === 'overview' && (
-				<div className="flex justify-end">
-					<div className="w-full lg:w-80 xl:w-96">
-						<div className="card p-3 md:p-4 bg-primary/5 border border-primary/20">
-							<h3 className="font-semibold mb-3 text-sm md:text-base">Get Started</h3>
-							<div className="space-y-2">
-								{/* Step 1: Connect LinkedIn */}
-								<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 1 ? 'bg-primary/10 border border-primary/30' : 'opacity-60'}`}>
-									<div className="font-medium">Step 1. Connect your social media account(s)</div>
-									{currentStep === 1 && (
-										<a
-											href="/connections"
-											className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
-										>
-											Connect Accounts Now
-										</a>
-									)}
-									{currentStep > 1 && (
-										<span className="text-xs text-accent font-medium">✓ Complete</span>
-									)}
-								</div>
-
-								{/* Step 2: Complete Questionnaire */}
-								<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 2 ? 'bg-primary/10 border border-primary/30' : currentStep < 2 ? 'opacity-40' : 'opacity-60'}`}>
-									<div className="font-medium">Step 2. Complete your brand questionnaire to generate your content strategy</div>
-									{currentStep === 2 && (
-										<a
-											href="/onboarding"
-											className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
-										>
-											Complete Questionnaire Now
-										</a>
-									)}
-									{currentStep > 2 && (
-										<span className="text-xs text-accent font-medium">✓ Complete</span>
-									)}
-									{currentStep < 2 && (
-										<span className="text-xs text-text-dim">Locked</span>
-									)}
-								</div>
-
-								{/* Step 3: Approve Strategy */}
-								<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 3 ? 'bg-primary/10 border border-primary/30' : currentStep < 3 ? 'opacity-40' : 'opacity-60'}`}>
-									<div className="font-medium">Step 3. Approve your bespoke content strategy</div>
-									{currentStep === 3 && brandProfiles.length > 0 && (
-										<a
-											href={`/strategy/${brandProfiles[0].id}`}
-											className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
-										>
-											Approve Strategy
-										</a>
-									)}
-									{currentStep > 3 && (
-										<span className="text-xs text-accent font-medium">✓ Complete</span>
-									)}
-									{currentStep < 3 && (
-										<span className="text-xs text-text-dim">Locked</span>
-									)}
-								</div>
-
-								{/* Step 4: Review Content */}
-								<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 4 ? 'bg-primary/10 border border-primary/30' : currentStep < 4 ? 'opacity-40' : 'opacity-60'}`}>
-									<div className="font-medium">Step 4. Human Oversight - Review, Approve/Edit and Auto Schedule your Content</div>
-									{currentStep === 4 && (
-										<a
-											href="/content/approval"
-											className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
-										>
-											Review Content
-										</a>
-									)}
-									{currentStep > 4 && (
-										<span className="text-xs text-accent font-medium">✓ Complete</span>
-									)}
-									{currentStep < 4 && (
-										<span className="text-xs text-text-dim">Locked</span>
-									)}
-								</div>
-							</div>
-						</div>
-					</div>
-				</div>
-			)}
-
 			<DashboardTabs activeTab={activeTab} />
 
 			{activeTab === 'overview' && (
 				<>
-					<PlanUsageCard />
+					{/* Plan and Get Started boxes side by side */}
+					<div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+						{/* Your Plan box - Left side */}
+						<div className="flex">
+							<PlanUsageCard />
+						</div>
+
+						{/* Get Started box - Right side */}
+						{currentStep > 0 && (
+							<div className="flex">
+								<div className="w-full card p-3 md:p-4 bg-primary/5 border border-primary/20 flex flex-col">
+									<h3 className="font-semibold mb-3 text-sm md:text-base">Get Started</h3>
+									<div className="space-y-2 flex-1">
+										{/* Step 1: Connect LinkedIn */}
+										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 1 ? 'bg-primary/10 border border-primary/30' : 'opacity-60'}`}>
+											<div className="font-medium">Step 1. Connect your social media account(s)</div>
+											{currentStep === 1 && (
+												<a
+													href="/connections"
+													className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
+												>
+													Connect Accounts Now
+												</a>
+											)}
+											{currentStep > 1 && (
+												<span className="text-xs text-accent font-medium">✓ Complete</span>
+											)}
+										</div>
+
+										{/* Step 2: Complete Questionnaire */}
+										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 2 ? 'bg-primary/10 border border-primary/30' : currentStep < 2 ? 'opacity-40' : 'opacity-60'}`}>
+											<div className="font-medium">Step 2. Complete your brand questionnaire to generate your content strategy</div>
+											{currentStep === 2 && (
+												<a
+													href="/onboarding"
+													className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
+												>
+													Complete Questionnaire Now
+												</a>
+											)}
+											{currentStep > 2 && (
+												<span className="text-xs text-accent font-medium">✓ Complete</span>
+											)}
+											{currentStep < 2 && (
+												<span className="text-xs text-text-dim">Locked</span>
+											)}
+										</div>
+
+										{/* Step 3: Approve Strategy */}
+										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 3 ? 'bg-primary/10 border border-primary/30' : currentStep < 3 ? 'opacity-40' : 'opacity-60'}`}>
+											<div className="font-medium">Step 3. Approve your bespoke content strategy</div>
+											{currentStep === 3 && brandProfiles.length > 0 && (
+												<a
+													href={`/strategy/${brandProfiles[0].id}`}
+													className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
+												>
+													Approve Strategy
+												</a>
+											)}
+											{currentStep > 3 && (
+												<span className="text-xs text-accent font-medium">✓ Complete</span>
+											)}
+											{currentStep < 3 && (
+												<span className="text-xs text-text-dim">Locked</span>
+											)}
+										</div>
+
+										{/* Step 4: Review Content */}
+										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 4 ? 'bg-primary/10 border border-primary/30' : currentStep < 4 ? 'opacity-40' : 'opacity-60'}`}>
+											<div className="font-medium">Step 4. Human Oversight - Review, Approve/Edit and Auto Schedule your Content</div>
+											{currentStep === 4 && (
+												<a
+													href="/content/approval"
+													className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
+												>
+													Review Content
+												</a>
+											)}
+											{currentStep > 4 && (
+												<span className="text-xs text-accent font-medium">✓ Complete</span>
+											)}
+											{currentStep < 4 && (
+												<span className="text-xs text-text-dim">Locked</span>
+											)}
+										</div>
+									</div>
+								</div>
+							</div>
+						)}
+					</div>
 
 					<BrandProfilesList 
 						maxBrands={maxBrands}
