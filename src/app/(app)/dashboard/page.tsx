@@ -96,18 +96,11 @@ export default async function Dashboard({
 			// Check if any brand has an approved strategy
 			// Strategy is approved if status is "Strategy Approved" or if it has strategy_summary and status indicates approval
 			hasApprovedStrategies = brandProfiles.some((p: any) => {
-				const status = p.status || p.original_status || '';
+				const status = (p.status || p.original_status || '').toString();
+				// Check for exact match or contains "Approved" (case-insensitive)
 				return status === 'Strategy Approved' || 
-				       (p.strategy_summary && p.strategy_summary.trim() && status.includes('Approved'));
-			});
-			
-			// Also check if any brand has "Strategy Ready" status (means questionnaire is complete)
-			// This helps detect when questionnaire is just completed
-			const hasStrategyReady = brandProfiles.some((p: any) => {
-				const status = p.status || p.original_status || '';
-				return status === 'Strategy Ready' || 
-				       status === 'Strategy Ready (Awaiting Approval)' ||
-				       status === 'Strategy Ready For Approval';
+				       status.toLowerCase().includes('approved') ||
+				       (p.strategy_summary && p.strategy_summary.trim() && status.toLowerCase().includes('approved'));
 			});
 		}
 		
@@ -135,11 +128,28 @@ export default async function Dashboard({
 	// Step 3: Approve strategy (if has brand profiles with strategy ready but not approved)
 	// Step 4: Review content (if has approved strategies but has content to review)
 	let currentStep = 1;
+	
+	// Check if any brand has "Strategy Ready" status (means questionnaire is complete, strategy generated)
 	const hasStrategyReady = brandProfiles.some((p: any) => {
-		const status = p.status || p.original_status || '';
+		const status = (p.status || p.original_status || '').toString();
 		return status === 'Strategy Ready' || 
 		       status === 'Strategy Ready (Awaiting Approval)' ||
-		       status === 'Strategy Ready For Approval';
+		       status === 'Strategy Ready For Approval' ||
+		       status.toLowerCase().includes('strategy ready');
+	});
+	
+	// Debug logging (can be removed in production)
+	console.log('Onboarding step detection:', {
+		isLinkedInConnected,
+		hasBrandProfiles,
+		hasStrategyReady,
+		hasApprovedStrategies,
+		hasContentToReview,
+		brandStatuses: brandProfiles.map((p: any) => ({
+			name: p.client_name,
+			status: p.status,
+			original_status: p.original_status,
+		})),
 	});
 	
 	if (isLinkedInConnected && !hasBrandProfiles) {
@@ -154,6 +164,8 @@ export default async function Dashboard({
 		// All steps complete - don't show onboarding
 		currentStep = 0;
 	}
+	
+	console.log('Determined current step:', currentStep);
 	
 	// Get user's plan and brand limit
 	let maxBrands = 999; // Default to high number for admins or no subscription
