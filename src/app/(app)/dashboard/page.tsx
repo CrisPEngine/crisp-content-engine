@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { PlanUsageCard } from '@/components/PlanUsageCard';
 import { BrandProfilesList } from '@/components/BrandProfilesList';
 import { DashboardTabs } from '@/components/DashboardTabs';
+import { OnboardingDebug } from '@/components/OnboardingDebug';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -138,20 +139,6 @@ export default async function Dashboard({
 		       status.toLowerCase().includes('strategy ready');
 	});
 	
-	// Debug logging (can be removed in production)
-	console.log('Onboarding step detection:', {
-		isLinkedInConnected,
-		hasBrandProfiles,
-		hasStrategyReady,
-		hasApprovedStrategies,
-		hasContentToReview,
-		brandStatuses: brandProfiles.map((p: any) => ({
-			name: p.client_name,
-			status: p.status,
-			original_status: p.original_status,
-		})),
-	});
-	
 	if (isLinkedInConnected && !hasBrandProfiles) {
 		currentStep = 2;
 	} else if (isLinkedInConnected && hasBrandProfiles && !hasStrategyReady && !hasApprovedStrategies) {
@@ -164,8 +151,6 @@ export default async function Dashboard({
 		// All steps complete - don't show onboarding
 		currentStep = 0;
 	}
-	
-	console.log('Determined current step:', currentStep);
 	
 	// Get user's plan and brand limit
 	let maxBrands = 999; // Default to high number for admins or no subscription
@@ -190,6 +175,15 @@ export default async function Dashboard({
 
 	return (
 		<main className="p-4 md:p-6 space-y-4 md:space-y-6">
+			<OnboardingDebug
+				isLinkedInConnected={isLinkedInConnected}
+				hasBrandProfiles={hasBrandProfiles}
+				hasStrategyReady={hasStrategyReady}
+				hasApprovedStrategies={hasApprovedStrategies}
+				hasContentToReview={hasContentToReview}
+				brandProfiles={brandProfiles}
+				currentStep={currentStep}
+			/>
 			<div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
 				<div className="flex-1">
 					<h1 className="text-2xl md:text-3xl font-semibold">Welcome 👋</h1>
