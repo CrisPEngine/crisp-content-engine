@@ -52,12 +52,12 @@ function CallbackHandler() {
 				token_hash: tokenHash,
 				type: 'recovery',
 			})
-				.then(({ data, error: verifyError }) => {
-					if (verifyError) {
-						console.error('Error verifying recovery token:', verifyError);
+				.then((response: { data: any; error: any }) => {
+					if (response.error) {
+						console.error('Error verifying recovery token:', response.error);
 						// Redirect to login with error
-						router.push(`/login?error=token_verification_failed&error_description=${encodeURIComponent(verifyError.message)}`);
-					} else if (data.session) {
+						router.push(`/login?error=token_verification_failed&error_description=${encodeURIComponent(response.error.message)}`);
+					} else if (response.data?.session) {
 						console.log('Recovery token verified, session established');
 						// Session is now established, redirect to login with update_password view
 						// The Auth UI will detect the session and allow password update
