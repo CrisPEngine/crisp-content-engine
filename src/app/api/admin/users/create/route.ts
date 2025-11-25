@@ -128,6 +128,8 @@ export async function POST(req: Request) {
 
 				if (!response.ok) {
 					const errorText = await response.text();
+					const isRateLimited = response.status === 429;
+					
 					console.error('Failed to send password reset email:', {
 						status: response.status,
 						statusText: response.statusText,
@@ -135,7 +137,23 @@ export async function POST(req: Request) {
 						email,
 						userId,
 						redirectUrl,
+						isRateLimited,
 					});
+
+					// If rate limited, return a specific error message
+					if (isRateLimited) {
+						return NextResponse.json({ 
+							error: 'Email rate limit exceeded',
+							message: 'Supabase email rate limit has been exceeded. Please wait a few minutes before creating more users or sending password reset emails. The user has been created successfully, but the password reset email could not be sent automatically.',
+							userId,
+							email,
+							plan,
+							cycle,
+							trialDays,
+							trialExpiresAt: trialExpiresAt?.toISOString(),
+							rateLimited: true,
+						}, { status: 429 });
+					}
 				} else {
 					const responseData = await response.json().catch(() => ({}));
 					console.log('Password reset email sent successfully:', {

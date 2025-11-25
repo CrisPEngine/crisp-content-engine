@@ -103,6 +103,11 @@ export default function AdminPage() {
 			return;
 		}
 
+		// Prevent duplicate submissions
+		if (creatingUser) {
+			return;
+		}
+
 		setCreatingUser(true);
 		try {
 			const res = await fetch('/api/admin/users/create', {
@@ -119,7 +124,18 @@ export default function AdminPage() {
 			const data = await res.json();
 
 			if (!res.ok) {
-				throw new Error(data.error || 'Failed to create user');
+				// Handle rate limit errors specifically
+				if (res.status === 429 || data.rateLimited) {
+					const message = data.message || 'Email rate limit exceeded. The user was created successfully, but the password reset email could not be sent. Please wait a few minutes before creating more users.';
+					alert(message);
+					// Still close the form and refresh since user was created
+					setShowCreateUser(false);
+					setCreateUserEmail('');
+					setCreateUserTrialDays(7);
+					loadUsers();
+					return;
+				}
+				throw new Error(data.error || data.message || 'Failed to create user');
 			}
 
 			alert(data.message || 'User created successfully!');
@@ -273,6 +289,10 @@ export default function AdminPage() {
 			{showCreateUser && (
 				<div className="card p-6 space-y-4">
 					<h2 className="text-xl font-medium">Create New User</h2>
+					<div className="bg-surface/50 border border-edge/60 rounded-xl2 p-3 text-sm text-text-soft">
+						<strong className="text-text">Note:</strong> Supabase has a rate limit of 2 emails per hour. 
+						If you need to create multiple users, consider spacing them out or using custom SMTP for higher limits.
+					</div>
 					<div className="grid gap-4 md:grid-cols-2">
 						<div>
 							<label className="block text-sm font-medium mb-2">Email Address *</label>
