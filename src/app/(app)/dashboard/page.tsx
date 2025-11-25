@@ -65,12 +65,21 @@ export default async function Dashboard({
 	const error = (params as any).error;
 	const disconnected = (params as any).disconnected;
 
-	// Check if user has brand profiles and strategies (using Airtable via API)
+	// Check onboarding progress
 	let hasBrandProfiles = false;
-	let hasStrategies = false;
+	let hasApprovedStrategies = false;
 	let brandProfiles: any[] = [];
-	let needsConnection = false;
-	let connectedPlatforms: string[] = [];
+	let isLinkedInConnected = false;
+	let hasContentToReview = false;
+	
+	// Check social connections first (for Step 1)
+	const { data: connections } = await supabase
+		.from('social_connections')
+		.select('provider')
+		.eq('user_id', user.id);
+	
+	const connectedPlatforms = (connections || []).map((c: any) => c.provider?.toLowerCase() || '');
+	isLinkedInConnected = connectedPlatforms.includes('linkedin');
 	
 	try {
 		const brandsRes = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/brands`, {
@@ -83,42 +92,49 @@ export default async function Dashboard({
 			const brandsData = await brandsRes.json();
 			brandProfiles = brandsData.profiles || [];
 			hasBrandProfiles = brandProfiles.length > 0;
-			// Check if any brand has a strategy (strategy_summary exists)
-			hasStrategies = brandProfiles.some((p: any) => p.strategy_summary && p.strategy_summary.trim());
 			
-			// Check which platforms are requested across all brands
-			const requestedPlatforms = new Set<string>();
-			brandProfiles.forEach((p: any) => {
-				if (p.platforms_requested && Array.isArray(p.platforms_requested)) {
-					p.platforms_requested.forEach((platform: string) => {
-						// Map to lowercase for comparison
-						const normalized = platform.toLowerCase();
-						if (normalized === 'linkedin') requestedPlatforms.add('linkedin');
-						if (normalized === 'x' || normalized === 'twitter') requestedPlatforms.add('x');
-						if (normalized === 'instagram') requestedPlatforms.add('instagram');
-						if (normalized === 'facebook') requestedPlatforms.add('facebook');
-					});
-				}
+			// Check if any brand has an approved strategy
+			// Strategy is approved if status is "Strategy Approved" or if it has strategy_summary and status indicates approval
+			hasApprovedStrategies = brandProfiles.some((p: any) => {
+				const status = p.status || p.original_status || '';
+				return status === 'Strategy Approved' || 
+				       (p.strategy_summary && p.strategy_summary.trim() && status.includes('Approved'));
 			});
-			
-			// Check social connections
-			const { data: connections } = await supabase
-				.from('social_connections')
-				.select('provider')
-				.eq('user_id', user.id);
-			
-			connectedPlatforms = (connections || []).map((c: any) => c.provider?.toLowerCase() || '');
-			
-			// Check if any requested platform is not connected
-			if (requestedPlatforms.size > 0) {
-				const missingPlatforms = Array.from(requestedPlatforms).filter(
-					platform => !connectedPlatforms.includes(platform)
-				);
-				needsConnection = missingPlatforms.length > 0;
+		}
+		
+		// Check if there's content to review (Step 4)
+		if (hasApprovedStrategies) {
+			try {
+				const contentRes = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/content/queue?stage=approval`, {
+					cache: 'no-store',
+				});
+				if (contentRes.ok) {
+					const contentData = await contentRes.json();
+					hasContentToReview = Array.isArray(contentData.items) && contentData.items.length > 0;
+				}
+			} catch (error) {
+				console.error('Failed to check content queue:', error);
 			}
 		}
 	} catch (error) {
 		console.error('Failed to check brand profiles:', error);
+	}
+	
+	// Determine current step (1-4)
+	// Step 1: Connect LinkedIn (if not connected)
+	// Step 2: Complete questionnaire (if LinkedIn connected but no brand profiles)
+	// Step 3: Approve strategy (if has brand profiles but no approved strategies)
+	// Step 4: Review content (if has approved strategies but has content to review)
+	let currentStep = 1;
+	if (isLinkedInConnected && !hasBrandProfiles) {
+		currentStep = 2;
+	} else if (isLinkedInConnected && hasBrandProfiles && !hasApprovedStrategies) {
+		currentStep = 3;
+	} else if (isLinkedInConnected && hasBrandProfiles && hasApprovedStrategies && hasContentToReview) {
+		currentStep = 4;
+	} else if (isLinkedInConnected && hasBrandProfiles && hasApprovedStrategies && !hasContentToReview) {
+		// All steps complete - don't show onboarding
+		currentStep = 0;
 	}
 	
 	// Get user's plan and brand limit
@@ -204,40 +220,91 @@ export default async function Dashboard({
 				</div>
 			)}
 
-			{/* Prominent Connect Accounts section - show at top if accounts not connected */}
-			{hasBrandProfiles && needsConnection && activeTab === 'overview' && (
-				<div className="card p-4 md:p-6 bg-gradient-to-br from-accent/20 to-accent/5 border-2 border-accent/40 shadow-lg">
-					<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-						<div className="flex-1">
-							<h2 className="text-lg md:text-xl font-semibold mb-2">Connect Your Accounts</h2>
-							<p className="text-sm md:text-base text-text-dim">
-								Connect your social media accounts to enable automatic publishing. This is required before content can be published.
-							</p>
-						</div>
-						<a
-							href="/connections"
-							className="w-full sm:w-auto px-6 md:px-8 py-3 rounded-xl2 bg-accent hover:bg-accent/90 text-white font-semibold whitespace-nowrap shadow-lg hover:shadow-xl transition-all transform hover:scale-105 text-center"
-						>
-							Connect Accounts
-						</a>
-					</div>
-				</div>
-			)}
-
-			{/* Show onboarding button if user has no brand profiles OR no strategies */}
-			{(!hasBrandProfiles || !hasStrategies) && activeTab === 'overview' && (
+			{/* Progressive Onboarding Steps */}
+			{currentStep > 0 && activeTab === 'overview' && (
 				<div className="card p-4 md:p-6 bg-primary/5 border border-primary/20">
-					<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-						<div className="flex-1">
-							<h3 className="font-semibold mb-1 text-base md:text-lg">Get Started</h3>
-							<p className="text-sm text-text-dim">Complete your brand questionnaire to generate your content strategy</p>
+					<h3 className="font-semibold mb-4 text-base md:text-lg">Get Started</h3>
+					<div className="space-y-3">
+						{/* Step 1: Connect LinkedIn */}
+						<div className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 rounded-xl2 ${currentStep === 1 ? 'bg-primary/10 border border-primary/30' : 'opacity-60'}`}>
+							<div className="flex-1">
+								<h4 className="font-medium text-sm md:text-base mb-1">Step 1. Connect your social media account(s)</h4>
+							</div>
+							{currentStep === 1 && (
+								<a
+									href="/connections"
+									className="w-full sm:w-auto px-4 md:px-6 py-2 rounded-xl2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium whitespace-nowrap text-center text-sm md:text-base"
+								>
+									Connect Accounts Now
+								</a>
+							)}
+							{currentStep > 1 && (
+								<span className="text-xs text-accent font-medium">✓ Complete</span>
+							)}
 						</div>
-						<a
-							href="/onboarding"
-							className="w-full sm:w-auto px-4 md:px-6 py-2 md:py-3 rounded-xl2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium whitespace-nowrap text-center text-sm md:text-base"
-						>
-							Complete Your Brand Questionnaire
-						</a>
+
+						{/* Step 2: Complete Questionnaire */}
+						<div className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 rounded-xl2 ${currentStep === 2 ? 'bg-primary/10 border border-primary/30' : currentStep < 2 ? 'opacity-40' : 'opacity-60'}`}>
+							<div className="flex-1">
+								<h4 className="font-medium text-sm md:text-base mb-1">Step 2. Complete your brand questionnaire to generate your content strategy</h4>
+							</div>
+							{currentStep === 2 && (
+								<a
+									href="/onboarding"
+									className="w-full sm:w-auto px-4 md:px-6 py-2 rounded-xl2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium whitespace-nowrap text-center text-sm md:text-base"
+								>
+									Complete Questionnaire Now
+								</a>
+							)}
+							{currentStep > 2 && (
+								<span className="text-xs text-accent font-medium">✓ Complete</span>
+							)}
+							{currentStep < 2 && (
+								<span className="text-xs text-text-dim">Locked</span>
+							)}
+						</div>
+
+						{/* Step 3: Approve Strategy */}
+						<div className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 rounded-xl2 ${currentStep === 3 ? 'bg-primary/10 border border-primary/30' : currentStep < 3 ? 'opacity-40' : 'opacity-60'}`}>
+							<div className="flex-1">
+								<h4 className="font-medium text-sm md:text-base mb-1">Step 3. Approve your bespoke content strategy</h4>
+							</div>
+							{currentStep === 3 && brandProfiles.length > 0 && (
+								<a
+									href={`/strategy/${brandProfiles[0].id}`}
+									className="w-full sm:w-auto px-4 md:px-6 py-2 rounded-xl2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium whitespace-nowrap text-center text-sm md:text-base"
+								>
+									Approve Strategy
+								</a>
+							)}
+							{currentStep > 3 && (
+								<span className="text-xs text-accent font-medium">✓ Complete</span>
+							)}
+							{currentStep < 3 && (
+								<span className="text-xs text-text-dim">Locked</span>
+							)}
+						</div>
+
+						{/* Step 4: Review Content */}
+						<div className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 rounded-xl2 ${currentStep === 4 ? 'bg-primary/10 border border-primary/30' : currentStep < 4 ? 'opacity-40' : 'opacity-60'}`}>
+							<div className="flex-1">
+								<h4 className="font-medium text-sm md:text-base mb-1">Step 4. Human Oversight - Review, Approve/Edit and Auto Schedule your Content</h4>
+							</div>
+							{currentStep === 4 && (
+								<a
+									href="/content/approval"
+									className="w-full sm:w-auto px-4 md:px-6 py-2 rounded-xl2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium whitespace-nowrap text-center text-sm md:text-base"
+								>
+									Review Content
+								</a>
+							)}
+							{currentStep > 4 && (
+								<span className="text-xs text-accent font-medium">✓ Complete</span>
+							)}
+							{currentStep < 4 && (
+								<span className="text-xs text-text-dim">Locked</span>
+							)}
+						</div>
 					</div>
 				</div>
 			)}
