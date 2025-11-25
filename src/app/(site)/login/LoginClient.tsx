@@ -20,6 +20,15 @@ export function LoginClient() {
 		const type = searchParams?.get('type');
 		const token = searchParams?.get('token');
 		const tokenHash = searchParams?.get('token_hash');
+		const error = searchParams?.get('error');
+		const errorDescription = searchParams?.get('error_description');
+		
+		if (error) {
+			console.error('Login error:', { error, errorDescription });
+			// If there's an error (like expired token), show a message
+			// The Auth component should handle displaying this
+		}
+		
 		if (type === 'recovery' && (token || tokenHash)) {
 			console.log('Password reset flow detected:', { type, hasToken: !!token, hasTokenHash: !!tokenHash });
 			setAuthView('update_password');
