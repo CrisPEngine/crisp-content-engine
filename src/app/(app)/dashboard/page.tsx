@@ -83,26 +83,54 @@ export default async function Dashboard({
 	isLinkedInConnected = connectedPlatforms.includes('linkedin');
 	
 	try {
-		const brandsRes = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/brands`, {
-			cache: 'no-store',
-			headers: {
-				// Auth handled by API
-			},
-		});
-		if (brandsRes.ok) {
-			const brandsData = await brandsRes.json();
-			brandProfiles = brandsData.profiles || [];
-			hasBrandProfiles = brandProfiles.length > 0;
-			
-			// Check if any brand has an approved strategy
-			// Strategy is approved if status is "Strategy Approved" or if it has strategy_summary and status indicates approval
-			hasApprovedStrategies = brandProfiles.some((p: any) => {
-				const status = (p.status || p.original_status || '').toString();
-				// Check for exact match or contains "Approved" (case-insensitive)
-				return status === 'Strategy Approved' || 
-				       status.toLowerCase().includes('approved') ||
-				       (p.strategy_summary && p.strategy_summary.trim() && status.toLowerCase().includes('approved'));
-			});
+		// Fetch brands directly from Airtable (same logic as API but server-side)
+		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
+		const BASE_ID = process.env.AIRTABLE_BASE_ID;
+		const TABLE_ID = process.env.AIRTABLE_BRANDPROFILES_TABLE;
+
+		if (AIRTABLE_TOKEN && BASE_ID && TABLE_ID) {
+			const airtableRes = await fetch(
+				`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}?filterByFormula={user_id}="${user.id}"&sort[0][field]=created_time&sort[0][direction]=desc`,
+				{
+					headers: {
+						Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+					},
+					cache: 'no-store',
+				}
+			);
+
+			if (airtableRes.ok) {
+				const airtableData = await airtableRes.json();
+				const records = airtableData.records || [];
+
+				// Transform records to match API format
+				brandProfiles = records.map((record: any) => {
+					const status = record.fields.status || '';
+					const normalisedStatus = status === 'Strategy Ready (Awaiting Approval)' ? 'Strategy Ready' : status;
+					
+					return {
+						id: record.id,
+						client_name: record.fields.client_name || '',
+						status: normalisedStatus,
+						original_status: normalisedStatus,
+						has_pending_content: false, // We'll check this separately if needed
+						created_time: record.fields.created_time || record.createdTime,
+						platforms_requested: record.fields.platforms_requested || [],
+						strategy_summary: record.fields.strategy_summary || '',
+						strategy_payload: record.fields.strategy_payload || null,
+						strategy_meta: record.fields.strategy_meta || null,
+					};
+				});
+
+				hasBrandProfiles = brandProfiles.length > 0;
+				
+				// Check if any brand has an approved strategy
+				hasApprovedStrategies = brandProfiles.some((p: any) => {
+					const status = (p.status || p.original_status || '').toString();
+					return status === 'Strategy Approved' || 
+					       status.toLowerCase().includes('approved');
+				});
+			}
 		}
 		
 		// Check if there's content to review (Step 4)
