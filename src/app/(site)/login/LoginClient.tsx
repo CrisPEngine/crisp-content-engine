@@ -6,14 +6,33 @@ import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { Linkedin, Mail } from 'lucide-react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 export function LoginClient() {
 	const supabase = useSupabase();
+	const router = useRouter();
 	const [mounted, setMounted] = useState(false);
 	const searchParams = useSearchParams();
 	const [authView, setAuthView] = useState<'sign_in' | 'update_password'>('sign_in');
+	const [isRecoveryFlow, setIsRecoveryFlow] = useState(false);
 	
+	// Check if user is already signed in and redirect if so (unless in recovery flow)
+	useEffect(() => {
+		if (!supabase || !mounted) return;
+		
+		const checkSession = async () => {
+			const { data: { session } } = await supabase.auth.getSession();
+			const type = searchParams?.get('type');
+			// If user is signed in and not in recovery flow, redirect to dashboard
+			if (session && type !== 'recovery') {
+				console.log('User already signed in, redirecting to dashboard');
+				router.replace('/dashboard');
+			}
+		};
+		
+		checkSession();
+	}, [supabase, mounted, searchParams, router]);
+
 	useEffect(() => {
 		setMounted(true);
 		// Check if this is a password reset flow
@@ -60,18 +79,22 @@ export function LoginClient() {
 						console.error('Error verifying recovery token:', error);
 						// Still show the form - Auth UI might handle it differently
 						setAuthView('update_password');
+						setIsRecoveryFlow(true);
 					} else if (data?.session) {
 						console.log('Recovery token verified, session established');
 						setAuthView('update_password');
+						setIsRecoveryFlow(true);
 					} else {
 						console.warn('Token verification returned no session');
 						// Show form anyway - might work
 						setAuthView('update_password');
+						setIsRecoveryFlow(true);
 					}
 				} catch (err) {
 					console.error('Exception verifying token:', err);
 					// Show form anyway
 					setAuthView('update_password');
+					setIsRecoveryFlow(true);
 				}
 			};
 
@@ -80,27 +103,40 @@ export function LoginClient() {
 			// Handle old token format
 			console.log('Password reset flow with token (old format):', { type, hasToken: !!token });
 			setAuthView('update_password');
+			setIsRecoveryFlow(true);
 		}
 	}, [searchParams, supabase]);
 
-	// Listen for auth state changes to handle password recovery
+	// Listen for auth state changes to handle password recovery and redirect after update
 	useEffect(() => {
 		if (!supabase) return;
 
 		const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: any) => {
-			console.log('Auth state changed:', { event, hasSession: !!session });
+			console.log('Auth state changed:', { event, hasSession: !!session, isRecoveryFlow, authView });
 			
 			// When password recovery is detected, ensure we're on update_password view
-			if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
-				console.log('Password recovery session established:', { event, hasSession: !!session });
+			if (event === 'PASSWORD_RECOVERY') {
+				console.log('PASSWORD_RECOVERY event detected');
 				setAuthView('update_password');
+				setIsRecoveryFlow(true);
+			}
+			
+			// After password is successfully updated, redirect to dashboard
+			// Only redirect if we were in a recovery flow and now have a session
+			if (event === 'SIGNED_IN' && session && isRecoveryFlow && authView === 'update_password') {
+				console.log('Password updated successfully, redirecting to dashboard');
+				// Clear recovery flow flag and redirect
+				setIsRecoveryFlow(false);
+				setAuthView('sign_in');
+				// Clear URL parameters
+				router.replace('/dashboard');
 			}
 		});
 
 		return () => {
 			subscription.unsubscribe();
 		};
-	}, [supabase]);
+	}, [supabase, isRecoveryFlow, authView, router]);
 
 	const handleLinkedInSignIn = async () => {
 		if (!supabase) return;
