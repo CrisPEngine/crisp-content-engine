@@ -29,8 +29,9 @@ export function LoginClient() {
 			// The Auth component should handle displaying this
 		}
 		
-		if (type === 'recovery' && (token || tokenHash)) {
-			console.log('Password reset flow detected:', { type, hasToken: !!token, hasTokenHash: !!tokenHash });
+		// Handle both recovery (password reset) and invite (new user) flows
+		if ((type === 'recovery' || type === 'invite') && (token || tokenHash)) {
+			console.log('Password reset/invite flow detected:', { type, hasToken: !!token, hasTokenHash: !!tokenHash });
 			setAuthView('update_password');
 		}
 	}, [searchParams]);

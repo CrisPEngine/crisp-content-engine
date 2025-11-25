@@ -24,11 +24,12 @@ export async function GET(request: Request) {
 		return NextResponse.redirect(loginUrl);
 	}
 	
-	// Handle password reset flow - redirect to login with token so Auth UI can handle it
-	if (type === 'recovery' && (token || tokenHash)) {
+	// Handle password reset or invite flow - redirect to login with token so Auth UI can handle it
+	// Both 'recovery' (password reset) and 'invite' (new user invite) should go to login
+	if ((type === 'recovery' || type === 'invite') && (token || tokenHash)) {
 		// Build the redirect URL with all the necessary parameters
 		const loginUrl = new URL('/login', url.origin);
-		loginUrl.searchParams.set('type', 'recovery');
+		loginUrl.searchParams.set('type', type);
 		if (token) loginUrl.searchParams.set('token', token);
 		if (tokenHash) loginUrl.searchParams.set('token_hash', tokenHash);
 		// Preserve any other query params that might be needed

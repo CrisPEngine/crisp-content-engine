@@ -100,54 +100,33 @@ export async function POST(req: Request) {
 			currentPeriodEnd,
 		});
 
-		// Send password reset email so user can set their own password
-		// Use the Supabase REST API /auth/v1/recover endpoint to send password reset email
-		// Redirect to /auth/callback which will handle the token and redirect to /login
+		// Send invite email so user can set their password
+		// For newly created users, use inviteUserByEmail which sends an invite email
+		// This is the correct method for users who haven't set a password yet
 		try {
 			const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io'}/auth/callback`;
-			const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-			const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-			
-			if (!supabaseUrl || !serviceRoleKey) {
-				console.error('Missing Supabase URL or service role key for sending password reset email');
-			} else {
-				// Use the Supabase Auth REST API to send password reset email
-				// This endpoint automatically sends the email with the recovery link
-				const response = await fetch(`${supabaseUrl}/auth/v1/recover`, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						'apikey': serviceRoleKey,
-						'Authorization': `Bearer ${serviceRoleKey}`,
-					},
-					body: JSON.stringify({
-						email: email,
-						redirect_to: redirectUrl,
-					}),
-				});
+			const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
+				redirectTo: redirectUrl,
+			});
 
-				if (!response.ok) {
-					const errorText = await response.text();
-					console.error('Failed to send password reset email:', {
-						status: response.status,
-						statusText: response.statusText,
-						error: errorText,
-						email,
-						userId,
-						redirectUrl,
-					});
-				} else {
-					const responseData = await response.json().catch(() => ({}));
-					console.log('Password reset email sent successfully:', {
-						email,
-						userId,
-						redirectUrl,
-						responseData,
-					});
-				}
+			if (inviteError) {
+				console.error('Failed to send invite email:', {
+					error: inviteError,
+					message: inviteError.message,
+					email,
+					userId,
+					redirectUrl,
+				});
+			} else {
+				console.log('Invite email sent successfully:', {
+					email,
+					userId,
+					redirectUrl,
+					hasData: !!inviteData,
+				});
 			}
 		} catch (err: any) {
-			console.error('Error sending password reset email:', {
+			console.error('Error sending invite email:', {
 				error: err,
 				message: err?.message,
 				stack: err?.stack,
