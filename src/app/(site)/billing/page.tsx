@@ -285,7 +285,7 @@ export default function BillingPage() {
 			{!loadingPlan && currentPlan && currentPlan.plan !== 'free' && (
 				<section className="mb-8 rounded-xl2 border border-primary/30 p-6 bg-gradient-to-br from-primary/10 to-primary/5">
 					<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-						<div>
+						<div className="flex-1">
 							<h2 className="text-xl font-semibold mb-1">Current Plan</h2>
 							<p className="text-lg font-medium text-text-soft">
 								{planNames[currentPlan.plan]} ({currentPlan.cycle})
@@ -296,18 +296,20 @@ export default function BillingPage() {
 								</p>
 							)}
 						</div>
-						<button
-							onClick={handleCancelSubscription}
-							disabled={cancelling}
-							className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 text-text-soft text-sm transition disabled:opacity-50"
-							title="Cancel subscription at end of billing cycle"
-						>
-							{cancelling ? 'Opening...' : 'Cancel Subscription'}
-						</button>
+						<div className="flex flex-col items-end gap-2">
+							<button
+								onClick={handleCancelSubscription}
+								disabled={cancelling}
+								className="px-3 py-1.5 rounded-lg border border-edge/40 bg-transparent hover:bg-surface/30 text-text-dim hover:text-text-soft text-xs transition disabled:opacity-50"
+								title="Cancel subscription at end of billing cycle"
+							>
+								{cancelling ? 'Opening...' : 'Cancel Subscription'}
+							</button>
+							<p className="text-xs text-text-dim text-right max-w-[200px]">
+								Cancellation takes effect at end of billing cycle
+							</p>
+						</div>
 					</div>
-					<p className="text-xs text-text-dim mt-3">
-						If you cancel, your subscription will remain active until the end of your current billing cycle ({currentPlan.currentPeriodEnd ? formatPeriodEnd(currentPlan.currentPeriodEnd) : 'end of period'}).
-					</p>
 				</section>
 			)}
 			
