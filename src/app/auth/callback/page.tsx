@@ -56,7 +56,7 @@ function CallbackHandler() {
 		if (code && supabase) {
 			console.log('Exchanging OAuth code for session');
 			supabase.auth.exchangeCodeForSession(code)
-				.then((response) => {
+				.then((response: { data: any; error: any }) => {
 					if (response.error) {
 						console.error('Error exchanging code:', response.error);
 						router.push('/login?error=oauth_error');
