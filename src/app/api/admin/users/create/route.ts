@@ -101,10 +101,10 @@ export async function POST(req: Request) {
 		});
 
 		// Send password reset email so user can set their own password
-		// Use the Supabase REST API to send password reset email
-		// Redirect directly to /login so Auth UI can handle the password reset
+		// Use the Supabase REST API /auth/v1/recover endpoint to send password reset email
+		// Redirect to /auth/callback which will handle the token and redirect to /login
 		try {
-			const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io'}/login`;
+			const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io'}/auth/callback`;
 			const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 			const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 			
@@ -112,6 +112,7 @@ export async function POST(req: Request) {
 				console.error('Missing Supabase URL or service role key for sending password reset email');
 			} else {
 				// Use the Supabase Auth REST API to send password reset email
+				// This endpoint automatically sends the email with the recovery link
 				const response = await fetch(`${supabaseUrl}/auth/v1/recover`, {
 					method: 'POST',
 					headers: {
@@ -136,10 +137,12 @@ export async function POST(req: Request) {
 						redirectUrl,
 					});
 				} else {
+					const responseData = await response.json().catch(() => ({}));
 					console.log('Password reset email sent successfully:', {
 						email,
 						userId,
 						redirectUrl,
+						responseData,
 					});
 				}
 			}

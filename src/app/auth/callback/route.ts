@@ -10,6 +10,20 @@ export async function GET(request: Request) {
 	const token = requestUrl.searchParams.get('token');
 	const tokenHash = requestUrl.searchParams.get('token_hash');
 	
+	// Handle error parameters (e.g., expired tokens)
+	const error = requestUrl.searchParams.get('error');
+	const errorDescription = requestUrl.searchParams.get('error_description');
+	if (error) {
+		console.error('Auth callback error:', { error, errorDescription, url: requestUrl.toString() });
+		// Redirect to login with error message
+		const loginUrl = new URL('/login', url.origin);
+		loginUrl.searchParams.set('error', error);
+		if (errorDescription) {
+			loginUrl.searchParams.set('error_description', errorDescription);
+		}
+		return NextResponse.redirect(loginUrl);
+	}
+	
 	// Handle password reset flow - redirect to login with token so Auth UI can handle it
 	if (type === 'recovery' && (token || tokenHash)) {
 		// Build the redirect URL with all the necessary parameters
