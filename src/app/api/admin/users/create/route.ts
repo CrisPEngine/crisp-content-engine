@@ -100,38 +100,54 @@ export async function POST(req: Request) {
 			currentPeriodEnd,
 		});
 
-		// Send invite email so user can set their password
-		// For newly created users, use inviteUserByEmail which sends an invite email
-		// This is the correct method for users who haven't set a password yet
-		// Note: Requires "Invite" email template to be configured in Supabase
+		// Send password reset email so user can set their password
+		// Use password reset flow for new users (since Supabase doesn't have an "Invite" template)
+		// This uses the "Reset Password" template which is always available
 		try {
 			const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io'}/auth/callback`;
-			const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
-				redirectTo: redirectUrl,
-			});
-
-			if (inviteError) {
-				console.error('Failed to send invite email:', {
-					error: inviteError,
-					message: inviteError.message,
-					code: inviteError.status,
-					email,
-					userId,
-					redirectUrl,
-					note: 'Make sure "Invite" email template is enabled in Supabase Dashboard → Authentication → Email Templates',
-				});
-				// Don't fail the user creation, but log the error
+			const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+			const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+			
+			if (!supabaseUrl || !serviceRoleKey) {
+				console.error('Missing Supabase URL or service role key for sending password reset email');
 			} else {
-				console.log('Invite email sent successfully:', {
-					email,
-					userId,
-					redirectUrl,
-					hasData: !!inviteData,
-					hasUser: !!inviteData?.user,
+				// Use the Supabase Auth REST API to send password reset email
+				// This works for both existing users (forgot password) and new users (set initial password)
+				const response = await fetch(`${supabaseUrl}/auth/v1/recover`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'apikey': serviceRoleKey,
+						'Authorization': `Bearer ${serviceRoleKey}`,
+					},
+					body: JSON.stringify({
+						email: email,
+						redirect_to: redirectUrl,
+					}),
 				});
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					console.error('Failed to send password reset email:', {
+						status: response.status,
+						statusText: response.statusText,
+						error: errorText,
+						email,
+						userId,
+						redirectUrl,
+					});
+				} else {
+					const responseData = await response.json().catch(() => ({}));
+					console.log('Password reset email sent successfully:', {
+						email,
+						userId,
+						redirectUrl,
+						responseData,
+					});
+				}
 			}
 		} catch (err: any) {
-			console.error('Error sending invite email:', {
+			console.error('Error sending password reset email:', {
 				error: err,
 				message: err?.message,
 				stack: err?.stack,

@@ -40,11 +40,12 @@ function CallbackHandler() {
 			return;
 		}
 
-		// Handle password reset or invite flow - redirect to login with token
-		if ((type === 'recovery' || type === 'invite') && (token || tokenHash)) {
-			console.log('Redirecting to login with recovery/invite token:', { type, hasToken: !!token, hasTokenHash: !!tokenHash });
+		// Handle password reset flow - redirect to login with token
+		// This works for both existing users (forgot password) and new users (set initial password)
+		if (type === 'recovery' && (token || tokenHash)) {
+			console.log('Redirecting to login with recovery token:', { type, hasToken: !!token, hasTokenHash: !!tokenHash });
 			const params = new URLSearchParams();
-			params.set('type', type);
+			params.set('type', 'recovery');
 			if (token) params.set('token', token);
 			if (tokenHash) params.set('token_hash', tokenHash);
 			router.push(`/login?${params.toString()}`);
@@ -55,16 +56,16 @@ function CallbackHandler() {
 		if (code && supabase) {
 			console.log('Exchanging OAuth code for session');
 			supabase.auth.exchangeCodeForSession(code)
-				.then(({ error: exchangeError }) => {
-					if (exchangeError) {
-						console.error('Error exchanging code:', exchangeError);
+				.then((response) => {
+					if (response.error) {
+						console.error('Error exchanging code:', response.error);
 						router.push('/login?error=oauth_error');
 						return;
 					}
 					// Success - redirect to dashboard (profile creation happens on dashboard load)
 					router.push('/dashboard');
 				})
-				.catch((err) => {
+				.catch((err: unknown) => {
 					console.error('Exception exchanging code:', err);
 					router.push('/login?error=oauth_error');
 				});
