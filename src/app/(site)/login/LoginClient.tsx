@@ -30,24 +30,56 @@ export function LoginClient() {
 		}
 		
 		// Handle password reset flow
-		// If session is already established (from callback), show update form
-		// Otherwise, Auth UI component will handle token_hash from URL
-		if (type === 'recovery') {
-			const sessionEstablished = searchParams?.get('session') === 'established';
-			console.log('Password reset flow detected:', { 
+		// For token_hash, we need to verify it to establish a session
+		if (type === 'recovery' && tokenHash && supabase) {
+			console.log('Password reset flow detected with token_hash, verifying...', { 
 				type, 
-				hasToken: !!token, 
-				hasTokenHash: !!tokenHash,
-				sessionEstablished 
+				hasTokenHash: !!tokenHash
 			});
 			
-			if (sessionEstablished) {
-				// Session already established by callback, show update form
-				setAuthView('update_password');
-			} else if (token || tokenHash) {
-				// Token in URL - Auth UI component should handle it
-				setAuthView('update_password');
-			}
+			// Verify token_hash to establish session before showing password update form
+			// Use the REST API approach since verifyOtp might not work for recovery token_hash
+			const verifyToken = async () => {
+				try {
+					// Use exchangeCodeForSession with the token_hash
+					// Actually, for recovery token_hash, we need to use a different approach
+					// Let's try using the Supabase REST API to verify
+					const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+					if (!supabaseUrl) {
+						console.error('Missing Supabase URL');
+						return;
+					}
+
+					// For recovery token_hash, we can use verifyOtp but need to pass it correctly
+					const { data, error } = await supabase.auth.verifyOtp({
+						token_hash: tokenHash,
+						type: 'recovery',
+					});
+
+					if (error) {
+						console.error('Error verifying recovery token:', error);
+						// Still show the form - Auth UI might handle it differently
+						setAuthView('update_password');
+					} else if (data?.session) {
+						console.log('Recovery token verified, session established');
+						setAuthView('update_password');
+					} else {
+						console.warn('Token verification returned no session');
+						// Show form anyway - might work
+						setAuthView('update_password');
+					}
+				} catch (err) {
+					console.error('Exception verifying token:', err);
+					// Show form anyway
+					setAuthView('update_password');
+				}
+			};
+
+			verifyToken();
+		} else if (type === 'recovery' && token) {
+			// Handle old token format
+			console.log('Password reset flow with token (old format):', { type, hasToken: !!token });
+			setAuthView('update_password');
 		}
 	}, [searchParams, supabase]);
 

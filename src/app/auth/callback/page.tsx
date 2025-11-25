@@ -2,14 +2,20 @@
 
 import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useSupabase } from '@/components/SupabaseProvider';
+import { supabaseBrowser } from '@/lib/supabase/client';
 
 function CallbackHandler() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
-	const supabase = useSupabase();
+	const supabase = supabaseBrowser();
 
 	useEffect(() => {
+		// Wait for searchParams to be available
+		if (!searchParams) {
+			console.log('Waiting for searchParams...');
+			return;
+		}
+
 		// Handle hash fragments (Supabase sometimes uses these for errors)
 		// Hash fragments are only available client-side
 		const hash = window.location.hash;
@@ -26,12 +32,12 @@ function CallbackHandler() {
 		}
 
 		// Handle query parameters
-		const type = searchParams?.get('type');
-		const token = searchParams?.get('token');
-		const tokenHash = searchParams?.get('token_hash');
-		const code = searchParams?.get('code');
-		const error = searchParams?.get('error');
-		const errorDescription = searchParams?.get('error_description');
+		const type = searchParams.get('type');
+		const token = searchParams.get('token');
+		const tokenHash = searchParams.get('token_hash');
+		const code = searchParams.get('code');
+		const error = searchParams.get('error');
+		const errorDescription = searchParams.get('error_description');
 
 		// Handle errors from query params
 		if (error) {
@@ -40,48 +46,26 @@ function CallbackHandler() {
 			return;
 		}
 
-		// Handle password reset flow
-		// For token_hash, we need to verify it client-side to establish a session
-		// Then redirect to login with the password update form
-		if (type === 'recovery' && tokenHash && supabase) {
-			console.log('Password reset flow detected, verifying token_hash:', { type, hasTokenHash: !!tokenHash });
-			
-			// Verify the token_hash using verifyOtp to establish a session
-			// This is required before the user can update their password
-			supabase.auth.verifyOtp({
-				token_hash: tokenHash,
-				type: 'recovery',
-			})
-				.then((response: { data: any; error: any }) => {
-					if (response.error) {
-						console.error('Error verifying recovery token:', response.error);
-						// Redirect to login with error
-						router.push(`/login?error=token_verification_failed&error_description=${encodeURIComponent(response.error.message)}`);
-					} else if (response.data?.session) {
-						console.log('Recovery token verified, session established');
-						// Session is now established, redirect to login with update_password view
-						// The Auth UI will detect the session and allow password update
-						router.push('/login?type=recovery&session=established');
-					} else {
-						console.warn('Token verified but no session created');
-						// Still redirect to login - Auth UI might handle it
-						router.push('/login?type=recovery');
-					}
-				})
-				.catch((err: unknown) => {
-					console.error('Exception verifying recovery token:', err);
-					router.push('/login?error=token_verification_error');
-				});
-			return;
-		}
-		
-		// Handle old token format or fallback
-		if (type === 'recovery' && token) {
-			console.log('Password reset flow with token (old format):', { type, hasToken: !!token });
+		// Handle password reset flow - redirect to login with token_hash
+		// Don't verify here - let the login page handle verification
+		// This ensures token_hash is preserved in the URL
+		if (type === 'recovery' && (token || tokenHash)) {
+			console.log('Password reset flow detected, redirecting to login:', { 
+				type, 
+				hasToken: !!token, 
+				hasTokenHash: !!tokenHash,
+				fullUrl: window.location.href
+			});
 			const params = new URLSearchParams();
 			params.set('type', 'recovery');
-			params.set('token', token);
-			router.push(`/login?${params.toString()}`);
+			if (token) params.set('token', token);
+			if (tokenHash) {
+				params.set('token_hash', tokenHash);
+			}
+			const loginUrl = `/login?${params.toString()}`;
+			console.log('Redirecting to:', loginUrl);
+			// Use window.location for reliable redirect
+			window.location.href = loginUrl;
 			return;
 		}
 
