@@ -127,7 +127,7 @@ export async function POST(req: Request) {
 					userId,
 					redirectUrl,
 					hasData: !!inviteData,
-					properties: inviteData?.properties,
+					hasUser: !!inviteData?.user,
 				});
 			}
 		} catch (err: any) {
