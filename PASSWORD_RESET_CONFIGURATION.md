@@ -128,7 +128,9 @@ Supabase requires email templates to be configured for different authentication 
 1. **Reset Password** (for existing users who forgot password)
    - Location: Supabase Dashboard → Authentication → Email Templates → "Reset Password"
    - Should be enabled by default
-   - Uses `{{ .RedirectTo }}` and `{{ .TokenHash }}` variables
+   - **CRITICAL**: Must include token parameters in the link
+   - Use: `{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=recovery`
+   - OR use: `{{ .ConfirmationURL }}` (includes all parameters automatically)
 
 2. **Invite** (for newly created users)
    - Location: Supabase Dashboard → Authentication → Email Templates → "Invite"
