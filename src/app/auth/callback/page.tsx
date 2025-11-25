@@ -42,13 +42,15 @@ function CallbackHandler() {
 
 		// Handle password reset flow - redirect to login with token
 		// This works for both existing users (forgot password) and new users (set initial password)
+		// IMPORTANT: Keep token_hash in URL so Auth UI component can read it
 		if (type === 'recovery' && (token || tokenHash)) {
 			console.log('Redirecting to login with recovery token:', { type, hasToken: !!token, hasTokenHash: !!tokenHash });
 			const params = new URLSearchParams();
 			params.set('type', 'recovery');
 			if (token) params.set('token', token);
 			if (tokenHash) params.set('token_hash', tokenHash);
-			router.push(`/login?${params.toString()}`);
+			// Use replace instead of push to avoid adding to history
+			router.replace(`/login?${params.toString()}`);
 			return;
 		}
 

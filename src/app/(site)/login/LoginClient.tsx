@@ -29,36 +29,32 @@ export function LoginClient() {
 			// The Auth component should handle displaying this
 		}
 		
-		// Handle password reset flow - need to verify token_hash to establish session
-		if (type === 'recovery' && tokenHash && supabase) {
-			console.log('Password reset flow detected, verifying token_hash:', { type, hasTokenHash: !!tokenHash });
-			
-			// Verify the token_hash to establish a session
-			// This is required before the user can update their password
-			supabase.auth.verifyOtp({
-				token_hash: tokenHash,
-				type: 'recovery',
-			})
-				.then(({ data, error: verifyError }) => {
-					if (verifyError) {
-						console.error('Error verifying recovery token:', verifyError);
-						// Still show the update password form - Auth UI might handle it
-						setAuthView('update_password');
-					} else {
-						console.log('Recovery token verified, session established:', { hasSession: !!data.session });
-						setAuthView('update_password');
-					}
-				})
-				.catch((err) => {
-					console.error('Exception verifying recovery token:', err);
-					setAuthView('update_password');
-				});
-		} else if (type === 'recovery' && token && supabase) {
-			// Handle old token format (if used)
-			console.log('Password reset flow detected with token:', { type, hasToken: !!token });
+		// Handle password reset flow
+		// The Auth UI component will automatically read token_hash from URL and verify it
+		if (type === 'recovery' && (token || tokenHash)) {
+			console.log('Password reset flow detected:', { type, hasToken: !!token, hasTokenHash: !!tokenHash });
 			setAuthView('update_password');
 		}
-	}, [searchParams, supabase]);
+	}, [searchParams]);
+
+	// Listen for auth state changes to handle password recovery
+	useEffect(() => {
+		if (!supabase) return;
+
+		const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+			console.log('Auth state changed:', { event, hasSession: !!session });
+			
+			// When password recovery is detected, ensure we're on update_password view
+			if (event === 'PASSWORD_RECOVERY') {
+				console.log('PASSWORD_RECOVERY event detected, session established');
+				setAuthView('update_password');
+			}
+		});
+
+		return () => {
+			subscription.unsubscribe();
+		};
+	}, [supabase]);
 
 	const handleLinkedInSignIn = async () => {
 		if (!supabase) return;
