@@ -54,7 +54,7 @@ function CallbackHandler() {
 				type, 
 				hasToken: !!token, 
 				hasTokenHash: !!tokenHash,
-				fullUrl: window.location.href
+				fullUrl: typeof window !== 'undefined' ? window.location.href : 'N/A'
 			});
 			const params = new URLSearchParams();
 			params.set('type', 'recovery');
@@ -64,8 +64,8 @@ function CallbackHandler() {
 			}
 			const loginUrl = `/login?${params.toString()}`;
 			console.log('Redirecting to:', loginUrl);
-			// Use window.location for reliable redirect
-			window.location.href = loginUrl;
+			// Use replace to avoid adding to history
+			router.replace(loginUrl);
 			return;
 		}
 
@@ -102,15 +102,17 @@ function CallbackHandler() {
 			params.set('type', 'recovery');
 			if (urlToken) params.set('token', urlToken);
 			if (urlTokenHash) params.set('token_hash', urlTokenHash);
-			window.location.href = `/login?${params.toString()}`;
+			router.replace(`/login?${params.toString()}`);
 			return;
 		}
 
 		// If still no recognized parameters, redirect to login
 		console.warn('Callback page loaded with no recognized parameters, redirecting to login');
-		console.log('Current URL:', window.location.href);
-		console.log('Search params:', Object.fromEntries(currentUrl.searchParams));
-		window.location.href = '/login';
+		if (typeof window !== 'undefined') {
+			console.log('Current URL:', window.location.href);
+			console.log('Search params:', Object.fromEntries(currentUrl.searchParams));
+		}
+		router.replace('/login');
 	}, [router, searchParams, supabase]);
 
 	return (
