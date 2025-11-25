@@ -29,12 +29,36 @@ export function LoginClient() {
 			// The Auth component should handle displaying this
 		}
 		
-		// Handle both recovery (password reset) and invite (new user) flows
-		if ((type === 'recovery' || type === 'invite') && (token || tokenHash)) {
-			console.log('Password reset/invite flow detected:', { type, hasToken: !!token, hasTokenHash: !!tokenHash });
+		// Handle password reset flow - need to verify token_hash to establish session
+		if (type === 'recovery' && tokenHash && supabase) {
+			console.log('Password reset flow detected, verifying token_hash:', { type, hasTokenHash: !!tokenHash });
+			
+			// Verify the token_hash to establish a session
+			// This is required before the user can update their password
+			supabase.auth.verifyOtp({
+				token_hash: tokenHash,
+				type: 'recovery',
+			})
+				.then(({ data, error: verifyError }) => {
+					if (verifyError) {
+						console.error('Error verifying recovery token:', verifyError);
+						// Still show the update password form - Auth UI might handle it
+						setAuthView('update_password');
+					} else {
+						console.log('Recovery token verified, session established:', { hasSession: !!data.session });
+						setAuthView('update_password');
+					}
+				})
+				.catch((err) => {
+					console.error('Exception verifying recovery token:', err);
+					setAuthView('update_password');
+				});
+		} else if (type === 'recovery' && token && supabase) {
+			// Handle old token format (if used)
+			console.log('Password reset flow detected with token:', { type, hasToken: !!token });
 			setAuthView('update_password');
 		}
-	}, [searchParams]);
+	}, [searchParams, supabase]);
 
 	const handleLinkedInSignIn = async () => {
 		if (!supabase) return;
