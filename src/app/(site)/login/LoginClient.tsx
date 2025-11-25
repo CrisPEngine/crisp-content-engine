@@ -21,6 +21,7 @@ export function LoginClient() {
 		const token = searchParams?.get('token');
 		const tokenHash = searchParams?.get('token_hash');
 		if (type === 'recovery' && (token || tokenHash)) {
+			console.log('Password reset flow detected:', { type, hasToken: !!token, hasTokenHash: !!tokenHash });
 			setAuthView('update_password');
 		}
 	}, [searchParams]);
@@ -133,7 +134,7 @@ export function LoginClient() {
 								input: 'bg-bg/80 border border-edge/80 focus:border-primary/60 focus:ring-0',
 								divider: 'text-text-soft',
 								label: 'text-text-soft',
-								message: 'bg-surface/90 border border-edge/80 text-text font-medium rounded-xl2 p-4 shadow-sm',
+								message: '!bg-surface !border-2 !border-edge !text-text !font-semibold !rounded-xl2 !p-4 !shadow-lg !opacity-100',
 							},
 						}}
 					/>

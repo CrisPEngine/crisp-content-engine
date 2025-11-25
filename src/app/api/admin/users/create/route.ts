@@ -102,9 +102,9 @@ export async function POST(req: Request) {
 
 		// Send password reset email so user can set their own password
 		// Use the Supabase REST API to send password reset email
-		// Note: generateLink doesn't send emails automatically, so we use the auth endpoint directly
+		// Redirect directly to /login so Auth UI can handle the password reset
 		try {
-			const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io'}/auth/callback`;
+			const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io'}/login`;
 			const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 			const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 			

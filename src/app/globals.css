@@ -110,18 +110,32 @@ html, body {
 }
 
 .skeleton-shimmer::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(138, 180, 248, 0.05) 0%,
-    transparent 50%,
-    rgba(79, 240, 184, 0.05) 100%
-  );
-  pointer-events: none;
-  animation: pulse 2s ease-in-out infinite;
+	content: '';
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: linear-gradient(
+		180deg,
+		rgba(138, 180, 248, 0.05) 0%,
+		transparent 50%,
+		rgba(79, 240, 184, 0.05) 100%
+	);
+	pointer-events: none;
+	animation: pulse 2s ease-in-out infinite;
+}
+
+/* Ensure Supabase Auth UI messages are readable with high contrast */
+[data-testid="auth-message"],
+.supabase-auth-ui_ui-message,
+div[class*="message"] {
+	background-color: rgb(26, 34, 48) !important;
+	border: 2px solid rgb(17, 24, 33) !important;
+	color: rgb(230, 234, 242) !important;
+	font-weight: 600 !important;
+	padding: 1rem !important;
+	border-radius: 12px !important;
+	opacity: 1 !important;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
 }
