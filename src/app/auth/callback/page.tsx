@@ -89,9 +89,28 @@ function CallbackHandler() {
 			return;
 		}
 
-		// If no recognized parameters, redirect to login
-		console.warn('Callback page loaded with no recognized parameters');
-		router.push('/login');
+		// If no recognized parameters, check URL directly as fallback
+		const currentUrl = new URL(window.location.href);
+		const urlType = currentUrl.searchParams.get('type');
+		const urlTokenHash = currentUrl.searchParams.get('token_hash');
+		const urlToken = currentUrl.searchParams.get('token');
+		
+		// Fallback: check URL directly if searchParams didn't catch it
+		if (urlType === 'recovery' && (urlToken || urlTokenHash)) {
+			console.log('Fallback: Found recovery params in URL directly:', { urlType, hasToken: !!urlToken, hasTokenHash: !!urlTokenHash });
+			const params = new URLSearchParams();
+			params.set('type', 'recovery');
+			if (urlToken) params.set('token', urlToken);
+			if (urlTokenHash) params.set('token_hash', urlTokenHash);
+			window.location.href = `/login?${params.toString()}`;
+			return;
+		}
+
+		// If still no recognized parameters, redirect to login
+		console.warn('Callback page loaded with no recognized parameters, redirecting to login');
+		console.log('Current URL:', window.location.href);
+		console.log('Search params:', Object.fromEntries(currentUrl.searchParams));
+		window.location.href = '/login';
 	}, [router, searchParams, supabase]);
 
 	return (
