@@ -120,7 +120,7 @@ export function LoginClient() {
 						supabaseClient={supabase}
 						view={authView}
 						providers={[]}
-						redirectTo={process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback` : (typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://app.crispdigital.io/auth/callback')}
+						redirectTo={typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://app.crispdigital.io/auth/callback'}
 						appearance={{
 							theme: ThemeSupa,
 							variables: {

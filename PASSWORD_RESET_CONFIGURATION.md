@@ -119,10 +119,43 @@ In Supabase Dashboard → Authentication → Email Templates:
   - Uses `inviteUserByEmail()` for new users
   - Redirect URL: `/auth/callback`
 
+## Email Template Configuration
+
+### Required Templates
+
+Supabase requires email templates to be configured for different authentication flows:
+
+1. **Reset Password** (for existing users who forgot password)
+   - Location: Supabase Dashboard → Authentication → Email Templates → "Reset Password"
+   - Should be enabled by default
+   - Uses `{{ .RedirectTo }}` and `{{ .TokenHash }}` variables
+
+2. **Invite** (for newly created users)
+   - Location: Supabase Dashboard → Authentication → Email Templates → "Invite"
+   - **Must be enabled** for admin-created users to receive emails
+   - Uses `{{ .RedirectTo }}` and `{{ .TokenHash }}` variables
+
+### How to Enable/Configure Email Templates
+
+1. Go to Supabase Dashboard → Authentication → Email Templates
+2. Find the "Invite" template
+3. Click "Enable" if it's disabled
+4. Customize the template if needed (optional)
+5. Ensure the template includes:
+   - A link with `{{ .RedirectTo }}` and `{{ .TokenHash }}`
+   - Example: `<a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite">Set Password</a>`
+
+### Email Sending Requirements
+
+- Email sending must be enabled in your Supabase project
+- For production, consider configuring custom SMTP (Settings → Auth → SMTP Settings)
+- Default Supabase email service has rate limits
+
 ## Additional Notes
 
 - Tokens are single-use and expire after 1 hour by default
 - Email clients that prefetch links can consume tokens prematurely
 - Consider adding OTP (One-Time Password) as alternative to links
 - Monitor Supabase logs for authentication errors
+- Check Supabase Dashboard → Logs → Auth Logs for email sending errors
 

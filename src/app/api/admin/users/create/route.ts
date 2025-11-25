@@ -103,6 +103,7 @@ export async function POST(req: Request) {
 		// Send invite email so user can set their password
 		// For newly created users, use inviteUserByEmail which sends an invite email
 		// This is the correct method for users who haven't set a password yet
+		// Note: Requires "Invite" email template to be configured in Supabase
 		try {
 			const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io'}/auth/callback`;
 			const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
@@ -113,16 +114,20 @@ export async function POST(req: Request) {
 				console.error('Failed to send invite email:', {
 					error: inviteError,
 					message: inviteError.message,
+					code: inviteError.status,
 					email,
 					userId,
 					redirectUrl,
+					note: 'Make sure "Invite" email template is enabled in Supabase Dashboard → Authentication → Email Templates',
 				});
+				// Don't fail the user creation, but log the error
 			} else {
 				console.log('Invite email sent successfully:', {
 					email,
 					userId,
 					redirectUrl,
 					hasData: !!inviteData,
+					properties: inviteData?.properties,
 				});
 			}
 		} catch (err: any) {
@@ -132,6 +137,7 @@ export async function POST(req: Request) {
 				stack: err?.stack,
 				email,
 				userId,
+				note: 'Check Supabase email configuration and ensure email sending is enabled',
 			});
 		}
 
