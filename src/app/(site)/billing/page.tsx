@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { PRICING, type PlanId } from "@/config/pricing";
 import { LoadingButton } from "@/components/LoadingButton";
+import { useSupabase } from "@/components/SupabaseProvider";
 
 function PlanCard({
 	tier,
@@ -62,12 +63,65 @@ function PlanCard({
 }
 
 export default function BillingPage() {
+	const supabase = useSupabase();
 	const [cycle, setCycle] = useState<"monthly" | "annual">("monthly");
 	const [loading, setLoading] = useState<string | null>(null);
 	const [waitlistOpenPlan, setWaitlistOpenPlan] = useState<string | null>(null);
 	const [waitlistEmail, setWaitlistEmail] = useState('');
 	const [waitlistStatus, setWaitlistStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 	const [waitlistMessage, setWaitlistMessage] = useState<string | null>(null);
+	const [currentPlan, setCurrentPlan] = useState<{ plan: PlanId | 'free'; cycle: 'monthly' | 'annual'; currentPeriodEnd?: string } | null>(null);
+	const [loadingPlan, setLoadingPlan] = useState(true);
+	const [cancelling, setCancelling] = useState(false);
+
+	// Fetch current subscription
+	useEffect(() => {
+		if (!supabase) return;
+		
+		async function loadCurrentPlan() {
+			try {
+				const res = await fetch('/api/plan', { cache: 'no-store' });
+				if (res.ok) {
+					const data = await res.json();
+					const planName = data.planName?.toLowerCase() || 'free';
+					const planId = planName === 'creator' ? 'creator' : 
+					               planName === 'growth' ? 'growth' :
+					               planName === 'pro' ? 'pro' :
+					               planName === 'scale' ? 'scale' : 'free';
+					
+					// Get subscription details including current_period_end
+					const { data: { user } } = await supabase.auth.getUser();
+					if (user) {
+						const { data: sub } = await supabase
+							.from('subscriptions')
+							.select('plan, cycle, current_period_end')
+							.eq('user_id', user.id)
+							.maybeSingle();
+						
+						if (sub) {
+							setCurrentPlan({
+								plan: (sub.plan as PlanId) || planId,
+								cycle: (sub.cycle as 'monthly' | 'annual') || data.cycle || 'monthly',
+								currentPeriodEnd: sub.current_period_end,
+							});
+							// Set cycle to match current subscription
+							if (sub.cycle) {
+								setCycle(sub.cycle as 'monthly' | 'annual');
+							}
+						} else {
+							setCurrentPlan({ plan: planId, cycle: data.cycle || 'monthly' });
+						}
+					}
+				}
+			} catch (error) {
+				console.error('Failed to load current plan:', error);
+			} finally {
+				setLoadingPlan(false);
+			}
+		}
+		
+		loadCurrentPlan();
+	}, [supabase]);
 
 	const goCheckout = async (priceId: string) => {
 		setLoading(priceId);
@@ -159,11 +213,59 @@ export default function BillingPage() {
 				throw new Error(data?.error || 'Failed to join the waitlist.');
 			}
 			setWaitlistStatus('success');
-			setWaitlistMessage('Thanks! We’ll email you as soon as it’s available.');
+			setWaitlistMessage('Thanks! We'll email you as soon as it's available.');
 		} catch (error: any) {
 			console.error('Waitlist submission error', error);
 			setWaitlistStatus('error');
 			setWaitlistMessage(error?.message || 'Failed to join the waitlist.');
+		}
+	};
+
+	const handleCancelSubscription = async () => {
+		if (!confirm('Are you sure you want to cancel your subscription? Your subscription will remain active until the end of your current billing cycle.')) {
+			return;
+		}
+
+		setCancelling(true);
+		try {
+			const res = await fetch('/api/billing/portal', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+			});
+			const data = await res.json();
+			if (!res.ok) {
+				throw new Error(data?.error || 'Failed to open billing portal');
+			}
+			if (data.url) {
+				window.location.href = data.url;
+			}
+		} catch (error: any) {
+			console.error('Failed to open billing portal:', error);
+			alert(error.message || 'Failed to open billing portal. Please try again.');
+			setCancelling(false);
+		}
+	};
+
+	// Get upgrade options (plans higher than current)
+	const getUpgradeOptions = () => {
+		if (!currentPlan || currentPlan.plan === 'free') {
+			return PRICING.order;
+		}
+		const currentIndex = PRICING.order.indexOf(currentPlan.plan);
+		return PRICING.order.slice(currentIndex + 1);
+	};
+
+	const upgradeOptions = getUpgradeOptions();
+	const planNames: Record<string, string> = { creator: 'Creator', growth: 'Growth', pro: 'Pro', scale: 'Scale', free: 'Free' };
+
+	// Format period end date
+	const formatPeriodEnd = (dateString?: string) => {
+		if (!dateString) return '';
+		try {
+			const date = new Date(dateString);
+			return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+		} catch {
+			return '';
 		}
 	};
 
@@ -178,13 +280,46 @@ export default function BillingPage() {
 					← Back
 				</button>
 			</div>
+
+			{/* Current Plan Section - Show if user has subscription */}
+			{!loadingPlan && currentPlan && currentPlan.plan !== 'free' && (
+				<section className="mb-8 rounded-xl2 border border-primary/30 p-6 bg-gradient-to-br from-primary/10 to-primary/5">
+					<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+						<div>
+							<h2 className="text-xl font-semibold mb-1">Current Plan</h2>
+							<p className="text-lg font-medium text-text-soft">
+								{planNames[currentPlan.plan]} ({currentPlan.cycle})
+							</p>
+							{currentPlan.currentPeriodEnd && (
+								<p className="text-sm text-text-dim mt-1">
+									Current period ends: {formatPeriodEnd(currentPlan.currentPeriodEnd)}
+								</p>
+							)}
+						</div>
+						<button
+							onClick={handleCancelSubscription}
+							disabled={cancelling}
+							className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 text-text-soft text-sm transition disabled:opacity-50"
+							title="Cancel subscription at end of billing cycle"
+						>
+							{cancelling ? 'Opening...' : 'Cancel Subscription'}
+						</button>
+					</div>
+					<p className="text-xs text-text-dim mt-3">
+						If you cancel, your subscription will remain active until the end of your current billing cycle ({currentPlan.currentPeriodEnd ? formatPeriodEnd(currentPlan.currentPeriodEnd) : 'end of period'}).
+					</p>
+				</section>
+			)}
 			
 			{/* Hero */}
 			<section className="mb-8 rounded-xl2 border border-edge/60 p-6 bg-gradient-to-br from-surface/70 to-surface/30">
-				<h1 className="text-2xl font-semibold">Choose your plan</h1>
+				<h1 className="text-2xl font-semibold">
+					{currentPlan && currentPlan.plan !== 'free' ? 'Upgrade your plan' : 'Choose your plan'}
+				</h1>
 				<p className="text-text-dim mt-1">
-					Scale content from idea → publish. Plans include Stripe-backed billing, secure auth,
-					and simple limits you can upgrade anytime.
+					{currentPlan && currentPlan.plan !== 'free' 
+						? 'Upgrade to unlock more features and higher limits.'
+						: 'Scale content from idea → publish. Plans include Stripe-backed billing, secure auth, and simple limits you can upgrade anytime.'}
 				</p>
 				{/* Toggle */}
 				<div className="mt-4 inline-flex rounded-xl2 border border-edge/60 bg-bg/40">
@@ -209,19 +344,37 @@ export default function BillingPage() {
 				</div>
 			</section>
 
-			{/* Active plan */}
-			<section className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-				{activePlanIds.map((id) => (
-					<PlanCard
-						key={id}
-						tier={id}
-						billingCycle={cycle}
-						onCheckout={goCheckout}
-						highlight
-						loading={loading}
-					/>
-				))}
-			</section>
+			{/* Upgrade options or all plans */}
+			{upgradeOptions.length > 0 ? (
+				<section>
+					<h2 className="text-lg font-semibold mb-4">Available Upgrades</h2>
+					<div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+						{upgradeOptions.map((id) => (
+							<PlanCard
+								key={id}
+								tier={id}
+								billingCycle={cycle}
+								onCheckout={goCheckout}
+								highlight={id === 'growth'}
+								loading={loading}
+							/>
+						))}
+					</div>
+				</section>
+			) : (
+				<section className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+					{activePlanIds.map((id) => (
+						<PlanCard
+							key={id}
+							tier={id}
+							billingCycle={cycle}
+							onCheckout={goCheckout}
+							highlight
+							loading={loading}
+						/>
+					))}
+				</section>
+			)}
 
 			{/* Coming soon */}
 			<section className="mt-8">
