@@ -1,16 +1,17 @@
 'use client';
 
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
 
-export default function CallbackPage() {
+function CallbackHandler() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const supabase = useSupabase();
 
 	useEffect(() => {
 		// Handle hash fragments (Supabase sometimes uses these for errors)
+		// Hash fragments are only available client-side
 		const hash = window.location.hash;
 		if (hash) {
 			const hashParams = new URLSearchParams(hash.substring(1));
@@ -39,7 +40,7 @@ export default function CallbackPage() {
 			return;
 		}
 
-		// Handle password reset or invite flow
+		// Handle password reset or invite flow - redirect to login with token
 		if ((type === 'recovery' || type === 'invite') && (token || tokenHash)) {
 			console.log('Redirecting to login with recovery/invite token:', { type, hasToken: !!token, hasTokenHash: !!tokenHash });
 			const params = new URLSearchParams();
@@ -58,10 +59,10 @@ export default function CallbackPage() {
 					if (exchangeError) {
 						console.error('Error exchanging code:', exchangeError);
 						router.push('/login?error=oauth_error');
-					} else {
-						// Success - redirect to dashboard
-						router.push('/dashboard');
+						return;
 					}
+					// Success - redirect to dashboard (profile creation happens on dashboard load)
+					router.push('/dashboard');
 				})
 				.catch((err) => {
 					console.error('Exception exchanging code:', err);
@@ -70,7 +71,7 @@ export default function CallbackPage() {
 			return;
 		}
 
-		// If no parameters, redirect to login
+		// If no recognized parameters, redirect to login
 		console.warn('Callback page loaded with no recognized parameters');
 		router.push('/login');
 	}, [router, searchParams, supabase]);
@@ -81,6 +82,20 @@ export default function CallbackPage() {
 				<div className="text-text-soft">Processing authentication...</div>
 			</div>
 		</div>
+	);
+}
+
+export default function CallbackPage() {
+	return (
+		<Suspense fallback={
+			<div className="flex items-center justify-center min-h-screen">
+				<div className="text-center">
+					<div className="text-text-soft">Loading...</div>
+				</div>
+			</div>
+		}>
+			<CallbackHandler />
+		</Suspense>
 	);
 }
 
