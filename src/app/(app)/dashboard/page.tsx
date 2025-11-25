@@ -100,6 +100,15 @@ export default async function Dashboard({
 				return status === 'Strategy Approved' || 
 				       (p.strategy_summary && p.strategy_summary.trim() && status.includes('Approved'));
 			});
+			
+			// Also check if any brand has "Strategy Ready" status (means questionnaire is complete)
+			// This helps detect when questionnaire is just completed
+			const hasStrategyReady = brandProfiles.some((p: any) => {
+				const status = p.status || p.original_status || '';
+				return status === 'Strategy Ready' || 
+				       status === 'Strategy Ready (Awaiting Approval)' ||
+				       status === 'Strategy Ready For Approval';
+			});
 		}
 		
 		// Check if there's content to review (Step 4)
@@ -122,16 +131,25 @@ export default async function Dashboard({
 	
 	// Determine current step (1-4)
 	// Step 1: Connect LinkedIn (if not connected)
-	// Step 2: Complete questionnaire (if LinkedIn connected but no brand profiles)
-	// Step 3: Approve strategy (if has brand profiles but no approved strategies)
+	// Step 2: Complete questionnaire (if LinkedIn connected but no brand profiles OR has brand profiles but no strategy ready/approved)
+	// Step 3: Approve strategy (if has brand profiles with strategy ready but not approved)
 	// Step 4: Review content (if has approved strategies but has content to review)
 	let currentStep = 1;
+	const hasStrategyReady = brandProfiles.some((p: any) => {
+		const status = p.status || p.original_status || '';
+		return status === 'Strategy Ready' || 
+		       status === 'Strategy Ready (Awaiting Approval)' ||
+		       status === 'Strategy Ready For Approval';
+	});
+	
 	if (isLinkedInConnected && !hasBrandProfiles) {
 		currentStep = 2;
-	} else if (isLinkedInConnected && hasBrandProfiles && !hasApprovedStrategies) {
-		currentStep = 3;
+	} else if (isLinkedInConnected && hasBrandProfiles && !hasStrategyReady && !hasApprovedStrategies) {
+		currentStep = 2; // Still need to complete questionnaire (brand created but no strategy yet)
+	} else if (isLinkedInConnected && hasBrandProfiles && hasStrategyReady && !hasApprovedStrategies) {
+		currentStep = 3; // Strategy ready, needs approval
 	} else if (isLinkedInConnected && hasBrandProfiles && hasApprovedStrategies && hasContentToReview) {
-		currentStep = 4;
+		currentStep = 4; // Approved, has content to review
 	} else if (isLinkedInConnected && hasBrandProfiles && hasApprovedStrategies && !hasContentToReview) {
 		// All steps complete - don't show onboarding
 		currentStep = 0;
@@ -160,20 +178,24 @@ export default async function Dashboard({
 
 	return (
 		<main className="p-4 md:p-6 space-y-4 md:space-y-6">
-			<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-				<h1 className="text-2xl md:text-3xl font-semibold">Welcome 👋</h1>
-				{profile?.is_admin && (
-					<a
-						href="/admin"
-						className="px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm whitespace-nowrap"
-					>
-						Admin Dashboard
-					</a>
-				)}
+			<div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+				<div className="flex-1">
+					<h1 className="text-2xl md:text-3xl font-semibold">Welcome 👋</h1>
+					<p className="text-sm md:text-base text-text-dim mt-1">
+						You're signed in as <span className="font-medium">{user.email}</span>.
+					</p>
+				</div>
+				<div className="flex items-center gap-3">
+					{profile?.is_admin && (
+						<a
+							href="/admin"
+							className="px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm whitespace-nowrap"
+						>
+							Admin Dashboard
+						</a>
+					)}
+				</div>
 			</div>
-			<p className="text-sm md:text-base text-text-dim">
-				You're signed in as <span className="font-medium">{user.email}</span>.
-			</p>
 
 			{/* Prominent "Select Your Plan" button for users without subscription */}
 			{!hasSubscription && (
@@ -220,90 +242,86 @@ export default async function Dashboard({
 				</div>
 			)}
 
-			{/* Progressive Onboarding Steps */}
+			{/* Progressive Onboarding Steps - Right aligned, smaller */}
 			{currentStep > 0 && activeTab === 'overview' && (
-				<div className="card p-4 md:p-6 bg-primary/5 border border-primary/20">
-					<h3 className="font-semibold mb-4 text-base md:text-lg">Get Started</h3>
-					<div className="space-y-3">
-						{/* Step 1: Connect LinkedIn */}
-						<div className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 rounded-xl2 ${currentStep === 1 ? 'bg-primary/10 border border-primary/30' : 'opacity-60'}`}>
-							<div className="flex-1">
-								<h4 className="font-medium text-sm md:text-base mb-1">Step 1. Connect your social media account(s)</h4>
-							</div>
-							{currentStep === 1 && (
-								<a
-									href="/connections"
-									className="w-full sm:w-auto px-4 md:px-6 py-2 rounded-xl2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium whitespace-nowrap text-center text-sm md:text-base"
-								>
-									Connect Accounts Now
-								</a>
-							)}
-							{currentStep > 1 && (
-								<span className="text-xs text-accent font-medium">✓ Complete</span>
-							)}
-						</div>
+				<div className="flex justify-end">
+					<div className="w-full lg:w-80 xl:w-96">
+						<div className="card p-3 md:p-4 bg-primary/5 border border-primary/20">
+							<h3 className="font-semibold mb-3 text-sm md:text-base">Get Started</h3>
+							<div className="space-y-2">
+								{/* Step 1: Connect LinkedIn */}
+								<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 1 ? 'bg-primary/10 border border-primary/30' : 'opacity-60'}`}>
+									<div className="font-medium">Step 1. Connect your social media account(s)</div>
+									{currentStep === 1 && (
+										<a
+											href="/connections"
+											className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
+										>
+											Connect Accounts Now
+										</a>
+									)}
+									{currentStep > 1 && (
+										<span className="text-xs text-accent font-medium">✓ Complete</span>
+									)}
+								</div>
 
-						{/* Step 2: Complete Questionnaire */}
-						<div className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 rounded-xl2 ${currentStep === 2 ? 'bg-primary/10 border border-primary/30' : currentStep < 2 ? 'opacity-40' : 'opacity-60'}`}>
-							<div className="flex-1">
-								<h4 className="font-medium text-sm md:text-base mb-1">Step 2. Complete your brand questionnaire to generate your content strategy</h4>
-							</div>
-							{currentStep === 2 && (
-								<a
-									href="/onboarding"
-									className="w-full sm:w-auto px-4 md:px-6 py-2 rounded-xl2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium whitespace-nowrap text-center text-sm md:text-base"
-								>
-									Complete Questionnaire Now
-								</a>
-							)}
-							{currentStep > 2 && (
-								<span className="text-xs text-accent font-medium">✓ Complete</span>
-							)}
-							{currentStep < 2 && (
-								<span className="text-xs text-text-dim">Locked</span>
-							)}
-						</div>
+								{/* Step 2: Complete Questionnaire */}
+								<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 2 ? 'bg-primary/10 border border-primary/30' : currentStep < 2 ? 'opacity-40' : 'opacity-60'}`}>
+									<div className="font-medium">Step 2. Complete your brand questionnaire to generate your content strategy</div>
+									{currentStep === 2 && (
+										<a
+											href="/onboarding"
+											className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
+										>
+											Complete Questionnaire Now
+										</a>
+									)}
+									{currentStep > 2 && (
+										<span className="text-xs text-accent font-medium">✓ Complete</span>
+									)}
+									{currentStep < 2 && (
+										<span className="text-xs text-text-dim">Locked</span>
+									)}
+								</div>
 
-						{/* Step 3: Approve Strategy */}
-						<div className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 rounded-xl2 ${currentStep === 3 ? 'bg-primary/10 border border-primary/30' : currentStep < 3 ? 'opacity-40' : 'opacity-60'}`}>
-							<div className="flex-1">
-								<h4 className="font-medium text-sm md:text-base mb-1">Step 3. Approve your bespoke content strategy</h4>
-							</div>
-							{currentStep === 3 && brandProfiles.length > 0 && (
-								<a
-									href={`/strategy/${brandProfiles[0].id}`}
-									className="w-full sm:w-auto px-4 md:px-6 py-2 rounded-xl2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium whitespace-nowrap text-center text-sm md:text-base"
-								>
-									Approve Strategy
-								</a>
-							)}
-							{currentStep > 3 && (
-								<span className="text-xs text-accent font-medium">✓ Complete</span>
-							)}
-							{currentStep < 3 && (
-								<span className="text-xs text-text-dim">Locked</span>
-							)}
-						</div>
+								{/* Step 3: Approve Strategy */}
+								<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 3 ? 'bg-primary/10 border border-primary/30' : currentStep < 3 ? 'opacity-40' : 'opacity-60'}`}>
+									<div className="font-medium">Step 3. Approve your bespoke content strategy</div>
+									{currentStep === 3 && brandProfiles.length > 0 && (
+										<a
+											href={`/strategy/${brandProfiles[0].id}`}
+											className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
+										>
+											Approve Strategy
+										</a>
+									)}
+									{currentStep > 3 && (
+										<span className="text-xs text-accent font-medium">✓ Complete</span>
+									)}
+									{currentStep < 3 && (
+										<span className="text-xs text-text-dim">Locked</span>
+									)}
+								</div>
 
-						{/* Step 4: Review Content */}
-						<div className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 rounded-xl2 ${currentStep === 4 ? 'bg-primary/10 border border-primary/30' : currentStep < 4 ? 'opacity-40' : 'opacity-60'}`}>
-							<div className="flex-1">
-								<h4 className="font-medium text-sm md:text-base mb-1">Step 4. Human Oversight - Review, Approve/Edit and Auto Schedule your Content</h4>
+								{/* Step 4: Review Content */}
+								<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 4 ? 'bg-primary/10 border border-primary/30' : currentStep < 4 ? 'opacity-40' : 'opacity-60'}`}>
+									<div className="font-medium">Step 4. Human Oversight - Review, Approve/Edit and Auto Schedule your Content</div>
+									{currentStep === 4 && (
+										<a
+											href="/content/approval"
+											className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
+										>
+											Review Content
+										</a>
+									)}
+									{currentStep > 4 && (
+										<span className="text-xs text-accent font-medium">✓ Complete</span>
+									)}
+									{currentStep < 4 && (
+										<span className="text-xs text-text-dim">Locked</span>
+									)}
+								</div>
 							</div>
-							{currentStep === 4 && (
-								<a
-									href="/content/approval"
-									className="w-full sm:w-auto px-4 md:px-6 py-2 rounded-xl2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium whitespace-nowrap text-center text-sm md:text-base"
-								>
-									Review Content
-								</a>
-							)}
-							{currentStep > 4 && (
-								<span className="text-xs text-accent font-medium">✓ Complete</span>
-							)}
-							{currentStep < 4 && (
-								<span className="text-xs text-text-dim">Locked</span>
-							)}
 						</div>
 					</div>
 				</div>

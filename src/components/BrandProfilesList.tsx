@@ -58,7 +58,7 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 	}
 
 	const normaliseStatus = (status: string) => {
-		if (status === 'Strategy Ready (Awaiting Approval)') return 'Strategy Ready';
+		if (status === 'Strategy Ready (Awaiting Approval)') return 'Strategy Ready For Approval';
 		return status;
 	};
 
@@ -105,6 +105,7 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 			case 'Needs Strategy':
 				return <Clock className="w-4 h-4 text-warning" />;
 			case 'Strategy Ready':
+			case 'Strategy Ready For Approval':
 				return <FileText className="w-4 h-4 text-primary" />;
 			case 'Content Review':
 				return <FileText className="w-4 h-4 text-accent" />;
@@ -127,6 +128,7 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 			case 'Needs Strategy':
 				return 'bg-warning/15 border-warning/30 text-warning';
 			case 'Strategy Ready':
+			case 'Strategy Ready For Approval':
 				return 'bg-primary/15 border-primary/30 text-primary';
 			case 'Content Review':
 				return 'bg-accent/15 border-accent/30 text-accent';
@@ -203,7 +205,7 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 						{profiles.map((profile) => {
 							const normalisedStatus = normaliseStatus(profile.status);
 							const isContentReview = normalisedStatus === 'Content Review';
-							const isStrategyReady = normalisedStatus === 'Strategy Ready';
+							const isStrategyReady = normalisedStatus === 'Strategy Ready' || normalisedStatus === 'Strategy Ready For Approval';
 							const isStrategyApproved = profile.original_status === 'Strategy Approved' || normalisedStatus === 'Strategy Approved';
 							const hasPendingContent = profile.has_pending_content === true;
 							
