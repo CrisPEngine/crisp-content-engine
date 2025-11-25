@@ -40,17 +40,48 @@ function CallbackHandler() {
 			return;
 		}
 
-		// Handle password reset flow - redirect to login with token
-		// This works for both existing users (forgot password) and new users (set initial password)
-		// IMPORTANT: Keep token_hash in URL so Auth UI component can read it
-		if (type === 'recovery' && (token || tokenHash)) {
-			console.log('Redirecting to login with recovery token:', { type, hasToken: !!token, hasTokenHash: !!tokenHash });
+		// Handle password reset flow
+		// For token_hash, we need to verify it client-side to establish a session
+		// Then redirect to login with the password update form
+		if (type === 'recovery' && tokenHash && supabase) {
+			console.log('Password reset flow detected, verifying token_hash:', { type, hasTokenHash: !!tokenHash });
+			
+			// Verify the token_hash using verifyOtp to establish a session
+			// This is required before the user can update their password
+			supabase.auth.verifyOtp({
+				token_hash: tokenHash,
+				type: 'recovery',
+			})
+				.then(({ data, error: verifyError }) => {
+					if (verifyError) {
+						console.error('Error verifying recovery token:', verifyError);
+						// Redirect to login with error
+						router.push(`/login?error=token_verification_failed&error_description=${encodeURIComponent(verifyError.message)}`);
+					} else if (data.session) {
+						console.log('Recovery token verified, session established');
+						// Session is now established, redirect to login with update_password view
+						// The Auth UI will detect the session and allow password update
+						router.push('/login?type=recovery&session=established');
+					} else {
+						console.warn('Token verified but no session created');
+						// Still redirect to login - Auth UI might handle it
+						router.push('/login?type=recovery');
+					}
+				})
+				.catch((err: unknown) => {
+					console.error('Exception verifying recovery token:', err);
+					router.push('/login?error=token_verification_error');
+				});
+			return;
+		}
+		
+		// Handle old token format or fallback
+		if (type === 'recovery' && token) {
+			console.log('Password reset flow with token (old format):', { type, hasToken: !!token });
 			const params = new URLSearchParams();
 			params.set('type', 'recovery');
-			if (token) params.set('token', token);
-			if (tokenHash) params.set('token_hash', tokenHash);
-			// Use replace instead of push to avoid adding to history
-			router.replace(`/login?${params.toString()}`);
+			params.set('token', token);
+			router.push(`/login?${params.toString()}`);
 			return;
 		}
 

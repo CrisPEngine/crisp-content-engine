@@ -30,12 +30,26 @@ export function LoginClient() {
 		}
 		
 		// Handle password reset flow
-		// The Auth UI component will automatically read token_hash from URL and verify it
-		if (type === 'recovery' && (token || tokenHash)) {
-			console.log('Password reset flow detected:', { type, hasToken: !!token, hasTokenHash: !!tokenHash });
-			setAuthView('update_password');
+		// If session is already established (from callback), show update form
+		// Otherwise, Auth UI component will handle token_hash from URL
+		if (type === 'recovery') {
+			const sessionEstablished = searchParams?.get('session') === 'established';
+			console.log('Password reset flow detected:', { 
+				type, 
+				hasToken: !!token, 
+				hasTokenHash: !!tokenHash,
+				sessionEstablished 
+			});
+			
+			if (sessionEstablished) {
+				// Session already established by callback, show update form
+				setAuthView('update_password');
+			} else if (token || tokenHash) {
+				// Token in URL - Auth UI component should handle it
+				setAuthView('update_password');
+			}
 		}
-	}, [searchParams]);
+	}, [searchParams, supabase]);
 
 	// Listen for auth state changes to handle password recovery
 	useEffect(() => {
@@ -45,8 +59,8 @@ export function LoginClient() {
 			console.log('Auth state changed:', { event, hasSession: !!session });
 			
 			// When password recovery is detected, ensure we're on update_password view
-			if (event === 'PASSWORD_RECOVERY') {
-				console.log('PASSWORD_RECOVERY event detected, session established');
+			if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
+				console.log('Password recovery session established:', { event, hasSession: !!session });
 				setAuthView('update_password');
 			}
 		});
