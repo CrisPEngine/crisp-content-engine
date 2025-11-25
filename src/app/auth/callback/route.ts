@@ -6,8 +6,27 @@ export async function GET(request: Request) {
 	const url = new URL(request.url);
 	const requestUrl = new URL(request.url);
 	const code = requestUrl.searchParams.get('code');
+	const type = requestUrl.searchParams.get('type');
+	const token = requestUrl.searchParams.get('token');
+	const tokenHash = requestUrl.searchParams.get('token_hash');
 	
-	// If code is present, exchange it for a session
+	// Handle password reset flow - redirect to login with token so Auth UI can handle it
+	if (type === 'recovery' && (token || tokenHash)) {
+		// Build the redirect URL with all the necessary parameters
+		const loginUrl = new URL('/login', url.origin);
+		loginUrl.searchParams.set('type', 'recovery');
+		if (token) loginUrl.searchParams.set('token', token);
+		if (tokenHash) loginUrl.searchParams.set('token_hash', tokenHash);
+		// Preserve any other query params that might be needed
+		requestUrl.searchParams.forEach((value, key) => {
+			if (key !== 'type' && key !== 'token' && key !== 'token_hash') {
+				loginUrl.searchParams.set(key, value);
+			}
+		});
+		return NextResponse.redirect(loginUrl);
+	}
+	
+	// If code is present, exchange it for a session (OAuth flow)
 	if (code) {
 		const supabase = await createClient();
 		// Exchange code for session - this will set cookies automatically

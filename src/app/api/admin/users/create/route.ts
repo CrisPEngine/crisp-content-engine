@@ -101,19 +101,56 @@ export async function POST(req: Request) {
 		});
 
 		// Send password reset email so user can set their own password
-		// Note: Supabase admin API doesn't have generateLink, we'll use inviteUser instead
-		// or send a recovery email
+		// Use the Supabase REST API to send password reset email
+		// Note: generateLink doesn't send emails automatically, so we use the auth endpoint directly
 		try {
-			const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
-				redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io'}/auth/callback`,
-			});
+			const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io'}/auth/callback`;
+			const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+			const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+			
+			if (!supabaseUrl || !serviceRoleKey) {
+				console.error('Missing Supabase URL or service role key for sending password reset email');
+			} else {
+				// Use the Supabase Auth REST API to send password reset email
+				const response = await fetch(`${supabaseUrl}/auth/v1/recover`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'apikey': serviceRoleKey,
+						'Authorization': `Bearer ${serviceRoleKey}`,
+					},
+					body: JSON.stringify({
+						email: email,
+						redirect_to: redirectUrl,
+					}),
+				});
 
-			if (inviteError) {
-				console.warn('Failed to send invite email:', inviteError);
-				// Don't fail the request, but log it
+				if (!response.ok) {
+					const errorText = await response.text();
+					console.error('Failed to send password reset email:', {
+						status: response.status,
+						statusText: response.statusText,
+						error: errorText,
+						email,
+						userId,
+						redirectUrl,
+					});
+				} else {
+					console.log('Password reset email sent successfully:', {
+						email,
+						userId,
+						redirectUrl,
+					});
+				}
 			}
 		} catch (err: any) {
-			console.warn('Error sending invite email:', err);
+			console.error('Error sending password reset email:', {
+				error: err,
+				message: err?.message,
+				stack: err?.stack,
+				email,
+				userId,
+			});
 		}
 
 		return NextResponse.json({ 

@@ -6,14 +6,24 @@ import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { Linkedin, Mail } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 
 export function LoginClient() {
 	const supabase = useSupabase();
 	const [mounted, setMounted] = useState(false);
+	const searchParams = useSearchParams();
+	const [authView, setAuthView] = useState<'sign_in' | 'update_password'>('sign_in');
 	
 	useEffect(() => {
 		setMounted(true);
-	}, []);
+		// Check if this is a password reset flow
+		const type = searchParams?.get('type');
+		const token = searchParams?.get('token');
+		const tokenHash = searchParams?.get('token_hash');
+		if (type === 'recovery' && (token || tokenHash)) {
+			setAuthView('update_password');
+		}
+	}, [searchParams]);
 
 	const handleLinkedInSignIn = async () => {
 		if (!supabase) return;
@@ -67,31 +77,37 @@ export function LoginClient() {
 					<p className="text-sm text-text-dim mt-1">Your content workflow just leveled up. Create, schedule and automatically publish social & blog content with AI that understands your brand.</p>
 				</div>
 				<div className="mb-6">
-					<h1 className="text-2xl font-semibold">Sign in</h1>
-					<p className="mt-1 text-text-dim">Access your AI content studio — secure & private.</p>
+					<h1 className="text-2xl font-semibold">{authView === 'update_password' ? 'Update Password' : 'Sign in'}</h1>
+					<p className="mt-1 text-text-dim">
+						{authView === 'update_password' 
+							? 'Enter your new password below.' 
+							: 'Access your AI content studio — secure & private.'}
+					</p>
 				</div>
-				<div className="space-y-3">
-					<button
-						onClick={handleGoogleSignIn}
-						type="button"
-						className="w-full flex items-center justify-center gap-2 rounded-xl2 border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-text hover:bg-primary/20 transition"
-					>
-						<Mail className="w-4 h-4" />
-						Sign in with Google
-					</button>
-					<button
-						onClick={handleLinkedInSignIn}
-						type="button"
-						className="w-full flex items-center justify-center gap-2 rounded-xl2 border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-text hover:bg-primary/20 transition"
-					>
-						<Linkedin className="w-4 h-4" />
-						Sign in with LinkedIn
-					</button>
-				</div>
+				{authView === 'sign_in' && (
+					<div className="space-y-3">
+						<button
+							onClick={handleGoogleSignIn}
+							type="button"
+							className="w-full flex items-center justify-center gap-2 rounded-xl2 border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-text hover:bg-primary/20 transition"
+						>
+							<Mail className="w-4 h-4" />
+							Sign in with Google
+						</button>
+						<button
+							onClick={handleLinkedInSignIn}
+							type="button"
+							className="w-full flex items-center justify-center gap-2 rounded-xl2 border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-text hover:bg-primary/20 transition"
+						>
+							<Linkedin className="w-4 h-4" />
+							Sign in with LinkedIn
+						</button>
+					</div>
+				)}
 				<div className="mt-6">
 					<Auth
 						supabaseClient={supabase}
-						view="sign_in"
+						view={authView}
 						providers={[]}
 						redirectTo={typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://app.crispdigital.io/auth/callback'}
 						appearance={{
@@ -105,6 +121,11 @@ export function LoginClient() {
 										inputText: '#E6EAF2',
 										inputBorder: '#1A2230',
 										messageText: '#E6EAF2',
+										messageTextDanger: '#FF6B6B',
+										messageTextSuccess: '#4FF0B8',
+										messageBackground: '#1A2230',
+										messageBackgroundSuccess: '#0B3D2E',
+										messageBackgroundDanger: '#3D1A1A',
 									},
 									radii: { inputBorderRadius: '12px', buttonBorderRadius: '12px' },
 									space: { inputPadding: '12px' },
@@ -117,6 +138,9 @@ export function LoginClient() {
 								input: 'bg-bg/80 border border-edge/80 focus:border-primary/60 focus:ring-0',
 								divider: 'text-text-soft',
 								label: 'text-text-soft',
+								message: 'bg-surface/80 border border-edge/60 text-text rounded-xl2 p-4',
+								messageSuccess: 'bg-primary/20 border border-primary/40 text-primary rounded-xl2 p-4',
+								messageDanger: 'bg-red-500/20 border border-red-500/40 text-red-400 rounded-xl2 p-4',
 							},
 						}}
 					/>
