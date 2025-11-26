@@ -471,8 +471,8 @@ export default function ContentApprovalPage() {
 		}
 		if (!canUploadImage(item)) {
 			console.log('Upload not allowed for this item status:', item.status);
-			// Still allow click but show a message
-			setImageUploadError((prev) => ({ ...prev, [contentId]: 'Image upload is only available for posts in Draft, Needs Review, or Ready To Publish status.' }));
+			// Show message for published items
+			setImageUploadError((prev) => ({ ...prev, [contentId]: 'Image upload is not available for published posts.' }));
 			setTimeout(() => {
 				setImageUploadError((prev) => {
 					const next = { ...prev };
@@ -492,9 +492,10 @@ export default function ContentApprovalPage() {
 	}
 
 	function canUploadImage(item: ContentItem): boolean {
-		// Allow upload for Creator tier and higher (for now, enable for all users)
-		// Only allow in statuses where editing is allowed
-		return item.status === 'Needs Review' || item.status === 'Draft' || item.status === 'Ready To Publish';
+		// Allow upload for all tiers and platforms
+		// Allow upload for all statuses except Published (which is already live)
+		// This makes image upload available for all content items
+		return item.status !== 'Published';
 	}
 
 	if (loading) {
