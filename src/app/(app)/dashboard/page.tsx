@@ -4,6 +4,7 @@ import { PlanUsageCard } from '@/components/PlanUsageCard';
 import { BrandProfilesList } from '@/components/BrandProfilesList';
 import { DashboardTabs } from '@/components/DashboardTabs';
 import { OnboardingDebug } from '@/components/OnboardingDebug';
+import { GenerateContentButton } from '@/components/GenerateContentButton';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -280,6 +281,11 @@ export default async function Dashboard({
 
 			{activeTab === 'overview' && (
 				<>
+					{/* Generate More Content Button - Show for users with approved strategies and remaining posts */}
+					{hasApprovedStrategies && brandProfiles.length > 0 && (
+						<GenerateContentButton brandProfiles={brandProfiles} />
+					)}
+
 					{/* Plan and Get Started boxes side by side */}
 					<div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
 						{/* Your Plan box - Left side */}
