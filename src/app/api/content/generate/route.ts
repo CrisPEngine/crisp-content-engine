@@ -116,6 +116,7 @@ export async function POST(req: Request) {
 		}
 
 		// Get strategy data (use strategyId if provided, otherwise use the brand's approved strategy)
+		// Note: Airtable stores strategy as 'strategy_json', but some older records may have 'strategy_payload'
 		let strategyJson = null;
 		let strategySummary = brandFields.strategy_summary || '';
 		let brandType = brandFields.brand_type || 'company';
@@ -134,7 +135,8 @@ export async function POST(req: Request) {
 					});
 					if (strategyRes.ok) {
 						const strategyData = await strategyRes.json();
-						strategyJson = strategyData.fields?.strategy_payload || brandFields.strategy_payload;
+						// Check both field names for compatibility
+						strategyJson = strategyData.fields?.strategy_json || strategyData.fields?.strategy_payload;
 						strategySummary = strategyData.fields?.strategy_summary || strategySummary;
 					}
 				} catch (error) {
@@ -144,8 +146,9 @@ export async function POST(req: Request) {
 		}
 
 		// Use brand's strategy if no strategyId provided
+		// Check both 'strategy_json' (current field name) and 'strategy_payload' (legacy field name)
 		if (!strategyJson) {
-			strategyJson = brandFields.strategy_payload;
+			strategyJson = brandFields.strategy_json || brandFields.strategy_payload;
 		}
 
 		if (!strategyJson) {
