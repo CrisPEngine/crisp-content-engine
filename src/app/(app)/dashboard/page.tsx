@@ -370,6 +370,13 @@ export default async function Dashboard({
 								</div>
 							</div>
 						)}
+
+						{/* Generate Content Actions - Right side (after onboarding complete) */}
+						{currentStep === 0 && hasApprovedStrategies && brandProfiles.length > 0 && (
+							<div className="flex">
+								<GenerateContentActions brandProfiles={brandProfiles} />
+							</div>
+						)}
 					</div>
 
 					<BrandProfilesList 

@@ -20,11 +20,27 @@ type GenerateContentActionsProps = {
 
 export function GenerateContentActions({ brandProfiles }: GenerateContentActionsProps) {
 	const [modalOpen, setModalOpen] = useState(false);
-	const { data: usageData } = useUsage();
+	const { data: usageData, loading } = useUsage();
 
 	// Check if user has remaining posts
-	const remainingPosts = (usageData?.caps?.posts_per_month || 999999) - (usageData?.usage?.posts || 0);
-	const hasRemainingPosts = remainingPosts > 0 || remainingPosts === 999999;
+	// For unlimited plans, posts_per_month might be null, undefined, or a very large number
+	const postsCap = usageData?.caps?.posts_per_month;
+	const isUnlimited = !postsCap || postsCap === 999999 || postsCap === Infinity || postsCap >= 999999;
+	const remainingPosts = isUnlimited ? 999999 : (postsCap - (usageData?.usage?.posts || 0));
+	const hasRemainingPosts = isUnlimited || remainingPosts > 0;
+
+	// Show loading state or hide if no remaining posts (but only after loading completes)
+	if (loading) {
+		// Show component during loading to avoid layout shift
+		return (
+			<div className="w-full card p-3 md:p-4 bg-primary/5 border border-primary/20 flex flex-col h-full">
+				<h3 className="font-semibold mb-3 text-sm md:text-base">Content Actions</h3>
+				<div className="space-y-2 flex-1 opacity-50">
+					<div className="text-xs text-text-dim">Loading...</div>
+				</div>
+			</div>
+		);
+	}
 
 	// Only show if user has remaining posts
 	if (!hasRemainingPosts) {
