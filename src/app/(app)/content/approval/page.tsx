@@ -388,7 +388,7 @@ export default function ContentApprovalPage() {
 
 		const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 		if (!allowedTypes.includes(file.type)) {
-			setImageUploadError((prev) => ({ ...prev, [contentId]: `Invalid file type. Allowed types: ${allowedTypes.join(', ')}` }));
+			setImageUploadError((prev) => ({ ...prev, [contentId]: 'Only JPG, PNG, and WebP supported.' }));
 			return;
 		}
 
@@ -460,6 +460,7 @@ export default function ContentApprovalPage() {
 	}
 
 	function handleImagePanelClick(contentId: string) {
+		if (uploadingImage === contentId) return; // Don't allow clicks while uploading
 		const item = contentItems.find((item) => item.id === contentId);
 		if (!item || !canUploadImage(item)) return;
 		const input = fileInputRefs.current[contentId];
@@ -698,19 +699,24 @@ export default function ContentApprovalPage() {
 									</div>
 
 									{/* Right Column - Compact Image Panel */}
-									<div className="w-full md:w-48 lg:w-56 flex-shrink-0">
+									<div className="w-full md:w-48 lg:w-56 h-full flex-shrink-0">
 										<button
 											type="button"
 											onClick={() => handleImagePanelClick(item.id)}
 											disabled={!canUploadImage(item) || uploadingImage === item.id}
 											className={`
-												group relative flex h-full w-full flex-col items-center justify-center rounded-xl2 border border-edge/60 bg-surface/40 px-3 py-4 text-center transition-all
-												${canUploadImage(item) && !uploadingImage ? 'hover:border-primary/60 hover:bg-surface/60 cursor-pointer' : ''}
+												group relative flex h-full w-full flex-col items-center justify-center rounded-xl2 border border-edge/60 bg-surface/40 px-3 py-3 text-center transition-all
+												${canUploadImage(item) && uploadingImage !== item.id ? 'hover:border-primary/60 hover:bg-surface/60 cursor-pointer' : ''}
 												${uploadingImage === item.id ? 'pointer-events-none opacity-60' : ''}
-												${item.image_reference_url ? 'min-h-[160px] md:min-h-full' : 'min-h-[160px] md:h-full'}
+												${!canUploadImage(item) ? 'cursor-not-allowed opacity-50' : ''}
 											`}
 										>
-											{item.image_reference_url ? (
+											{uploadingImage === item.id ? (
+												<div className="flex flex-col items-center justify-center gap-2 text-xs text-text-soft">
+													<Loader2 className="w-4 h-4 animate-spin text-primary" />
+													<span>Uploading image...</span>
+												</div>
+											) : item.image_reference_url ? (
 												<>
 													<img
 														src={item.image_reference_url}
@@ -723,7 +729,7 @@ export default function ContentApprovalPage() {
 														}}
 													/>
 													{canUploadImage(item) && (
-														<div className="pointer-events-none absolute inset-0 hidden items-end justify-center bg-black/50 p-2 rounded-lg group-hover:flex">
+														<div className="absolute inset-0 hidden items-end justify-center bg-black/50 p-2 rounded-lg group-hover:flex pointer-events-none">
 															<div className="w-full text-left">
 																<div className="font-medium text-text text-xs mb-0.5">Change image</div>
 																<div className="text-[11px] text-text-dim">
@@ -732,30 +738,24 @@ export default function ContentApprovalPage() {
 															</div>
 														</div>
 													)}
-													{item.image_reference_url && (
-														<div className="absolute top-2 right-2 bg-accent/90 rounded-full p-1">
-															<Check className="w-3 h-3 text-white" />
-														</div>
-													)}
 												</>
-											) : uploadingImage === item.id ? (
-												<div className="flex flex-col items-center justify-center gap-2 text-xs text-text-soft">
-													<Loader2 className="w-4 h-4 animate-spin text-primary" />
-													<span>Uploading image...</span>
-												</div>
 											) : (
-												<div className="flex flex-col items-center justify-center gap-2">
+												<div className="flex flex-col items-center justify-center gap-2 text-xs text-text-soft">
 													<ImageIcon className="h-6 w-6 text-text-dim" />
-													<span className="font-medium text-text-soft text-xs">No image attached</span>
-													{canUploadImage(item) && (
+													<span className="font-medium">No image attached</span>
+													{canUploadImage(item) ? (
 														<>
 															<span className="text-[11px] text-text-dim">
 																Click to upload (optional)
 															</span>
-															<span className="mt-1 text-[10px] text-text-dim">
+															<span className="text-[10px] text-text-dim">
 																JPG, PNG or WebP up to 2 MB
 															</span>
 														</>
+													) : (
+														<span className="text-[11px] text-text-dim">
+															Image upload not available
+														</span>
 													)}
 												</div>
 											)}
@@ -775,8 +775,10 @@ export default function ContentApprovalPage() {
 													if (file) {
 														handleImageUpload(item.id, file);
 													}
+													// Reset input so same file can be selected again
+													e.target.value = '';
 												}}
-												disabled={uploadingImage === item.id}
+												disabled={uploadingImage === item.id || !canUploadImage(item)}
 											/>
 										</button>
 										{/* Success/Error Messages */}
