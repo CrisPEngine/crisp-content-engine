@@ -120,6 +120,37 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 		const titleUpdate = body?.title; // For editing title (hook field)
 		const hashtagsUpdate = body?.hashtags; // For editing hashtags
 		const scheduledTime = body?.scheduled_time; // For updating scheduled time
+		const imageUrl = body?.imageUrl; // For image upload
+		const cloudinaryId = body?.cloudinaryId; // For image upload
+		const imageSource = body?.source; // For image upload (should be "Brand")
+
+		// Handle image update
+		if (imageUrl !== undefined && cloudinaryId !== undefined) {
+			const updateFields: Record<string, any> = {
+				image_reference_url: String(imageUrl),
+				image_cloudinary_id: String(cloudinaryId),
+				image_generation_source: imageSource || 'Brand',
+			};
+
+			const patchRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${contentId}`, {
+				method: 'PATCH',
+				headers: {
+					Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ fields: updateFields }),
+			});
+
+			if (!patchRes.ok) {
+				const patchResult = await patchRes.json();
+				return NextResponse.json(
+					{ error: patchResult?.error?.message || 'Failed to update image' },
+					{ status: 502 }
+				);
+			}
+
+			return NextResponse.json({ ok: true, message: 'Image updated successfully' });
+		}
 
 		// Handle content editing or scheduled time update
 		if (contentUpdate !== undefined || titleUpdate !== undefined || hashtagsUpdate !== undefined || scheduledTime !== undefined) {

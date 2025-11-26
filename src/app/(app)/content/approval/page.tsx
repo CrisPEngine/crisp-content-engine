@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, Eye, Calendar, Loader2, Edit2, Save, Clock } from 'lucide-react';
+import { Check, X, Eye, Calendar, Loader2, Edit2, Save, Clock, Upload, Image as ImageIcon } from 'lucide-react';
 import { Skeleton, ContentItemSkeleton } from '@/components/skeletons/Skeleton';
 
 type ContentItem = {
@@ -23,6 +23,8 @@ type ContentItem = {
 	hashtags?: string;
 	image_prompt?: string;
 	image_generation_source?: string;
+	image_reference_url?: string;
+	image_cloudinary_id?: string;
 };
 
 export default function ContentApprovalPage() {
@@ -43,6 +45,8 @@ export default function ContentApprovalPage() {
 	const [error, setError] = useState<string | null>(null);
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [bulkApproving, setBulkApproving] = useState(false);
+	const [uploadingImage, setUploadingImage] = useState<string | null>(null);
+	const [imageUploadError, setImageUploadError] = useState<Record<string, string>>({});
 
 	useEffect(() => {
 		if (!supabase) return;
@@ -358,6 +362,91 @@ export default function ContentApprovalPage() {
 		}
 	}
 
+	async function handleImageUpload(contentId: string, file: File) {
+		if (!file) return;
+
+		// Clear any previous errors for this item
+		setImageUploadError((prev) => {
+			const next = { ...prev };
+			delete next[contentId];
+			return next;
+		});
+
+		// Client-side validation
+		const maxSize = 2 * 1024 * 1024; // 2 MB
+		if (file.size > maxSize) {
+			setImageUploadError((prev) => ({ ...prev, [contentId]: 'File too large. Maximum size is 2 MB.' }));
+			return;
+		}
+
+		const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+		if (!allowedTypes.includes(file.type)) {
+			setImageUploadError((prev) => ({ ...prev, [contentId]: `Invalid file type. Allowed types: ${allowedTypes.join(', ')}` }));
+			return;
+		}
+
+		setUploadingImage(contentId);
+
+		try {
+			// Upload to Cloudinary
+			const formData = new FormData();
+			formData.append('file', file);
+
+			const uploadRes = await fetch('/api/uploads/image', {
+				method: 'POST',
+				body: formData,
+			});
+
+			if (!uploadRes.ok) {
+				const uploadData = await uploadRes.json().catch(() => ({}));
+				throw new Error(uploadData?.error || 'Upload failed. Please try again.');
+			}
+
+			const { secureUrl, publicId } = await uploadRes.json();
+
+			// Save to Airtable
+			const saveRes = await fetch(`/api/content/queue/${contentId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					imageUrl: secureUrl,
+					cloudinaryId: publicId,
+					source: 'Brand',
+				}),
+			});
+
+			if (!saveRes.ok) {
+				const saveData = await saveRes.json().catch(() => ({}));
+				throw new Error(saveData?.error || 'Could not save image. Please try again.');
+			}
+
+			// Optimistically update UI
+			setContentItems((items) =>
+				items.map((item) =>
+					item.id === contentId
+						? {
+								...item,
+								image_reference_url: secureUrl,
+								image_cloudinary_id: publicId,
+								image_generation_source: 'Brand',
+							}
+						: item
+				)
+			);
+		} catch (err: any) {
+			console.error('Image upload error:', err);
+			setImageUploadError((prev) => ({ ...prev, [contentId]: err.message || 'Failed to upload image' }));
+		} finally {
+			setUploadingImage(null);
+		}
+	}
+
+	function canUploadImage(item: ContentItem): boolean {
+		// Allow upload for Creator tier and higher (for now, enable for all users)
+		// Only allow in statuses where editing is allowed
+		return item.status === 'Needs Review' || item.status === 'Draft' || item.status === 'Ready To Publish';
+	}
+
 	if (loading) {
 		return (
 			<div className="mx-auto max-w-7xl space-y-4">
@@ -582,6 +671,71 @@ export default function ContentApprovalPage() {
 
 									{/* Right Column - Actions + Metadata */}
 									<div className="lg:col-span-1 space-y-4 flex flex-col">
+										{/* Image Preview/Upload */}
+										<div className="space-y-2">
+											{item.image_reference_url ? (
+												<div className="relative group">
+													<img
+														src={item.image_reference_url}
+														alt="Post image"
+														className="w-full aspect-[4/5] object-cover rounded-xl2 border border-edge/60"
+													/>
+													{canUploadImage(item) && (
+														<div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl2 flex items-center justify-center">
+															<label className="px-3 py-1.5 rounded-lg bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary text-xs font-medium cursor-pointer flex items-center gap-1.5">
+																<Upload className="w-3 h-3" />
+																Replace Image
+																<input
+																	type="file"
+																	accept="image/jpeg,image/jpg,image/png,image/webp"
+																	className="hidden"
+																	onChange={(e) => {
+																		const file = e.target.files?.[0];
+																		if (file) {
+																			handleImageUpload(item.id, file);
+																		}
+																	}}
+																	disabled={uploadingImage === item.id}
+																/>
+															</label>
+														</div>
+													)}
+												</div>
+											) : (
+												<div className="w-full aspect-[4/5] rounded-xl2 border-2 border-dashed border-edge/60 bg-surface/30 flex flex-col items-center justify-center text-center p-4">
+													<ImageIcon className="w-8 h-8 text-text-dim mb-2" />
+													<p className="text-xs text-text-dim mb-2">No image attached</p>
+													{canUploadImage(item) && (
+														<label className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary text-xs font-medium cursor-pointer flex items-center gap-1.5">
+															<Upload className="w-3 h-3" />
+															Upload Image
+															<input
+																type="file"
+																accept="image/jpeg,image/jpg,image/png,image/webp"
+																className="hidden"
+																onChange={(e) => {
+																	const file = e.target.files?.[0];
+																	if (file) {
+																		handleImageUpload(item.id, file);
+																	}
+																}}
+																disabled={uploadingImage === item.id}
+															/>
+														</label>
+													)}
+												</div>
+											)}
+											{uploadingImage === item.id && (
+												<div className="flex items-center gap-2 text-xs text-text-soft">
+													<Loader2 className="w-3 h-3 animate-spin" />
+													Uploading...
+												</div>
+											)}
+											{imageUploadError[item.id] && (
+												<div className="text-xs text-danger">{imageUploadError[item.id]}</div>
+											)}
+										</div>
+
 										{/* Scheduled Time - Editable */}
 										<div className="flex items-center justify-end gap-2">
 											<Calendar className="w-4 h-4 text-text-dim flex-shrink-0" />
@@ -674,7 +828,7 @@ export default function ContentApprovalPage() {
 												<div className="flex gap-2">
 													<button
 														onClick={() => approveContent(item.id)}
-														disabled={approving === item.id || rejecting === item.id || saving === item.id}
+														disabled={approving === item.id || rejecting === item.id || saving === item.id || uploadingImage === item.id}
 														className="flex-1 px-3 py-2 rounded-xl2 bg-gradient-to-r from-accent/90 to-accent/70 hover:from-accent hover:to-accent/90 text-white text-sm font-medium shadow-lg shadow-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
 													>
 														{approving === item.id ? (
@@ -686,7 +840,7 @@ export default function ContentApprovalPage() {
 													</button>
 													<button
 														onClick={() => rejectContent(item.id)}
-														disabled={approving === item.id || rejecting === item.id || saving === item.id}
+														disabled={approving === item.id || rejecting === item.id || saving === item.id || uploadingImage === item.id}
 														className="px-3 py-2 rounded-xl2 border border-danger/40 bg-transparent hover:bg-danger/10 text-danger text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
 													>
 														{rejecting === item.id ? (

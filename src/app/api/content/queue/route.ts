@@ -162,6 +162,8 @@ export async function GET(request: Request) {
 		hashtags?: string;
 		image_prompt?: string;
 		image_generation_source?: string;
+		image_reference_url?: string;
+		image_cloudinary_id?: string;
 		created_time: string;
 		updated_time: string | null;
 	};
@@ -252,6 +254,8 @@ export async function GET(request: Request) {
 			hashtags: fields.hashtags || '',
 			image_prompt: fields.image_prompt || '',
 			image_generation_source: fields.image_generation_source || '',
+			image_reference_url: fields.image_reference_url || '',
+			image_cloudinary_id: fields.image_cloudinary_id || '',
 			created_time: fields.created_time || record.createdTime,
 			updated_time: fields.last_modified_time || fields.updated_time || null,
 		};
