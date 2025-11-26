@@ -42,6 +42,7 @@ interface ContentRecord {
 		content?: string;
 		post_body?: string;
 		hashtags?: string;
+		image_reference_url?: string;
 		publish_attempts?: number;
 		publish_error?: string;
 	};
