@@ -460,12 +460,34 @@ export default function ContentApprovalPage() {
 	}
 
 	function handleImagePanelClick(contentId: string) {
-		if (uploadingImage === contentId) return; // Don't allow clicks while uploading
+		if (uploadingImage === contentId) {
+			console.log('Upload in progress, ignoring click');
+			return; // Don't allow clicks while uploading
+		}
 		const item = contentItems.find((item) => item.id === contentId);
-		if (!item || !canUploadImage(item)) return;
+		if (!item) {
+			console.log('Item not found:', contentId);
+			return;
+		}
+		if (!canUploadImage(item)) {
+			console.log('Upload not allowed for this item status:', item.status);
+			// Still allow click but show a message
+			setImageUploadError((prev) => ({ ...prev, [contentId]: 'Image upload is only available for posts in Draft, Needs Review, or Ready To Publish status.' }));
+			setTimeout(() => {
+				setImageUploadError((prev) => {
+					const next = { ...prev };
+					delete next[contentId];
+					return next;
+				});
+			}, 3000);
+			return;
+		}
 		const input = fileInputRefs.current[contentId];
 		if (input) {
+			console.log('Triggering file input click for:', contentId);
 			input.click();
+		} else {
+			console.error('File input not found for:', contentId);
 		}
 	}
 
@@ -703,12 +725,10 @@ export default function ContentApprovalPage() {
 										<button
 											type="button"
 											onClick={() => handleImagePanelClick(item.id)}
-											disabled={!canUploadImage(item) || uploadingImage === item.id}
+											disabled={uploadingImage === item.id}
 											className={`
 												group relative flex h-full w-full flex-col items-center justify-center rounded-xl2 border border-edge/60 bg-surface/40 px-3 py-3 text-center transition-all
-												${canUploadImage(item) && uploadingImage !== item.id ? 'hover:border-primary/60 hover:bg-surface/60 cursor-pointer' : ''}
-												${uploadingImage === item.id ? 'pointer-events-none opacity-60' : ''}
-												${!canUploadImage(item) ? 'cursor-not-allowed opacity-50' : ''}
+												${uploadingImage !== item.id ? 'hover:border-primary/60 hover:bg-surface/60 cursor-pointer' : 'pointer-events-none opacity-60'}
 											`}
 										>
 											{uploadingImage === item.id ? (
