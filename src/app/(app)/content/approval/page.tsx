@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -47,6 +47,8 @@ export default function ContentApprovalPage() {
 	const [bulkApproving, setBulkApproving] = useState(false);
 	const [uploadingImage, setUploadingImage] = useState<string | null>(null);
 	const [imageUploadError, setImageUploadError] = useState<Record<string, string>>({});
+	const [imageUploadSuccess, setImageUploadSuccess] = useState<Record<string, boolean>>({});
+	const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
 	useEffect(() => {
 		if (!supabase) return;
@@ -365,8 +367,13 @@ export default function ContentApprovalPage() {
 	async function handleImageUpload(contentId: string, file: File) {
 		if (!file) return;
 
-		// Clear any previous errors for this item
+		// Clear any previous errors and success messages for this item
 		setImageUploadError((prev) => {
+			const next = { ...prev };
+			delete next[contentId];
+			return next;
+		});
+		setImageUploadSuccess((prev) => {
 			const next = { ...prev };
 			delete next[contentId];
 			return next;
@@ -433,11 +440,31 @@ export default function ContentApprovalPage() {
 						: item
 				)
 			);
+
+			// Show success message
+			setImageUploadSuccess((prev) => ({ ...prev, [contentId]: true }));
+			// Clear success message after 3 seconds
+			setTimeout(() => {
+				setImageUploadSuccess((prev) => {
+					const next = { ...prev };
+					delete next[contentId];
+					return next;
+				});
+			}, 3000);
 		} catch (err: any) {
 			console.error('Image upload error:', err);
-			setImageUploadError((prev) => ({ ...prev, [contentId]: err.message || 'Failed to upload image' }));
+			setImageUploadError((prev) => ({ ...prev, [contentId]: err.message || 'Could not upload image. Please try again.' }));
 		} finally {
 			setUploadingImage(null);
+		}
+	}
+
+	function handleImagePanelClick(contentId: string) {
+		const item = contentItems.find((item) => item.id === contentId);
+		if (!item || !canUploadImage(item)) return;
+		const input = fileInputRefs.current[contentId];
+		if (input) {
+			input.click();
 		}
 	}
 
@@ -574,9 +601,10 @@ export default function ContentApprovalPage() {
 								animate={{ opacity: 1, y: 0 }}
 								className="card p-6"
 							>
-								<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+								{/* Main Content Row: Text + Image Panel */}
+								<div className="flex flex-col md:flex-row md:items-stretch gap-4 mb-4">
 									{/* Left Column - Content Summary */}
-									<div className="lg:col-span-2 space-y-4">
+									<div className="flex-1 min-w-0 space-y-4">
 										{/* Title with Checkbox */}
 										<div className="flex items-start gap-3">
 											<input
@@ -669,75 +697,105 @@ export default function ContentApprovalPage() {
 										)}
 									</div>
 
-									{/* Right Column - Actions + Metadata */}
-									<div className="lg:col-span-1 space-y-4 flex flex-col">
-										{/* Image Preview/Upload */}
-										<div className="space-y-2">
+									{/* Right Column - Compact Image Panel */}
+									<div className="w-full md:w-48 lg:w-56 flex-shrink-0">
+										<button
+											type="button"
+											onClick={() => handleImagePanelClick(item.id)}
+											disabled={!canUploadImage(item) || uploadingImage === item.id}
+											className={`
+												group relative flex h-full w-full flex-col items-center justify-center rounded-xl2 border border-edge/60 bg-surface/40 px-3 py-4 text-center transition-all
+												${canUploadImage(item) && !uploadingImage ? 'hover:border-primary/60 hover:bg-surface/60 cursor-pointer' : ''}
+												${uploadingImage === item.id ? 'pointer-events-none opacity-60' : ''}
+												${item.image_reference_url ? 'min-h-[160px] md:min-h-full' : 'min-h-[160px] md:h-full'}
+											`}
+										>
 											{item.image_reference_url ? (
-												<div className="relative group">
+												<>
 													<img
 														src={item.image_reference_url}
 														alt="Post image"
-														className="w-full aspect-[4/5] object-cover rounded-xl2 border border-edge/60"
+														className="h-full w-full rounded-lg object-cover"
+														onError={(e) => {
+															// Fallback to no image state if image fails to load
+															const target = e.target as HTMLImageElement;
+															target.style.display = 'none';
+														}}
 													/>
 													{canUploadImage(item) && (
-														<div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl2 flex items-center justify-center">
-															<label className="px-3 py-1.5 rounded-lg bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary text-xs font-medium cursor-pointer flex items-center gap-1.5">
-																<Upload className="w-3 h-3" />
-																Replace Image
-																<input
-																	type="file"
-																	accept="image/jpeg,image/jpg,image/png,image/webp"
-																	className="hidden"
-																	onChange={(e) => {
-																		const file = e.target.files?.[0];
-																		if (file) {
-																			handleImageUpload(item.id, file);
-																		}
-																	}}
-																	disabled={uploadingImage === item.id}
-																/>
-															</label>
+														<div className="pointer-events-none absolute inset-0 hidden items-end justify-center bg-black/50 p-2 rounded-lg group-hover:flex">
+															<div className="w-full text-left">
+																<div className="font-medium text-text text-xs mb-0.5">Change image</div>
+																<div className="text-[11px] text-text-dim">
+																	JPG, PNG or WebP up to 2 MB
+																</div>
+															</div>
 														</div>
 													)}
+													{item.image_reference_url && (
+														<div className="absolute top-2 right-2 bg-accent/90 rounded-full p-1">
+															<Check className="w-3 h-3 text-white" />
+														</div>
+													)}
+												</>
+											) : uploadingImage === item.id ? (
+												<div className="flex flex-col items-center justify-center gap-2 text-xs text-text-soft">
+													<Loader2 className="w-4 h-4 animate-spin text-primary" />
+													<span>Uploading image...</span>
 												</div>
 											) : (
-												<div className="w-full aspect-[4/5] rounded-xl2 border-2 border-dashed border-edge/60 bg-surface/30 flex flex-col items-center justify-center text-center p-4">
-													<ImageIcon className="w-8 h-8 text-text-dim mb-2" />
-													<p className="text-xs text-text-dim mb-2">No image attached</p>
+												<div className="flex flex-col items-center justify-center gap-2">
+													<ImageIcon className="h-6 w-6 text-text-dim" />
+													<span className="font-medium text-text-soft text-xs">No image attached</span>
 													{canUploadImage(item) && (
-														<label className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary text-xs font-medium cursor-pointer flex items-center gap-1.5">
-															<Upload className="w-3 h-3" />
-															Upload Image
-															<input
-																type="file"
-																accept="image/jpeg,image/jpg,image/png,image/webp"
-																className="hidden"
-																onChange={(e) => {
-																	const file = e.target.files?.[0];
-																	if (file) {
-																		handleImageUpload(item.id, file);
-																	}
-																}}
-																disabled={uploadingImage === item.id}
-															/>
-														</label>
+														<>
+															<span className="text-[11px] text-text-dim">
+																Click to upload (optional)
+															</span>
+															<span className="mt-1 text-[10px] text-text-dim">
+																JPG, PNG or WebP up to 2 MB
+															</span>
+														</>
 													)}
 												</div>
 											)}
-											{uploadingImage === item.id && (
-												<div className="flex items-center gap-2 text-xs text-text-soft">
-													<Loader2 className="w-3 h-3 animate-spin" />
-													Uploading...
-												</div>
-											)}
-											{imageUploadError[item.id] && (
-												<div className="text-xs text-danger">{imageUploadError[item.id]}</div>
-											)}
-										</div>
+											<input
+												type="file"
+												accept="image/jpeg,image/jpg,image/png,image/webp"
+												className="hidden"
+												ref={(el) => {
+													if (el) {
+														fileInputRefs.current[item.id] = el;
+													} else {
+														delete fileInputRefs.current[item.id];
+													}
+												}}
+												onChange={(e) => {
+													const file = e.target.files?.[0];
+													if (file) {
+														handleImageUpload(item.id, file);
+													}
+												}}
+												disabled={uploadingImage === item.id}
+											/>
+										</button>
+										{/* Success/Error Messages */}
+										{imageUploadSuccess[item.id] && (
+											<div className="mt-2 text-xs text-accent flex items-center gap-1">
+												<Check className="w-3 h-3" />
+												Image added to this post.
+											</div>
+										)}
+										{imageUploadError[item.id] && (
+											<div className="mt-2 text-xs text-danger">{imageUploadError[item.id]}</div>
+										)}
+									</div>
+								</div>
 
-										{/* Scheduled Time - Editable */}
-										<div className="flex items-center justify-end gap-2">
+								{/* Bottom Row: Scheduled Time + Actions */}
+								<div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pt-4 border-t border-edge/60">
+									{/* Scheduled Time - Editable */}
+									<div className="flex items-center gap-2">
 											<Calendar className="w-4 h-4 text-text-dim flex-shrink-0" />
 											{editingScheduledTimeId === item.id ? (
 												<div className="flex items-center gap-2 flex-1">
@@ -787,10 +845,10 @@ export default function ContentApprovalPage() {
 											)}
 										</div>
 
-										{/* Actions */}
-										<div className="flex flex-col gap-2 mt-auto">
-											{/* View/Edit Button - Right Aligned */}
-											<div className="flex justify-end">
+									{/* Actions */}
+									<div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-end">
+										{/* View/Edit Button */}
+										<div className="flex justify-end md:justify-start">
 												<button
 													onClick={() => {
 														if (editingItem === item.id) {
