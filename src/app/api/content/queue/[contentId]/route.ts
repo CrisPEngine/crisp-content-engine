@@ -129,8 +129,16 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 			const updateFields: Record<string, any> = {
 				image_reference_url: String(imageUrl),
 				image_cloudinary_id: String(cloudinaryId),
-				image_generation_source: imageSource || 'Brand',
+				// Only update image_generation_source if provided and it's a valid option
+				// Valid options are: 'AI Generated', 'Stock', 'Brand'
+				// If the field doesn't allow new options, we'll skip it to avoid permission errors
 			};
+
+			// Try to set image_generation_source, but don't fail if it's not allowed
+			// The valid options in Airtable are: 'AI Generated', 'Stock', 'Brand'
+			if (imageSource && ['AI Generated', 'Stock', 'Brand'].includes(imageSource)) {
+				updateFields.image_generation_source = imageSource;
+			}
 
 			const patchRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${contentId}`, {
 				method: 'PATCH',
@@ -143,8 +151,38 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 
 			if (!patchRes.ok) {
 				const patchResult = await patchRes.json();
+				// If the error is about image_generation_source, try again without it
+				const errorMessage = patchResult?.error?.message || '';
+				if (errorMessage.includes('image_generation_source') || errorMessage.includes('select option')) {
+					// Retry without image_generation_source
+					const retryFields: Record<string, any> = {
+						image_reference_url: String(imageUrl),
+						image_cloudinary_id: String(cloudinaryId),
+					};
+					
+					const retryRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${contentId}`, {
+						method: 'PATCH',
+						headers: {
+							Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify({ fields: retryFields }),
+					});
+
+					if (!retryRes.ok) {
+						const retryResult = await retryRes.json();
+						return NextResponse.json(
+							{ error: retryResult?.error?.message || 'Failed to update image' },
+							{ status: 502 }
+						);
+					}
+
+					// Success without image_generation_source
+					return NextResponse.json({ ok: true, message: 'Image updated successfully (source field skipped)' });
+				}
+
 				return NextResponse.json(
-					{ error: patchResult?.error?.message || 'Failed to update image' },
+					{ error: errorMessage || 'Failed to update image' },
 					{ status: 502 }
 				);
 			}
