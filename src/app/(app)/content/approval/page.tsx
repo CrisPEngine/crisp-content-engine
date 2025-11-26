@@ -796,7 +796,7 @@ export default function ContentApprovalPage() {
 								<div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pt-4 border-t border-edge/60">
 									{/* Scheduled Time - Editable */}
 									<div className="flex items-center gap-2">
-											<Calendar className="w-4 h-4 text-text-dim flex-shrink-0" />
+										<Calendar className="w-4 h-4 text-text-dim flex-shrink-0" />
 											{editingScheduledTimeId === item.id ? (
 												<div className="flex items-center gap-2 flex-1">
 													<input
@@ -910,7 +910,6 @@ export default function ContentApprovalPage() {
 													</button>
 												</div>
 											)}
-										</div>
 									</div>
 								</div>
 
