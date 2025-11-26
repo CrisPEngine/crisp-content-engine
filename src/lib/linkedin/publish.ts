@@ -217,9 +217,95 @@ export async function getLinkedInConnection(
 }
 
 /**
- * Publish a text post to LinkedIn
- * For Creator tier: text only, no images
+ * Upload an image to LinkedIn Assets API
+ * Returns the asset URN needed for image posts
+ * Based on LinkedIn UGC Posts API documentation
+ */
+async function uploadImageToLinkedIn(
+	accessToken: string,
+	personUrn: string,
+	imageUrl: string
+): Promise<{ asset: string }> {
+	try {
+		// Ensure person_urn is in correct format
+		let formattedPersonUrn = personUrn;
+		if (!formattedPersonUrn.startsWith('urn:li:person:')) {
+			formattedPersonUrn = `urn:li:person:${formattedPersonUrn}`;
+		}
+
+		// Step 1: Register the image upload with LinkedIn
+		const registerResponse = await fetch('https://api.linkedin.com/v2/assets?action=registerUpload', {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${accessToken}`,
+				'Content-Type': 'application/json',
+				'X-Restli-Protocol-Version': '2.0.0',
+			},
+			body: JSON.stringify({
+				registerUploadRequest: {
+					recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
+					owner: formattedPersonUrn,
+					serviceRelationships: [
+						{
+							relationshipType: 'OWNER',
+							identifier: 'urn:li:userGeneratedContent',
+						},
+					],
+				},
+			}),
+		});
+
+		if (!registerResponse.ok) {
+			const errorText = await registerResponse.text();
+			console.error('LinkedIn register upload error:', errorText);
+			throw new Error(`Failed to register image upload: ${errorText}`);
+		}
+
+		const registerData = await registerResponse.json();
+		const uploadUrl = registerData.value?.uploadMechanism?.['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest']?.uploadUrl;
+		const asset = registerData.value?.asset;
+
+		if (!uploadUrl || !asset) {
+			console.error('Invalid register response:', registerData);
+			throw new Error('Invalid response from LinkedIn image registration');
+		}
+
+		// Step 2: Download the image from Cloudinary
+		const imageResponse = await fetch(imageUrl);
+		if (!imageResponse.ok) {
+			throw new Error(`Failed to download image from ${imageUrl}: ${imageResponse.statusText}`);
+		}
+		
+		// Get content type from response or default to jpeg
+		const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
+		const imageBuffer = await imageResponse.arrayBuffer();
+
+		// Step 3: Upload the image to LinkedIn using the upload URL
+		const uploadResponse = await fetch(uploadUrl, {
+			method: 'PUT',
+			headers: {
+				'Content-Type': contentType,
+			},
+			body: imageBuffer,
+		});
+
+		if (!uploadResponse.ok) {
+			const errorText = await uploadResponse.text();
+			console.error('LinkedIn image upload error:', errorText);
+			throw new Error(`Failed to upload image to LinkedIn: ${errorText}`);
+		}
+
+		return { asset };
+	} catch (error: any) {
+		console.error('LinkedIn image upload error:', error);
+		throw new Error(`Failed to upload image to LinkedIn: ${error?.message || 'Unknown error'}`);
+	}
+}
+
+/**
+ * Publish a post to LinkedIn (text or with image)
  * @param idempotencyKey - Optional idempotency key to prevent duplicate posts (uses record ID)
+ * @param imageUrl - Optional image URL to include in the post
  */
 export async function publishToLinkedIn(
 	accessToken: string,
@@ -228,6 +314,7 @@ export async function publishToLinkedIn(
 		title?: string;
 		body: string;
 		hashtags?: string;
+		imageUrl?: string;
 	},
 	idempotencyKey?: string
 ): Promise<PublishResult> {
@@ -263,18 +350,43 @@ export async function publishToLinkedIn(
 		formattedPersonUrn = `urn:li:person:${formattedPersonUrn}`;
 	}
 
+	// Handle image upload if image URL is provided
+	let mediaAsset: string | undefined;
+	if (content.imageUrl && content.imageUrl.trim()) {
+		try {
+			const imageUploadResult = await uploadImageToLinkedIn(accessToken, formattedPersonUrn, content.imageUrl);
+			mediaAsset = imageUploadResult.asset;
+		} catch (error: any) {
+			console.error('Failed to upload image, publishing text-only post:', error);
+			// Continue with text-only post if image upload fails
+			// This allows posts to still publish even if image upload fails
+		}
+	}
+
 	// LinkedIn UGC Posts API payload
-	// Using UGC Posts API (v2) for text posts
+	// Using UGC Posts API (v2) for text posts or posts with images
+	const shareContent: any = {
+		shareCommentary: {
+			text: postText,
+		},
+		shareMediaCategory: mediaAsset ? 'IMAGE' : 'NONE',
+	};
+
+	// Add media if image was uploaded successfully
+	if (mediaAsset) {
+		shareContent.media = [
+			{
+				status: 'READY',
+				media: mediaAsset,
+			},
+		];
+	}
+
 	const payload = {
 		author: formattedPersonUrn,
 		lifecycleState: 'PUBLISHED',
 		specificContent: {
-			'com.linkedin.ugc.ShareContent': {
-				shareCommentary: {
-					text: postText,
-				},
-				shareMediaCategory: 'NONE', // Text only, no media
-			},
+			'com.linkedin.ugc.ShareContent': shareContent,
 		},
 		visibility: {
 			'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC',

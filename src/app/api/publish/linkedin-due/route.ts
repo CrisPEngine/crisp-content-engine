@@ -209,6 +209,7 @@ async function publishDueContent(): Promise<{
 		'scheduled_time',
 		'brand_profile_id',
 		'publish_attempts',
+		'image_reference_url', // Include image URL for posts with images
 	];
 	fields.forEach((field) => {
 		url.searchParams.append('fields[]', field);
@@ -318,6 +319,9 @@ async function publishDueContent(): Promise<{
 				continue;
 			}
 
+			// Get image URL if available
+			const imageUrl = fields.image_reference_url || '';
+
 			// Publish to LinkedIn with idempotency key (record ID)
 			const publishResult = await publishToLinkedIn(
 				connection.accessToken,
@@ -326,6 +330,7 @@ async function publishDueContent(): Promise<{
 					title,
 					body,
 					hashtags,
+					imageUrl: imageUrl || undefined,
 				},
 				record.id // Idempotency key
 			);
