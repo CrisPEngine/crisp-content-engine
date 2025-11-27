@@ -233,19 +233,18 @@ export async function GET(request: Request) {
 			// In the future, we could allow users to select which organization
 			const selectedOrg = organizations[0];
 
-			// Check if business connection already exists
+			// Check if business connection already exists (by checking for organisation_urn)
 			const { data: existingBusiness } = await admin
 				.from('social_connections')
 				.select('id')
 				.eq('user_id', user.id)
 				.eq('provider', 'linkedin')
-				.eq('connection_type', 'business')
+				.not('organisation_urn', 'is', null)
 				.maybeSingle();
 
-			const connectionData = {
+			const connectionData: any = {
 				user_id: user.id,
 				provider: 'linkedin',
-				connection_type: 'business',
 				access_token: encryptToken(accessToken),
 				refresh_token: refreshToken ? encryptToken(refreshToken) : null,
 				expires_at: expiresAt?.toISOString() ?? null,
@@ -287,23 +286,18 @@ export async function GET(request: Request) {
 			return NextResponse.redirect(`${redirectBase}/connections/assign-brand?connection_id=${connectionId}&type=business`);
 		} else {
 			// Personal connection (existing logic)
-			// Check if personal connection already exists
-			// Look for connections without organisation_urn (personal) or with connection_type='personal'
-			const { data: allLinkedIn } = await admin
+			// Check if personal connection already exists (no organisation_urn)
+			const { data: existingPersonal } = await admin
 				.from('social_connections')
-				.select('id, connection_type, organisation_urn')
+				.select('id')
 				.eq('user_id', user.id)
-				.eq('provider', 'linkedin');
+				.eq('provider', 'linkedin')
+				.is('organisation_urn', null)
+				.maybeSingle();
 
-			// Find personal connection (no organisation_urn or connection_type='personal')
-			const existingPersonal = allLinkedIn?.find((conn: any) => 
-				!conn.organisation_urn || conn.connection_type === 'personal'
-			);
-
-			const connectionData = {
+			const connectionData: any = {
 				user_id: user.id,
 				provider: 'linkedin',
-				connection_type: 'personal',
 				access_token: encryptToken(accessToken),
 				refresh_token: refreshToken ? encryptToken(refreshToken) : null,
 				expires_at: expiresAt?.toISOString() ?? null,

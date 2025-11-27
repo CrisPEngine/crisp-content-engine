@@ -43,10 +43,13 @@ export default async function AssignBrandPage({
 	const admin = getSupabaseService();
 	const { data: connection } = await admin
 		.from('social_connections')
-		.select('id, account_name, account_avatar, connection_type, brand_profile_id')
+		.select('id, account_name, account_avatar, organisation_urn, brand_profile_id, metadata')
 		.eq('id', connectionId)
 		.eq('user_id', user.id)
 		.single();
+	
+	// Determine connection type from organisation_urn or metadata
+	const actualConnectionType = connection?.organisation_urn ? 'business' : (connection?.metadata?.connection_type || 'personal');
 
 	if (!connection) {
 		redirect('/connections?error=connection_not_found');
@@ -93,7 +96,7 @@ export default async function AssignBrandPage({
 	// Personal connections should be assigned to personal brands
 	// Business connections should be assigned to company brands
 	const filteredBrands = brandProfiles.filter((brand) => {
-		if (connectionType === 'personal') {
+		if (actualConnectionType === 'personal') {
 			return brand.brand_type === 'personal';
 		} else {
 			return brand.brand_type === 'company';
@@ -106,16 +109,16 @@ export default async function AssignBrandPage({
 		
 		const brandProfileId = formData.get('brand_profile_id') as string;
 		if (!brandProfileId) {
-			redirect('/connections/assign-brand?connection_id=' + connectionId + '&type=' + connectionType + '&error=no_brand_selected');
+			redirect('/connections/assign-brand?connection_id=' + connectionId + '&type=' + actualConnectionType + '&error=no_brand_selected');
 		}
 
 		const { error } = await assignBrandToConnection(connectionId, brandProfileId);
 		
 		if (error) {
-			redirect('/connections/assign-brand?connection_id=' + connectionId + '&type=' + connectionType + '&error=assignment_failed');
+			redirect('/connections/assign-brand?connection_id=' + connectionId + '&type=' + actualConnectionType + '&error=assignment_failed');
 		}
 
-		redirect(`/connections?connected=linkedin${connectionType === 'business' ? '_business' : ''}`);
+		redirect(`/connections?connected=linkedin${actualConnectionType === 'business' ? '_business' : ''}`);
 	};
 
 	return (
@@ -129,7 +132,7 @@ export default async function AssignBrandPage({
 			<header className="space-y-2">
 				<h1 className="text-3xl font-semibold">Assign Brand to Connection</h1>
 				<p className="text-text-dim">
-					Select which brand this LinkedIn {connectionType === 'business' ? 'business account' : 'personal profile'} should be associated with.
+					Select which brand this LinkedIn {actualConnectionType === 'business' ? 'business account' : 'personal profile'} should be associated with.
 				</p>
 			</header>
 
@@ -148,7 +151,7 @@ export default async function AssignBrandPage({
 							{connection.account_name || 'LinkedIn Account'}
 						</div>
 						<div className="text-sm text-text-dim">
-							{connectionType === 'business' ? 'Business Account' : 'Personal Profile'}
+							{actualConnectionType === 'business' ? 'Business Account' : 'Personal Profile'}
 						</div>
 					</div>
 				</div>
@@ -158,15 +161,15 @@ export default async function AssignBrandPage({
 			<form action={assignAction} className="card p-6 space-y-4">
 				<div>
 					<label htmlFor="brand_profile_id" className="block text-sm font-medium text-text-soft mb-2">
-						Select Brand {connectionType === 'personal' ? '(Personal Brands)' : '(Company Brands)'}
+						Select Brand {actualConnectionType === 'personal' ? '(Personal Brands)' : '(Company Brands)'}
 					</label>
 					{filteredBrands.length === 0 ? (
 						<div className="p-4 rounded-xl2 bg-warning/10 border border-warning/30">
 							<p className="text-warning text-sm mb-3">
-								No {connectionType === 'personal' ? 'personal' : 'company'} brands found.
+								No {actualConnectionType === 'personal' ? 'personal' : 'company'} brands found.
 							</p>
 							<p className="text-sm text-text-dim mb-4">
-								You need to create a {connectionType === 'personal' ? 'personal' : 'company'} brand profile first.
+								You need to create a {actualConnectionType === 'personal' ? 'personal' : 'company'} brand profile first.
 							</p>
 							<Link
 								href="/onboarding"

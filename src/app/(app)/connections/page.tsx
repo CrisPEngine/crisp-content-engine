@@ -152,13 +152,21 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 		.eq('provider', 'linkedin');
 
 	// Separate personal and business connections
+	// Personal connections have no organisation_urn, business connections have organisation_urn
 	// Only show as connected if they have a brand_profile_id assigned
 	const personalConnection = connections?.find((c: any) => 
-		(c.connection_type === 'personal' || (!c.connection_type && !c.organisation_urn))
+		!c.organisation_urn
 	) || null;
 	const businessConnection = connections?.find((c: any) => 
-		c.connection_type === 'business' || (c.organisation_urn && c.connection_type !== 'personal')
+		c.organisation_urn
 	) || null;
+
+	// Determine connection type from metadata or organisation_urn presence
+	const getConnectionType = (conn: any): 'personal' | 'business' => {
+		if (conn?.organisation_urn) return 'business';
+		if (conn?.metadata?.connection_type) return conn.metadata.connection_type;
+		return 'personal'; // Default to personal if no organisation_urn
+	};
 
 	const personalStatus = {
 		connected: Boolean(personalConnection?.brand_profile_id) || (connected === 'linkedin' && Boolean(personalConnection?.brand_profile_id)),
