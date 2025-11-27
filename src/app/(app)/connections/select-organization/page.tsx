@@ -94,7 +94,7 @@ async function saveOrganizationConnection(
 export default async function SelectOrganizationPage({
 	searchParams,
 }: {
-	searchParams: Promise<{ error?: string; org_urn?: string }>;
+	searchParams: Promise<{ error?: string; org_urn?: string; details?: string }>;
 }) {
 	const supabase = await createClient();
 	const {
