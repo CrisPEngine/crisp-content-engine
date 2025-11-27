@@ -109,7 +109,26 @@ export default async function SelectOrganizationPage({
 	const cookieStore = await import('next/headers').then(m => m.cookies());
 	const orgSelectionCookie = cookieStore.get('linkedin_org_selection')?.value;
 
+	// If cookie doesn't exist, check if user already has an organization connection without brand assignment
+	// This handles cases where the cookie expired but connection was saved
 	if (!orgSelectionCookie) {
+		const admin = getSupabaseService();
+		const { data: existingConnections } = await admin
+			.from('social_connections')
+			.select('id, organization_urn, brand_profile_id')
+			.eq('user_id', user.id)
+			.eq('provider', 'linkedin')
+			.eq('connection_type', 'organization');
+
+		// Check if there's a connection without brand assignment
+		const unassignedConnection = existingConnections?.find(conn => !conn.brand_profile_id);
+		
+		if (unassignedConnection) {
+			// Redirect to brand assignment for this existing connection
+			redirect(`/connections/assign-brand?connection_id=${unassignedConnection.id}&type=business`);
+		}
+
+		// If no unassigned connection exists, show expired error
 		redirect('/connections?error=expired_selection&details=Organization selection expired. Please try connecting again.');
 	}
 
@@ -165,9 +184,9 @@ export default async function SelectOrganizationPage({
 				orgData.profile
 			);
 
-			// Clear the selection cookie
-			const cookieStore = await import('next/headers').then(m => m.cookies());
-			cookieStore.set('linkedin_org_selection', '', { path: '/', maxAge: 0 });
+			// Don't clear cookie yet - keep it until brand assignment is complete
+			// This allows recovery if user navigates back
+			// Cookie will expire naturally after 5 minutes
 
 			// Redirect to brand assignment
 			redirect(`/connections/assign-brand?connection_id=${connectionId}&type=business`);

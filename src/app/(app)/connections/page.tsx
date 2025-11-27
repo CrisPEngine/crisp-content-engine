@@ -106,14 +106,6 @@ function LinkedInCard({
 								Disconnect
 							</button>
 						</form>
-						<a
-							href="https://www.linkedin.com/help/linkedin/answer/a507721"
-							target="_blank"
-							rel="noopener noreferrer"
-							className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 text-sm"
-						>
-							Manage on LinkedIn
-						</a>
 					</>
 				) : !needsBrandAssignment ? (
 					<a

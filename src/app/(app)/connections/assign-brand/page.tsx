@@ -118,6 +118,12 @@ export default async function AssignBrandPage({
 			redirect('/connections/assign-brand?connection_id=' + connectionId + '&type=' + actualConnectionType + '&error=assignment_failed');
 		}
 
+		// Clear the organization selection cookie if this was a business connection
+		if (actualConnectionType === 'business') {
+			const cookieStore = await import('next/headers').then(m => m.cookies());
+			cookieStore.set('linkedin_org_selection', '', { path: '/', maxAge: 0 });
+		}
+
 		redirect(`/connections?connected=linkedin${actualConnectionType === 'business' ? '_business' : ''}`);
 	};
 
