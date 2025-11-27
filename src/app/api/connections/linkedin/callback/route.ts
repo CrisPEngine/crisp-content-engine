@@ -256,21 +256,60 @@ export async function GET(request: Request) {
 				updated_at: new Date().toISOString(),
 			};
 
-			// Use upsert with new conflict target: (user_id, provider, connection_type)
-			const { data: newConnection, error: upsertError } = await admin
-				.from('social_connections')
-				.upsert(connectionData, {
-					onConflict: 'user_id,provider,connection_type',
-				})
-				.select('id')
-				.single();
-			
-			if (upsertError || !newConnection) {
-				throw new Error(`Failed to save connection: ${upsertError?.message || 'Unknown error'}`);
+			// Check if connection already exists (by user_id, provider, connection_type)
+			// Note: This requires the database migration to be run first
+			let existingConnection: { id: string } | null = null;
+			try {
+				const { data } = await admin
+					.from('social_connections')
+					.select('id')
+					.eq('user_id', user.id)
+					.eq('provider', 'linkedin')
+					.eq('connection_type', dbConnectionType)
+					.maybeSingle();
+				existingConnection = data;
+			} catch (queryError: any) {
+				// If connection_type column doesn't exist, provide helpful error
+				if (queryError?.message?.includes('connection_type') || queryError?.message?.includes('column')) {
+					throw new Error(`Database migration required: Please run the SQL migration in database_migrations/add_linkedin_connection_types.sql first. See DATABASE_MIGRATION_INSTRUCTIONS.md for details.`);
+				}
+				throw queryError;
+			}
+
+			let connectionId: string;
+			if (existingConnection) {
+				// Update existing connection
+				const { error: updateError } = await admin
+					.from('social_connections')
+					.update(connectionData)
+					.eq('id', existingConnection.id);
+				
+				if (updateError) {
+					if (updateError.message.includes('connection_type') || updateError.message.includes('organization_urn')) {
+						throw new Error(`Database migration required: Please run the SQL migration in database_migrations/add_linkedin_connection_types.sql first. See DATABASE_MIGRATION_INSTRUCTIONS.md for details.`);
+					}
+					throw new Error(`Failed to update connection: ${updateError.message}`);
+				}
+				connectionId = existingConnection.id;
+			} else {
+				// Insert new connection
+				const { data: newConnection, error: insertError } = await admin
+					.from('social_connections')
+					.insert(connectionData)
+					.select('id')
+					.single();
+				
+				if (insertError || !newConnection) {
+					if (insertError?.message?.includes('connection_type') || insertError?.message?.includes('organization_urn') || insertError?.message?.includes('constraint')) {
+						throw new Error(`Database migration required: Please run the SQL migration in database_migrations/add_linkedin_connection_types.sql first. See DATABASE_MIGRATION_INSTRUCTIONS.md for details. Original error: ${insertError.message}`);
+					}
+					throw new Error(`Failed to save connection: ${insertError?.message || 'Unknown error'}`);
+				}
+				connectionId = newConnection.id;
 			}
 
 			// Redirect to brand assignment page
-			return NextResponse.redirect(`${redirectBase}/connections/assign-brand?connection_id=${newConnection.id}&type=business`);
+			return NextResponse.redirect(`${redirectBase}/connections/assign-brand?connection_id=${connectionId}&type=business`);
 		} else {
 			// Personal connection (member)
 			const connectionData: any = {
@@ -289,21 +328,60 @@ export async function GET(request: Request) {
 				updated_at: new Date().toISOString(),
 			};
 
-			// Use upsert with new conflict target: (user_id, provider, connection_type)
-			const { data: newConnection, error: upsertError } = await admin
-				.from('social_connections')
-				.upsert(connectionData, {
-					onConflict: 'user_id,provider,connection_type',
-				})
-				.select('id')
-				.single();
-			
-			if (upsertError || !newConnection) {
-				throw new Error(`Failed to save connection: ${upsertError?.message || 'Unknown error'}`);
+			// Check if connection already exists (by user_id, provider, connection_type)
+			// Note: This requires the database migration to be run first
+			let existingConnection: { id: string } | null = null;
+			try {
+				const { data } = await admin
+					.from('social_connections')
+					.select('id')
+					.eq('user_id', user.id)
+					.eq('provider', 'linkedin')
+					.eq('connection_type', dbConnectionType)
+					.maybeSingle();
+				existingConnection = data;
+			} catch (queryError: any) {
+				// If connection_type column doesn't exist, provide helpful error
+				if (queryError?.message?.includes('connection_type') || queryError?.message?.includes('column')) {
+					throw new Error(`Database migration required: Please run the SQL migration in database_migrations/add_linkedin_connection_types.sql first. See DATABASE_MIGRATION_INSTRUCTIONS.md for details.`);
+				}
+				throw queryError;
+			}
+
+			let connectionId: string;
+			if (existingConnection) {
+				// Update existing connection
+				const { error: updateError } = await admin
+					.from('social_connections')
+					.update(connectionData)
+					.eq('id', existingConnection.id);
+				
+				if (updateError) {
+					if (updateError.message.includes('connection_type') || updateError.message.includes('organization_urn')) {
+						throw new Error(`Database migration required: Please run the SQL migration in database_migrations/add_linkedin_connection_types.sql first. See DATABASE_MIGRATION_INSTRUCTIONS.md for details.`);
+					}
+					throw new Error(`Failed to update connection: ${updateError.message}`);
+				}
+				connectionId = existingConnection.id;
+			} else {
+				// Insert new connection
+				const { data: newConnection, error: insertError } = await admin
+					.from('social_connections')
+					.insert(connectionData)
+					.select('id')
+					.single();
+				
+				if (insertError || !newConnection) {
+					if (insertError?.message?.includes('connection_type') || insertError?.message?.includes('organization_urn') || insertError?.message?.includes('constraint')) {
+						throw new Error(`Database migration required: Please run the SQL migration in database_migrations/add_linkedin_connection_types.sql first. See DATABASE_MIGRATION_INSTRUCTIONS.md for details. Original error: ${insertError.message}`);
+					}
+					throw new Error(`Failed to save connection: ${insertError?.message || 'Unknown error'}`);
+				}
+				connectionId = newConnection.id;
 			}
 
 			// Redirect to brand assignment page
-			return NextResponse.redirect(`${redirectBase}/connections/assign-brand?connection_id=${newConnection.id}&type=personal`);
+			return NextResponse.redirect(`${redirectBase}/connections/assign-brand?connection_id=${connectionId}&type=personal`);
 		}
 	} catch (err: any) {
 		console.error('LinkedIn OAuth callback error:', err);
