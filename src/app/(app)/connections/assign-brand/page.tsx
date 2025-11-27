@@ -142,13 +142,43 @@ export default async function AssignBrandPage({
 					{connection.account_avatar && (
 						<img
 							src={connection.account_avatar}
-							alt={connection.account_name || 'Account'}
+							alt={connection.account_name || connection.organization_name || 'Account'}
 							className="w-16 h-16 rounded-full border border-edge/60"
 						/>
 					)}
 					<div>
 						<div className="font-semibold text-lg">
-							{connection.account_name || 'LinkedIn Account'}
+							{(() => {
+								// Parse organization name - might be stored as JSON string
+								let displayName = connection.organization_name || connection.account_name || 'LinkedIn Account';
+								
+								// If it's a JSON string, try to parse it
+								if (typeof displayName === 'string' && displayName.startsWith('{')) {
+									try {
+										const parsed = JSON.parse(displayName);
+										if (parsed.localized && typeof parsed.localized === 'object') {
+											// Get preferred locale or first available
+											const preferredLocale = parsed.preferredLocale;
+											if (preferredLocale?.language && preferredLocale?.country) {
+												const localeKey = `${preferredLocale.language}_${preferredLocale.country}`;
+												if (parsed.localized[localeKey]) {
+													displayName = parsed.localized[localeKey];
+												}
+											}
+											// Fall back to first available locale
+											if (displayName.startsWith('{')) {
+												const locales = Object.keys(parsed.localized);
+												if (locales.length > 0) {
+													displayName = parsed.localized[locales[0]];
+												}
+											}
+										}
+									} catch {
+										// If parsing fails, use the string as-is
+									}
+								}
+								return displayName;
+							})()}
 						</div>
 						<div className="text-sm text-text-dim">
 							{actualConnectionType === 'business' ? 'Business Account' : 'Personal Profile'}

@@ -144,9 +144,53 @@ async function fetchLinkedInOrganizations(accessToken: string) {
 						const logoElements = orgData?.logoV2?.['original~']?.elements || [];
 						const logoUrl = logoElements[logoElements.length - 1]?.identifiers?.[0]?.identifier || null;
 
+						// Parse organization name - LinkedIn returns it in localized format
+						let orgName = 'Company Page';
+						if (orgData?.name) {
+							let nameObj: any = orgData.name;
+							
+							// If name is a JSON string, parse it first
+							if (typeof nameObj === 'string' && nameObj.trim().startsWith('{')) {
+								try {
+									nameObj = JSON.parse(nameObj);
+								} catch {
+									// If parsing fails, use the string as-is
+									orgName = nameObj;
+								}
+							}
+							
+							// If it's already a parsed object with localized data
+							if (typeof nameObj === 'object' && nameObj !== null) {
+								if (nameObj.localized && typeof nameObj.localized === 'object') {
+									// Try to get the preferred locale first
+									const preferredLocale = nameObj.preferredLocale;
+									if (preferredLocale?.language && preferredLocale?.country) {
+										const localeKey = `${preferredLocale.language}_${preferredLocale.country}`;
+										if (nameObj.localized[localeKey]) {
+											orgName = nameObj.localized[localeKey];
+										}
+									}
+									
+									// Fall back to first available locale if preferred not found
+									if (orgName === 'Company Page') {
+										const locales = Object.keys(nameObj.localized);
+										if (locales.length > 0) {
+											orgName = nameObj.localized[locales[0]];
+										}
+									}
+								} else if (typeof nameObj === 'string') {
+									// If it's just a plain string after parsing
+									orgName = nameObj;
+								}
+							} else if (typeof nameObj === 'string') {
+								// If it's a plain string
+								orgName = nameObj;
+							}
+						}
+
 						return {
 							urn,
-							name: orgData?.name || 'Company Page',
+							name: orgName,
 							logoUrl,
 						};
 					}
@@ -232,84 +276,29 @@ export async function GET(request: Request) {
 				return NextResponse.redirect(`${redirectBase}/connections?error=no_organizations&details=${encodeURIComponent('No company pages found. You must be an administrator of at least one LinkedIn company page.')}`);
 			}
 
-			// For now, connect the first organization
-			// In the future, we could allow users to select which organization
-			const selectedOrg = organizations[0];
+			// Store organizations in a cookie/session so the user can select which one
+			// For now, we'll redirect to a selection page
+			// Store the access token temporarily in a cookie (encrypted) for the selection step
+			const cookieStore = await import('next/headers').then(m => m.cookies());
+			
+			// Store organizations list and tokens temporarily for organization selection
+			// We'll store in a cookie with short expiration (5 minutes)
+			cookieStore.set('linkedin_org_selection', JSON.stringify({
+				organizations: organizations,
+				accessToken: encryptToken(accessToken),
+				refreshToken: refreshToken ? encryptToken(refreshToken) : null,
+				expiresAt: expiresAt?.toISOString() ?? null,
+				personUrn: details.personUrn,
+				profile: profile,
+			}), {
+				httpOnly: true,
+				secure: true,
+				path: '/',
+				maxAge: 300, // 5 minutes
+			});
 
-			// Connection data for organization
-			const connectionData: any = {
-				user_id: user.id,
-				provider: 'linkedin',
-				connection_type: dbConnectionType,
-				access_token: encryptToken(accessToken),
-				refresh_token: refreshToken ? encryptToken(refreshToken) : null,
-				expires_at: expiresAt?.toISOString() ?? null,
-				person_urn: details.personUrn, // Admin's person URN
-				organization_urn: selectedOrg.urn,
-				organization_name: selectedOrg.name,
-				account_name: selectedOrg.name,
-				account_avatar: selectedOrg.logoUrl,
-				metadata: {
-					...profile,
-					organizations: organizations, // Store all orgs for future use
-				},
-				updated_at: new Date().toISOString(),
-			};
-
-			// Check if connection already exists (by user_id, provider, connection_type)
-			// Note: This requires the database migration to be run first
-			let existingConnection: { id: string } | null = null;
-			try {
-				const { data } = await admin
-					.from('social_connections')
-					.select('id')
-					.eq('user_id', user.id)
-					.eq('provider', 'linkedin')
-					.eq('connection_type', dbConnectionType)
-					.maybeSingle();
-				existingConnection = data;
-			} catch (queryError: any) {
-				// If connection_type column doesn't exist, provide helpful error
-				if (queryError?.message?.includes('connection_type') || queryError?.message?.includes('column')) {
-					throw new Error(`Database migration required: Please run the SQL migration in database_migrations/add_linkedin_connection_types.sql first. See DATABASE_MIGRATION_INSTRUCTIONS.md for details.`);
-				}
-				throw queryError;
-			}
-
-			let connectionId: string;
-			if (existingConnection) {
-				// Update existing connection
-				const { error: updateError } = await admin
-					.from('social_connections')
-					.update(connectionData)
-					.eq('id', existingConnection.id);
-				
-				if (updateError) {
-					if (updateError.message.includes('connection_type') || updateError.message.includes('organization_urn')) {
-						throw new Error(`Database migration required: Please run the SQL migration in database_migrations/add_linkedin_connection_types.sql first. See DATABASE_MIGRATION_INSTRUCTIONS.md for details.`);
-					}
-					throw new Error(`Failed to update connection: ${updateError.message}`);
-				}
-				connectionId = existingConnection.id;
-			} else {
-				// Insert new connection
-				const { data: newConnection, error: insertError } = await admin
-					.from('social_connections')
-					.insert(connectionData)
-					.select('id')
-					.single();
-				
-				if (insertError || !newConnection) {
-					if (insertError?.message?.includes('connection_type') || insertError?.message?.includes('organization_urn') || insertError?.message?.includes('constraint')) {
-						throw new Error(`Database migration required: Please run the SQL migration in database_migrations/add_linkedin_connection_types.sql first. See DATABASE_MIGRATION_INSTRUCTIONS.md for details. Original error: ${insertError.message}`);
-					}
-					throw new Error(`Failed to save connection: ${insertError?.message || 'Unknown error'}`);
-				}
-				connectionId = newConnection.id;
-			}
-
-			// Redirect to brand assignment page
-			return NextResponse.redirect(`${redirectBase}/connections/assign-brand?connection_id=${connectionId}&type=business`);
+			// Redirect to organization selection page
+			return NextResponse.redirect(`${redirectBase}/connections/select-organization`);
 		} else {
 			// Personal connection (member)
 			const connectionData: any = {
