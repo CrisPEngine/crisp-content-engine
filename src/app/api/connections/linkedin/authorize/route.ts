@@ -31,10 +31,23 @@ export async function GET() {
 		maxAge: 600,
 	});
 
-	// LinkedIn Marketing Developer Platform scopes
-	// r_liteprofile is deprecated - removed
-	// w_member_social requires Marketing Developer Platform product to be enabled
-	const scope = ['w_member_social', 'openid', 'profile', 'email'].join(' ');
+	// LinkedIn OAuth scopes
+	// Personal profile posting (existing functionality)
+	// w_member_social - Post to personal profile
+	// Organization posting (new - requires LinkedIn Advertising API access)
+	// r_organization_social - Read posts, comments, reactions from organization pages
+	// w_organization_social - Write/post content to organization pages
+	// r_organization_admin - Read organizational data (list pages user administers)
+	// w_organization_admin - Write organizational data (if needed)
+	const scope = [
+		'openid',
+		'profile',
+		'email',
+		'w_member_social',           // Personal profile posting
+		'r_organization_admin',      // Read organization admin data
+		'r_organization_social',     // Read organization social posts
+		'w_organization_social',     // Write organization social posts
+	].join(' ');
 	const authorizeUrl = new URL('https://www.linkedin.com/oauth/v2/authorization');
 	authorizeUrl.searchParams.set('response_type', 'code');
 	authorizeUrl.searchParams.set('client_id', clientId);

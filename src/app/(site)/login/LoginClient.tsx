@@ -194,7 +194,7 @@ export function LoginClient() {
 					<p className="mt-1 text-text-dim">
 						{authView === 'update_password' 
 							? 'Enter your new password below.' 
-							: 'Access your AI content studio — secure & private.'}
+							: 'Access your AI content studio - secure & private.'}
 					</p>
 				</div>
 				{authView === 'sign_in' && (
