@@ -191,6 +191,10 @@ export default async function SelectOrganizationPage({
 			// Redirect to brand assignment
 			redirect(`/connections/assign-brand?connection_id=${connectionId}&type=business`);
 		} catch (error: any) {
+			// Re-throw redirect errors - Next.js redirect() throws a special error
+			if (error && typeof error === 'object' && 'digest' in error && typeof error.digest === 'string' && error.digest.includes('NEXT_REDIRECT')) {
+				throw error;
+			}
 			console.error('Failed to save organization connection:', error);
 			redirect(`/connections/select-organization?error=save_failed&details=${encodeURIComponent(error.message || 'Failed to save connection')}`);
 		}
