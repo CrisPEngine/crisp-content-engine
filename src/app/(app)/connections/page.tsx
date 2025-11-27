@@ -178,7 +178,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 
 	const businessStatus = {
 		connected: Boolean(businessConnection?.brand_profile_id) || (connected === 'linkedin_business' && Boolean(businessConnection?.brand_profile_id)),
-		accountName: businessConnection?.organization_name || businessConnection?.account_name ?? null,
+		accountName: businessConnection?.organization_name ?? businessConnection?.account_name ?? null,
 		accountAvatar: businessConnection?.account_avatar ?? null,
 		organisationUrn: businessConnection?.organization_urn ?? null,
 		personUrn: businessConnection?.person_urn ?? null,
