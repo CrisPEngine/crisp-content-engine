@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseService } from '@/lib/supabaseService';
+import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -13,6 +14,7 @@ function LinkedInCard({
 	organisationUrn,
 	connectionType,
 	connectionId,
+	needsBrandAssignment,
 }: {
 	connected: boolean;
 	accountName?: string | null;
@@ -21,6 +23,7 @@ function LinkedInCard({
 	organisationUrn?: string | null;
 	connectionType?: 'personal' | 'business';
 	connectionId?: string;
+	needsBrandAssignment?: boolean;
 }) {
 	const connectHref = connectionType === 'business' 
 		? '/api/connections/linkedin/authorize?type=business'
@@ -42,27 +45,45 @@ function LinkedInCard({
 						<p className="text-sm text-text-dim">{description}</p>
 					</div>
 				</div>
-				{connected && (
+				{connected && !needsBrandAssignment && (
 					<div className="text-xs px-2 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300">
 						Connected
 					</div>
 				)}
+				{needsBrandAssignment && (
+					<div className="text-xs px-2 py-1 rounded-full bg-warning/15 border border-warning/40 text-warning">
+						Needs Brand Assignment
+					</div>
+				)}
 			</div>
 
-			{connected ? (
-				<div className="flex items-start gap-4">
-					{accountAvatar && (
-						<img src={accountAvatar} alt={isBusiness ? 'Company logo' : 'LinkedIn avatar'} className="w-12 h-12 rounded-full border border-edge/60" />
-					)}
-					<div className="text-sm space-y-1">
-						<div className="font-medium">{accountName}</div>
-						{isBusiness && organisationUrn && (
-							<div className="text-text-dim text-xs">{organisationUrn}</div>
+			{connected || needsBrandAssignment ? (
+				<div className="space-y-3">
+					<div className="flex items-start gap-4">
+						{accountAvatar && (
+							<img src={accountAvatar} alt={isBusiness ? 'Company logo' : 'LinkedIn avatar'} className="w-12 h-12 rounded-full border border-edge/60" />
 						)}
-						{!isBusiness && personUrn && (
-							<div className="text-text-dim text-xs">{personUrn}</div>
-						)}
+						<div className="text-sm space-y-1 flex-1">
+							<div className="font-medium">{accountName || (isBusiness ? 'Company Page' : 'LinkedIn Profile')}</div>
+							{isBusiness && organisationUrn && (
+								<div className="text-text-dim text-xs">{organisationUrn}</div>
+							)}
+							{!isBusiness && personUrn && (
+								<div className="text-text-dim text-xs">{personUrn}</div>
+							)}
+						</div>
 					</div>
+					{needsBrandAssignment && (
+						<div className="p-3 rounded-xl2 bg-warning/10 border border-warning/30">
+							<p className="text-warning text-sm mb-2">This connection needs to be assigned to a brand.</p>
+							<Link
+								href={`/connections/assign-brand?connection_id=${connectionId}&type=${connectionType}`}
+								className="px-3 py-1.5 rounded-lg bg-warning/20 hover:bg-warning/30 border border-warning/40 text-warning font-medium text-sm inline-block"
+							>
+								Assign to Brand
+							</Link>
+						</div>
+					)}
 				</div>
 			) : (
 				<p className="text-sm text-text-dim">
@@ -73,35 +94,35 @@ function LinkedInCard({
 			)}
 
 			<div className="flex gap-3">
-				{connected ? (
-					<form action="/api/connections/linkedin/disconnect" method="post">
-						<input type="hidden" name="connection_id" value={connectionId || ''} />
-						<input type="hidden" name="connection_type" value={connectionType || 'personal'} />
-						<button
-							type="submit"
-							className="px-4 py-2 rounded-xl2 border border-danger/40 bg-danger/10 hover:bg-danger/20 text-sm"
+				{connected && !needsBrandAssignment ? (
+					<>
+						<form action="/api/connections/linkedin/disconnect" method="post">
+							<input type="hidden" name="connection_id" value={connectionId || ''} />
+							<input type="hidden" name="connection_type" value={connectionType || 'personal'} />
+							<button
+								type="submit"
+								className="px-4 py-2 rounded-xl2 border border-danger/40 bg-danger/10 hover:bg-danger/20 text-sm"
+							>
+								Disconnect
+							</button>
+						</form>
+						<a
+							href="https://www.linkedin.com/help/linkedin/answer/a507721"
+							target="_blank"
+							rel="noopener noreferrer"
+							className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 text-sm"
 						>
-							Disconnect
-						</button>
-					</form>
-				) : (
+							Manage on LinkedIn
+						</a>
+					</>
+				) : !needsBrandAssignment ? (
 					<a
 						href={connectHref}
 						className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm"
 					>
 						Connect {isBusiness ? 'Business Account' : 'Personal Profile'}
 					</a>
-				)}
-				{connected && (
-					<a
-						href="https://www.linkedin.com/help/linkedin/answer/a507721"
-						target="_blank"
-						rel="noopener noreferrer"
-						className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 text-sm"
-					>
-						Manage on LinkedIn
-					</a>
-				)}
+				) : null}
 			</div>
 		</div>
 	);
@@ -126,35 +147,38 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 	// Fetch all LinkedIn connections (both personal and business)
 	const { data: connections } = await admin
 		.from('social_connections')
-		.select('id, account_name, account_avatar, person_urn, organisation_urn, connection_type, metadata')
+		.select('id, account_name, account_avatar, person_urn, organisation_urn, connection_type, brand_profile_id, metadata')
 		.eq('user_id', user.id)
 		.eq('provider', 'linkedin');
 
 	// Separate personal and business connections
+	// Only show as connected if they have a brand_profile_id assigned
 	const personalConnection = connections?.find((c: any) => 
 		(c.connection_type === 'personal' || (!c.connection_type && !c.organisation_urn))
 	) || null;
 	const businessConnection = connections?.find((c: any) => 
-		c.connection_type === 'business' || c.organisation_urn
+		c.connection_type === 'business' || (c.organisation_urn && c.connection_type !== 'personal')
 	) || null;
 
 	const personalStatus = {
-		connected: Boolean(personalConnection) || connected === 'linkedin',
+		connected: Boolean(personalConnection?.brand_profile_id) || (connected === 'linkedin' && Boolean(personalConnection?.brand_profile_id)),
 		accountName: personalConnection?.account_name ?? null,
 		accountAvatar: personalConnection?.account_avatar ?? null,
 		personUrn: personalConnection?.person_urn ?? null,
 		connectionType: 'personal' as const,
 		connectionId: personalConnection?.id ?? undefined,
+		needsBrandAssignment: Boolean(personalConnection && !personalConnection.brand_profile_id),
 	};
 
 	const businessStatus = {
-		connected: Boolean(businessConnection) || connected === 'linkedin_business',
+		connected: Boolean(businessConnection?.brand_profile_id) || (connected === 'linkedin_business' && Boolean(businessConnection?.brand_profile_id)),
 		accountName: businessConnection?.account_name ?? null,
 		accountAvatar: businessConnection?.account_avatar ?? null,
 		organisationUrn: businessConnection?.organisation_urn ?? null,
 		personUrn: businessConnection?.person_urn ?? null,
 		connectionType: 'business' as const,
 		connectionId: businessConnection?.id ?? undefined,
+		needsBrandAssignment: Boolean(businessConnection && !businessConnection.brand_profile_id),
 	};
 
 	return (

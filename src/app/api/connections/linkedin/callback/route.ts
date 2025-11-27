@@ -261,18 +261,30 @@ export async function GET(request: Request) {
 				updated_at: new Date().toISOString(),
 			};
 
+			let connectionId: string;
 			if (existingBusiness) {
 				// Update existing connection
 				await admin
 					.from('social_connections')
 					.update(connectionData)
 					.eq('id', existingBusiness.id);
+				connectionId = existingBusiness.id;
 			} else {
 				// Insert new connection
-				await admin.from('social_connections').insert(connectionData);
+				const { data: newConnection, error: insertError } = await admin
+					.from('social_connections')
+					.insert(connectionData)
+					.select('id')
+					.single();
+				
+				if (insertError || !newConnection) {
+					throw new Error(`Failed to save connection: ${insertError?.message || 'Unknown error'}`);
+				}
+				connectionId = newConnection.id;
 			}
 
-			return NextResponse.redirect(`${redirectBase}/connections?connected=linkedin_business`);
+			// Redirect to brand assignment page
+			return NextResponse.redirect(`${redirectBase}/connections/assign-brand?connection_id=${connectionId}&type=business`);
 		} else {
 			// Personal connection (existing logic)
 			// Check if personal connection already exists
@@ -305,18 +317,30 @@ export async function GET(request: Request) {
 				updated_at: new Date().toISOString(),
 			};
 
+			let connectionId: string;
 			if (existingPersonal) {
 				// Update existing connection
 				await admin
 					.from('social_connections')
 					.update(connectionData)
 					.eq('id', existingPersonal.id);
+				connectionId = existingPersonal.id;
 			} else {
 				// Insert new connection
-				await admin.from('social_connections').insert(connectionData);
+				const { data: newConnection, error: insertError } = await admin
+					.from('social_connections')
+					.insert(connectionData)
+					.select('id')
+					.single();
+				
+				if (insertError || !newConnection) {
+					throw new Error(`Failed to save connection: ${insertError?.message || 'Unknown error'}`);
+				}
+				connectionId = newConnection.id;
 			}
 
-			return NextResponse.redirect(`${redirectBase}/connections?connected=linkedin`);
+			// Redirect to brand assignment page
+			return NextResponse.redirect(`${redirectBase}/connections/assign-brand?connection_id=${connectionId}&type=personal`);
 		}
 	} catch (err: any) {
 		console.error('LinkedIn OAuth callback error:', err);
