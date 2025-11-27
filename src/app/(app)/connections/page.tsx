@@ -144,36 +144,27 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 	const connected = params?.connected;
 
 	const admin = getSupabaseService();
-	// Fetch all LinkedIn connections (both personal and business)
-	const { data: connections } = await admin
+	// Fetch LinkedIn connections separately by connection_type
+	// Member connection (personal profile)
+	const { data: memberConnection } = await admin
 		.from('social_connections')
-		.select('id, account_name, account_avatar, person_urn, organisation_urn, connection_type, brand_profile_id, metadata')
+		.select('id, account_name, account_avatar, person_urn, organization_urn, organization_name, connection_type, brand_profile_id, metadata')
 		.eq('user_id', user.id)
-		.eq('provider', 'linkedin');
+		.eq('provider', 'linkedin')
+		.eq('connection_type', 'member')
+		.maybeSingle();
 
-	// Separate personal and business connections
-	// Check metadata for connection_type and organisation_urn (stored in metadata since columns don't exist)
-	// Only show as connected if they have a brand_profile_id assigned
-	const personalConnection = connections?.find((c: any) => {
-		const metadata = c.metadata || {};
-		return metadata.connection_type === 'personal' || (!metadata.organisation_urn && !c.organisation_urn);
-	}) || null;
-	const businessConnection = connections?.find((c: any) => {
-		const metadata = c.metadata || {};
-		return metadata.connection_type === 'business' || metadata.organisation_urn || c.organisation_urn;
-	}) || null;
+	// Organization connection (business account)
+	const { data: organizationConnection } = await admin
+		.from('social_connections')
+		.select('id, account_name, account_avatar, person_urn, organization_urn, organization_name, connection_type, brand_profile_id, metadata')
+		.eq('user_id', user.id)
+		.eq('provider', 'linkedin')
+		.eq('connection_type', 'organization')
+		.maybeSingle();
 
-	// Determine connection type from metadata or organisation_urn presence
-	const getConnectionType = (conn: any): 'personal' | 'business' => {
-		if (conn?.organisation_urn) return 'business';
-		if (conn?.metadata?.connection_type) return conn.metadata.connection_type;
-		return 'personal'; // Default to personal if no organisation_urn
-	};
-
-	// Get organisation_urn from metadata if not in column
-	const getOrganisationUrn = (conn: any) => {
-		return conn?.organisation_urn || conn?.metadata?.organisation_urn || null;
-	};
+	const personalConnection = memberConnection || null;
+	const businessConnection = organizationConnection || null;
 
 	const personalStatus = {
 		connected: Boolean(personalConnection?.brand_profile_id) || (connected === 'linkedin' && Boolean(personalConnection?.brand_profile_id)),
@@ -187,9 +178,9 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 
 	const businessStatus = {
 		connected: Boolean(businessConnection?.brand_profile_id) || (connected === 'linkedin_business' && Boolean(businessConnection?.brand_profile_id)),
-		accountName: businessConnection?.account_name ?? null,
+		accountName: businessConnection?.organization_name || businessConnection?.account_name ?? null,
 		accountAvatar: businessConnection?.account_avatar ?? null,
-		organisationUrn: getOrganisationUrn(businessConnection),
+		organisationUrn: businessConnection?.organization_urn ?? null,
 		personUrn: businessConnection?.person_urn ?? null,
 		connectionType: 'business' as const,
 		connectionId: businessConnection?.id ?? undefined,

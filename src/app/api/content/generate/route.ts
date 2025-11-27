@@ -158,13 +158,34 @@ export async function POST(req: Request) {
 			);
 		}
 
-		// Get LinkedIn connection for person_urn
+		// Get LinkedIn connection assigned to this brand
 		const { data: linkedInConnection } = await supabase
 			.from('social_connections')
-			.select('person_urn')
-			.eq('user_id', user.id)
+			.select('person_urn, organization_urn, connection_type')
+			.eq('brand_profile_id', brandProfileId)
 			.eq('provider', 'linkedin')
 			.maybeSingle();
+
+		// If no connection assigned to brand, fall back to member connection for user
+		let personUrn: string | undefined;
+		if (!linkedInConnection) {
+			const { data: fallbackConnection } = await supabase
+				.from('social_connections')
+				.select('person_urn, organization_urn, connection_type')
+				.eq('user_id', user.id)
+				.eq('provider', 'linkedin')
+				.eq('connection_type', 'member')
+				.maybeSingle();
+			
+			if (fallbackConnection) {
+				personUrn = fallbackConnection.person_urn || undefined;
+			}
+		} else {
+			// Use organization_urn if it's an organization connection, otherwise person_urn
+			personUrn = linkedInConnection.connection_type === 'organization' && linkedInConnection.organization_urn
+				? linkedInConnection.organization_urn
+				: linkedInConnection.person_urn || undefined;
+		}
 
 		// Determine which webhook to use based on plan
 		// For now, use creator webhook for all plans (as per user's request)
@@ -193,7 +214,7 @@ export async function POST(req: Request) {
 		const contentPayload = {
 			brand_profile_id: brandProfileId,
 			user_id: user.id,
-			person_urn: linkedInConnection?.person_urn || null,
+				person_urn: personUrn || null,
 			brand_type: brandType,
 			platform: platform, // LinkedIn, X, Instagram, etc.
 			strategy_json: strategyJson,

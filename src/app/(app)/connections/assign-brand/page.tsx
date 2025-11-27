@@ -43,14 +43,13 @@ export default async function AssignBrandPage({
 	const admin = getSupabaseService();
 	const { data: connection } = await admin
 		.from('social_connections')
-		.select('id, account_name, account_avatar, organisation_urn, brand_profile_id, metadata')
+		.select('id, account_name, account_avatar, organization_urn, organization_name, connection_type, brand_profile_id, metadata')
 		.eq('id', connectionId)
 		.eq('user_id', user.id)
 		.single();
 	
-	// Determine connection type from metadata (organisation_urn is stored in metadata)
-	const metadata = connection?.metadata || {};
-	const actualConnectionType = metadata.connection_type || (metadata.organisation_urn ? 'business' : 'personal');
+	// Determine connection type from connection_type column
+	const actualConnectionType = connection?.connection_type === 'organization' ? 'business' : 'personal';
 
 	if (!connection) {
 		redirect('/connections?error=connection_not_found');

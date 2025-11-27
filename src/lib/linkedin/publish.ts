@@ -84,11 +84,13 @@ async function refreshLinkedInToken(refreshToken: string): Promise<{
 
 /**
  * Get and refresh LinkedIn connection for a user
- * Returns valid access token and person_urn
+ * Returns valid access token and person_urn or organization_urn
  */
 export interface LinkedInConnectionResult {
 	accessToken: string;
 	personUrn: string;
+	organizationUrn?: string; // For organization connections
+	connectionType: 'member' | 'organization';
 }
 
 export interface LinkedInConnectionError {
@@ -97,16 +99,19 @@ export interface LinkedInConnectionError {
 	requiresReconnect: boolean;
 }
 
-export async function getLinkedInConnection(
-	userId: string
+/**
+ * Get LinkedIn connection by brand_profile_id (preferred - uses brand assignment)
+ */
+export async function getLinkedInConnectionByBrand(
+	brandProfileId: string
 ): Promise<LinkedInConnectionResult | LinkedInConnectionError | null> {
 	const supabase = getSupabaseService();
 
-	// Fetch LinkedIn connection
+	// Fetch LinkedIn connection assigned to this brand
 	const { data: connection, error } = await supabase
 		.from('social_connections')
 		.select('*')
-		.eq('user_id', userId)
+		.eq('brand_profile_id', brandProfileId)
 		.eq('provider', 'linkedin')
 		.maybeSingle();
 
@@ -114,12 +119,53 @@ export async function getLinkedInConnection(
 		return null;
 	}
 
+	return await processLinkedInConnection(connection, supabase);
+}
+
+/**
+ * Get LinkedIn connection for a user (legacy - for backward compatibility)
+ * Now tries to get member connection first
+ */
+export async function getLinkedInConnection(
+	userId: string,
+	connectionType?: 'member' | 'organization'
+): Promise<LinkedInConnectionResult | LinkedInConnectionError | null> {
+	const supabase = getSupabaseService();
+
+	// Default to member connection if not specified
+	const type = connectionType || 'member';
+
+	// Fetch LinkedIn connection
+	const { data: connection, error } = await supabase
+		.from('social_connections')
+		.select('*')
+		.eq('user_id', userId)
+		.eq('provider', 'linkedin')
+		.eq('connection_type', type)
+		.maybeSingle();
+
+	if (error || !connection) {
+		return null;
+	}
+
+	return await processLinkedInConnection(connection, supabase);
+}
+
+/**
+ * Process LinkedIn connection: refresh token, get URN, return result
+ */
+async function processLinkedInConnection(
+	connection: any,
+	supabase: ReturnType<typeof getSupabaseService>
+): Promise<LinkedInConnectionResult | LinkedInConnectionError | null> {
 	let accessToken = decryptToken(connection.access_token);
 	const refreshToken = connection.refresh_token ? decryptToken(connection.refresh_token) : null;
 
 	if (!accessToken) {
 		return null;
 	}
+
+	const connectionType = (connection.connection_type as 'member' | 'organization') || 'member';
 
 	// Check if token needs refresh (refresh if expires within 5 minutes)
 	const expiresAt = connection.expires_at ? new Date(connection.expires_at).getTime() : null;
@@ -150,15 +196,6 @@ export async function getLinkedInConnection(
 			
 			// Check if it's a permanent error
 			if (err.isPermanent) {
-				// Mark connection as invalid in Supabase
-				await supabase
-					.from('social_connections')
-					.update({
-						// Could add an 'is_valid' field or similar
-						updated_at: new Date().toISOString(),
-					})
-					.eq('id', connection.id);
-
 				return {
 					error: `LinkedIn connection expired. Please reconnect your LinkedIn account. Error: ${err.message}`,
 					isPermanent: true,
@@ -167,17 +204,25 @@ export async function getLinkedInConnection(
 			}
 
 			// Transient error - continue with existing token (might still work)
-			// The caller will handle the error if publishing fails
 		}
 	}
 
-	// Get or fetch person_urn
+	// For organization connections, use organization_urn
+	if (connectionType === 'organization' && connection.organization_urn) {
+		return {
+			accessToken,
+			personUrn: connection.person_urn || '', // Admin's person URN (still needed for some operations)
+			organizationUrn: connection.organization_urn,
+			connectionType: 'organization',
+		};
+	}
+
+	// For member connections, get or fetch person_urn
 	let personUrn = connection.person_urn;
 	if (!personUrn) {
 		try {
 			// Fetch person URN from LinkedIn API
-			// Use /v2/me endpoint which returns the person URN
-			const profileRes = await fetch('https://api.linkedin.com/v2/me', {
+			const profileRes = await fetch('https://api.linkedin.com/v2/userinfo', {
 				headers: {
 					Authorization: `Bearer ${accessToken}`,
 				},
@@ -185,16 +230,14 @@ export async function getLinkedInConnection(
 
 			if (profileRes.ok) {
 				const profile = await profileRes.json();
-				// LinkedIn returns id as "urn:li:person:{id}" format
-				personUrn = profile.id || null;
+				// OIDC userinfo returns sub as the user ID
+				const userId = profile.sub || profile.id;
+				if (userId) {
+					personUrn = userId.startsWith('urn:li:person:') 
+						? userId 
+						: `urn:li:person:${userId}`;
 
-				// Ensure it's in the correct format
-				if (personUrn && !personUrn.startsWith('urn:li:person:')) {
-					personUrn = `urn:li:person:${personUrn}`;
-				}
-
-				// Save person_urn for future use
-				if (personUrn) {
+					// Save person_urn for future use
 					await supabase
 						.from('social_connections')
 						.update({ person_urn: personUrn })
@@ -213,6 +256,7 @@ export async function getLinkedInConnection(
 	return {
 		accessToken,
 		personUrn,
+		connectionType: 'member',
 	};
 }
 
@@ -223,14 +267,17 @@ export async function getLinkedInConnection(
  */
 async function uploadImageToLinkedIn(
 	accessToken: string,
-	personUrn: string,
+	ownerUrn: string, // Can be person or organization URN
 	imageUrl: string
 ): Promise<{ asset: string }> {
 	try {
-		// Ensure person_urn is in correct format
-		let formattedPersonUrn = personUrn;
-		if (!formattedPersonUrn.startsWith('urn:li:person:')) {
-			formattedPersonUrn = `urn:li:person:${formattedPersonUrn}`;
+		// Ensure URN is in correct format (could be person or organization)
+		let formattedOwnerUrn = ownerUrn;
+		if (!formattedOwnerUrn.startsWith('urn:li:')) {
+			// If not in URN format, assume it's an ID and format based on whether it looks like an org
+			formattedOwnerUrn = formattedOwnerUrn.includes('organization') 
+				? `urn:li:organization:${formattedOwnerUrn.replace(/urn:li:organization:/g, '')}`
+				: `urn:li:person:${formattedOwnerUrn.replace(/urn:li:person:/g, '')}`;
 		}
 
 		// Step 1: Register the image upload with LinkedIn
@@ -244,7 +291,7 @@ async function uploadImageToLinkedIn(
 			body: JSON.stringify({
 				registerUploadRequest: {
 					recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
-					owner: formattedPersonUrn,
+					owner: formattedOwnerUrn, // Use formatted owner URN (person or organization)
 					serviceRelationships: [
 						{
 							relationshipType: 'OWNER',
@@ -316,7 +363,8 @@ export async function publishToLinkedIn(
 		hashtags?: string;
 		imageUrl?: string;
 	},
-	idempotencyKey?: string
+	idempotencyKey?: string,
+	organizationUrn?: string
 ): Promise<PublishResult> {
 	// Build post text: combine title (if provided), body, and hashtags
 	let postText = '';
@@ -343,23 +391,34 @@ export async function publishToLinkedIn(
 		};
 	}
 
-	// Ensure person_urn is in correct format
-	// LinkedIn API expects: urn:li:person:{id}
-	let formattedPersonUrn = personUrn;
-	if (!formattedPersonUrn.startsWith('urn:li:person:')) {
-		formattedPersonUrn = `urn:li:person:${formattedPersonUrn}`;
+	// Determine which URN to use as author
+	// For organization posts, use organization_urn; otherwise use person_urn
+	const authorUrn = organizationUrn || personUrn;
+	
+	// Ensure URN is in correct format
+	let formattedAuthorUrn = authorUrn;
+	if (organizationUrn) {
+		// Organization URN format: urn:li:organization:{id}
+		if (!formattedAuthorUrn.startsWith('urn:li:organization:')) {
+			formattedAuthorUrn = `urn:li:organization:${formattedAuthorUrn.replace('urn:li:organization:', '')}`;
+		}
+	} else {
+		// Person URN format: urn:li:person:{id}
+		if (!formattedAuthorUrn.startsWith('urn:li:person:')) {
+			formattedAuthorUrn = `urn:li:person:${formattedAuthorUrn}`;
+		}
 	}
 
 	// Handle image upload if image URL is provided
+	// Use authorUrn (organization or person) for image upload ownership
 	let mediaAsset: string | undefined;
 	if (content.imageUrl && content.imageUrl.trim()) {
 		try {
-			const imageUploadResult = await uploadImageToLinkedIn(accessToken, formattedPersonUrn, content.imageUrl);
+			const imageUploadResult = await uploadImageToLinkedIn(accessToken, formattedAuthorUrn, content.imageUrl);
 			mediaAsset = imageUploadResult.asset;
 		} catch (error: any) {
 			console.error('Failed to upload image, publishing text-only post:', error);
 			// Continue with text-only post if image upload fails
-			// This allows posts to still publish even if image upload fails
 		}
 	}
 
@@ -383,7 +442,7 @@ export async function publishToLinkedIn(
 	}
 
 	const payload = {
-		author: formattedPersonUrn,
+		author: formattedAuthorUrn, // Use organization or person URN
 		lifecycleState: 'PUBLISHED',
 		specificContent: {
 			'com.linkedin.ugc.ShareContent': shareContent,
@@ -461,4 +520,5 @@ export async function publishToLinkedIn(
 		};
 	}
 }
+
 

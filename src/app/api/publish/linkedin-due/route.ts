@@ -22,7 +22,7 @@
 
 import { NextResponse } from 'next/server';
 import { getSupabaseService } from '@/lib/supabaseService';
-import { getLinkedInConnection, publishToLinkedIn } from '@/lib/linkedin/publish';
+import { getLinkedInConnectionByBrand, publishToLinkedIn } from '@/lib/linkedin/publish';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // 5 minutes max for Vercel
@@ -272,16 +272,16 @@ async function publishDueContent(): Promise<{
 				continue;
 			}
 
-			// Get LinkedIn connection
-			const connectionResult = await getLinkedInConnection(userId);
+			// Get LinkedIn connection by brand_profile_id (uses brand assignment)
+			const connectionResult = await getLinkedInConnectionByBrand(brandProfileId);
 			if (!connectionResult) {
 				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
 					status: 'Failed',
-					publish_error: 'No LinkedIn connection found for user',
+					publish_error: 'No LinkedIn connection found for this brand. Please assign a LinkedIn connection to the brand.',
 					publish_attempts: (fields.publish_attempts || 0) + 1,
 				});
 				stats.failed++;
-				stats.errors.push(`Record ${record.id}: No LinkedIn connection`);
+				stats.errors.push(`Record ${record.id}: No LinkedIn connection for brand`);
 				continue;
 			}
 
@@ -323,17 +323,23 @@ async function publishDueContent(): Promise<{
 			// Get image URL if available
 			const imageUrl = fields.image_reference_url || '';
 
+			// Determine which URN to use based on connection type
+			const authorUrn = connection.connectionType === 'organization' && connection.organizationUrn
+				? connection.organizationUrn
+				: connection.personUrn;
+
 			// Publish to LinkedIn with idempotency key (record ID)
 			const publishResult = await publishToLinkedIn(
 				connection.accessToken,
-				connection.personUrn,
+				authorUrn, // Use organization or person URN based on connection type
 				{
 					title,
 					body,
 					hashtags,
 					imageUrl: imageUrl || undefined,
 				},
-				record.id // Idempotency key
+				record.id, // Idempotency key
+				connection.organizationUrn // Pass organization URN if present
 			);
 
 			if (publishResult.success) {

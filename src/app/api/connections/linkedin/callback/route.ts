@@ -221,6 +221,9 @@ export async function GET(request: Request) {
 
 		const admin = getSupabaseService();
 
+		// Determine connection type: 'member' for personal, 'organization' for business
+		const dbConnectionType: 'member' | 'organization' = connectionType === 'business' ? 'organization' : 'member';
+
 		if (connectionType === 'business') {
 			// Fetch organizations
 			const organizations = await fetchLinkedInOrganizations(accessToken);
@@ -233,76 +236,47 @@ export async function GET(request: Request) {
 			// In the future, we could allow users to select which organization
 			const selectedOrg = organizations[0];
 
-			// Check if any LinkedIn connection exists (unique constraint on user_id + provider)
-			const { data: existingConnection } = await admin
-				.from('social_connections')
-				.select('id, metadata')
-				.eq('user_id', user.id)
-				.eq('provider', 'linkedin')
-				.maybeSingle();
-
-			// Store organisation_urn in metadata since the column doesn't exist
+			// Connection data for organization
 			const connectionData: any = {
 				user_id: user.id,
 				provider: 'linkedin',
+				connection_type: dbConnectionType,
 				access_token: encryptToken(accessToken),
 				refresh_token: refreshToken ? encryptToken(refreshToken) : null,
 				expires_at: expiresAt?.toISOString() ?? null,
 				person_urn: details.personUrn, // Admin's person URN
+				organization_urn: selectedOrg.urn,
+				organization_name: selectedOrg.name,
 				account_name: selectedOrg.name,
 				account_avatar: selectedOrg.logoUrl,
 				metadata: {
 					...profile,
 					organizations: organizations, // Store all orgs for future use
-					connection_type: 'business',
-					organisation_urn: selectedOrg.urn, // Store in metadata
 				},
 				updated_at: new Date().toISOString(),
 			};
 
-			let connectionId: string;
-			if (existingConnection) {
-				// Update existing connection
-				const { error: updateError } = await admin
-					.from('social_connections')
-					.update(connectionData)
-					.eq('id', existingConnection.id);
-				
-				if (updateError) {
-					throw new Error(`Failed to update connection: ${updateError.message}`);
-				}
-				connectionId = existingConnection.id;
-			} else {
-				// Use upsert to handle unique constraint
-				const { data: newConnection, error: upsertError } = await admin
-					.from('social_connections')
-					.upsert(connectionData, {
-						onConflict: 'user_id,provider',
-					})
-					.select('id')
-					.single();
-				
-				if (upsertError || !newConnection) {
-					throw new Error(`Failed to save connection: ${upsertError?.message || 'Unknown error'}`);
-				}
-				connectionId = newConnection.id;
+			// Use upsert with new conflict target: (user_id, provider, connection_type)
+			const { data: newConnection, error: upsertError } = await admin
+				.from('social_connections')
+				.upsert(connectionData, {
+					onConflict: 'user_id,provider,connection_type',
+				})
+				.select('id')
+				.single();
+			
+			if (upsertError || !newConnection) {
+				throw new Error(`Failed to save connection: ${upsertError?.message || 'Unknown error'}`);
 			}
 
 			// Redirect to brand assignment page
-			return NextResponse.redirect(`${redirectBase}/connections/assign-brand?connection_id=${connectionId}&type=business`);
+			return NextResponse.redirect(`${redirectBase}/connections/assign-brand?connection_id=${newConnection.id}&type=business`);
 		} else {
-			// Personal connection
-			// Check if any LinkedIn connection exists (unique constraint on user_id + provider)
-			const { data: existingConnection } = await admin
-				.from('social_connections')
-				.select('id, metadata')
-				.eq('user_id', user.id)
-				.eq('provider', 'linkedin')
-				.maybeSingle();
-
+			// Personal connection (member)
 			const connectionData: any = {
 				user_id: user.id,
 				provider: 'linkedin',
+				connection_type: dbConnectionType,
 				access_token: encryptToken(accessToken),
 				refresh_token: refreshToken ? encryptToken(refreshToken) : null,
 				expires_at: expiresAt?.toISOString() ?? null,
@@ -311,43 +285,25 @@ export async function GET(request: Request) {
 				account_avatar: details.avatarUrl,
 				metadata: {
 					...profile,
-					connection_type: 'personal',
-					// Ensure organisation_urn is not set for personal connections
-					organisation_urn: null,
 				},
 				updated_at: new Date().toISOString(),
 			};
 
-			let connectionId: string;
-			if (existingConnection) {
-				// Update existing connection
-				const { error: updateError } = await admin
-					.from('social_connections')
-					.update(connectionData)
-					.eq('id', existingConnection.id);
-				
-				if (updateError) {
-					throw new Error(`Failed to update connection: ${updateError.message}`);
-				}
-				connectionId = existingConnection.id;
-			} else {
-				// Use upsert to handle unique constraint
-				const { data: newConnection, error: upsertError } = await admin
-					.from('social_connections')
-					.upsert(connectionData, {
-						onConflict: 'user_id,provider',
-					})
-					.select('id')
-					.single();
-				
-				if (upsertError || !newConnection) {
-					throw new Error(`Failed to save connection: ${upsertError?.message || 'Unknown error'}`);
-				}
-				connectionId = newConnection.id;
+			// Use upsert with new conflict target: (user_id, provider, connection_type)
+			const { data: newConnection, error: upsertError } = await admin
+				.from('social_connections')
+				.upsert(connectionData, {
+					onConflict: 'user_id,provider,connection_type',
+				})
+				.select('id')
+				.single();
+			
+			if (upsertError || !newConnection) {
+				throw new Error(`Failed to save connection: ${upsertError?.message || 'Unknown error'}`);
 			}
 
 			// Redirect to brand assignment page
-			return NextResponse.redirect(`${redirectBase}/connections/assign-brand?connection_id=${connectionId}&type=personal`);
+			return NextResponse.redirect(`${redirectBase}/connections/assign-brand?connection_id=${newConnection.id}&type=personal`);
 		}
 	} catch (err: any) {
 		console.error('LinkedIn OAuth callback error:', err);
