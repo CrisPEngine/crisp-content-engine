@@ -125,9 +125,15 @@ export default async function SelectOrganizationPage({
 	try {
 		orgData = JSON.parse(orgSelectionCookie);
 		// Decrypt tokens
-		orgData.accessToken = decryptToken(orgData.accessToken);
+		const decryptedAccessToken = decryptToken(orgData.accessToken);
+		if (!decryptedAccessToken) {
+			throw new Error('Failed to decrypt access token');
+		}
+		orgData.accessToken = decryptedAccessToken;
+		
 		if (orgData.refreshToken) {
-			orgData.refreshToken = decryptToken(orgData.refreshToken);
+			const decryptedRefreshToken = decryptToken(orgData.refreshToken);
+			orgData.refreshToken = decryptedRefreshToken;
 		}
 	} catch (error) {
 		console.error('Failed to parse organization selection data:', error);
