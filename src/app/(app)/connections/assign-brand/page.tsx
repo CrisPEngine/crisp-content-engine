@@ -48,8 +48,9 @@ export default async function AssignBrandPage({
 		.eq('user_id', user.id)
 		.single();
 	
-	// Determine connection type from organisation_urn or metadata
-	const actualConnectionType = connection?.organisation_urn ? 'business' : (connection?.metadata?.connection_type || 'personal');
+	// Determine connection type from metadata (organisation_urn is stored in metadata)
+	const metadata = connection?.metadata || {};
+	const actualConnectionType = metadata.connection_type || (metadata.organisation_urn ? 'business' : 'personal');
 
 	if (!connection) {
 		redirect('/connections?error=connection_not_found');

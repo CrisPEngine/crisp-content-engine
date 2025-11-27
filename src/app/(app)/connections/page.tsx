@@ -152,20 +152,27 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 		.eq('provider', 'linkedin');
 
 	// Separate personal and business connections
-	// Personal connections have no organisation_urn, business connections have organisation_urn
+	// Check metadata for connection_type and organisation_urn (stored in metadata since columns don't exist)
 	// Only show as connected if they have a brand_profile_id assigned
-	const personalConnection = connections?.find((c: any) => 
-		!c.organisation_urn
-	) || null;
-	const businessConnection = connections?.find((c: any) => 
-		c.organisation_urn
-	) || null;
+	const personalConnection = connections?.find((c: any) => {
+		const metadata = c.metadata || {};
+		return metadata.connection_type === 'personal' || (!metadata.organisation_urn && !c.organisation_urn);
+	}) || null;
+	const businessConnection = connections?.find((c: any) => {
+		const metadata = c.metadata || {};
+		return metadata.connection_type === 'business' || metadata.organisation_urn || c.organisation_urn;
+	}) || null;
 
 	// Determine connection type from metadata or organisation_urn presence
 	const getConnectionType = (conn: any): 'personal' | 'business' => {
 		if (conn?.organisation_urn) return 'business';
 		if (conn?.metadata?.connection_type) return conn.metadata.connection_type;
 		return 'personal'; // Default to personal if no organisation_urn
+	};
+
+	// Get organisation_urn from metadata if not in column
+	const getOrganisationUrn = (conn: any) => {
+		return conn?.organisation_urn || conn?.metadata?.organisation_urn || null;
 	};
 
 	const personalStatus = {
@@ -182,7 +189,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 		connected: Boolean(businessConnection?.brand_profile_id) || (connected === 'linkedin_business' && Boolean(businessConnection?.brand_profile_id)),
 		accountName: businessConnection?.account_name ?? null,
 		accountAvatar: businessConnection?.account_avatar ?? null,
-		organisationUrn: businessConnection?.organisation_urn ?? null,
+		organisationUrn: getOrganisationUrn(businessConnection),
 		personUrn: businessConnection?.person_urn ?? null,
 		connectionType: 'business' as const,
 		connectionId: businessConnection?.id ?? undefined,

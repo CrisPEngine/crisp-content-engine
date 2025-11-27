@@ -233,15 +233,15 @@ export async function GET(request: Request) {
 			// In the future, we could allow users to select which organization
 			const selectedOrg = organizations[0];
 
-			// Check if business connection already exists (by checking for organisation_urn)
-			const { data: existingBusiness } = await admin
+			// Check if any LinkedIn connection exists (unique constraint on user_id + provider)
+			const { data: existingConnection } = await admin
 				.from('social_connections')
-				.select('id')
+				.select('id, metadata')
 				.eq('user_id', user.id)
 				.eq('provider', 'linkedin')
-				.not('organisation_urn', 'is', null)
 				.maybeSingle();
 
+			// Store organisation_urn in metadata since the column doesn't exist
 			const connectionData: any = {
 				user_id: user.id,
 				provider: 'linkedin',
@@ -249,35 +249,41 @@ export async function GET(request: Request) {
 				refresh_token: refreshToken ? encryptToken(refreshToken) : null,
 				expires_at: expiresAt?.toISOString() ?? null,
 				person_urn: details.personUrn, // Admin's person URN
-				organisation_urn: selectedOrg.urn,
 				account_name: selectedOrg.name,
 				account_avatar: selectedOrg.logoUrl,
 				metadata: {
 					...profile,
 					organizations: organizations, // Store all orgs for future use
 					connection_type: 'business',
+					organisation_urn: selectedOrg.urn, // Store in metadata
 				},
 				updated_at: new Date().toISOString(),
 			};
 
 			let connectionId: string;
-			if (existingBusiness) {
+			if (existingConnection) {
 				// Update existing connection
-				await admin
+				const { error: updateError } = await admin
 					.from('social_connections')
 					.update(connectionData)
-					.eq('id', existingBusiness.id);
-				connectionId = existingBusiness.id;
+					.eq('id', existingConnection.id);
+				
+				if (updateError) {
+					throw new Error(`Failed to update connection: ${updateError.message}`);
+				}
+				connectionId = existingConnection.id;
 			} else {
-				// Insert new connection
-				const { data: newConnection, error: insertError } = await admin
+				// Use upsert to handle unique constraint
+				const { data: newConnection, error: upsertError } = await admin
 					.from('social_connections')
-					.insert(connectionData)
+					.upsert(connectionData, {
+						onConflict: 'user_id,provider',
+					})
 					.select('id')
 					.single();
 				
-				if (insertError || !newConnection) {
-					throw new Error(`Failed to save connection: ${insertError?.message || 'Unknown error'}`);
+				if (upsertError || !newConnection) {
+					throw new Error(`Failed to save connection: ${upsertError?.message || 'Unknown error'}`);
 				}
 				connectionId = newConnection.id;
 			}
@@ -285,14 +291,13 @@ export async function GET(request: Request) {
 			// Redirect to brand assignment page
 			return NextResponse.redirect(`${redirectBase}/connections/assign-brand?connection_id=${connectionId}&type=business`);
 		} else {
-			// Personal connection (existing logic)
-			// Check if personal connection already exists (no organisation_urn)
-			const { data: existingPersonal } = await admin
+			// Personal connection
+			// Check if any LinkedIn connection exists (unique constraint on user_id + provider)
+			const { data: existingConnection } = await admin
 				.from('social_connections')
-				.select('id')
+				.select('id, metadata')
 				.eq('user_id', user.id)
 				.eq('provider', 'linkedin')
-				.is('organisation_urn', null)
 				.maybeSingle();
 
 			const connectionData: any = {
@@ -307,28 +312,36 @@ export async function GET(request: Request) {
 				metadata: {
 					...profile,
 					connection_type: 'personal',
+					// Ensure organisation_urn is not set for personal connections
+					organisation_urn: null,
 				},
 				updated_at: new Date().toISOString(),
 			};
 
 			let connectionId: string;
-			if (existingPersonal) {
+			if (existingConnection) {
 				// Update existing connection
-				await admin
+				const { error: updateError } = await admin
 					.from('social_connections')
 					.update(connectionData)
-					.eq('id', existingPersonal.id);
-				connectionId = existingPersonal.id;
+					.eq('id', existingConnection.id);
+				
+				if (updateError) {
+					throw new Error(`Failed to update connection: ${updateError.message}`);
+				}
+				connectionId = existingConnection.id;
 			} else {
-				// Insert new connection
-				const { data: newConnection, error: insertError } = await admin
+				// Use upsert to handle unique constraint
+				const { data: newConnection, error: upsertError } = await admin
 					.from('social_connections')
-					.insert(connectionData)
+					.upsert(connectionData, {
+						onConflict: 'user_id,provider',
+					})
 					.select('id')
 					.single();
 				
-				if (insertError || !newConnection) {
-					throw new Error(`Failed to save connection: ${insertError?.message || 'Unknown error'}`);
+				if (upsertError || !newConnection) {
+					throw new Error(`Failed to save connection: ${upsertError?.message || 'Unknown error'}`);
 				}
 				connectionId = newConnection.id;
 			}
