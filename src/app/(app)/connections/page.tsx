@@ -10,21 +10,36 @@ function LinkedInCard({
 	accountName,
 	accountAvatar,
 	personUrn,
+	organisationUrn,
+	connectionType,
+	connectionId,
 }: {
 	connected: boolean;
 	accountName?: string | null;
 	accountAvatar?: string | null;
 	personUrn?: string | null;
+	organisationUrn?: string | null;
+	connectionType?: 'personal' | 'business';
+	connectionId?: string;
 }) {
-	const connectHref = '/api/connections/linkedin/authorize';
+	const connectHref = connectionType === 'business' 
+		? '/api/connections/linkedin/authorize?type=business'
+		: '/api/connections/linkedin/authorize?type=personal';
+	
+	const isBusiness = connectionType === 'business';
+	const title = isBusiness ? 'LinkedIn Business Account' : 'LinkedIn Personal Profile';
+	const description = isBusiness 
+		? 'Share directly to your LinkedIn company page.'
+		: 'Share directly to your LinkedIn personal profile.';
+
 	return (
 		<div className="card p-6 space-y-4">
 			<div className="flex items-center justify-between">
 				<div className="flex items-center gap-3">
-					<span className="text-4xl">💼</span>
+					<span className="text-4xl">{isBusiness ? '🏢' : '👤'}</span>
 					<div>
-						<h2 className="text-xl font-semibold">LinkedIn</h2>
-						<p className="text-sm text-text-dim">Share directly to your LinkedIn profile or company page.</p>
+						<h2 className="text-xl font-semibold">{title}</h2>
+						<p className="text-sm text-text-dim">{description}</p>
 					</div>
 				</div>
 				{connected && (
@@ -37,27 +52,36 @@ function LinkedInCard({
 			{connected ? (
 				<div className="flex items-start gap-4">
 					{accountAvatar && (
-						<img src={accountAvatar} alt="LinkedIn avatar" className="w-12 h-12 rounded-full border border-edge/60" />
+						<img src={accountAvatar} alt={isBusiness ? 'Company logo' : 'LinkedIn avatar'} className="w-12 h-12 rounded-full border border-edge/60" />
 					)}
 					<div className="text-sm space-y-1">
 						<div className="font-medium">{accountName}</div>
-						{personUrn && <div className="text-text-dim">{personUrn}</div>}
+						{isBusiness && organisationUrn && (
+							<div className="text-text-dim text-xs">{organisationUrn}</div>
+						)}
+						{!isBusiness && personUrn && (
+							<div className="text-text-dim text-xs">{personUrn}</div>
+						)}
 					</div>
 				</div>
 			) : (
 				<p className="text-sm text-text-dim">
-					Connect your LinkedIn account to publish strategies, updates, and content without leaving CrisP Content Engine.
+					{isBusiness 
+						? 'Connect your LinkedIn business account to publish content to your company page and access analytics.'
+						: 'Connect your LinkedIn personal profile to publish strategies, updates, and content without leaving CrisP Content Engine.'}
 				</p>
 			)}
 
 			<div className="flex gap-3">
 				{connected ? (
 					<form action="/api/connections/linkedin/disconnect" method="post">
+						<input type="hidden" name="connection_id" value={connectionId || ''} />
+						<input type="hidden" name="connection_type" value={connectionType || 'personal'} />
 						<button
 							type="submit"
 							className="px-4 py-2 rounded-xl2 border border-danger/40 bg-danger/10 hover:bg-danger/20 text-sm"
 						>
-							Disconnect LinkedIn
+							Disconnect
 						</button>
 					</form>
 				) : (
@@ -65,7 +89,7 @@ function LinkedInCard({
 						href={connectHref}
 						className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm"
 					>
-						Connect LinkedIn
+						Connect {isBusiness ? 'Business Account' : 'Personal Profile'}
 					</a>
 				)}
 				{connected && (
@@ -99,18 +123,38 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 	const connected = params?.connected;
 
 	const admin = getSupabaseService();
-	const { data } = await admin
+	// Fetch all LinkedIn connections (both personal and business)
+	const { data: connections } = await admin
 		.from('social_connections')
-		.select('account_name, account_avatar, person_urn, provider')
+		.select('id, account_name, account_avatar, person_urn, organisation_urn, connection_type, metadata')
 		.eq('user_id', user.id)
-		.eq('provider', 'linkedin')
-		.maybeSingle();
+		.eq('provider', 'linkedin');
 
-	const linkedInStatus = {
-		connected: Boolean(data) || connected === 'linkedin',
-		accountName: data?.account_name ?? null,
-		accountAvatar: data?.account_avatar ?? null,
-		personUrn: data?.person_urn ?? null,
+	// Separate personal and business connections
+	const personalConnection = connections?.find((c: any) => 
+		(c.connection_type === 'personal' || (!c.connection_type && !c.organisation_urn))
+	) || null;
+	const businessConnection = connections?.find((c: any) => 
+		c.connection_type === 'business' || c.organisation_urn
+	) || null;
+
+	const personalStatus = {
+		connected: Boolean(personalConnection) || connected === 'linkedin',
+		accountName: personalConnection?.account_name ?? null,
+		accountAvatar: personalConnection?.account_avatar ?? null,
+		personUrn: personalConnection?.person_urn ?? null,
+		connectionType: 'personal' as const,
+		connectionId: personalConnection?.id ?? undefined,
+	};
+
+	const businessStatus = {
+		connected: Boolean(businessConnection) || connected === 'linkedin_business',
+		accountName: businessConnection?.account_name ?? null,
+		accountAvatar: businessConnection?.account_avatar ?? null,
+		organisationUrn: businessConnection?.organisation_urn ?? null,
+		personUrn: businessConnection?.person_urn ?? null,
+		connectionType: 'business' as const,
+		connectionId: businessConnection?.id ?? undefined,
 	};
 
 	return (
@@ -139,14 +183,26 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 				</div>
 			)}
 
-			{connected === 'linkedin' && !error && (
+			{(connected === 'linkedin' || connected === 'linkedin_business') && !error && (
 				<div className="card p-4 border-emerald-500/40 bg-emerald-500/10">
 					<div className="font-medium text-emerald-300 mb-1">Successfully Connected!</div>
-					<div className="text-sm text-text-dim">Your LinkedIn account has been connected.</div>
+					<div className="text-sm text-text-dim">
+						Your LinkedIn {connected === 'linkedin_business' ? 'business account' : 'personal profile'} has been connected.
+					</div>
 				</div>
 			)}
 
-			<LinkedInCard {...linkedInStatus} />
+			{error === 'no_organizations' && (
+				<div className="card p-4 border-warning/40 bg-warning/10">
+					<div className="font-medium text-warning mb-1">No Company Pages Found</div>
+					<div className="text-sm text-text-dim">
+						{errorDetails ? decodeURIComponent(errorDetails) : 'You must be an administrator of at least one LinkedIn company page to connect a business account.'}
+					</div>
+				</div>
+			)}
+
+			<LinkedInCard {...personalStatus} />
+			<LinkedInCard {...businessStatus} />
 
 			<div className="card p-6 bg-primary/5 border-primary/20">
 				<h2 className="font-semibold mb-2">How it works</h2>

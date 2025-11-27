@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
 
-export async function GET() {
+export async function GET(request: Request) {
 	const supabase = await createClient();
 	const {
 		data: { user },
@@ -14,6 +14,9 @@ export async function GET() {
 	if (!user) {
 		return NextResponse.redirect(new URL('/login', process.env.NEXT_PUBLIC_SITE_URL || 'https://app.crispdigital.io'));
 	}
+
+	const url = new URL(request.url);
+	const connectionType = url.searchParams.get('type') || 'personal'; // 'personal' or 'business'
 
 	const clientId = process.env.LINKEDIN_CLIENT_ID;
 	const redirectUri = process.env.LINKEDIN_REDIRECT_URI || `${process.env.NEXT_PUBLIC_SITE_URL || 'https://app.crispdigital.io'}/api/connections/linkedin/callback`;
@@ -25,6 +28,13 @@ export async function GET() {
 	const state = randomBytes(16).toString('hex');
 	const cookieStore = await cookies();
 	cookieStore.set('linkedin_oauth_state', state, {
+		httpOnly: true,
+		secure: true,
+		path: '/',
+		maxAge: 600,
+	});
+	// Store connection type in cookie so callback knows which type to create
+	cookieStore.set('linkedin_connection_type', connectionType, {
 		httpOnly: true,
 		secure: true,
 		path: '/',
