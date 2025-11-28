@@ -119,8 +119,8 @@ export default async function Dashboard({
 					const airtableData = await airtableRes.json();
 					const records = airtableData?.records || [];
 
-				// Transform records to match API format
-				brandProfiles = records.map((record: any) => {
+					// Transform records to match API format
+					brandProfiles = records.map((record: any) => {
 					try {
 						const fields = record.fields || {};
 						const status = fields.status || '';
@@ -161,12 +161,23 @@ export default async function Dashboard({
 				hasBrandProfiles = brandProfiles.length > 0;
 				
 				// Check if any brand has an approved strategy
-				hasApprovedStrategies = brandProfiles.some((p: any) => {
-					const status = (p.status || p.original_status || '').toString();
-					return status === 'Strategy Approved' || 
-					       status.toLowerCase().includes('approved');
-				});
+					hasApprovedStrategies = brandProfiles.some((p: any) => {
+						const status = (p.status || p.original_status || '').toString();
+						return status === 'Strategy Approved' || 
+						       status.toLowerCase().includes('approved');
+					});
+				}
+			} catch (airtableError) {
+				console.error('Error fetching from Airtable:', airtableError);
+				// Continue with empty brandProfiles array
+				brandProfiles = [];
 			}
+		} else {
+			console.warn('Missing Airtable configuration:', {
+				hasToken: !!AIRTABLE_TOKEN,
+				hasBaseId: !!BASE_ID,
+				hasTableId: !!TABLE_ID,
+			});
 		}
 		
 		// Check if there's content to review (Step 4)
