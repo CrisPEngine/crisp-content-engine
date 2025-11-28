@@ -121,7 +121,7 @@ export default async function Dashboard({
 
 					// Transform records to match API format
 					brandProfiles = records.map((record: any) => {
-					try {
+						try {
 						const fields = record.fields || {};
 						const status = fields.status || '';
 						const normalisedStatus = status === 'Strategy Ready (Awaiting Approval)' ? 'Strategy Ready' : status;
@@ -155,8 +155,8 @@ export default async function Dashboard({
 							strategy_meta: null,
 							brand_type: 'company',
 						};
-					}
-				});
+						}
+					});
 
 				hasBrandProfiles = brandProfiles.length > 0;
 				
