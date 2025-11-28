@@ -85,11 +85,18 @@ const schema = z
 			},
 			z.array(z.string()).default([])
 		),
-		personal_risk_tolerance: z.enum([
-			'Low risk (safe, neutral, reputation-protected)',
-			'Medium risk (balanced, industry-relevant opinions)',
-			'High risk (strong viewpoints, controversial insights)'
-		]).optional(),
+		personal_risk_tolerance: z.preprocess(
+			(val) => {
+				// Convert empty string, null, or undefined to undefined
+				if (!val || val === '' || val === null) return undefined;
+				return val;
+			},
+			z.enum([
+				'Low risk (safe, neutral, reputation-protected)',
+				'Medium risk (balanced, industry-relevant opinions)',
+				'High risk (strong viewpoints, controversial insights)'
+			]).optional()
+		),
 		personal_content_style: z.preprocess(
 			(val) => {
 				if (Array.isArray(val)) return val;
