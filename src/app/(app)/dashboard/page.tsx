@@ -452,4 +452,27 @@ export default async function Dashboard({
 			)}
 		</main>
 	);
+	} catch (error: any) {
+		console.error('Dashboard error:', error);
+		// Return a minimal error page instead of crashing
+		return (
+			<main className="p-4 md:p-6 space-y-4 md:space-y-6">
+				<div className="card p-6 bg-danger/10 border border-danger/30">
+					<h1 className="text-xl font-semibold mb-2">Error Loading Dashboard</h1>
+					<p className="text-text-dim mb-4">
+						We encountered an error while loading your dashboard. Please try refreshing the page.
+					</p>
+					<p className="text-xs text-text-soft">
+						Error: {error?.message || 'Unknown error'}
+					</p>
+					<a
+						href="/dashboard"
+						className="mt-4 inline-block px-4 py-2 rounded-xl2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-sm"
+					>
+						Refresh Dashboard
+					</a>
+				</div>
+			</main>
+		);
+	}
 }
