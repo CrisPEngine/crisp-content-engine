@@ -111,21 +111,41 @@ export default async function Dashboard({
 
 				// Transform records to match API format
 				brandProfiles = records.map((record: any) => {
-					const status = record.fields.status || '';
-					const normalisedStatus = status === 'Strategy Ready (Awaiting Approval)' ? 'Strategy Ready' : status;
-					
-					return {
-						id: record.id,
-						client_name: record.fields.client_name || '',
-						status: normalisedStatus,
-						original_status: normalisedStatus,
-						has_pending_content: false, // We'll check this separately if needed
-						created_time: record.fields.created_time || record.createdTime,
-						platforms_requested: record.fields.platforms_requested || [],
-						strategy_summary: record.fields.strategy_summary || '',
-						strategy_payload: record.fields.strategy_payload || null,
-						strategy_meta: record.fields.strategy_meta || null,
-					};
+					try {
+						const fields = record.fields || {};
+						const status = fields.status || '';
+						const normalisedStatus = status === 'Strategy Ready (Awaiting Approval)' ? 'Strategy Ready' : status;
+						
+						return {
+							id: record.id,
+							client_name: fields.client_name || '',
+							status: normalisedStatus,
+							original_status: normalisedStatus,
+							has_pending_content: false, // We'll check this separately if needed
+							created_time: fields.created_time || record.createdTime || '',
+							platforms_requested: Array.isArray(fields.platforms_requested) ? fields.platforms_requested : [],
+							strategy_summary: fields.strategy_summary || '',
+							strategy_payload: fields.strategy_payload || fields.strategy_json || null,
+							strategy_meta: fields.strategy_meta || null,
+							brand_type: fields.brand_type || 'company', // Add brand_type for filtering
+						};
+					} catch (recordError) {
+						console.error('Error processing brand profile record:', recordError, record);
+						// Return a minimal valid record to prevent crashes
+						return {
+							id: record.id || '',
+							client_name: 'Unknown Brand',
+							status: '',
+							original_status: '',
+							has_pending_content: false,
+							created_time: '',
+							platforms_requested: [],
+							strategy_summary: '',
+							strategy_payload: null,
+							strategy_meta: null,
+							brand_type: 'company',
+						};
+					}
 				});
 
 				hasBrandProfiles = brandProfiles.length > 0;
