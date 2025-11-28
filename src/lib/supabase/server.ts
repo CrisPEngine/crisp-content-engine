@@ -12,10 +12,22 @@ export async function createClient() {
 					return cookieStore.get(name)?.value;
 				},
 				set(name: string, value: string, options: CookieOptions) {
-					cookieStore.set({ name, value, ...options });
+					try {
+						// Only set cookies if we're in a Server Action or Route Handler
+						// In Server Components, we can only read cookies
+						cookieStore.set({ name, value, ...options });
+					} catch (error) {
+						// Silently fail if we can't set cookies (e.g., in Server Component render)
+						// This is expected behavior - token refresh will happen on next request
+						// The error is: "Cookies can only be modified in a Server Action or Route Handler"
+					}
 				},
 				remove(name: string, options: CookieOptions) {
-					cookieStore.set({ name, value: '', ...options });
+					try {
+						cookieStore.set({ name, value: '', ...options });
+					} catch (error) {
+						// Silently fail if we can't remove cookies
+					}
 				}
 			}
 		}
