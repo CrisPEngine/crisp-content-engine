@@ -42,11 +42,16 @@ export default async function Dashboard({
 	if (!user) redirect('/login');
 
 	// Get user profile to check admin status
-	const { data: profile } = await supabase
+	const { data: profile, error: profileError } = await supabase
 		.from('profiles')
 		.select('is_admin')
 		.eq('id', user.id)
-		.single();
+		.maybeSingle();
+	
+	// Log profile error but don't fail - profile might not exist yet
+	if (profileError) {
+		console.error('Failed to fetch profile:', profileError);
+	}
 
 	// Check if user has a subscription - admins can bypass
 	const { data: sub } = await supabase
