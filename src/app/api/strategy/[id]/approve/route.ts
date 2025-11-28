@@ -121,9 +121,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 		}
 
 		// Update strategy status in Airtable
-		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
-		const BASE_ID = process.env.AIRTABLE_BASE_ID;
-		const TABLE_ID = process.env.AIRTABLE_BRANDPROFILES_TABLE;
+		// AIRTABLE_TOKEN, BASE_ID, and TABLE_ID are already defined above
 
 		if (!AIRTABLE_TOKEN || !BASE_ID || !TABLE_ID) {
 			return NextResponse.json(
