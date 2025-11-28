@@ -101,19 +101,23 @@ export default async function Dashboard({
 		const TABLE_ID = process.env.AIRTABLE_BRANDPROFILES_TABLE;
 
 		if (AIRTABLE_TOKEN && BASE_ID && TABLE_ID) {
-			const airtableRes = await fetch(
-				`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}?filterByFormula={user_id}="${user.id}"&sort[0][field]=created_time&sort[0][direction]=desc`,
-				{
-					headers: {
-						Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-					},
-					cache: 'no-store',
-				}
-			);
+			try {
+				const airtableRes = await fetch(
+					`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}?filterByFormula={user_id}="${user.id}"&sort[0][field]=created_time&sort[0][direction]=desc`,
+					{
+						headers: {
+							Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+						},
+						cache: 'no-store',
+					}
+				);
 
-			if (airtableRes.ok) {
-				const airtableData = await airtableRes.json();
-				const records = airtableData.records || [];
+				if (!airtableRes.ok) {
+					const errorText = await airtableRes.text();
+					console.error('Airtable API error:', airtableRes.status, errorText);
+				} else {
+					const airtableData = await airtableRes.json();
+					const records = airtableData?.records || [];
 
 				// Transform records to match API format
 				brandProfiles = records.map((record: any) => {
