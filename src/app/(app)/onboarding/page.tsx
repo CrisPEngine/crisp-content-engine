@@ -475,15 +475,26 @@ export default function OnboardingPage() {
 			if (!res.ok) {
 				console.error('Onboarding API error:', result);
 				
-				// Display field-specific errors if available
-				if (result.fieldErrors) {
-					const fieldErrorMessages = Object.entries(result.fieldErrors)
-						.map(([field, err]: [string, any]) => `${field}: ${err.message}`)
-						.join('\n');
-					throw new Error(`Form validation failed:\n${JSON.stringify(result.fieldErrors, null, 2)}`);
+				// Set field-specific errors if available
+				if (result.fieldErrors && typeof result.fieldErrors === 'object') {
+					// Set errors on the form for each field
+					Object.entries(result.fieldErrors).forEach(([field, err]: [string, any]) => {
+						setError(field as keyof FormData, {
+							type: 'server',
+							message: err.message || err || 'Validation error',
+						});
+					});
+					// Still throw to prevent form submission
+					throw new Error('Please fix the validation errors above');
 				}
 				
-				throw new Error(result.error || result.details?.message || 'Failed to save brand profile');
+				// For non-field-specific errors, show a general error
+				const errorMessage = result.error || result.details?.message || 'Failed to save brand profile';
+				setError('root', {
+					type: 'server',
+					message: errorMessage,
+				});
+				throw new Error(errorMessage);
 			}
 
 			const airtableId: string | undefined = result?.airtableId;
