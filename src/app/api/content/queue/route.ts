@@ -174,17 +174,27 @@ export async function GET(request: Request) {
 		const fields = record.fields || {};
 		if (fields.brand_profile_id) {
 			if (Array.isArray(fields.brand_profile_id)) {
-				fields.brand_profile_id.forEach((id: string) => brandProfileIdSet.add(id));
+				// Link field returns array - could be record IDs or objects with id property
+				fields.brand_profile_id.forEach((item: any) => {
+					const id = typeof item === 'string' ? item : (item?.id || item);
+					if (id) brandProfileIdSet.add(String(id));
+				});
 			} else if (typeof fields.brand_profile_id === 'string') {
 				brandProfileIdSet.add(fields.brand_profile_id);
+			} else if (fields.brand_profile_id?.id) {
+				// Could be an object with id property
+				brandProfileIdSet.add(String(fields.brand_profile_id.id));
 			}
 		}
 	});
+	console.log(`Found ${brandProfileIdSet.size} unique brand_profile_ids:`, Array.from(brandProfileIdSet));
 
 	// Fetch brand names from BrandProfiles
 	const brandNamesMap = new Map<string, string>();
 	if (brandProfileIdSet.size > 0 && BRANDPROFILES_TABLE) {
 		const brandIds = Array.from(brandProfileIdSet);
+		console.log(`Fetching brand names for ${brandIds.length} brand profile IDs:`, brandIds);
+		
 		// Airtable allows up to 10 IDs in OR formula, so batch if needed
 		for (let i = 0; i < brandIds.length; i += 10) {
 			const batch = brandIds.slice(i, i + 10);
@@ -194,8 +204,9 @@ export async function GET(request: Request) {
 			
 			const brandUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}`);
 			brandUrl.searchParams.set('filterByFormula', brandFilter);
-			brandUrl.searchParams.set('fields[]', 'client_name');
-			brandUrl.searchParams.set('fields[]', 'personal_full_name');
+			// Don't use fields[] - fetch all fields to ensure we get client_name
+			// brandUrl.searchParams.set('fields[]', 'client_name');
+			// brandUrl.searchParams.set('fields[]', 'personal_full_name');
 			
 			try {
 				const brandRes = await fetch(brandUrl.toString(), {
@@ -207,17 +218,24 @@ export async function GET(request: Request) {
 				
 				if (brandRes.ok) {
 					const brandData = await brandRes.json();
+					console.log(`Fetched ${brandData.records?.length || 0} brand records for batch ${i / 10 + 1}`);
 					(brandData.records || []).forEach((brandRecord: any) => {
 						const brandName = brandRecord.fields?.client_name || 
 						                  brandRecord.fields?.personal_full_name || 
 						                  'Unknown Brand';
 						brandNamesMap.set(brandRecord.id, brandName);
+						console.log(`Mapped brand_profile_id ${brandRecord.id} to brand name: ${brandName}`);
 					});
+				} else {
+					const errorText = await brandRes.text();
+					console.error(`Failed to fetch brand names for batch ${i / 10 + 1}:`, brandRes.status, errorText);
 				}
 			} catch (error) {
-				console.warn('Failed to fetch brand names:', error);
+				console.error('Failed to fetch brand names:', error);
 			}
 		}
+		
+		console.log(`Brand names map created with ${brandNamesMap.size} entries:`, Array.from(brandNamesMap.entries()));
 	}
 
 	let items: ContentItem[] = (airtableResult.records || []).map((record: any) => {
@@ -226,17 +244,33 @@ export async function GET(request: Request) {
 		let brandProfileId: string | null = null;
 		if (fields.brand_profile_id) {
 			if (Array.isArray(fields.brand_profile_id)) {
-				// Link field returns array of record IDs
-				brandProfileId = fields.brand_profile_id[0] || null;
+				// Link field returns array - could be record IDs or objects with id property
+				const firstItem = fields.brand_profile_id[0];
+				if (firstItem) {
+					brandProfileId = typeof firstItem === 'string' ? firstItem : (firstItem?.id || String(firstItem));
+				}
 			} else if (typeof fields.brand_profile_id === 'string') {
 				brandProfileId = fields.brand_profile_id;
+			} else if (fields.brand_profile_id?.id) {
+				// Could be an object with id property
+				brandProfileId = String(fields.brand_profile_id.id);
 			}
 		}
 
 		// Get brand name from map or fallback
-		const brandName = brandProfileId 
-			? (brandNamesMap.get(brandProfileId) || fields.brand_name || fields.client_name || brandProfileId)
-			: (fields.brand_name || fields.client_name || 'Unknown Brand');
+		let brandName = 'Unknown Brand';
+		if (brandProfileId) {
+			// First try to get from the brand names map (fetched from BrandProfiles table)
+			brandName = brandNamesMap.get(brandProfileId) || 'Unknown Brand';
+			
+			// If not found in map, log for debugging
+			if (!brandNamesMap.has(brandProfileId)) {
+				console.warn(`Brand name not found for brand_profile_id: ${brandProfileId}. Map size: ${brandNamesMap.size}, Map keys:`, Array.from(brandNamesMap.keys()));
+			}
+		} else {
+			// No brand_profile_id - try to get from content queue fields as fallback
+			brandName = fields.brand_name || fields.client_name || 'Unknown Brand';
+		}
 
 		return {
 			id: record.id,
