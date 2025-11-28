@@ -158,9 +158,9 @@ export default async function Dashboard({
 						}
 					});
 
-				hasBrandProfiles = brandProfiles.length > 0;
-				
-				// Check if any brand has an approved strategy
+					hasBrandProfiles = brandProfiles.length > 0;
+					
+					// Check if any brand has an approved strategy
 					hasApprovedStrategies = brandProfiles.some((p: any) => {
 						const status = (p.status || p.original_status || '').toString();
 						return status === 'Strategy Approved' || 
