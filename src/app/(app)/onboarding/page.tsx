@@ -263,6 +263,7 @@ export default function OnboardingPage() {
 		setValue,
 		watch,
 		trigger,
+		setError,
 	} = useForm<FormData>({
 		resolver: zodResolver(schema) as any,
 		defaultValues: {
