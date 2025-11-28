@@ -36,10 +36,16 @@ export default async function Dashboard({
 }: {
 	searchParams: Promise<{ tab?: string }>;
 }) {
-	const supabase = await createClient();
-	const { data: { user } } = await supabase.auth.getUser();
+	try {
+		const supabase = await createClient();
+		const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-	if (!user) redirect('/login');
+		if (authError) {
+			console.error('Auth error in dashboard:', authError);
+			redirect('/login');
+		}
+
+		if (!user) redirect('/login');
 
 	// Get user profile to check admin status
 	const { data: profile, error: profileError } = await supabase
@@ -211,12 +217,15 @@ export default async function Dashboard({
 	let currentBrandCount = brandProfiles.length;
 	try {
 		if (sub) {
-			const { data: entitlements } = await supabase
+			const { data: entitlements, error: entitlementsError } = await supabase
 				.from('entitlements')
 				.select('max_brands')
 				.eq('user_id', user.id)
-				.single();
-			if (entitlements?.max_brands) {
+				.maybeSingle();
+			
+			if (entitlementsError) {
+				console.error('Failed to get entitlements:', entitlementsError);
+			} else if (entitlements?.max_brands) {
 				maxBrands = entitlements.max_brands;
 			}
 		}
