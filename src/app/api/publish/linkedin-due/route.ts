@@ -277,8 +277,20 @@ async function publishDueContent(): Promise<{
 			const fields = record.fields;
 
 			// Check if content is due (scheduled_time is in UTC)
-			if (!isContentDue(fields.scheduled_time)) {
-				console.log(`Skipping record ${record.id}: scheduled_time ${fields.scheduled_time} is not due yet`);
+			const scheduledTime = fields.scheduled_time;
+			const isDue = isContentDue(scheduledTime);
+			const now = new Date().toISOString();
+			
+			console.log(`[Publish Job] Record ${record.id}:`, {
+				scheduled_time: scheduledTime,
+				isDue,
+				now,
+				hook: fields.hook?.substring(0, 50) || 'no hook',
+			});
+			
+			if (!isDue) {
+				console.log(`Skipping record ${record.id}: scheduled_time ${scheduledTime} is not due yet (now: ${now})`);
+				stats.processed--; // Don't count skipped records as processed
 				continue; // Skip if not due yet
 			}
 
