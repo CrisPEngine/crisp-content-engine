@@ -249,8 +249,8 @@ async function publishDueContent(): Promise<{
 
 			// Get user_id from brand_profile_id
 			brandProfileId = Array.isArray(fields.brand_profile_id)
-				? fields.brand_profile_id[0]
-				: fields.brand_profile_id;
+				? (fields.brand_profile_id[0] || null)
+				: (fields.brand_profile_id || null);
 
 			if (!brandProfileId) {
 				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
