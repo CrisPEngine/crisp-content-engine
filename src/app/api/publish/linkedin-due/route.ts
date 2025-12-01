@@ -275,13 +275,14 @@ async function publishDueContent(): Promise<{
 			// Get LinkedIn connection by brand_profile_id (uses brand assignment)
 			const connectionResult = await getLinkedInConnectionByBrand(brandProfileId);
 			if (!connectionResult) {
+				console.error(`No LinkedIn connection found for brand ${brandProfileId} (record ${record.id}, user ${userId})`);
 				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
 					status: 'Failed',
-					publish_error: 'No LinkedIn connection found for this brand. Please assign a LinkedIn connection to the brand.',
+					publish_error: 'No LinkedIn connection found for this brand. Please assign a LinkedIn connection to the brand in Settings > Connections.',
 					publish_attempts: (fields.publish_attempts || 0) + 1,
 				});
 				stats.failed++;
-				stats.errors.push(`Record ${record.id}: No LinkedIn connection for brand`);
+				stats.errors.push(`Record ${record.id}: No LinkedIn connection for brand ${brandProfileId}`);
 				continue;
 			}
 
@@ -379,14 +380,23 @@ async function publishDueContent(): Promise<{
 			const attempts = (record.fields.publish_attempts || 0) + 1;
 			const newStatus = attempts >= 3 ? 'Failed' : 'Ready To Publish';
 
+			const errorMessage = error?.message || 'Unexpected error during publishing';
+			console.error(`Publishing error for record ${record.id}:`, {
+				error: errorMessage,
+				errorStack: error?.stack,
+				brandProfileId,
+				userId,
+				attempts,
+			});
+
 			await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
 				status: newStatus,
-				publish_error: error?.message || 'Unexpected error during publishing',
+				publish_error: errorMessage,
 				publish_attempts: attempts,
 			});
 
 			stats.failed++;
-			stats.errors.push(`Record ${record.id}: ${error?.message || 'Unexpected error'}`);
+			stats.errors.push(`Record ${record.id}: ${errorMessage}`);
 		}
 	}
 
