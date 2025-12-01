@@ -101,13 +101,14 @@ export interface LinkedInConnectionError {
 
 /**
  * Get LinkedIn connection by brand_profile_id (preferred - uses brand assignment)
+ * Falls back to finding appropriate connection type if no assigned connection exists
  */
 export async function getLinkedInConnectionByBrand(
 	brandProfileId: string
 ): Promise<LinkedInConnectionResult | LinkedInConnectionError | null> {
 	const supabase = getSupabaseService();
 
-	// Fetch LinkedIn connection assigned to this brand
+	// First, try to fetch LinkedIn connection assigned to this brand
 	const { data: connection, error } = await supabase
 		.from('social_connections')
 		.select('*')
@@ -115,11 +116,70 @@ export async function getLinkedInConnectionByBrand(
 		.eq('provider', 'linkedin')
 		.maybeSingle();
 
-	if (error || !connection) {
-		return null;
+	if (connection && !error) {
+		return await processLinkedInConnection(connection, supabase);
 	}
 
-	return await processLinkedInConnection(connection, supabase);
+	// Fallback: If no assigned connection, fetch brand profile to determine type
+	// Then find an appropriate connection for the user
+	try {
+		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
+		const BASE_ID = process.env.AIRTABLE_BASE_ID;
+		const BRANDPROFILES_TABLE = process.env.AIRTABLE_BRANDPROFILES_TABLE;
+
+		if (AIRTABLE_TOKEN && BASE_ID && BRANDPROFILES_TABLE) {
+			const brandRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}/${brandProfileId}`, {
+				headers: {
+					Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+					'Content-Type': 'application/json',
+				},
+			});
+
+			if (brandRes.ok) {
+				const brandRecord = await brandRes.json();
+				const brandType = brandRecord.fields?.brand_type || 'company';
+				const userId = brandRecord.fields?.user_id;
+
+				if (userId) {
+					// Determine expected connection type based on brand type
+					const expectedConnectionType = brandType === 'personal' ? 'member' : 'organization';
+
+					// Try to find a connection of the appropriate type for this user
+					const { data: fallbackConnection, error: fallbackError } = await supabase
+						.from('social_connections')
+						.select('*')
+						.eq('user_id', userId)
+						.eq('provider', 'linkedin')
+						.eq('connection_type', expectedConnectionType)
+						.maybeSingle();
+
+					if (fallbackConnection && !fallbackError) {
+						console.warn(`No connection assigned to brand ${brandProfileId}, using fallback ${expectedConnectionType} connection for user ${userId}`);
+						return await processLinkedInConnection(fallbackConnection, supabase);
+					}
+
+					// Last resort: try any LinkedIn connection for this user
+					const { data: anyConnection, error: anyError } = await supabase
+						.from('social_connections')
+						.select('*')
+						.eq('user_id', userId)
+						.eq('provider', 'linkedin')
+						.maybeSingle();
+
+					if (anyConnection && !anyError) {
+						console.warn(`Using any available LinkedIn connection for user ${userId} (brand ${brandProfileId} has no assigned connection)`);
+						return await processLinkedInConnection(anyConnection, supabase);
+					}
+				}
+			}
+		}
+	} catch (fallbackError) {
+		console.error('Error in fallback connection lookup:', fallbackError);
+	}
+
+	// If all fallbacks fail, return null
+	console.error(`No LinkedIn connection found for brand ${brandProfileId}`);
+	return null;
 }
 
 /**
@@ -250,7 +310,20 @@ async function processLinkedInConnection(
 	}
 
 	if (!personUrn) {
-		throw new Error('Could not determine LinkedIn person_urn');
+		// For member connections, person_urn is required
+		// Log detailed error for debugging
+		console.error('Could not determine LinkedIn person_urn for connection:', {
+			connectionId: connection.id,
+			userId: connection.user_id,
+			connectionType: connectionType,
+			hasPersonUrn: !!connection.person_urn,
+			hasOrganizationUrn: !!connection.organization_urn,
+		});
+		return {
+			error: 'Could not determine LinkedIn person_urn. Please reconnect your LinkedIn account.',
+			isPermanent: true,
+			requiresReconnect: true,
+		};
 	}
 
 	return {
