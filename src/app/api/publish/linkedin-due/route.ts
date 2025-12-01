@@ -229,7 +229,42 @@ async function publishDueContent(): Promise<{
 	}
 
 	const data = await response.json();
-	const records: ContentRecord[] = data.records || [];
+	let records: ContentRecord[] = data.records || [];
+	
+	console.log(`Found ${records.length} records from ReadyToPublish_LinkedIn view`);
+
+	// If no records found from view, try querying directly without the view
+	// This helps debug if the view filters are too restrictive
+	if (records.length === 0) {
+		console.log('No records from view, trying direct query...');
+		const directUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
+		directUrl.searchParams.set('filterByFormula', `AND(
+			{platform} = "LinkedIn",
+			{status} = "Ready To Publish",
+			OR({scheduled_time} <= NOW(), {scheduled_time} = BLANK()),
+			OR({publish_attempts} < 3, {publish_attempts} = BLANK())
+		)`);
+		directUrl.searchParams.set('maxRecords', '100');
+		fields.forEach((field) => {
+			directUrl.searchParams.append('fields[]', field);
+		});
+
+		const directResponse = await fetch(directUrl.toString(), {
+			headers: {
+				Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+				'Content-Type': 'application/json',
+			},
+		});
+
+		if (directResponse.ok) {
+			const directData = await directResponse.json();
+			records = directData.records || [];
+			console.log(`Found ${records.length} records from direct query (bypassing view)`);
+		} else {
+			const errorText = await directResponse.text();
+			console.error('Direct query also failed:', errorText);
+		}
+	}
 
 	// Process each record
 	for (const record of records) {
@@ -244,6 +279,7 @@ async function publishDueContent(): Promise<{
 
 			// Check if content is due (scheduled_time is in UTC)
 			if (!isContentDue(fields.scheduled_time)) {
+				console.log(`Skipping record ${record.id}: scheduled_time ${fields.scheduled_time} is not due yet`);
 				continue; // Skip if not due yet
 			}
 
