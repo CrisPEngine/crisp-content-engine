@@ -235,6 +235,10 @@ async function publishDueContent(): Promise<{
 	for (const record of records) {
 		stats.processed++;
 
+		// Declare variables in outer scope for error handling
+		let brandProfileId: string | null = null;
+		let userId: string | null = null;
+
 		try {
 			const fields = record.fields;
 
@@ -244,7 +248,7 @@ async function publishDueContent(): Promise<{
 			}
 
 			// Get user_id from brand_profile_id
-			const brandProfileId = Array.isArray(fields.brand_profile_id)
+			brandProfileId = Array.isArray(fields.brand_profile_id)
 				? fields.brand_profile_id[0]
 				: fields.brand_profile_id;
 
@@ -259,7 +263,7 @@ async function publishDueContent(): Promise<{
 				continue;
 			}
 
-			const userId = fields.user_id || (await getUserIdFromBrandProfile(brandProfileId, BASE_ID, BRANDPROFILES_TABLE, AIRTABLE_TOKEN));
+			userId = fields.user_id || (await getUserIdFromBrandProfile(brandProfileId, BASE_ID, BRANDPROFILES_TABLE, AIRTABLE_TOKEN));
 
 			if (!userId) {
 				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
@@ -384,8 +388,8 @@ async function publishDueContent(): Promise<{
 			console.error(`Publishing error for record ${record.id}:`, {
 				error: errorMessage,
 				errorStack: error?.stack,
-				brandProfileId,
-				userId,
+				brandProfileId: brandProfileId || 'unknown',
+				userId: userId || 'unknown',
 				attempts,
 			});
 
