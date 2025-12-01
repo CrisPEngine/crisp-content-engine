@@ -187,10 +187,9 @@ async function publishDueContent(): Promise<{
 	// - status = "Ready To Publish"
 	// Then apply additional filters for scheduled_time and publish_attempts
 	const viewName = 'ReadyToPublish_LinkedIn';
-	const filterFormula = `AND(
-		OR({scheduled_time} <= NOW(), {scheduled_time} = BLANK()),
-		OR({publish_attempts} < 3, {publish_attempts} = BLANK())
-	)`;
+	// More lenient filter - just check status and attempts, let isContentDue handle time check
+	// This ensures we get all "Ready To Publish" posts and check scheduled_time in code
+	const filterFormula = `OR({publish_attempts} < 3, {publish_attempts} = BLANK())`;
 
 	// Use view endpoint for better performance
 	const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
