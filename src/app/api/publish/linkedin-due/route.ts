@@ -140,6 +140,7 @@ async function incrementUsage(userId: string): Promise<void> {
 function isContentDue(scheduledTime: string | null | undefined): boolean {
 	// If no scheduled_time, treat as "publish immediately"
 	if (!scheduledTime) {
+		console.log('[isContentDue] No scheduled_time, treating as due');
 		return true;
 	}
 
@@ -148,11 +149,23 @@ function isContentDue(scheduledTime: string | null | undefined): boolean {
 		const scheduledDate = new Date(scheduledTime);
 		const now = new Date();
 
+		// Check if scheduled date is valid
+		if (isNaN(scheduledDate.getTime())) {
+			console.warn(`[isContentDue] Invalid scheduled_time format: ${scheduledTime}, treating as due`);
+			return true; // If we can't parse, treat as due to avoid blocking
+		}
+
 		// scheduled_time is in UTC, now is also UTC, direct comparison
-		return now >= scheduledDate;
+		// Add 1 minute buffer to account for any timezone/parsing issues
+		const bufferMs = 60 * 1000; // 1 minute
+		const isDue = now >= (scheduledDate.getTime() - bufferMs);
+		
+		console.log(`[isContentDue] scheduledTime=${scheduledTime}, scheduledDate=${scheduledDate.toISOString()}, now=${now.toISOString()}, isDue=${isDue}`);
+		
+		return isDue;
 	} catch (error) {
-		console.error('Error parsing scheduled_time:', error);
-		// If we can't parse, treat as due
+		console.error('[isContentDue] Error parsing scheduled_time:', error, scheduledTime);
+		// If we can't parse, treat as due to avoid blocking posts
 		return true;
 	}
 }
