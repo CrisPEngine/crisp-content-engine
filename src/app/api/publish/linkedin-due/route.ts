@@ -158,7 +158,7 @@ function isContentDue(scheduledTime: string | null | undefined): boolean {
 		// scheduled_time is in UTC, now is also UTC, direct comparison
 		// Add 1 minute buffer to account for any timezone/parsing issues
 		const bufferMs = 60 * 1000; // 1 minute
-		const isDue = now >= (scheduledDate.getTime() - bufferMs);
+		const isDue = now.getTime() >= (scheduledDate.getTime() - bufferMs);
 		
 		console.log(`[isContentDue] scheduledTime=${scheduledTime}, scheduledDate=${scheduledDate.toISOString()}, now=${now.toISOString()}, isDue=${isDue}`);
 		
@@ -195,18 +195,16 @@ async function publishDueContent(): Promise<{
 		errors: [] as string[],
 	};
 
-	// Query Airtable view "ReadyToPublish_LinkedIn" which pre-filters:
-	// - platform = "LinkedIn"
-	// - status = "Ready To Publish"
-	// Then apply additional filters for scheduled_time and publish_attempts
-	const viewName = 'ReadyToPublish_LinkedIn';
-	// More lenient filter - just check status and attempts, let isContentDue handle time check
-	// This ensures we get all "Ready To Publish" posts and check scheduled_time in code
-	const filterFormula = `OR({publish_attempts} < 3, {publish_attempts} = BLANK())`;
+	// Query directly instead of using view to avoid view filter issues
+	// Filter for LinkedIn posts that are Ready To Publish with low attempt count
+	const filterFormula = `AND(
+		{platform} = "LinkedIn",
+		{status} = "Ready To Publish",
+		OR({publish_attempts} < 3, {publish_attempts} = BLANK())
+	)`;
 
-	// Use view endpoint for better performance
+	// Query directly (bypassing view) to ensure we get all matching records
 	const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
-	url.searchParams.set('view', viewName);
 	url.searchParams.set('filterByFormula', filterFormula);
 	url.searchParams.set('maxRecords', '100'); // Process up to 100 records per run
 	
