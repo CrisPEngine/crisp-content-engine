@@ -302,9 +302,11 @@ async function publishDueContent(): Promise<{
 			}
 
 			// Get LinkedIn connection by brand_profile_id (uses brand assignment)
+			console.log(`[Publish Job] Looking up LinkedIn connection for brand ${brandProfileId} (record ${record.id})`);
 			const connectionResult = await getLinkedInConnectionByBrand(brandProfileId);
+			
 			if (!connectionResult) {
-				console.error(`No LinkedIn connection found for brand ${brandProfileId} (record ${record.id}, user ${userId})`);
+				console.error(`[Publish Job] No LinkedIn connection found for brand ${brandProfileId} (record ${record.id}, user ${userId})`);
 				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
 					status: 'Failed',
 					publish_error: 'No LinkedIn connection found for this brand. Please assign a LinkedIn connection to the brand in Settings > Connections.',
@@ -313,6 +315,13 @@ async function publishDueContent(): Promise<{
 				stats.failed++;
 				stats.errors.push(`Record ${record.id}: No LinkedIn connection for brand ${brandProfileId}`);
 				continue;
+			}
+			
+			// Log connection details for debugging
+			if ('error' in connectionResult) {
+				console.error(`[Publish Job] Connection error for brand ${brandProfileId}:`, connectionResult.error);
+			} else {
+				console.log(`[Publish Job] Found connection for brand ${brandProfileId}: type=${connectionResult.connectionType}, hasPersonUrn=${!!connectionResult.personUrn}, hasOrgUrn=${!!connectionResult.organizationUrn}`);
 			}
 
 			// Check if connection result is an error (permanent failure)
@@ -359,6 +368,7 @@ async function publishDueContent(): Promise<{
 				: connection.personUrn;
 
 			// Publish to LinkedIn with idempotency key (record ID)
+			console.log(`[Publish Job] Publishing to LinkedIn: record=${record.id}, authorUrn=${authorUrn}, connectionType=${connection.connectionType}, hasImage=${!!imageUrl}`);
 			const publishResult = await publishToLinkedIn(
 				connection.accessToken,
 				authorUrn, // Use organization or person URN based on connection type
@@ -371,6 +381,8 @@ async function publishDueContent(): Promise<{
 				record.id, // Idempotency key
 				connection.organizationUrn // Pass organization URN if present
 			);
+			
+			console.log(`[Publish Job] Publish result for record ${record.id}: success=${publishResult.success}, error=${publishResult.error || 'none'}`);
 
 			if (publishResult.success) {
 				// Success: Update Airtable IMMEDIATELY to prevent duplicate processing

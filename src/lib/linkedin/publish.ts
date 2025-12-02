@@ -312,13 +312,26 @@ async function processLinkedInConnection(
 	if (!personUrn) {
 		// For member connections, person_urn is required
 		// Log detailed error for debugging
-		console.error('Could not determine LinkedIn person_urn for connection:', {
+		console.error('[LinkedIn Connection] Could not determine person_urn for connection:', {
 			connectionId: connection.id,
 			userId: connection.user_id,
 			connectionType: connectionType,
 			hasPersonUrn: !!connection.person_urn,
 			hasOrganizationUrn: !!connection.organization_urn,
+			accountName: connection.account_name,
 		});
+		
+		// For organization connections, we can still proceed if organization_urn exists
+		if (connectionType === 'organization' && connection.organization_urn) {
+			console.warn('[LinkedIn Connection] Organization connection missing person_urn, but has organization_urn - proceeding');
+			return {
+				accessToken,
+				personUrn: '', // Empty but we'll use organization_urn
+				organizationUrn: connection.organization_urn,
+				connectionType: 'organization',
+			};
+		}
+		
 		return {
 			error: 'Could not determine LinkedIn person_urn. Please reconnect your LinkedIn account.',
 			isPermanent: true,
@@ -467,6 +480,14 @@ export async function publishToLinkedIn(
 	// Determine which URN to use as author
 	// For organization posts, use organization_urn; otherwise use person_urn
 	const authorUrn = organizationUrn || personUrn;
+	
+	if (!authorUrn) {
+		console.error('[LinkedIn Publish] No author URN available:', { personUrn, organizationUrn });
+		return {
+			success: false,
+			error: 'No author URN available. Please check your LinkedIn connection.',
+		};
+	}
 	
 	// Ensure URN is in correct format
 	let formattedAuthorUrn = authorUrn;
