@@ -384,10 +384,17 @@ async function publishDueContent(): Promise<{
 			}
 
 			// Publish to LinkedIn with idempotency key (record ID)
-			console.log(`[Publish Job] Publishing to LinkedIn: record=${record.id}, authorUrn=${authorUrn}, connectionType=${connection.connectionType}, hasImage=${!!imageUrl}`);
+			// For organization connections, pass organizationUrn as separate parameter
+			// For member connections, pass personUrn as first parameter
+			const personUrnForPublish = connection.connectionType === 'organization' 
+				? (connection.personUrn || '') // May be empty for org connections
+				: connection.personUrn; // Required for member connections
+			
+			console.log(`[Publish Job] Publishing to LinkedIn: record=${record.id}, connectionType=${connection.connectionType}, personUrn=${personUrnForPublish}, orgUrn=${connection.organizationUrn || 'none'}, hasImage=${!!imageUrl}`);
+			
 			const publishResult = await publishToLinkedIn(
 				connection.accessToken,
-				authorUrn, // Use organization or person URN based on connection type
+				personUrnForPublish, // Person URN (required parameter, may be empty for org)
 				{
 					title,
 					body,
@@ -395,7 +402,7 @@ async function publishDueContent(): Promise<{
 					imageUrl: imageUrl || undefined,
 				},
 				record.id, // Idempotency key
-				connection.organizationUrn // Pass organization URN if present
+				connection.organizationUrn // Pass organization URN if present (used as author for org posts)
 			);
 			
 			console.log(`[Publish Job] Publish result for record ${record.id}: success=${publishResult.success}, error=${publishResult.error || 'none'}`);
