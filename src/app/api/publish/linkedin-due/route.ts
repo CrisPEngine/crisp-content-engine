@@ -362,24 +362,30 @@ async function publishDueContent(): Promise<{
 			// Get image URL if available
 			const imageUrl = fields.image_reference_url || '';
 
-			// Determine which URN to use based on connection type
-			// For organization connections, use organization_urn; for member connections, use person_urn
-			let authorUrn: string | undefined;
-			if (connection.connectionType === 'organization' && connection.organizationUrn) {
-				authorUrn = connection.organizationUrn;
-				console.log(`[Publish Job] Using organization URN: ${authorUrn}`);
-			} else if (connection.personUrn) {
-				authorUrn = connection.personUrn;
-				console.log(`[Publish Job] Using person URN: ${authorUrn}`);
-			} else {
-				console.error(`[Publish Job] No valid URN found: connectionType=${connection.connectionType}, hasOrgUrn=${!!connection.organizationUrn}, hasPersonUrn=${!!connection.personUrn}`);
+			// Validate we have the required URN for publishing
+			// For organization connections, we need organizationUrn
+			// For member connections, we need personUrn
+			if (connection.connectionType === 'organization' && !connection.organizationUrn) {
+				console.error(`[Publish Job] Organization connection missing organizationUrn for record ${record.id}`);
 				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
 					status: 'Failed',
-					publish_error: 'No valid LinkedIn URN found. Please reconnect your LinkedIn account.',
+					publish_error: 'LinkedIn organization connection is missing organization URN. Please reconnect your LinkedIn business account.',
 					publish_attempts: (fields.publish_attempts || 0) + 1,
 				});
 				stats.failed++;
-				stats.errors.push(`Record ${record.id}: No valid URN`);
+				stats.errors.push(`Record ${record.id}: Missing organization URN`);
+				continue;
+			}
+			
+			if (connection.connectionType === 'member' && !connection.personUrn) {
+				console.error(`[Publish Job] Member connection missing personUrn for record ${record.id}`);
+				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
+					status: 'Failed',
+					publish_error: 'LinkedIn personal connection is missing person URN. Please reconnect your LinkedIn account.',
+					publish_attempts: (fields.publish_attempts || 0) + 1,
+				});
+				stats.failed++;
+				stats.errors.push(`Record ${record.id}: Missing person URN`);
 				continue;
 			}
 
@@ -388,9 +394,9 @@ async function publishDueContent(): Promise<{
 			// For member connections, pass personUrn as first parameter
 			const personUrnForPublish = connection.connectionType === 'organization' 
 				? (connection.personUrn || '') // May be empty for org connections
-				: connection.personUrn; // Required for member connections
+				: connection.personUrn!; // Required for member connections (we validated above)
 			
-			console.log(`[Publish Job] Publishing to LinkedIn: record=${record.id}, connectionType=${connection.connectionType}, personUrn=${personUrnForPublish}, orgUrn=${connection.organizationUrn || 'none'}, hasImage=${!!imageUrl}`);
+			console.log(`[Publish Job] Publishing to LinkedIn: record=${record.id}, connectionType=${connection.connectionType}, personUrn=${personUrnForPublish || 'none'}, orgUrn=${connection.organizationUrn || 'none'}, hasImage=${!!imageUrl}`);
 			
 			const publishResult = await publishToLinkedIn(
 				connection.accessToken,
