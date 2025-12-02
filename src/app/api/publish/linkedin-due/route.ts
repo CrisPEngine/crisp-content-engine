@@ -9,13 +9,13 @@
  * 
  * For setup instructions, see FREE_CRON_SETUP.md
  * 
- * Uses Airtable view "ReadyToPublish_LinkedIn" which filters:
+ * Queries Airtable directly for posts matching:
  * - platform = "LinkedIn"
  * - status = "Ready To Publish"
- * 
- * Additional filters applied:
- * - scheduled_time <= now (UTC) OR scheduled_time is null
  * - publish_attempts < 3
+ * 
+ * Then checks scheduled_time in code to publish posts that are due.
+ * Works for both personal and company brand posts.
  * 
  * Note: scheduled_time is stored in UTC in Airtable. No timezone conversion needed.
  */
