@@ -363,9 +363,25 @@ async function publishDueContent(): Promise<{
 			const imageUrl = fields.image_reference_url || '';
 
 			// Determine which URN to use based on connection type
-			const authorUrn = connection.connectionType === 'organization' && connection.organizationUrn
-				? connection.organizationUrn
-				: connection.personUrn;
+			// For organization connections, use organization_urn; for member connections, use person_urn
+			let authorUrn: string | undefined;
+			if (connection.connectionType === 'organization' && connection.organizationUrn) {
+				authorUrn = connection.organizationUrn;
+				console.log(`[Publish Job] Using organization URN: ${authorUrn}`);
+			} else if (connection.personUrn) {
+				authorUrn = connection.personUrn;
+				console.log(`[Publish Job] Using person URN: ${authorUrn}`);
+			} else {
+				console.error(`[Publish Job] No valid URN found: connectionType=${connection.connectionType}, hasOrgUrn=${!!connection.organizationUrn}, hasPersonUrn=${!!connection.personUrn}`);
+				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
+					status: 'Failed',
+					publish_error: 'No valid LinkedIn URN found. Please reconnect your LinkedIn account.',
+					publish_attempts: (fields.publish_attempts || 0) + 1,
+				});
+				stats.failed++;
+				stats.errors.push(`Record ${record.id}: No valid URN`);
+				continue;
+			}
 
 			// Publish to LinkedIn with idempotency key (record ID)
 			console.log(`[Publish Job] Publishing to LinkedIn: record=${record.id}, authorUrn=${authorUrn}, connectionType=${connection.connectionType}, hasImage=${!!imageUrl}`);

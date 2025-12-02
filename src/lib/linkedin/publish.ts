@@ -269,17 +269,24 @@ async function processLinkedInConnection(
 
 	// For organization connections, use organization_urn
 	if (connectionType === 'organization' && connection.organization_urn) {
+		// For organization connections, person_urn is optional (it's the admin's URN)
+		// We can proceed with just organization_urn
+		const personUrn = connection.person_urn || '';
+		
+		console.log(`[LinkedIn Connection] Organization connection: orgUrn=${connection.organization_urn}, personUrn=${personUrn || 'not set'}`);
+		
 		return {
 			accessToken,
-			personUrn: connection.person_urn || '', // Admin's person URN (still needed for some operations)
+			personUrn, // May be empty for organization connections
 			organizationUrn: connection.organization_urn,
 			connectionType: 'organization',
 		};
 	}
 
-	// For member connections, get or fetch person_urn
+	// For member connections, get or fetch person_urn (required)
 	let personUrn = connection.person_urn;
 	if (!personUrn) {
+		console.log('[LinkedIn Connection] Fetching person_urn from LinkedIn API...');
 		try {
 			// Fetch person URN from LinkedIn API
 			const profileRes = await fetch('https://api.linkedin.com/v2/userinfo', {
@@ -297,22 +304,26 @@ async function processLinkedInConnection(
 						? userId 
 						: `urn:li:person:${userId}`;
 
+					console.log(`[LinkedIn Connection] Fetched person_urn: ${personUrn}`);
+
 					// Save person_urn for future use
 					await supabase
 						.from('social_connections')
 						.update({ person_urn: personUrn })
 						.eq('id', connection.id);
 				}
+			} else {
+				const errorText = await profileRes.text();
+				console.error('[LinkedIn Connection] Failed to fetch userinfo:', profileRes.status, errorText);
 			}
 		} catch (err) {
-			console.error('Failed to fetch person_urn:', err);
+			console.error('[LinkedIn Connection] Error fetching person_urn:', err);
 		}
 	}
 
 	if (!personUrn) {
 		// For member connections, person_urn is required
-		// Log detailed error for debugging
-		console.error('[LinkedIn Connection] Could not determine person_urn for connection:', {
+		console.error('[LinkedIn Connection] Could not determine person_urn for member connection:', {
 			connectionId: connection.id,
 			userId: connection.user_id,
 			connectionType: connectionType,
@@ -321,17 +332,6 @@ async function processLinkedInConnection(
 			accountName: connection.account_name,
 		});
 		
-		// For organization connections, we can still proceed if organization_urn exists
-		if (connectionType === 'organization' && connection.organization_urn) {
-			console.warn('[LinkedIn Connection] Organization connection missing person_urn, but has organization_urn - proceeding');
-			return {
-				accessToken,
-				personUrn: '', // Empty but we'll use organization_urn
-				organizationUrn: connection.organization_urn,
-				connectionType: 'organization',
-			};
-		}
-		
 		return {
 			error: 'Could not determine LinkedIn person_urn. Please reconnect your LinkedIn account.',
 			isPermanent: true,
@@ -339,6 +339,8 @@ async function processLinkedInConnection(
 		};
 	}
 
+	console.log(`[LinkedIn Connection] Member connection: personUrn=${personUrn}`);
+	
 	return {
 		accessToken,
 		personUrn,
