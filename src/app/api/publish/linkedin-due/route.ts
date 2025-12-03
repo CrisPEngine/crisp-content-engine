@@ -440,14 +440,27 @@ async function publishDueContent(): Promise<{
 			);
 			
 			// If token was revoked, try to refresh and retry once
-			if (!publishResult.success && publishResult.requiresTokenRefresh && connection.refresh_token) {
+			if (!publishResult.success && publishResult.requiresTokenRefresh) {
 				console.log(`[Publish Job] Token revoked for record ${record.id}, attempting refresh and retry...`);
 				
 				try {
 					const admin = getSupabaseService();
 					const { decryptToken, encryptToken } = await import('@/lib/encryption');
 					
-					const refreshToken = decryptToken(connection.refresh_token);
+					// Fetch the full connection from database to get refresh_token
+					const { data: dbConnection, error: dbError } = await admin
+						.from('social_connections')
+						.select('id, refresh_token, user_id, provider, connection_type')
+						.eq('user_id', userId)
+						.eq('provider', 'linkedin')
+						.eq('connection_type', connection.connectionType)
+						.maybeSingle();
+
+					if (dbError || !dbConnection || !dbConnection.refresh_token) {
+						throw new Error('Could not find connection with refresh token in database');
+					}
+
+					const refreshToken = decryptToken(dbConnection.refresh_token);
 					const refreshResponse = await refreshLinkedInToken(refreshToken);
 					const now = Date.now();
 					const newExpiresAt = refreshResponse.expires_in
@@ -465,7 +478,7 @@ async function publishDueContent(): Promise<{
 							expires_at: newExpiresAt ? new Date(newExpiresAt).toISOString() : null,
 							updated_at: new Date().toISOString(),
 						})
-						.eq('id', connection.id);
+						.eq('id', dbConnection.id);
 
 					console.log(`[Publish Job] Token refreshed successfully, retrying publish for record ${record.id}...`);
 					
