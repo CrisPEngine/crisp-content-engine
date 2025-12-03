@@ -426,7 +426,7 @@ async function publishDueContent(): Promise<{
 				bodyLength: body.length,
 			});
 			
-			const publishResult = await publishToLinkedIn(
+			let publishResult = await publishToLinkedIn(
 				connection.accessToken,
 				personUrnForPublish, // Person URN (required parameter, may be empty for org)
 				{
@@ -438,6 +438,59 @@ async function publishDueContent(): Promise<{
 				record.id, // Idempotency key
 				connection.organizationUrn // Pass organization URN if present (used as author for org posts)
 			);
+			
+			// If token was revoked, try to refresh and retry once
+			if (!publishResult.success && publishResult.requiresTokenRefresh && connection.refresh_token) {
+				console.log(`[Publish Job] Token revoked for record ${record.id}, attempting refresh and retry...`);
+				
+				try {
+					const admin = getSupabaseService();
+					const { decryptToken, encryptToken } = await import('@/lib/encryption');
+					
+					// Import refreshLinkedInToken function
+					const linkedInModule = await import('@/lib/linkedin/publish');
+					
+					const refreshToken = decryptToken(connection.refresh_token);
+					const refreshResponse = await linkedInModule.refreshLinkedInToken(refreshToken);
+					const now = Date.now();
+					const newExpiresAt = refreshResponse.expires_in
+						? now + refreshResponse.expires_in * 1000
+						: null;
+					const newRefreshToken = refreshResponse.refresh_token || refreshToken;
+					const newAccessToken = refreshResponse.access_token;
+
+					// Update connection in database
+					await admin
+						.from('social_connections')
+						.update({
+							access_token: encryptToken(newAccessToken),
+							refresh_token: newRefreshToken ? encryptToken(newRefreshToken) : null,
+							expires_at: newExpiresAt ? new Date(newExpiresAt).toISOString() : null,
+							updated_at: new Date().toISOString(),
+						})
+						.eq('id', connection.id);
+
+					console.log(`[Publish Job] Token refreshed successfully, retrying publish for record ${record.id}...`);
+					
+					// Retry publish with new token
+					publishResult = await publishToLinkedIn(
+						newAccessToken,
+						personUrnForPublish,
+						{
+							title,
+							body,
+							hashtags,
+							imageUrl: imageUrl || undefined,
+						},
+						record.id,
+						connection.organizationUrn
+					);
+				} catch (refreshError: any) {
+					console.error(`[Publish Job] Failed to refresh token for record ${record.id}:`, refreshError);
+					// Keep the original error result but update it to indicate refresh failed
+					publishResult.error = `Token refresh failed. Please reconnect your LinkedIn account. Original error: ${publishResult.error}`;
+				}
+			}
 			
 			console.log(`[Publish Job] Publish result for record ${record.id}: success=${publishResult.success}, error=${publishResult.error || 'none'}`);
 

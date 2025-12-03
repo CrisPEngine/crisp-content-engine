@@ -21,6 +21,7 @@ export interface PublishResult {
 	published_url?: string;
 	linkedin_post_id?: string;
 	error?: string;
+	requiresTokenRefresh?: boolean;
 }
 
 /**
@@ -639,6 +640,20 @@ export async function publishToLinkedIn(
 					success: true,
 					linkedin_post_id: existingPostId,
 					published_url: `https://www.linkedin.com/feed/update/${existingPostId.replace('urn:li:ugcPost:', '')}`,
+				};
+			}
+
+			// Check if token is revoked (401 with REVOKED_ACCESS_TOKEN)
+			if (response.status === 401 && (errorData.code === 'REVOKED_ACCESS_TOKEN' || errorText.includes('REVOKED_ACCESS_TOKEN'))) {
+				console.error('[LinkedIn Publish] Token revoked, refresh required:', {
+					status: response.status,
+					errorCode: errorData.code,
+					authorUrn: formattedAuthorUrn,
+				});
+				return {
+					success: false,
+					error: 'REVOKED_ACCESS_TOKEN',
+					requiresTokenRefresh: true,
 				};
 			}
 
