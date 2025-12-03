@@ -403,6 +403,7 @@ async function processLinkedInConnection(
 		accessToken,
 		personUrn,
 		connectionType: 'member',
+		connectionId: connection.id,
 	};
 }
 
