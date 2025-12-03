@@ -320,8 +320,25 @@ async function publishDueContent(): Promise<{
 			// Log connection details for debugging
 			if ('error' in connectionResult) {
 				console.error(`[Publish Job] Connection error for brand ${brandProfileId}:`, connectionResult.error);
+				console.error(`[Publish Job] Connection error details:`, {
+					error: connectionResult.error,
+					isPermanent: connectionResult.isPermanent,
+					requiresReconnect: connectionResult.requiresReconnect,
+					brandProfileId,
+					userId,
+					recordId: record.id,
+				});
 			} else {
-				console.log(`[Publish Job] Found connection for brand ${brandProfileId}: type=${connectionResult.connectionType}, hasPersonUrn=${!!connectionResult.personUrn}, hasOrgUrn=${!!connectionResult.organizationUrn}`);
+				console.log(`[Publish Job] Found connection for brand ${brandProfileId}:`, {
+					connectionType: connectionResult.connectionType,
+					hasPersonUrn: !!connectionResult.personUrn,
+					personUrn: connectionResult.personUrn || 'none',
+					hasOrgUrn: !!connectionResult.organizationUrn,
+					organizationUrn: connectionResult.organizationUrn || 'none',
+					brandProfileId,
+					userId,
+					recordId: record.id,
+				});
 			}
 
 			// Check if connection result is an error (permanent failure)
@@ -396,7 +413,18 @@ async function publishDueContent(): Promise<{
 				? (connection.personUrn || '') // May be empty for org connections
 				: connection.personUrn!; // Required for member connections (we validated above)
 			
-			console.log(`[Publish Job] Publishing to LinkedIn: record=${record.id}, connectionType=${connection.connectionType}, personUrn=${personUrnForPublish || 'none'}, orgUrn=${connection.organizationUrn || 'none'}, hasImage=${!!imageUrl}`);
+			console.log(`[Publish Job] Publishing to LinkedIn:`, {
+				recordId: record.id,
+				brandProfileId,
+				userId,
+				connectionType: connection.connectionType,
+				personUrn: personUrnForPublish || 'none',
+				orgUrn: connection.organizationUrn || 'none',
+				hasImage: !!imageUrl,
+				imageUrl: imageUrl || 'none',
+				title: title.substring(0, 50) + (title.length > 50 ? '...' : ''),
+				bodyLength: body.length,
+			});
 			
 			const publishResult = await publishToLinkedIn(
 				connection.accessToken,
