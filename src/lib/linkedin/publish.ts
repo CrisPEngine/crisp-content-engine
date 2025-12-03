@@ -286,10 +286,11 @@ async function processLinkedInConnection(
 	// For member connections, get or fetch person_urn (required)
 	let personUrn = connection.person_urn;
 	if (!personUrn) {
-		console.log('[LinkedIn Connection] Fetching person_urn from LinkedIn API...');
+		console.log('[LinkedIn Connection] person_urn not stored, fetching from LinkedIn API...');
 		try {
-			// Fetch person URN from LinkedIn API
-			const profileRes = await fetch('https://api.linkedin.com/v2/userinfo', {
+			// Try multiple endpoints to get person URN
+			// Method 1: OIDC userinfo endpoint
+			let profileRes = await fetch('https://api.linkedin.com/v2/userinfo', {
 				headers: {
 					Authorization: `Bearer ${accessToken}`,
 				},
@@ -304,7 +305,7 @@ async function processLinkedInConnection(
 						? userId 
 						: `urn:li:person:${userId}`;
 
-					console.log(`[LinkedIn Connection] Fetched person_urn: ${personUrn}`);
+					console.log(`[LinkedIn Connection] Fetched person_urn from userinfo: ${personUrn}`);
 
 					// Save person_urn for future use
 					await supabase
@@ -313,8 +314,36 @@ async function processLinkedInConnection(
 						.eq('id', connection.id);
 				}
 			} else {
-				const errorText = await profileRes.text();
-				console.error('[LinkedIn Connection] Failed to fetch userinfo:', profileRes.status, errorText);
+				// Method 2: Try profile API endpoint
+				console.log('[LinkedIn Connection] userinfo failed, trying profile API...');
+				profileRes = await fetch('https://api.linkedin.com/v2/me', {
+					headers: {
+						Authorization: `Bearer ${accessToken}`,
+						'X-Restli-Protocol-Version': '2.0.0',
+					},
+				});
+
+				if (profileRes.ok) {
+					const profile = await profileRes.json();
+					// Profile API returns id as the person URN or ID
+					const profileId = profile.id;
+					if (profileId) {
+						personUrn = profileId.startsWith('urn:li:person:') 
+							? profileId 
+							: `urn:li:person:${profileId}`;
+
+						console.log(`[LinkedIn Connection] Fetched person_urn from profile API: ${personUrn}`);
+
+						// Save person_urn for future use
+						await supabase
+							.from('social_connections')
+							.update({ person_urn: personUrn })
+							.eq('id', connection.id);
+					}
+				} else {
+					const errorText = await profileRes.text();
+					console.error('[LinkedIn Connection] Failed to fetch person_urn from both endpoints:', profileRes.status, errorText);
+				}
 			}
 		} catch (err) {
 			console.error('[LinkedIn Connection] Error fetching person_urn:', err);
@@ -330,13 +359,39 @@ async function processLinkedInConnection(
 			hasPersonUrn: !!connection.person_urn,
 			hasOrganizationUrn: !!connection.organization_urn,
 			accountName: connection.account_name,
+			accessTokenLength: accessToken?.length || 0,
 		});
 		
-		return {
-			error: 'Could not determine LinkedIn person_urn. Please reconnect your LinkedIn account.',
-			isPermanent: true,
-			requiresReconnect: true,
-		};
+		// Try one more time with a different approach - check if we can extract from metadata
+		if (connection.metadata && typeof connection.metadata === 'object') {
+			const metadata = connection.metadata as any;
+			if (metadata.person_urn) {
+				personUrn = metadata.person_urn;
+				console.log(`[LinkedIn Connection] Found person_urn in metadata: ${personUrn}`);
+				// Save it to the main field
+				await supabase
+					.from('social_connections')
+					.update({ person_urn: personUrn })
+					.eq('id', connection.id);
+			} else if (metadata.sub) {
+				// OIDC sub might be stored in metadata
+				const sub = metadata.sub;
+				personUrn = sub.startsWith('urn:li:person:') ? sub : `urn:li:person:${sub}`;
+				console.log(`[LinkedIn Connection] Found person_urn from metadata.sub: ${personUrn}`);
+				await supabase
+					.from('social_connections')
+					.update({ person_urn: personUrn })
+					.eq('id', connection.id);
+			}
+		}
+		
+		if (!personUrn) {
+			return {
+				error: 'Could not determine LinkedIn person_urn. Please reconnect your LinkedIn account.',
+				isPermanent: true,
+				requiresReconnect: true,
+			};
+		}
 	}
 
 	console.log(`[LinkedIn Connection] Member connection: personUrn=${personUrn}`);
