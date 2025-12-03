@@ -25,7 +25,7 @@ import { getSupabaseService } from '@/lib/supabaseService';
 import { getLinkedInConnectionByBrand, publishToLinkedIn } from '@/lib/linkedin/publish';
 
 export const runtime = 'nodejs';
-export const maxDuration = 300; // 5 minutes max for Vercel
+export const maxDuration = 300; // Personal brand publishing fixes deployed // 5 minutes max for Vercel
 
 interface ContentRecord {
 	id: string;
