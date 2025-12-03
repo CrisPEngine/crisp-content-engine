@@ -461,6 +461,10 @@ async function publishDueContent(): Promise<{
 					}
 
 					const refreshToken = decryptToken(dbConnection.refresh_token);
+					if (!refreshToken) {
+						throw new Error('Could not decrypt refresh token');
+					}
+
 					const refreshResponse = await refreshLinkedInToken(refreshToken);
 					const now = Date.now();
 					const newExpiresAt = refreshResponse.expires_in
