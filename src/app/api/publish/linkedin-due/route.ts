@@ -22,7 +22,7 @@
 
 import { NextResponse } from 'next/server';
 import { getSupabaseService } from '@/lib/supabaseService';
-import { getLinkedInConnectionByBrand, publishToLinkedIn } from '@/lib/linkedin/publish';
+import { getLinkedInConnectionByBrand, publishToLinkedIn, refreshLinkedInToken } from '@/lib/linkedin/publish';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // Personal brand publishing fixes deployed // 5 minutes max for Vercel
@@ -447,11 +447,8 @@ async function publishDueContent(): Promise<{
 					const admin = getSupabaseService();
 					const { decryptToken, encryptToken } = await import('@/lib/encryption');
 					
-					// Import refreshLinkedInToken function
-					const linkedInModule = await import('@/lib/linkedin/publish');
-					
 					const refreshToken = decryptToken(connection.refresh_token);
-					const refreshResponse = await linkedInModule.refreshLinkedInToken(refreshToken);
+					const refreshResponse = await refreshLinkedInToken(refreshToken);
 					const now = Date.now();
 					const newExpiresAt = refreshResponse.expires_in
 						? now + refreshResponse.expires_in * 1000

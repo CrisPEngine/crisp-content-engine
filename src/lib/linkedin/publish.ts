@@ -28,7 +28,7 @@ export interface PublishResult {
  * Refresh LinkedIn access token
  * Returns error type: 'permanent' or 'transient'
  */
-async function refreshLinkedInToken(refreshToken: string): Promise<{
+export async function refreshLinkedInToken(refreshToken: string): Promise<{
 	access_token: string;
 	refresh_token?: string;
 	expires_in?: number;
