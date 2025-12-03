@@ -450,23 +450,48 @@ async function publishDueContent(): Promise<{
 					// Fetch the full connection from database using the connection ID we stored
 					const { data: dbConnection, error: dbError } = await admin
 						.from('social_connections')
-						.select('id, refresh_token, user_id, provider, connection_type')
+						.select('id, refresh_token, user_id, provider, connection_type, account_name')
 						.eq('id', connection.connectionId)
 						.single();
 
 					if (dbError || !dbConnection) {
 						console.error(`[Publish Job] Failed to fetch connection ${connection.connectionId}:`, dbError);
-						throw new Error(`Could not find connection ${connection.connectionId} in database`);
+						const errorMessage = `LinkedIn connection not found. Please reconnect your LinkedIn account in Settings > Connections.`;
+						await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
+							status: 'Failed',
+							publish_error: errorMessage,
+							publish_attempts: (fields.publish_attempts || 0) + 1,
+						});
+						stats.failed++;
+						stats.errors.push(`Record ${record.id}: ${errorMessage}`);
+						continue;
 					}
 
 					if (!dbConnection.refresh_token) {
-						console.error(`[Publish Job] Connection ${connection.connectionId} has no refresh_token`);
-						throw new Error('Connection does not have a refresh token. Please reconnect your LinkedIn account.');
+						console.error(`[Publish Job] Connection ${connection.connectionId} (${dbConnection.account_name || 'unknown'}) has no refresh_token. This connection was likely created before refresh tokens were supported, or LinkedIn did not provide a refresh token. User needs to reconnect.`);
+						const errorMessage = `LinkedIn connection expired and cannot be refreshed. Please disconnect and reconnect your LinkedIn account in Settings > Connections.`;
+						await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
+							status: 'Failed',
+							publish_error: errorMessage,
+							publish_attempts: (fields.publish_attempts || 0) + 1,
+						});
+						stats.failed++;
+						stats.errors.push(`Record ${record.id}: ${errorMessage}`);
+						continue;
 					}
 
 					const refreshToken = decryptToken(dbConnection.refresh_token);
 					if (!refreshToken) {
-						throw new Error('Could not decrypt refresh token');
+						console.error(`[Publish Job] Could not decrypt refresh_token for connection ${connection.connectionId}`);
+						const errorMessage = `LinkedIn connection token decryption failed. Please reconnect your LinkedIn account in Settings > Connections.`;
+						await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
+							status: 'Failed',
+							publish_error: errorMessage,
+							publish_attempts: (fields.publish_attempts || 0) + 1,
+						});
+						stats.failed++;
+						stats.errors.push(`Record ${record.id}: ${errorMessage}`);
+						continue;
 					}
 
 					const refreshResponse = await refreshLinkedInToken(refreshToken);
@@ -505,8 +530,17 @@ async function publishDueContent(): Promise<{
 					);
 				} catch (refreshError: any) {
 					console.error(`[Publish Job] Failed to refresh token for record ${record.id}:`, refreshError);
-					// Keep the original error result but update it to indicate refresh failed
-					publishResult.error = `Token refresh failed. Please reconnect your LinkedIn account. Original error: ${publishResult.error}`;
+					const errorMessage = refreshError.message?.includes('reconnect') 
+						? refreshError.message 
+						: `Token refresh failed: ${refreshError.message || 'Unknown error'}. Please reconnect your LinkedIn account in Settings > Connections.`;
+					await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
+						status: 'Failed',
+						publish_error: errorMessage,
+						publish_attempts: (fields.publish_attempts || 0) + 1,
+					});
+					stats.failed++;
+					stats.errors.push(`Record ${record.id}: ${errorMessage}`);
+					continue;
 				}
 			}
 			
