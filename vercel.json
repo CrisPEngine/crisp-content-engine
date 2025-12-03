@@ -3,12 +3,6 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "regions": ["iad1"],
-  "crons": [
-    {
-      "path": "/api/publish/linkedin-due",
-      "schedule": "*/15 * * * *"
-    }
-  ]
+  "regions": ["iad1"]
 }
 
