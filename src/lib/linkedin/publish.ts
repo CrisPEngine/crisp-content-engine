@@ -92,6 +92,7 @@ export interface LinkedInConnectionResult {
 	personUrn: string;
 	organizationUrn?: string; // For organization connections
 	connectionType: 'member' | 'organization';
+	connectionId: string; // Store connection ID for token refresh
 }
 
 export interface LinkedInConnectionError {
@@ -281,6 +282,7 @@ async function processLinkedInConnection(
 			personUrn, // May be empty for organization connections
 			organizationUrn: connection.organization_urn,
 			connectionType: 'organization',
+			connectionId: connection.id,
 		};
 	}
 

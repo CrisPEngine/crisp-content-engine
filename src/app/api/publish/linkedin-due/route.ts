@@ -447,17 +447,21 @@ async function publishDueContent(): Promise<{
 					const admin = getSupabaseService();
 					const { decryptToken, encryptToken } = await import('@/lib/encryption');
 					
-					// Fetch the full connection from database to get refresh_token
+					// Fetch the full connection from database using the connection ID we stored
 					const { data: dbConnection, error: dbError } = await admin
 						.from('social_connections')
 						.select('id, refresh_token, user_id, provider, connection_type')
-						.eq('user_id', userId)
-						.eq('provider', 'linkedin')
-						.eq('connection_type', connection.connectionType)
-						.maybeSingle();
+						.eq('id', connection.connectionId)
+						.single();
 
-					if (dbError || !dbConnection || !dbConnection.refresh_token) {
-						throw new Error('Could not find connection with refresh token in database');
+					if (dbError || !dbConnection) {
+						console.error(`[Publish Job] Failed to fetch connection ${connection.connectionId}:`, dbError);
+						throw new Error(`Could not find connection ${connection.connectionId} in database`);
+					}
+
+					if (!dbConnection.refresh_token) {
+						console.error(`[Publish Job] Connection ${connection.connectionId} has no refresh_token`);
+						throw new Error('Connection does not have a refresh token. Please reconnect your LinkedIn account.');
 					}
 
 					const refreshToken = decryptToken(dbConnection.refresh_token);
