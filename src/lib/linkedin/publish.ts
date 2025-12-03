@@ -642,10 +642,19 @@ export async function publishToLinkedIn(
 				};
 			}
 
-			console.error('LinkedIn API error:', errorText);
+			console.error('[LinkedIn Publish] API error:', {
+				status: response.status,
+				statusText: response.statusText,
+				errorText,
+				errorData,
+				authorUrn: formattedAuthorUrn,
+				hasImage: !!content.imageUrl,
+				postLength: postText.length,
+				idempotencyKey: idempotencyKey || 'none',
+			});
 			return {
 				success: false,
-				error: `LinkedIn API error: ${response.status} ${errorText}`,
+				error: `LinkedIn API error (${response.status}): ${errorText}`,
 			};
 		}
 
