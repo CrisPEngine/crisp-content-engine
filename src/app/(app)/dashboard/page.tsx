@@ -36,63 +36,64 @@ export default async function Dashboard({
 }: {
 	searchParams: Promise<{ tab?: string }>;
 }) {
-	try {
-		const supabase = await createClient();
-		const { data: { user }, error: authError } = await supabase.auth.getUser();
+	// Check authentication first - redirects must happen outside try-catch
+	const supabase = await createClient();
+	const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-		if (authError) {
-			console.error('Auth error in dashboard:', authError);
-			redirect('/login');
-		}
-
-		if (!user) redirect('/login');
-
-	// Get user profile to check admin status
-	const { data: profile, error: profileError } = await supabase
-		.from('profiles')
-		.select('is_admin')
-		.eq('id', user.id)
-		.maybeSingle();
-	
-	// Log profile error but don't fail - profile might not exist yet
-	if (profileError) {
-		console.error('Failed to fetch profile:', profileError);
+	if (authError) {
+		console.error('Auth error in dashboard:', authError);
+		redirect('/login');
 	}
 
-	// Check if user has a subscription - admins can bypass
-	const { data: sub } = await supabase
-		.from('subscriptions')
-		.select('plan')
-		.eq('user_id', user.id)
-		.maybeSingle();
+	if (!user) redirect('/login');
 
-	// Always allow access to dashboard - show "Select Your Plan" button if no subscription
-	// Admins can bypass subscription requirement
-	// Also allow access if coming from Stripe success (subscription might not be processed yet)
-	const params = await searchParams;
-	const fromStripe = (params as any).sub === 'success';
-	const hasSubscription = !!sub || profile?.is_admin || fromStripe;
+	try {
+		// Get user profile to check admin status
+		const { data: profile, error: profileError } = await supabase
+			.from('profiles')
+			.select('is_admin')
+			.eq('id', user.id)
+			.maybeSingle();
+		
+		// Log profile error but don't fail - profile might not exist yet
+		if (profileError) {
+			console.error('Failed to fetch profile:', profileError);
+		}
 
-	const activeTab: Tab = (params.tab === 'content' ? 'content' : 'overview') as Tab;
-	const subSuccess = (params as any).sub === 'success';
-	const error = (params as any).error;
-	const disconnected = (params as any).disconnected;
+		// Check if user has a subscription - admins can bypass
+		const { data: sub } = await supabase
+			.from('subscriptions')
+			.select('plan')
+			.eq('user_id', user.id)
+			.maybeSingle();
 
-	// Check onboarding progress
-	let hasBrandProfiles = false;
-	let hasApprovedStrategies = false;
-	let brandProfiles: any[] = [];
-	let isLinkedInConnected = false;
-	let hasContentToReview = false;
-	
-	// Check social connections first (for Step 1)
-	const { data: connections } = await supabase
-		.from('social_connections')
-		.select('provider')
-		.eq('user_id', user.id);
-	
-	const connectedPlatforms = (connections || []).map((c: any) => c.provider?.toLowerCase() || '');
-	isLinkedInConnected = connectedPlatforms.includes('linkedin');
+		// Always allow access to dashboard - show "Select Your Plan" button if no subscription
+		// Admins can bypass subscription requirement
+		// Also allow access if coming from Stripe success (subscription might not be processed yet)
+		const params = await searchParams;
+		const fromStripe = (params as any).sub === 'success';
+		const hasSubscription = !!sub || profile?.is_admin || fromStripe;
+
+		const activeTab: Tab = (params.tab === 'content' ? 'content' : 'overview') as Tab;
+		const subSuccess = (params as any).sub === 'success';
+		const error = (params as any).error;
+		const disconnected = (params as any).disconnected;
+
+		// Check onboarding progress
+		let hasBrandProfiles = false;
+		let hasApprovedStrategies = false;
+		let brandProfiles: any[] = [];
+		let isLinkedInConnected = false;
+		let hasContentToReview = false;
+		
+		// Check social connections first (for Step 1)
+		const { data: connections } = await supabase
+			.from('social_connections')
+			.select('provider')
+			.eq('user_id', user.id);
+		
+		const connectedPlatforms = (connections || []).map((c: any) => c.provider?.toLowerCase() || '');
+		isLinkedInConnected = connectedPlatforms.includes('linkedin');
 	
 	try {
 		// Fetch brands directly from Airtable (same logic as API but server-side)
@@ -198,61 +199,61 @@ export default async function Dashboard({
 		console.error('Failed to check brand profiles:', error);
 	}
 	
-	// Determine current step (1-4)
-	// Step 1: Connect LinkedIn (if not connected)
-	// Step 2: Complete questionnaire (if LinkedIn connected but no brand profiles OR has brand profiles but no strategy ready/approved)
-	// Step 3: Approve strategy (if has brand profiles with strategy ready but not approved)
-	// Step 4: Review content (if has approved strategies but has content to review)
-	let currentStep = 1;
-	
-	// Check if any brand has "Strategy Ready" status (means questionnaire is complete, strategy generated)
-	const hasStrategyReady = brandProfiles.some((p: any) => {
-		const status = (p.status || p.original_status || '').toString();
-		return status === 'Strategy Ready' || 
-		       status === 'Strategy Ready (Awaiting Approval)' ||
-		       status === 'Strategy Ready For Approval' ||
-		       status.toLowerCase().includes('strategy ready');
-	});
-	
-	if (isLinkedInConnected && !hasBrandProfiles) {
-		currentStep = 2;
-	} else if (isLinkedInConnected && hasBrandProfiles && !hasStrategyReady && !hasApprovedStrategies) {
-		currentStep = 2; // Still need to complete questionnaire (brand created but no strategy yet)
-	} else if (isLinkedInConnected && hasBrandProfiles && hasStrategyReady && !hasApprovedStrategies) {
-		currentStep = 3; // Strategy ready, needs approval
-	} else if (isLinkedInConnected && hasBrandProfiles && hasApprovedStrategies && hasContentToReview) {
-		currentStep = 4; // Approved, has content to review
-	} else if (isLinkedInConnected && hasBrandProfiles && hasApprovedStrategies && !hasContentToReview) {
-		// All steps complete - don't show onboarding
-		currentStep = 0;
-	}
-	
-	// Get user's plan and brand limit
-	let maxBrands = 999; // Default to high number for admins or no subscription
-	let currentBrandCount = brandProfiles.length;
-	try {
-		if (sub) {
-			const { data: entitlements, error: entitlementsError } = await supabase
-				.from('entitlements')
-				.select('max_brands')
-				.eq('user_id', user.id)
-				.maybeSingle();
-			
-			if (entitlementsError) {
-				console.error('Failed to get entitlements:', entitlementsError);
-			} else if (entitlements?.max_brands) {
-				maxBrands = entitlements.max_brands;
-			}
+		// Determine current step (1-4)
+		// Step 1: Connect LinkedIn (if not connected)
+		// Step 2: Complete questionnaire (if LinkedIn connected but no brand profiles OR has brand profiles but no strategy ready/approved)
+		// Step 3: Approve strategy (if has brand profiles with strategy ready but not approved)
+		// Step 4: Review content (if has approved strategies but has content to review)
+		let currentStep = 1;
+		
+		// Check if any brand has "Strategy Ready" status (means questionnaire is complete, strategy generated)
+		const hasStrategyReady = brandProfiles.some((p: any) => {
+			const status = (p.status || p.original_status || '').toString();
+			return status === 'Strategy Ready' || 
+			       status === 'Strategy Ready (Awaiting Approval)' ||
+			       status === 'Strategy Ready For Approval' ||
+			       status.toLowerCase().includes('strategy ready');
+		});
+		
+		if (isLinkedInConnected && !hasBrandProfiles) {
+			currentStep = 2;
+		} else if (isLinkedInConnected && hasBrandProfiles && !hasStrategyReady && !hasApprovedStrategies) {
+			currentStep = 2; // Still need to complete questionnaire (brand created but no strategy yet)
+		} else if (isLinkedInConnected && hasBrandProfiles && hasStrategyReady && !hasApprovedStrategies) {
+			currentStep = 3; // Strategy ready, needs approval
+		} else if (isLinkedInConnected && hasBrandProfiles && hasApprovedStrategies && hasContentToReview) {
+			currentStep = 4; // Approved, has content to review
+		} else if (isLinkedInConnected && hasBrandProfiles && hasApprovedStrategies && !hasContentToReview) {
+			// All steps complete - don't show onboarding
+			currentStep = 0;
 		}
-	} catch (error) {
-		console.error('Failed to get entitlements:', error);
-	}
+		
+		// Get user's plan and brand limit
+		let maxBrands = 999; // Default to high number for admins or no subscription
+		let currentBrandCount = brandProfiles.length;
+		try {
+			if (sub) {
+				const { data: entitlements, error: entitlementsError } = await supabase
+					.from('entitlements')
+					.select('max_brands')
+					.eq('user_id', user.id)
+					.maybeSingle();
+				
+				if (entitlementsError) {
+					console.error('Failed to get entitlements:', entitlementsError);
+				} else if (entitlements?.max_brands) {
+					maxBrands = entitlements.max_brands;
+				}
+			}
+		} catch (error) {
+			console.error('Failed to get entitlements:', error);
+		}
 
-	// For content tab, we'll fetch on client side since we need auth
-	// Server-side fetch would require passing cookies which is complex
+		// For content tab, we'll fetch on client side since we need auth
+		// Server-side fetch would require passing cookies which is complex
 
-	return (
-		<main className="p-4 md:p-6 space-y-4 md:space-y-6">
+		return (
+			<main className="p-4 md:p-6 space-y-4 md:space-y-6">
 			<OnboardingDebug
 				isLinkedInConnected={isLinkedInConnected}
 				hasBrandProfiles={hasBrandProfiles}
@@ -465,8 +466,8 @@ export default async function Dashboard({
 					</div>
 				</>
 			)}
-		</main>
-	);
+			</main>
+		);
 	} catch (error: any) {
 		console.error('Dashboard error:', error);
 		// Return a minimal error page instead of crashing
