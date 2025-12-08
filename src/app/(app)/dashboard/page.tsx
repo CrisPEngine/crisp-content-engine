@@ -35,7 +35,7 @@ async function getContentItems(userId: string) {
 export default async function Dashboard({
 	searchParams,
 }: {
-	searchParams: Promise<{ tab?: string }>;
+	searchParams: Promise<{ tab?: string; auth?: string }>;
 }) {
 	// Check authentication first - redirects must happen outside try-catch
 	const supabase = await createClient();

@@ -100,78 +100,50 @@ export async function POST(req: Request) {
 			currentPeriodEnd,
 		});
 
-		// Send password reset email so user can set their password
-		// Use password reset flow for new users (since Supabase doesn't have an "Invite" template)
-		// This uses the "Reset Password" template which is always available
+		// Send invite email via Resend
 		try {
 			const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io'}/auth/callback`;
-			const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-			const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 			
-			if (!supabaseUrl || !serviceRoleKey) {
-				console.error('Missing Supabase URL or service role key for sending password reset email');
+			// Generate invite link using Supabase admin API
+			const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+				type: 'recovery', // Use recovery type for new users (same as password reset)
+				email,
+				options: {
+					redirectTo: redirectUrl,
+				},
+			});
+
+			if (linkError || !linkData) {
+				console.error('Failed to generate invite link:', linkError);
 			} else {
-				// Use the Supabase Auth REST API to send password reset email
-				// This works for both existing users (forgot password) and new users (set initial password)
-				const response = await fetch(`${supabaseUrl}/auth/v1/recover`, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						'apikey': serviceRoleKey,
-						'Authorization': `Bearer ${serviceRoleKey}`,
-					},
-					body: JSON.stringify({
-						email: email,
-						redirect_to: redirectUrl,
-					}),
-				});
+				// Extract the action link
+				const inviteUrl = linkData.properties?.action_link || linkData.properties?.hashed_token 
+					? `${redirectUrl}?token_hash=${linkData.properties.hashed_token}&type=recovery`
+					: null;
 
-				if (!response.ok) {
-					const errorText = await response.text();
-					const isRateLimited = response.status === 429;
-					
-					console.error('Failed to send password reset email:', {
-						status: response.status,
-						statusText: response.statusText,
-						error: errorText,
-						email,
-						userId,
-						redirectUrl,
-						isRateLimited,
+				if (inviteUrl) {
+					const { sendEmail } = await import('@/lib/email/sendEmail');
+					const { AuthInviteEmail } = await import('@/emails/auth/AuthInviteEmail');
+
+					await sendEmail({
+						to: email,
+						subject: 'You have been invited to CRISP Content Engine',
+						react: AuthInviteEmail({ inviteUrl, userEmail: email }),
+						category: 'auth',
 					});
 
-					// If rate limited, return a specific error message
-					if (isRateLimited) {
-						return NextResponse.json({ 
-							error: 'Email rate limit exceeded',
-							message: 'Supabase email rate limit has been exceeded. Please wait a few minutes before creating more users or sending password reset emails. The user has been created successfully, but the password reset email could not be sent automatically.',
-							userId,
-							email,
-							plan,
-							cycle,
-							trialDays,
-							trialExpiresAt: trialExpiresAt?.toISOString(),
-							rateLimited: true,
-						}, { status: 429 });
-					}
+					console.log('Invite email sent successfully via Resend:', { email, userId });
 				} else {
-					const responseData = await response.json().catch(() => ({}));
-					console.log('Password reset email sent successfully:', {
-						email,
-						userId,
-						redirectUrl,
-						responseData,
-					});
+					console.error('No action link in generated invite link data:', linkData);
 				}
 			}
 		} catch (err: any) {
-			console.error('Error sending password reset email:', {
+			console.error('Error sending invite email via Resend:', {
 				error: err,
 				message: err?.message,
-				stack: err?.stack,
 				email,
 				userId,
-				note: 'Check Supabase email configuration and ensure email sending is enabled',
+				note: 'User created but invite email failed. They can use password reset to set their password.',
 			});
 		}
 

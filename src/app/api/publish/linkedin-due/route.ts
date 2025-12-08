@@ -23,6 +23,59 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { getLinkedInConnectionByBrand, publishToLinkedIn, refreshLinkedInToken } from '@/lib/linkedin/publish';
+import { sendEmail } from '@/lib/email/sendEmail';
+import { OAuthReconnectEmail } from '@/emails/product/OAuthReconnectEmail';
+
+// Helper function to mark connection as needing reauth and send notification
+async function markConnectionNeedsReauthAndNotify(
+	admin: ReturnType<typeof getSupabaseService>,
+	userId: string,
+	connectionId: string,
+	provider: string,
+	errorMessage: string,
+	affectedCount: number
+) {
+	try {
+		// Update connection to mark as needing reauth
+		await admin
+			.from('social_connections')
+			.update({
+				needs_reauth: true,
+				updated_at: new Date().toISOString(),
+			})
+			.eq('id', connectionId);
+
+		// Get user profile for email
+		const { data: profile } = await admin
+			.from('profiles')
+			.select('email, full_name')
+			.eq('id', userId)
+			.maybeSingle();
+
+		if (profile?.email) {
+			const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io';
+			const reconnectUrl = `${appUrl}/connections`;
+			const providerName = provider === 'linkedin' ? 'LinkedIn' : provider.charAt(0).toUpperCase() + provider.slice(1);
+			
+			// Send reconnection email
+			await sendEmail({
+				to: profile.email,
+				subject: `Action Required: Reconnect Your ${providerName} Account`,
+				react: OAuthReconnectEmail({
+					userName: profile.full_name || 'there',
+					provider: provider as 'linkedin' | 'facebook' | 'x' | 'buffer',
+					issueSummary: `We could not publish ${affectedCount} ${providerName} post${affectedCount !== 1 ? 's' : ''} because your ${providerName} connection has expired.`,
+					reconnectUrl,
+					affectedCount,
+				}),
+				category: 'system',
+			});
+		}
+	} catch (error) {
+		console.error('Failed to mark connection as needing reauth:', error);
+		// Don't throw - this is non-critical
+	}
+}
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // Personal brand publishing fixes deployed // 5 minutes max for Vercel
@@ -194,6 +247,8 @@ async function publishDueContent(): Promise<{
 		failed: 0,
 		errors: [] as string[],
 	};
+	
+	const admin = getSupabaseService(); // Create admin client once for the function
 
 	// Query directly instead of using view to avoid view filter issues
 	// Filter for LinkedIn posts that are Ready To Publish with low attempt count
@@ -443,8 +498,8 @@ async function publishDueContent(): Promise<{
 			if (!publishResult.success && publishResult.requiresTokenRefresh) {
 				console.log(`[Publish Job] Token revoked for record ${record.id}, attempting refresh and retry...`);
 				
+				const admin = getSupabaseService();
 				try {
-					const admin = getSupabaseService();
 					const { decryptToken, encryptToken } = await import('@/lib/encryption');
 					
 					// Fetch the full connection from database using the connection ID we stored
@@ -533,6 +588,17 @@ async function publishDueContent(): Promise<{
 					const errorMessage = refreshError.message?.includes('reconnect') 
 						? refreshError.message 
 						: `Token refresh failed: ${refreshError.message || 'Unknown error'}. Please reconnect your LinkedIn account in Settings > Connections.`;
+					
+					// Mark connection as needing reauth and send email notification
+					await markConnectionNeedsReauthAndNotify(
+						admin,
+						userId,
+						connection.connectionId,
+						'linkedin',
+						errorMessage,
+						1 // affectedCount (this post)
+					);
+
 					await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
 						status: 'Failed',
 						publish_error: errorMessage,
@@ -568,6 +634,25 @@ async function publishDueContent(): Promise<{
 				// Failure: Update Airtable with error
 				const attempts = (fields.publish_attempts || 0) + 1;
 				const newStatus = attempts >= 3 ? 'Failed' : 'Ready To Publish';
+
+				// Check if error is OAuth-related (401, 403, or requires reconnection)
+				const isOAuthError = publishResult.error?.includes('REVOKED_ACCESS_TOKEN') ||
+					publishResult.error?.includes('401') ||
+					publishResult.error?.includes('403') ||
+					publishResult.error?.includes('reconnect') ||
+					publishResult.error?.includes('expired');
+
+				if (isOAuthError && attempts >= 2) {
+					// Mark connection as needing reauth and send email notification
+					await markConnectionNeedsReauthAndNotify(
+						admin,
+						userId,
+						connection.connectionId,
+						'linkedin',
+						publishResult.error || 'LinkedIn connection expired',
+						1 // affectedCount
+					);
+				}
 
 				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
 					status: newStatus,

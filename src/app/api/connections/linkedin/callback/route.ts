@@ -314,6 +314,8 @@ export async function GET(request: Request) {
 				metadata: {
 					...profile,
 				},
+				needs_reauth: false, // Clear reauth flag on successful connection
+				oauth_reconnect_email_sent_at: null, // Reset email sent flag
 				updated_at: new Date().toISOString(),
 			};
 
