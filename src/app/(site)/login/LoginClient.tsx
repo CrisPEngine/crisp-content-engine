@@ -141,10 +141,21 @@ export function LoginClient() {
 	const handleLinkedInSignIn = async () => {
 		if (!supabase) return;
 		try {
+			// Check if user already has a session - if so, skip OAuth prompt
+			const { data: { session } } = await supabase.auth.getSession();
+			if (session) {
+				router.replace('/dashboard');
+				return;
+			}
+			
 			await supabase.auth.signInWithOAuth({
 				provider: 'linkedin_oidc',
 				options: {
 					redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://app.crispdigital.io/auth/callback',
+					queryParams: {
+						// Only prompt if no existing session
+						prompt: 'select_account', // Use 'select_account' instead of 'consent' to avoid re-prompting
+					},
 				},
 			});
 		} catch (error) {
@@ -155,10 +166,21 @@ export function LoginClient() {
 	const handleGoogleSignIn = async () => {
 		if (!supabase) return;
 		try {
+			// Check if user already has a session - if so, skip OAuth prompt
+			const { data: { session } } = await supabase.auth.getSession();
+			if (session) {
+				router.replace('/dashboard');
+				return;
+			}
+			
 			await supabase.auth.signInWithOAuth({
 				provider: 'google',
 				options: {
 					redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://app.crispdigital.io/auth/callback',
+					queryParams: {
+						// Only prompt if no existing session
+						prompt: 'select_account', // Use 'select_account' instead of 'consent' to avoid re-prompting
+					},
 				},
 			});
 		} catch (error) {

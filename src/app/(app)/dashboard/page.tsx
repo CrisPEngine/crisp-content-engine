@@ -5,6 +5,7 @@ import { BrandProfilesList } from '@/components/BrandProfilesList';
 import { DashboardTabs } from '@/components/DashboardTabs';
 import { OnboardingDebug } from '@/components/OnboardingDebug';
 import { GenerateContentActions } from '@/components/GenerateContentActions';
+import { CardSkeleton, UsageCardSkeleton } from '@/components/skeletons/Skeleton';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -38,6 +39,9 @@ export default async function Dashboard({
 }) {
 	// Check authentication first - redirects must happen outside try-catch
 	const supabase = await createClient();
+	const params = await searchParams;
+	const isAuthLoading = params.auth === 'loading';
+	
 	const { data: { user }, error: authError } = await supabase.auth.getUser();
 
 	if (authError) {
@@ -45,7 +49,30 @@ export default async function Dashboard({
 		redirect('/login');
 	}
 
-	if (!user) redirect('/login');
+	if (!user) {
+		// If we're in auth loading state, show skeleton while session establishes
+		if (isAuthLoading) {
+			return (
+				<main className="p-4 md:p-6 space-y-4 md:space-y-6">
+					<div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+						<div className="flex-1">
+							<CardSkeleton />
+						</div>
+					</div>
+					<div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+						<UsageCardSkeleton />
+						<CardSkeleton />
+					</div>
+					<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+						<CardSkeleton />
+						<CardSkeleton />
+						<CardSkeleton />
+					</div>
+				</main>
+			);
+		}
+		redirect('/login');
+	}
 
 	try {
 		// Get user profile to check admin status
@@ -70,7 +97,6 @@ export default async function Dashboard({
 		// Always allow access to dashboard - show "Select Your Plan" button if no subscription
 		// Admins can bypass subscription requirement
 		// Also allow access if coming from Stripe success (subscription might not be processed yet)
-		const params = await searchParams;
 		const fromStripe = (params as any).sub === 'success';
 		const hasSubscription = !!sub || profile?.is_admin || fromStripe;
 

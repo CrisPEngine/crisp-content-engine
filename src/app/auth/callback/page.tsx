@@ -72,19 +72,24 @@ function CallbackHandler() {
 		// Handle OAuth code exchange
 		if (code && supabase) {
 			console.log('Exchanging OAuth code for session');
+			// Redirect immediately to dashboard with loading state
+			// The dashboard will show skeleton while session is being established
+			router.replace('/dashboard?auth=loading');
+			
+			// Exchange code in background
 			supabase.auth.exchangeCodeForSession(code)
 				.then((response: { data: any; error: any }) => {
 					if (response.error) {
 						console.error('Error exchanging code:', response.error);
-						router.push('/login?error=oauth_error');
+						router.replace('/login?error=oauth_error');
 						return;
 					}
-					// Success - redirect to dashboard (profile creation happens on dashboard load)
-					router.push('/dashboard');
+					// Session established - refresh dashboard to show content
+					router.refresh();
 				})
 				.catch((err: unknown) => {
 					console.error('Exception exchanging code:', err);
-					router.push('/login?error=oauth_error');
+					router.replace('/login?error=oauth_error');
 				});
 			return;
 		}

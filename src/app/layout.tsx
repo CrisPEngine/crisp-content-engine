@@ -9,11 +9,15 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+  display: 'swap', // Optimize font loading
+  preload: true,
 });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+  display: 'swap', // Optimize font loading
+  preload: false, // Only preload primary font
 });
 
 export const metadata: Metadata = {
@@ -39,6 +43,10 @@ export default function RootLayout({
                 src="https://res.cloudinary.com/dr75zvtso/image/upload/v1762325831/CrispContentEngineLogo_white_1200x627_ojrxn6.png" 
                 alt="CrisP Content Engine" 
                 className="h-20 w-auto"
+                loading="eager"
+                fetchPriority="high"
+                width={1200}
+                height={627}
               />
             </a>
           </div>
@@ -62,6 +70,9 @@ export default function RootLayout({
                     src="https://res.cloudinary.com/dr75zvtso/image/upload/v1762325831/CrispContentEngineLogo_white_1200x627_ojrxn6.png" 
                     alt="CrisP Content Engine" 
                     className="h-4 w-auto opacity-70"
+                    loading="lazy"
+                    width={1200}
+                    height={627}
                   />
                   <span>© {new Date().getFullYear()} CRISP Content Engine</span>
                 </div>
