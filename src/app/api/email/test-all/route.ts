@@ -30,110 +30,127 @@ export async function POST(request: Request) {
 		const body = await request.json().catch(() => ({}));
 		const testEmail = body.email || TEST_EMAIL;
 
-		const results: Array<{ template: string; status: string; error?: string }> = [];
+		const results: Array<{ template: string; status: string; error?: string; resendId?: string }> = [];
+		const timestamp = Date.now();
+
+		// Helper to add delay between emails to avoid rate limiting
+		const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 		// Test 1: AuthInviteEmail
 		try {
-			await sendEmail({
+			const result = await sendEmail({
 				to: testEmail,
-				subject: '[TEST] You have been invited to CRISP Content Engine',
+				subject: `[TEST 1/7] ${timestamp} - You have been invited to CRISP Content Engine`,
 				react: AuthInviteEmail({
 					inviteUrl: `${APP_URL}/auth/callback?token=test-invite-token`,
 					userEmail: testEmail,
 				}),
 				category: 'auth',
 			});
-			results.push({ template: 'AuthInviteEmail', status: 'sent' });
+			results.push({ 
+				template: 'AuthInviteEmail', 
+				status: 'sent',
+				resendId: (result as any)?.id || 'unknown'
+			});
 		} catch (error: any) {
 			results.push({ template: 'AuthInviteEmail', status: 'error', error: error.message });
 		}
+		await delay(500); // Small delay between emails
 
 		// Test 2: AuthMagicLinkEmail
 		try {
-			await sendEmail({
+			const result = await sendEmail({
 				to: testEmail,
-				subject: '[TEST] Sign in to CRISP Content Engine',
+				subject: `[TEST 2/7] ${timestamp} - Sign in to CRISP Content Engine`,
 				react: AuthMagicLinkEmail({
 					magicLinkUrl: `${APP_URL}/auth/callback?token=test-magic-token`,
 					userEmail: testEmail,
 				}),
 				category: 'auth',
 			});
-			results.push({ template: 'AuthMagicLinkEmail', status: 'sent' });
+			results.push({ 
+				template: 'AuthMagicLinkEmail', 
+				status: 'sent',
+				resendId: (result as any)?.id || 'unknown'
+			});
 		} catch (error: any) {
 			results.push({ template: 'AuthMagicLinkEmail', status: 'error', error: error.message });
 		}
+		await delay(500);
 
 		// Test 3: AuthPasswordResetEmail
 		try {
-			await sendEmail({
+			const result = await sendEmail({
 				to: testEmail,
-				subject: '[TEST] Reset your CRISP Content Engine password',
+				subject: `[TEST 3/7] ${timestamp} - Reset your CRISP Content Engine password`,
 				react: AuthPasswordResetEmail({
 					resetUrl: `${APP_URL}/auth/reset?token=test-reset-token`,
 					userEmail: testEmail,
 				}),
 				category: 'auth',
 			});
-			results.push({ template: 'AuthPasswordResetEmail', status: 'sent' });
+			results.push({ 
+				template: 'AuthPasswordResetEmail', 
+				status: 'sent',
+				resendId: (result as any)?.id || 'unknown'
+			});
 		} catch (error: any) {
 			results.push({ template: 'AuthPasswordResetEmail', status: 'error', error: error.message });
 		}
+		await delay(500);
 
 		// Test 4: ContentApprovalDigestEmail
 		try {
-			const testItems: ContentApprovalItem[] = [
-				{
-					id: 'test-1',
-					platform: 'LinkedIn',
-					title: '5 Ways to Improve Your Content Strategy',
-					shortPreview: 'Content strategy is crucial for business growth. Here are five proven methods to enhance your approach and drive better results...',
-					scheduledTime: 'Mar 15, 2:00 PM',
-					viewUrl: `${APP_URL}/content/approval`,
-					approveUrl: generateEmailActionUrl({
-						baseUrl: APP_URL,
-						userId: 'test-user-id',
-						action: 'content/approve',
-						resourceId: 'test-1',
-					}),
-				},
-				{
-					id: 'test-2',
-					platform: 'X (Twitter)',
-					title: 'Quick tip: Content planning',
-					shortPreview: 'Planning your content in advance saves time and improves consistency. Start with a content calendar...',
-					scheduledTime: 'Mar 16, 10:00 AM',
-					viewUrl: `${APP_URL}/content/approval`,
-					approveUrl: generateEmailActionUrl({
-						baseUrl: APP_URL,
-						userId: 'test-user-id',
-						action: 'content/approve',
-						resourceId: 'test-2',
-					}),
-				},
-				{
-					id: 'test-3',
-					platform: 'LinkedIn',
-					title: 'The Future of Social Media Marketing',
-					shortPreview: 'As social media continues to evolve, marketers need to adapt their strategies. Here\'s what to expect...',
-					scheduledTime: undefined,
-					viewUrl: `${APP_URL}/content/approval`,
-					approveUrl: generateEmailActionUrl({
-						baseUrl: APP_URL,
-						userId: 'test-user-id',
-						action: 'content/approve',
-						resourceId: 'test-3',
-					}),
-				},
-			];
-
-			await sendEmail({
+			const result = await sendEmail({
 				to: testEmail,
-				subject: '[TEST] You have 3 posts waiting for approval',
+				subject: `[TEST 4/7] ${timestamp} - You have 3 posts waiting for approval`,
 				react: ContentApprovalDigestEmail({
 					userName: 'Chris',
 					pendingCount: 3,
-					items: testItems,
+					items: [
+						{
+							id: 'test-1',
+							platform: 'LinkedIn',
+							title: '5 Ways to Improve Your Content Strategy',
+							shortPreview: 'Content strategy is crucial for business growth. Here are five proven methods to enhance your approach and drive better results...',
+							scheduledTime: 'Mar 15, 2:00 PM',
+							viewUrl: `${APP_URL}/content/approval`,
+							approveUrl: generateEmailActionUrl({
+								baseUrl: APP_URL,
+								userId: 'test-user-id',
+								action: 'content/approve',
+								resourceId: 'test-1',
+							}),
+						},
+						{
+							id: 'test-2',
+							platform: 'X (Twitter)',
+							title: 'Quick tip: Content planning',
+							shortPreview: 'Planning your content in advance saves time and improves consistency. Start with a content calendar...',
+							scheduledTime: 'Mar 16, 10:00 AM',
+							viewUrl: `${APP_URL}/content/approval`,
+							approveUrl: generateEmailActionUrl({
+								baseUrl: APP_URL,
+								userId: 'test-user-id',
+								action: 'content/approve',
+								resourceId: 'test-2',
+							}),
+						},
+						{
+							id: 'test-3',
+							platform: 'LinkedIn',
+							title: 'The Future of Social Media Marketing',
+							shortPreview: 'As social media continues to evolve, marketers need to adapt their strategies. Here\'s what to expect...',
+							scheduledTime: undefined,
+							viewUrl: `${APP_URL}/content/approval`,
+							approveUrl: generateEmailActionUrl({
+								baseUrl: APP_URL,
+								userId: 'test-user-id',
+								action: 'content/approve',
+								resourceId: 'test-3',
+							}),
+						},
+					],
 					dashboardUrl: `${APP_URL}/content/approval`,
 					approveAllUrl: generateEmailActionUrl({
 						baseUrl: APP_URL,
@@ -144,42 +161,45 @@ export async function POST(request: Request) {
 				}),
 				category: 'content',
 			});
-			results.push({ template: 'ContentApprovalDigestEmail', status: 'sent' });
+			results.push({ 
+				template: 'ContentApprovalDigestEmail', 
+				status: 'sent',
+				resendId: (result as any)?.id || 'unknown'
+			});
 		} catch (error: any) {
 			results.push({ template: 'ContentApprovalDigestEmail', status: 'error', error: error.message });
 		}
+		await delay(500);
 
 		// Test 5: ContentBatchReadyEmail
 		try {
-			const testBatchItems: ContentBatchItem[] = [
-				{
-					id: 'batch-1',
-					platform: 'LinkedIn',
-					title: 'Weekly Industry Insights',
-					shortPreview: 'This week we explore the latest trends in content marketing and how they impact your strategy...',
-				},
-				{
-					id: 'batch-2',
-					platform: 'X (Twitter)',
-					title: 'Quick tip: Engagement',
-					shortPreview: 'Boost your engagement by asking questions and responding to comments within the first hour...',
-				},
-				{
-					id: 'batch-3',
-					platform: 'LinkedIn',
-					title: 'Case Study: Success Story',
-					shortPreview: 'Learn how one company increased their reach by 300% using our content strategy framework...',
-				},
-			];
-
-			await sendEmail({
+			const result = await sendEmail({
 				to: testEmail,
-				subject: '[TEST] Your new content batch for Acme Corp is ready for review',
+				subject: `[TEST 5/7] ${timestamp} - Your new content batch for Acme Corp is ready for review`,
 				react: ContentBatchReadyEmail({
 					userName: 'Chris',
 					brandName: 'Acme Corp',
 					itemCount: 15,
-					items: testBatchItems,
+					items: [
+						{
+							id: 'batch-1',
+							platform: 'LinkedIn',
+							title: 'Weekly Industry Insights',
+							shortPreview: 'This week we explore the latest trends in content marketing and how they impact your strategy...',
+						},
+						{
+							id: 'batch-2',
+							platform: 'X (Twitter)',
+							title: 'Quick tip: Engagement',
+							shortPreview: 'Boost your engagement by asking questions and responding to comments within the first hour...',
+						},
+						{
+							id: 'batch-3',
+							platform: 'LinkedIn',
+							title: 'Case Study: Success Story',
+							shortPreview: 'Learn how one company increased their reach by 300% using our content strategy framework...',
+						},
+					],
 					platforms: ['LinkedIn', 'X (Twitter)', 'Instagram'],
 					periodLabel: 'Next 30 days',
 					dashboardUrl: `${APP_URL}/content/approval`,
@@ -192,16 +212,21 @@ export async function POST(request: Request) {
 				}),
 				category: 'content',
 			});
-			results.push({ template: 'ContentBatchReadyEmail', status: 'sent' });
+			results.push({ 
+				template: 'ContentBatchReadyEmail', 
+				status: 'sent',
+				resendId: (result as any)?.id || 'unknown'
+			});
 		} catch (error: any) {
 			results.push({ template: 'ContentBatchReadyEmail', status: 'error', error: error.message });
 		}
+		await delay(500);
 
 		// Test 6: OAuthReconnectEmail
 		try {
-			await sendEmail({
+			const result = await sendEmail({
 				to: testEmail,
-				subject: '[TEST] Action needed: Reconnect your LinkedIn account',
+				subject: `[TEST 6/7] ${timestamp} - Action needed: Reconnect your LinkedIn account`,
 				react: OAuthReconnectEmail({
 					userName: 'Chris',
 					provider: 'linkedin',
@@ -212,16 +237,21 @@ export async function POST(request: Request) {
 				}),
 				category: 'system',
 			});
-			results.push({ template: 'OAuthReconnectEmail', status: 'sent' });
+			results.push({ 
+				template: 'OAuthReconnectEmail', 
+				status: 'sent',
+				resendId: (result as any)?.id || 'unknown'
+			});
 		} catch (error: any) {
 			results.push({ template: 'OAuthReconnectEmail', status: 'error', error: error.message });
 		}
+		await delay(500);
 
 		// Test 7: StrategyReminderEmail
 		try {
-			await sendEmail({
+			const result = await sendEmail({
 				to: testEmail,
-				subject: '[TEST] Time to confirm your strategy for March 2024',
+				subject: `[TEST 7/7] ${timestamp} - Time to confirm your strategy for March 2024`,
 				react: StrategyReminderEmail({
 					userName: 'Chris',
 					monthLabel: 'March 2024',
@@ -237,7 +267,11 @@ export async function POST(request: Request) {
 				}),
 				category: 'strategy',
 			});
-			results.push({ template: 'StrategyReminderEmail', status: 'sent' });
+			results.push({ 
+				template: 'StrategyReminderEmail', 
+				status: 'sent',
+				resendId: (result as any)?.id || 'unknown'
+			});
 		} catch (error: any) {
 			results.push({ template: 'StrategyReminderEmail', status: 'error', error: error.message });
 		}
