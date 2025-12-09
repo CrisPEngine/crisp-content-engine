@@ -1,5 +1,6 @@
 import { resend } from './resendClient';
 import { ReactElement } from 'react';
+import { render } from '@react-email/render';
 
 export type SendEmailArgs = {
 	to: string;
@@ -22,11 +23,14 @@ export async function sendEmail({ to, subject, react, category, replyTo }: SendE
 		headers['X-CRISP-Category'] = category;
 	}
 
+	// Render React component to HTML
+	const html = await render(react);
+
 	return resend.emails.send({
 		from: `${fromName} <${fromEmail}>`,
 		to,
 		subject,
-		react,
+		html,
 		replyTo: replyTo || process.env.EMAIL_REPLY_TO || undefined,
 		headers: Object.keys(headers).length > 0 ? headers : undefined,
 	});
