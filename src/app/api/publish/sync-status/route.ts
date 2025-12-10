@@ -80,6 +80,126 @@ export async function POST(request: Request) {
 		// Get request body for optional filters
 		const body = await request.json().catch(() => ({}));
 		const recordId = body.record_id; // Optional: specific record ID to sync
+		const publishedUrl = body.published_url; // Optional: published URL to set
+		const linkedinPostId = body.linkedin_post_id; // Optional: LinkedIn post ID to set
+		const publishedAt = body.published_at; // Optional: published timestamp
+
+		// If record_id is provided with published_url or linkedin_post_id, update that specific record
+		if (recordId && (publishedUrl || linkedinPostId)) {
+			console.log(`[Sync Status] Updating record ${recordId} with published info`);
+			
+			// First, check for duplicates - find other posts with the same published_url or linkedin_post_id
+			const duplicateChecks: string[] = [];
+			if (publishedUrl) {
+				duplicateChecks.push(`{published_url} = "${publishedUrl}"`);
+			}
+			if (linkedinPostId) {
+				duplicateChecks.push(`{linkedin_post_id} = "${linkedinPostId}"`);
+			}
+
+			if (duplicateChecks.length > 0) {
+				const duplicateFilter = `AND(
+					{platform} = "LinkedIn",
+					OR(${duplicateChecks.join(',')}),
+					NOT(RECORD_ID() = "${recordId}")
+				)`;
+
+				const duplicateUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
+				duplicateUrl.searchParams.set('filterByFormula', duplicateFilter);
+				duplicateUrl.searchParams.set('maxRecords', '10');
+				duplicateUrl.searchParams.append('fields[]', 'status');
+				duplicateUrl.searchParams.append('fields[]', 'published_url');
+				duplicateUrl.searchParams.append('fields[]', 'linkedin_post_id');
+
+				const duplicateResponse = await fetch(duplicateUrl.toString(), {
+					headers: {
+						Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+						'Content-Type': 'application/json',
+					},
+				});
+
+				if (duplicateResponse.ok) {
+					const duplicateData = await duplicateResponse.json();
+					const duplicates = duplicateData.records || [];
+					
+					if (duplicates.length > 0) {
+						// Found duplicates - mark them as duplicates or update their status
+						const duplicateIds = duplicates.map((d: any) => d.id);
+						console.warn(`[Sync Status] Found ${duplicates.length} duplicate posts: ${duplicateIds.join(', ')}`);
+						
+						// Update duplicates to "Published" if they're not already, to prevent re-publishing
+						for (const duplicate of duplicates) {
+							if (duplicate.fields.status !== 'Published') {
+								await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${duplicate.id}`, {
+									method: 'PATCH',
+									headers: {
+										Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+										'Content-Type': 'application/json',
+									},
+									body: JSON.stringify({
+										fields: {
+											status: 'Published',
+											publish_error: 'Duplicate post - already published',
+										},
+									}),
+								});
+							}
+						}
+					}
+				}
+			}
+
+			// Now update the target record
+			const updateFields: Record<string, any> = {
+				status: 'Published',
+			};
+
+			if (publishedUrl) {
+				updateFields.published_url = publishedUrl;
+			}
+			if (linkedinPostId) {
+				updateFields.linkedin_post_id = linkedinPostId;
+			}
+			if (publishedAt) {
+				updateFields.published_at = publishedAt;
+			} else if (!publishedAt) {
+				// If no published_at provided, use current time
+				updateFields.published_at = new Date().toISOString();
+			}
+
+			const updateResponse = await fetch(
+				`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${recordId}`,
+				{
+					method: 'PATCH',
+					headers: {
+						Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({ fields: updateFields }),
+				}
+			);
+
+			if (!updateResponse.ok) {
+				const errorText = await updateResponse.text();
+				return NextResponse.json(
+					{ error: `Failed to update record: ${errorText}` },
+					{ status: 502 }
+				);
+			}
+
+			return NextResponse.json({
+				ok: true,
+				message: `Successfully synced record ${recordId}`,
+				synced: 1,
+				record: {
+					id: recordId,
+					status: 'Published',
+					published_url: publishedUrl,
+					linkedin_post_id: linkedinPostId,
+					published_at: publishedAt || updateFields.published_at,
+				},
+			});
+		}
 
 		// Find posts that are "Ready To Publish" but have linkedin_post_id or published_url
 		// This indicates they were published but status wasn't updated
@@ -132,6 +252,43 @@ export async function POST(request: Request) {
 		}
 
 		console.log(`[Sync Status] Found ${records.length} out-of-sync posts`);
+
+		// Check for duplicates before updating
+		// Group records by published_url or linkedin_post_id to detect duplicates
+		const urlToRecords = new Map<string, any[]>();
+		const postIdToRecords = new Map<string, any[]>();
+
+		for (const record of records) {
+			const publishedUrl = record.fields.published_url;
+			const linkedinPostId = record.fields.linkedin_post_id;
+
+			if (publishedUrl) {
+				if (!urlToRecords.has(publishedUrl)) {
+					urlToRecords.set(publishedUrl, []);
+				}
+				urlToRecords.get(publishedUrl)!.push(record);
+			}
+
+			if (linkedinPostId) {
+				if (!postIdToRecords.has(linkedinPostId)) {
+					postIdToRecords.set(linkedinPostId, []);
+				}
+				postIdToRecords.get(linkedinPostId)!.push(record);
+			}
+		}
+
+		// Log duplicates found
+		for (const [url, recs] of urlToRecords.entries()) {
+			if (recs.length > 1) {
+				console.warn(`[Sync Status] Found ${recs.length} records with same published_url: ${url}`);
+			}
+		}
+
+		for (const [postId, recs] of postIdToRecords.entries()) {
+			if (recs.length > 1) {
+				console.warn(`[Sync Status] Found ${recs.length} records with same linkedin_post_id: ${postId}`);
+			}
+		}
 
 		// Update each record to "Published" status
 		const updatePromises = records.map(async (record: any) => {

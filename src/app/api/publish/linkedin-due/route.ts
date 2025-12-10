@@ -283,6 +283,8 @@ async function publishDueContent(): Promise<{
 		'brand_profile_id',
 		'publish_attempts',
 		'image_reference_url', // Include image URL for posts with images
+		'linkedin_post_id', // Check if already published
+		'published_url', // Check if already published
 	];
 	fields.forEach((field) => {
 		url.searchParams.append('fields[]', field);
@@ -315,6 +317,28 @@ async function publishDueContent(): Promise<{
 
 		try {
 			const fields = record.fields;
+
+			// Check if post is already published (has linkedin_post_id or published_url)
+			// This prevents duplicate publishing if status wasn't updated
+			if (fields.linkedin_post_id || fields.published_url) {
+				console.log(`[Publish Job] Record ${record.id} already has published info, syncing status instead of publishing`);
+				
+				// Update status to Published if it's not already
+				if (fields.status !== 'Published') {
+					try {
+						await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
+							status: 'Published',
+							published_at: fields.published_at || new Date().toISOString(),
+						});
+						console.log(`[Publish Job] Synced record ${record.id} status to Published`);
+					} catch (syncError: any) {
+						console.error(`[Publish Job] Failed to sync status for record ${record.id}:`, syncError);
+					}
+				}
+				
+				stats.processed--; // Don't count as processed (already published)
+				continue; // Skip publishing
+			}
 
 			// Check if content is due (scheduled_time is in UTC)
 			const scheduledTime = fields.scheduled_time;
