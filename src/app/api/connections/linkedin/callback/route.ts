@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { encryptToken } from '@/lib/encryption';
+import { retryFailedPostsAfterReconnection } from '@/lib/retryFailedPosts';
 
 export const runtime = 'nodejs';
 
@@ -340,7 +341,26 @@ export async function GET(request: Request) {
 			}
 
 			let connectionId: string;
+			let wasReconnection = false;
+			let existingBrandProfileIds: string[] = [];
+
 			if (existingConnection) {
+				// Check if this was a reconnection (connection had needs_reauth: true)
+				const { data: existingConnData } = await admin
+					.from('social_connections')
+					.select('needs_reauth, brand_profile_id')
+					.eq('id', existingConnection.id)
+					.single();
+
+				wasReconnection = existingConnData?.needs_reauth === true;
+				
+				// Get brand_profile_id if it exists
+				if (existingConnData?.brand_profile_id) {
+					existingBrandProfileIds = Array.isArray(existingConnData.brand_profile_id)
+						? existingConnData.brand_profile_id
+						: [existingConnData.brand_profile_id];
+				}
+
 				// Update existing connection
 				const { error: updateError } = await admin
 					.from('social_connections')
@@ -369,6 +389,19 @@ export async function GET(request: Request) {
 					throw new Error(`Failed to save connection: ${insertError?.message || 'Unknown error'}`);
 				}
 				connectionId = newConnection.id;
+			}
+
+			// If this was a reconnection and we have brand_profile_ids, retry failed posts
+			// Do this in a non-blocking way so it doesn't delay the redirect
+			if (wasReconnection && existingBrandProfileIds.length > 0) {
+				console.log(`[LinkedIn Callback] Reconnection detected for connection ${connectionId}, retrying failed posts for brands: ${existingBrandProfileIds.join(', ')}`);
+				retryFailedPostsAfterReconnection({
+					connectionId,
+					brandProfileIds: existingBrandProfileIds,
+				}).catch((error) => {
+					console.error(`[LinkedIn Callback] Failed to retry posts after reconnection:`, error);
+					// Don't throw - this is non-critical
+				});
 			}
 
 			// Redirect to brand assignment page
