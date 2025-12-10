@@ -98,6 +98,9 @@ interface ContentRecord {
 		image_reference_url?: string;
 		publish_attempts?: number;
 		publish_error?: string;
+		linkedin_post_id?: string;
+		published_url?: string;
+		published_at?: string;
 	};
 }
 
