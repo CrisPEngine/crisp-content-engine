@@ -156,7 +156,7 @@ async function updateAirtableRecord(
 	if (updates.publish_error !== undefined) fields.publish_error = updates.publish_error;
 	if (updates.publish_attempts !== undefined) fields.publish_attempts = updates.publish_attempts;
 
-	await fetch(`https://api.airtable.com/v0/${baseId}/${tableId}/${recordId}`, {
+	const response = await fetch(`https://api.airtable.com/v0/${baseId}/${tableId}/${recordId}`, {
 		method: 'PATCH',
 		headers: {
 			Authorization: `Bearer ${token}`,
@@ -164,6 +164,13 @@ async function updateAirtableRecord(
 		},
 		body: JSON.stringify({ fields }),
 	});
+
+	if (!response.ok) {
+		const errorText = await response.text();
+		const error = `Failed to update Airtable record ${recordId}: ${response.status} ${errorText}`;
+		console.error(`[Publish Job] ${error}`);
+		throw new Error(error);
+	}
 }
 
 /**
@@ -615,21 +622,28 @@ async function publishDueContent(): Promise<{
 			if (publishResult.success) {
 				// Success: Update Airtable IMMEDIATELY to prevent duplicate processing
 				// Do this before any other network calls
-				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
-					status: 'Published',
-					published_at: new Date().toISOString(),
-					published_url: publishResult.published_url || undefined,
-					linkedin_post_id: publishResult.linkedin_post_id || undefined,
-					publish_attempts: (fields.publish_attempts || 0) + 1,
-				});
+				try {
+					await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
+						status: 'Published',
+						published_at: new Date().toISOString(),
+						published_url: publishResult.published_url || undefined,
+						linkedin_post_id: publishResult.linkedin_post_id || undefined,
+						publish_attempts: (fields.publish_attempts || 0) + 1,
+					});
+					stats.success++;
+				} catch (updateError: any) {
+					// If Airtable update fails but post was published, log error but don't fail
+					// The post is already on LinkedIn, so we count it as success
+					console.error(`[Publish Job] Post ${record.id} published to LinkedIn but Airtable update failed:`, updateError);
+					stats.success++; // Still count as success since it's published
+					stats.errors.push(`Record ${record.id}: Published but Airtable update failed - ${updateError.message}`);
+				}
 
 				// Increment usage (non-blocking - don't fail if this errors)
 				incrementUsage(userId).catch((err) => {
 					console.error(`Failed to increment usage for user ${userId}:`, err);
 					// Status is already Published, so we don't rollback
 				});
-
-				stats.success++;
 			} else {
 				// Failure: Update Airtable with error
 				const attempts = (fields.publish_attempts || 0) + 1;
