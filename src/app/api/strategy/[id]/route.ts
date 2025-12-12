@@ -177,16 +177,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 			return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
 		}
 
-		// Check if strategy is already approved - prevent editing
-		const strategyStatus = verifyRecord.fields?.status;
-		if (strategyStatus === 'Strategy Approved') {
-			return NextResponse.json(
-				{ 
-					error: 'This strategy has been approved and cannot be edited. Please use the Monthly Strategy Update process to make changes.',
-				},
-				{ status: 403 }
-			);
-		}
+		// Master strategy is always editable - no need to check approval status
+		// Users can edit their master strategy at any time
 
 		// Build update fields
 		const updateFields: Record<string, any> = {};
