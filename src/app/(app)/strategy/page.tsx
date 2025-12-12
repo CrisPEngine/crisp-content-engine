@@ -22,23 +22,7 @@ export default function StrategyPage() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const supabase = useSupabase();
-	// Get initial tab from query params, default to master-strategy
-	const initialTab = useMemo(() => {
-		const tabParam = searchParams.get('tab');
-		return (tabParam === 'content-briefs' ? 'content-briefs' : 'master-strategy') as Tab;
-	}, [searchParams]);
-	
-	const [activeTab, setActiveTab] = useState<Tab>(initialTab);
-	
-	// Update tab when query param changes
-	useEffect(() => {
-		const tabParam = searchParams.get('tab');
-		if (tabParam === 'content-briefs') {
-			setActiveTab('content-briefs');
-		} else if (tabParam === 'master-strategy' || !tabParam) {
-			setActiveTab('master-strategy');
-		}
-	}, [searchParams]);
+	const [activeTab, setActiveTab] = useState<Tab>('master-strategy');
 	const [brandProfileId, setBrandProfileId] = useState<string | null>(null);
 	const [strategyJson, setStrategyJson] = useState<any>(null);
 	const [loading, setLoading] = useState(true);
@@ -54,10 +38,12 @@ export default function StrategyPage() {
 			loadFirstBrand();
 		}
 		
-		// Set initial tab from query params
+		// Set tab from query params
 		const tabParam = searchParams.get('tab');
 		if (tabParam === 'content-briefs') {
 			setActiveTab('content-briefs');
+		} else {
+			setActiveTab('master-strategy');
 		}
 	}, [searchParams]);
 
@@ -78,10 +64,13 @@ export default function StrategyPage() {
 					setBrandProfileId(profiles[0].id);
 				} else {
 					setError('No brand profiles found. Please complete onboarding first.');
+					setLoading(false);
 				}
 			}
 		} catch (err) {
 			console.error('Failed to load brands:', err);
+			setError('Failed to load brand profiles');
+			setLoading(false);
 		}
 	}
 
