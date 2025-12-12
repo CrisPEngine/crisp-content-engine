@@ -505,9 +505,9 @@ export function MasterStrategyFormEditor({ brandProfileId, initialStrategyJson }
 					</button>
 				</div>
 
-				{Array.isArray(strategy.pillars) && strategy.pillars.length === 0 ? (
+				{!Array.isArray(strategy.pillars) || strategy.pillars.length === 0 ? (
 					<p className="text-sm text-text-dim">No content pillars yet. Add your first pillar above.</p>
-				) : Array.isArray(strategy.pillars) ? (
+				) : (
 					<div className="space-y-4">
 						{strategy.pillars.map((pillar, index) => (
 							<div key={pillar.id || index} className="p-4 rounded-xl2 border border-edge/60 bg-bg/50">
@@ -558,8 +558,6 @@ export function MasterStrategyFormEditor({ brandProfileId, initialStrategyJson }
 							</div>
 						))}
 					</div>
-				) : (
-					<p className="text-sm text-text-dim">No content pillars yet. Add your first pillar above.</p>
 				)}
 			</section>
 
@@ -576,9 +574,9 @@ export function MasterStrategyFormEditor({ brandProfileId, initialStrategyJson }
 					</button>
 				</div>
 
-				{Array.isArray(strategy.platform_cadence) && strategy.platform_cadence.length === 0 ? (
+				{!Array.isArray(strategy.platform_cadence) || strategy.platform_cadence.length === 0 ? (
 					<p className="text-sm text-text-dim">No platform cadence defined. Add platforms above.</p>
-				) : Array.isArray(strategy.platform_cadence) ? (
+				) : (
 					<div className="space-y-4">
 						{strategy.platform_cadence.map((cadence, index) => (
 							<div key={index} className="p-4 rounded-xl2 border border-edge/60 bg-bg/50">
