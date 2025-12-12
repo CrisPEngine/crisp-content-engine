@@ -83,9 +83,21 @@ export async function POST(req: Request) {
 			);
 		}
 
-		// If mode is 'continue', just save preference to BrandProfiles and return
+		// If mode is 'continue', save preference and optionally trigger content generation
 		if (data.update_mode === 'continue') {
 			try {
+				// Check if renewal date is today or in the past - if so, trigger immediately
+				const renewalDate = data.monthly_cycle_start ? new Date(data.monthly_cycle_start) : null;
+				const today = new Date();
+				today.setHours(0, 0, 0, 0); // Reset to start of day for comparison
+				
+				let shouldTriggerNow = false;
+				if (renewalDate) {
+					const renewalDateStart = new Date(renewalDate);
+					renewalDateStart.setHours(0, 0, 0, 0);
+					shouldTriggerNow = renewalDateStart.getTime() <= today.getTime();
+				}
+
 				// Update BrandProfiles to mark that this brand should auto-generate content on renewal
 				const updateRes = await fetch(
 					`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}/${data.brand_profile_id}`,
@@ -109,6 +121,35 @@ export async function POST(req: Request) {
 					const errorData = await updateRes.json();
 					console.error('Failed to save continue preference:', errorData);
 					// Don't fail the request, just log
+				}
+
+				// If renewal is today or in the past, trigger content generation immediately
+				if (shouldTriggerNow) {
+					console.log('Renewal date is today or past, triggering content generation immediately');
+					const autoGenerateUrl = `${process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/content/auto-generate`;
+					
+					// Trigger in background (don't wait)
+					fetch(autoGenerateUrl, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							...(process.env.MAKE_API_KEY && {
+								'x-api-key': process.env.MAKE_API_KEY,
+							}),
+						},
+						body: JSON.stringify({
+							userId: user.id,
+							brand_profile_id: data.brand_profile_id,
+						}),
+					}).catch((err) => {
+						console.error('Failed to trigger auto-content generation:', err);
+						// Don't fail the request if this fails
+					});
+
+					return NextResponse.json({
+						ok: true,
+						message: 'Preference saved. Content generation has been triggered for your renewal.',
+					});
 				}
 
 				return NextResponse.json({
