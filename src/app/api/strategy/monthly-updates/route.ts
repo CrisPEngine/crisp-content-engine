@@ -86,8 +86,10 @@ export async function GET(request: Request) {
 		const filterFormula = `AND(OR(${brandFilters}), ${statusFilter})`;
 		
 		updatesUrl.searchParams.set('filterByFormula', filterFormula);
-		updatesUrl.searchParams.set('sort[0][field]', 'created_time');
-		updatesUrl.searchParams.set('sort[0][direction]', 'desc');
+		// Note: This endpoint is deprecated in favor of /api/content-briefs
+		// Don't sort by created_time as it's not a field in Airtable
+		// Airtable's automatic createdTime is in record metadata, not sortable via API
+		// We'll sort client-side if needed
 		updatesUrl.searchParams.set('maxRecords', '50');
 
 		const updatesRes = await fetch(updatesUrl.toString(), {

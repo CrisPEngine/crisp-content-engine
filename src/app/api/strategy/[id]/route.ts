@@ -95,13 +95,30 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 			}
 		}
 
+		// Ensure strategy_json is always an object, not null
+		// This allows the form editor to work even for accounts without strategy_json populated
+		let strategyJson = record.fields.strategy_json;
+		if (!strategyJson) {
+			// If strategy_json is null/undefined/empty, return empty object
+			// This allows users to build their strategy from scratch
+			strategyJson = {};
+		} else if (typeof strategyJson === 'string') {
+			// If it's a string, try to parse it
+			try {
+				strategyJson = JSON.parse(strategyJson);
+			} catch {
+				// If parsing fails, use empty object
+				strategyJson = {};
+			}
+		}
+
 		return NextResponse.json({
 			id: record.id,
 			brand_name: record.fields.client_name || 'Unknown Brand',
 			status: record.fields.status || 'New Brief',
 			content: strategyContent,
 			strategy_summary: record.fields.strategy_summary || '',
-			strategy_json: record.fields.strategy_json || null,
+			strategy_json: strategyJson,
 			created_at: record.fields.created_time || record.createdTime,
 		});
 	} catch (error: any) {
