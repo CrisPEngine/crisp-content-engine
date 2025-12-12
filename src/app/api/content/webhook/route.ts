@@ -99,78 +99,109 @@ export async function POST(req: NextRequest) {
 
 			if (AIRTABLE_TOKEN && BASE_ID && CONTENTBRIEFS_TABLE) {
 				try {
-					const updateFields: any = {
-						status: ok ? 'Generation Completed' : 'Failed',
-						generation_completed_at: new Date().toISOString(),
-					};
-
-					if (ok && generated_content_ids) {
-						// Store generated content IDs if provided
-						const contentIdsJson = Array.isArray(generated_content_ids)
-							? JSON.stringify(generated_content_ids)
-							: String(generated_content_ids);
-						updateFields.generated_content_ids = contentIdsJson;
-					}
-
-					if (!ok) {
-						updateFields.last_error = status || 'Content generation failed';
-					}
-
-					const updateRes = await fetch(
+					// Fetch current brief status for idempotency check
+					const briefCheckRes = await fetch(
 						`https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}/${brief_id}`,
 						{
-							method: 'PATCH',
 							headers: {
 								Authorization: `Bearer ${AIRTABLE_TOKEN}`,
 								'Content-Type': 'application/json',
 							},
-							body: JSON.stringify({ fields: updateFields }),
 						}
 					);
 
-					if (updateRes.ok) {
-						console.log('[CONTENT WEBHOOK] Updated content brief status to:', updateFields.status);
-						
-						// Send email notification if generation completed successfully
-						if (ok && user_id) {
-							try {
-								const { sendEmail } = await import('@/lib/email/sendEmail');
-								const { ContentReadyEmail } = await import('@/emails/product/ContentReadyEmail');
+					if (briefCheckRes.ok) {
+						const briefCheckData = await briefCheckRes.json();
+						const currentStatus = briefCheckData.fields?.status || '';
+
+						// Idempotency: Ignore duplicate callbacks for completed briefs
+						if (currentStatus === 'Generation Completed') {
+							console.log(`[CONTENT WEBHOOK] Ignoring duplicate callback for completed brief ${brief_id}`);
+							return NextResponse.json({ ok: true, received: true, message: 'Duplicate callback ignored' }, { status: 200 });
+						}
+
+						// Only update if not already completed
+						if (currentStatus !== 'Generation Completed') {
+							const updateFields: any = {};
+							
+							if (ok) {
+								updateFields.status = 'Generation Completed';
+								updateFields.generation_completed_at = new Date().toISOString();
 								
-								// Get user email from Supabase
-								const { getSupabaseService } = await import('@/lib/supabaseService');
-								const admin = getSupabaseService();
-								const { data: profile } = await admin
-									.from('profiles')
-									.select('email, full_name')
-									.eq('id', user_id)
-									.maybeSingle();
-
-								if (profile?.email) {
-									const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io';
-									const contentUrl = `${appUrl}/content/approval?brand_profile_id=${brand_profile_id}`;
-									
-									await sendEmail({
-										to: profile.email,
-										subject: 'New content ready for approval',
-										react: ContentReadyEmail({
-											userName: profile.full_name || 'there',
-											contentUrl,
-											brandName: brand_profile_id, // Could fetch actual brand name if needed
-										}),
-										category: 'content',
-									});
-
-									console.log('[CONTENT WEBHOOK] Sent content ready email to:', profile.email);
+								if (generated_content_ids) {
+									// Store generated content IDs if provided
+									const contentIdsJson = Array.isArray(generated_content_ids)
+										? JSON.stringify(generated_content_ids)
+										: String(generated_content_ids);
+									updateFields.generated_content_ids = contentIdsJson;
 								}
-							} catch (emailError) {
-								console.error('[CONTENT WEBHOOK] Failed to send email:', emailError);
-								// Don't fail the webhook if email fails
+							} else {
+								updateFields.status = 'Failed';
+								updateFields.generation_completed_at = new Date().toISOString();
+								// Use error_message from payload if provided, otherwise fallback to status
+								updateFields.last_error = body.error_message || status || 'Content generation failed';
+							}
+
+							const updateRes = await fetch(
+								`https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}/${brief_id}`,
+								{
+									method: 'PATCH',
+									headers: {
+										Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+										'Content-Type': 'application/json',
+									},
+									body: JSON.stringify({ fields: updateFields }),
+								}
+							);
+
+							if (updateRes.ok) {
+								console.log('[CONTENT WEBHOOK] Updated content brief status to:', updateFields.status);
+								
+								// Send email notification if generation completed successfully
+								if (ok && user_id) {
+									try {
+										const { sendEmail } = await import('@/lib/email/sendEmail');
+										const { ContentReadyEmail } = await import('@/emails/product/ContentReadyEmail');
+										
+										// Get user email from Supabase
+										const { getSupabaseService } = await import('@/lib/supabaseService');
+										const admin = getSupabaseService();
+										const { data: profile } = await admin
+											.from('profiles')
+											.select('email, full_name')
+											.eq('id', user_id)
+											.maybeSingle();
+
+										if (profile?.email) {
+											const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io';
+											// Include content_brief_id in deep link for traceability
+											const contentUrl = `${appUrl}/content/approval?brand_profile_id=${brand_profile_id}${brief_id ? `&content_brief_id=${brief_id}` : ''}`;
+											
+											await sendEmail({
+												to: profile.email,
+												subject: 'New content ready for approval',
+												react: ContentReadyEmail({
+													userName: profile.full_name || 'there',
+													contentUrl,
+													brandName: brand_profile_id, // Could fetch actual brand name if needed
+												}),
+												category: 'content',
+											});
+
+											console.log('[CONTENT WEBHOOK] Sent content ready email to:', profile.email);
+										}
+									} catch (emailError) {
+										console.error('[CONTENT WEBHOOK] Failed to send email:', emailError);
+										// Don't fail the webhook if email fails
+									}
+								}
+							} else {
+								const errorText = await updateRes.text();
+								console.error('[CONTENT WEBHOOK] Failed to update content brief:', errorText);
 							}
 						}
 					} else {
-						const errorText = await updateRes.text();
-						console.error('[CONTENT WEBHOOK] Failed to update content brief:', errorText);
+						console.warn(`[CONTENT WEBHOOK] Failed to fetch brief ${brief_id} for status check`);
 					}
 				} catch (briefError) {
 					console.error('[CONTENT WEBHOOK] Error updating content brief:', briefError);

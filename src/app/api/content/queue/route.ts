@@ -93,11 +93,19 @@ export async function GET(request: Request) {
 		const { searchParams } = new URL(request.url);
 		const stage = searchParams.get('stage');
 		const statusParam = searchParams.get('status');
+		const brandProfileId = searchParams.get('brand_profile_id');
+		const contentBriefId = searchParams.get('content_brief_id'); // For traceability
 		const statuses = mapStatuses(stage, statusParam);
 
-		// Note: brand_profile_id field may not exist in ContentQueue yet
-		// We'll filter by status only in Airtable, then filter by brand_profile_id in code
+		// Build filter formula
+		// Note: brand_profile_id and content_brief_id fields may not exist in ContentQueue yet
+		// We'll filter by status in Airtable, then filter by brand_profile_id and content_brief_id in code
 		const filters: string[] = [];
+		
+		// Add content_brief_id filter if provided (for traceability)
+		if (contentBriefId) {
+			filters.push(`FIND("${contentBriefId}", {content_brief_id})`);
+		}
 		if (statuses && statuses.length > 0) {
 			const statusFormula =
 				statuses.length === 1

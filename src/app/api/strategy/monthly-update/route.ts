@@ -39,6 +39,10 @@ const formatCycleLabel = (date: Date) =>
 	date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
 export async function POST(req: Request) {
+	// DEPRECATION WARNING: This endpoint is deprecated
+	// Use /api/content-brief instead for monthly content briefs
+	console.warn('[DEPRECATED] /api/strategy/monthly-update called. This endpoint is deprecated. Use /api/content-brief instead.');
+	
 	try {
 		const body = await req.json();
 		const data = schema.parse(body);

@@ -1,10 +1,9 @@
 /**
- * POST /api/content-brief/:id/approve
+ * POST /api/content-brief/:id/retry
  * 
- * Approves a content brief and triggers content generation
- * - Validates ownership
- * - Sets status = "Approved" and approved_at = now
- * - Calls triggerContentGenerationFromBrief(briefId)
+ * Retries content generation for a failed or stuck brief
+ * - Only allows retry when status is "Failed" or "Sent to Make" older than 30 minutes
+ * - Resets last_error and resends webhook to Make.com
  */
 
 import { NextResponse } from 'next/server';
@@ -90,20 +89,44 @@ export async function POST(
 			);
 		}
 
-		// Enforce strict status transition: Only allow approval from "Pending Approval"
-		if (fields.status !== 'Pending Approval') {
+		const currentStatus = fields.status || '';
+		const sentToMakeAt = fields.sent_to_make_at;
+
+		// Only allow retry for Failed or Sent to Make status
+		if (currentStatus !== 'Failed' && currentStatus !== 'Sent to Make') {
 			return NextResponse.json(
-				{ 
-					error: `Cannot approve brief. Current status: ${fields.status}. Only briefs with status "Pending Approval" can be approved.`,
-					current_status: fields.status,
-					brief_id: briefId,
+				{
+					error: `Cannot retry brief. Current status: ${currentStatus}. Only briefs with status "Failed" or "Sent to Make" can be retried.`,
+					current_status: currentStatus,
 				},
 				{ status: 400 }
 			);
 		}
 
-		// Update brief status to Approved
-		const updateRes = await fetch(
+		// If status is "Sent to Make", check if it's older than 30 minutes
+		if (currentStatus === 'Sent to Make' && sentToMakeAt) {
+			try {
+				const sentTime = new Date(sentToMakeAt);
+				const now = new Date();
+				const minutesSinceSent = (now.getTime() - sentTime.getTime()) / (1000 * 60);
+
+				if (minutesSinceSent < 30) {
+					return NextResponse.json(
+						{
+							error: `Cannot retry yet. Brief was sent to Make ${Math.round(minutesSinceSent)} minutes ago. Please wait at least 30 minutes before retrying.`,
+							minutes_since_sent: Math.round(minutesSinceSent),
+						},
+						{ status: 400 }
+					);
+				}
+			} catch (dateError) {
+				console.warn('Failed to parse sent_to_make_at date:', dateError);
+				// Continue with retry if date parsing fails
+			}
+		}
+
+		// Reset status to "Approved" and clear error before retrying
+		const resetRes = await fetch(
 			`https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}/${briefId}`,
 			{
 				method: 'PATCH',
@@ -114,17 +137,19 @@ export async function POST(
 				body: JSON.stringify({
 					fields: {
 						status: 'Approved',
-						approved_at: new Date().toISOString(),
+						last_error: null,
+						// Clear sent_to_make_at to allow fresh retry
+						sent_to_make_at: null,
 					},
 				}),
 			}
 		);
 
-		if (!updateRes.ok) {
-			const errorText = await updateRes.text();
-			console.error('Failed to update brief status:', errorText);
+		if (!resetRes.ok) {
+			const errorText = await resetRes.text();
+			console.error('Failed to reset brief status:', errorText);
 			return NextResponse.json(
-				{ error: 'Failed to approve brief' },
+				{ error: 'Failed to reset brief status for retry' },
 				{ status: 502 }
 			);
 		}
@@ -133,7 +158,7 @@ export async function POST(
 		try {
 			await triggerContentGenerationFromBrief(briefId);
 		} catch (error: any) {
-			console.error('Failed to trigger content generation:', error);
+			console.error('Failed to retry content generation:', error);
 			// Update brief with error
 			await fetch(
 				`https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}/${briefId}`,
@@ -145,25 +170,26 @@ export async function POST(
 					},
 					body: JSON.stringify({
 						fields: {
-							last_error: `Failed to trigger content generation: ${error?.message || 'Unknown error'}`,
+							status: 'Failed',
+							last_error: `Retry failed: ${error?.message || 'Unknown error'}`,
 						},
 					}),
 				}
 			).catch(() => {}); // Ignore errors updating error field
 
 			return NextResponse.json(
-				{ error: 'Brief approved but failed to trigger content generation', details: error?.message },
+				{ error: 'Retry failed', details: error?.message },
 				{ status: 500 }
 			);
 		}
 
 		return NextResponse.json({
 			ok: true,
-			message: 'Content brief approved. Content generation started.',
+			message: 'Content brief retry initiated. Content generation started.',
 			brief_id: briefId,
 		});
 	} catch (error: any) {
-		console.error('Error approving content brief:', error);
+		console.error('Error retrying content brief:', error);
 		return NextResponse.json(
 			{ error: error?.message || 'Server error' },
 			{ status: 500 }

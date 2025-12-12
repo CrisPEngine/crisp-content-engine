@@ -47,6 +47,18 @@ export async function triggerContentGenerationFromBrief(briefId: string): Promis
 	const briefData = await briefRes.json();
 	const fields = briefData.fields || {};
 
+	// Idempotency check: Don't allow triggering if already sent or completed
+	const currentStatus = fields.status || '';
+	if (currentStatus === 'Sent to Make' || currentStatus === 'Generation Completed') {
+		console.log(`[Content Brief] Skipping trigger - brief ${briefId} already in status: ${currentStatus}`);
+		throw new Error(`Brief already processed. Current status: ${currentStatus}`);
+	}
+
+	// Enforce strict status transition: Only allow triggering from "Approved"
+	if (currentStatus !== 'Approved') {
+		throw new Error(`Cannot trigger content generation. Current status: ${currentStatus}. Only briefs with status "Approved" can trigger generation.`);
+	}
+
 	// Extract brand_profile_id
 	let brandProfileId: string | null = null;
 	if (fields.brand_profile_id) {
@@ -249,29 +261,10 @@ export async function triggerContentGenerationFromBrief(briefId: string): Promis
 		headers['x-api-key'] = process.env.MAKE_API_KEY;
 	}
 
-	// Send webhook
-	console.log('[Content Brief] Triggering content generation webhook:', {
-		briefId,
-		brandProfileId,
-		userId,
-		briefMode: fields.brief_mode,
-		hasBestPost: !!bestPost,
-		hasWorstPost: !!worstPost,
-	});
-
-	const webhookRes = await fetch(MAKE_WEBHOOK_URL, {
-		method: 'POST',
-		headers,
-		body: JSON.stringify(webhookPayload),
-	});
-
-	if (!webhookRes.ok) {
-		const errorText = await webhookRes.text();
-		throw new Error(`Make.com webhook failed: ${webhookRes.status} - ${errorText}`);
-	}
-
-	// Update brief status to "Sent to Make"
-	await fetch(
+	// CRITICAL: Set status to "Sent to Make" BEFORE calling Make (for traceability)
+	// This ensures we have a record even if the webhook call fails
+	const sentToMakeAt = new Date().toISOString();
+	const statusUpdateRes = await fetch(
 		`https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}/${briefId}`,
 		{
 			method: 'PATCH',
@@ -282,13 +275,57 @@ export async function triggerContentGenerationFromBrief(briefId: string): Promis
 			body: JSON.stringify({
 				fields: {
 					status: 'Sent to Make',
-					sent_to_make_at: new Date().toISOString(),
+					sent_to_make_at: sentToMakeAt,
+					last_error: null, // Clear any previous errors
 				},
 			}),
 		}
-	).catch((error) => {
-		console.warn('Failed to update brief status to "Sent to Make":', error);
+	);
+
+	if (!statusUpdateRes.ok) {
+		const errorText = await statusUpdateRes.text();
+		throw new Error(`Failed to update brief status before webhook call: ${errorText}`);
+	}
+
+	// Send webhook
+	console.log('[Content Brief] Triggering content generation webhook:', {
+		briefId,
+		brandProfileId,
+		userId,
+		briefMode: fields.brief_mode,
+		hasBestPost: !!bestPost,
+		hasWorstPost: !!worstPost,
+		sentToMakeAt,
 	});
+
+	const webhookRes = await fetch(MAKE_WEBHOOK_URL, {
+		method: 'POST',
+		headers,
+		body: JSON.stringify(webhookPayload),
+	});
+
+	if (!webhookRes.ok) {
+		const errorText = await webhookRes.text();
+		// Update brief with error status
+		await fetch(
+			`https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}/${briefId}`,
+			{
+				method: 'PATCH',
+				headers: {
+					Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					fields: {
+						status: 'Failed',
+						last_error: `Make.com webhook failed: ${webhookRes.status} - ${errorText}`,
+					},
+				}),
+			}
+		).catch(() => {}); // Ignore errors updating error field
+		
+		throw new Error(`Make.com webhook failed: ${webhookRes.status} - ${errorText}`);
+	}
 
 	console.log('[Content Brief] Content generation webhook triggered successfully');
 }

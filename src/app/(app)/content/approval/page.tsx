@@ -80,7 +80,20 @@ export default function ContentApprovalPage() {
 				return;
 			}
 
-			const res = await fetch('/api/content/queue?stage=approval', { 
+			// Check for content_brief_id in URL params for traceability
+			const urlParams = new URLSearchParams(window.location.search);
+			const brandProfileId = urlParams.get('brand_profile_id');
+			const contentBriefId = urlParams.get('content_brief_id');
+			
+			let apiUrl = '/api/content/queue?stage=approval';
+			if (brandProfileId) {
+				apiUrl += `&brand_profile_id=${encodeURIComponent(brandProfileId)}`;
+			}
+			if (contentBriefId) {
+				apiUrl += `&content_brief_id=${encodeURIComponent(contentBriefId)}`;
+			}
+			
+			const res = await fetch(apiUrl, { 
 				cache: 'no-store',
 				credentials: 'include', // Include cookies for authentication
 			});
