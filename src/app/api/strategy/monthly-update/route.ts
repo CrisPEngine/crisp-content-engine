@@ -308,11 +308,26 @@ export async function POST(req: Request) {
 			monthlyFields: Object.keys(makePayload.monthly || {}),
 		});
 
+		console.log('[Monthly Strategy Update] Starting webhook fetch...', {
+			strategyUpdateId: airtableResult.id,
+			url: webhookUrl.substring(0, 60) + '...',
+			headers: Object.keys(headers),
+			payloadSize: JSON.stringify(makePayload).length,
+		});
+
 		Promise.race([
 			fetch(webhookUrl, {
 				method: 'POST',
 				headers,
 				body: JSON.stringify(makePayload),
+			}).catch((fetchError) => {
+				console.error('[Monthly Strategy Update] Fetch error (before race):', {
+					strategyUpdateId: airtableResult.id,
+					error: fetchError?.message,
+					errorType: fetchError?.name,
+					stack: fetchError?.stack?.substring(0, 300),
+				});
+				throw fetchError;
 			}),
 			timeoutPromise,
 		])
@@ -323,6 +338,8 @@ export async function POST(req: Request) {
 					status: makeRes?.status,
 					ok: makeRes?.ok,
 					statusText: makeRes?.statusText,
+					type: typeof makeRes,
+					constructor: makeRes?.constructor?.name,
 				});
 
 				// Check if it's a Response object
@@ -402,7 +419,9 @@ export async function POST(req: Request) {
 					strategyUpdateId: airtableResult.id,
 					error: error?.message || 'Unknown error',
 					errorType: error?.name,
+					errorCode: error?.code,
 					stack: error?.stack?.substring(0, 500),
+					fullError: JSON.stringify(error, Object.getOwnPropertyNames(error)).substring(0, 500),
 				});
 				// Update Airtable record with error status
 				fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${airtableResult.id}`, {
