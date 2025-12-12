@@ -41,6 +41,13 @@ type FormState = {
 	worst_performing_post_id: string;
 	best_post_reason: string;
 	worst_post_reason: string;
+	primary_goal: 'Awareness' | 'Engagement' | 'Traffic' | 'Leads' | '';
+	success_metric: 'CTR' | 'comments' | 'followers' | 'leads' | '';
+	cta: string;
+	cta_link: string;
+	offers_to_push: string;
+	topics_to_avoid_this_month: string;
+	competitor_or_inspo_links: string;
 	attachments: string[];
 };
 
@@ -60,6 +67,13 @@ const initialFormState = (): FormState => {
 		worst_performing_post_id: '',
 		best_post_reason: '',
 		worst_post_reason: '',
+		primary_goal: '',
+		success_metric: '',
+		cta: '',
+		cta_link: '',
+		offers_to_push: '',
+		topics_to_avoid_this_month: '',
+		competitor_or_inspo_links: '',
 		attachments: [],
 	};
 };
@@ -470,6 +484,98 @@ export default function ContentBriefPage() {
 							value={form.content_preferences}
 							onChange={(e) => updateField('content_preferences', e.target.value)}
 							placeholder="e.g. More video content, longer-form posts, specific CTAs, etc."
+							className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+						/>
+					</div>
+
+					{/* Primary Goal & Success Metric */}
+					<div className="grid gap-4 md:grid-cols-2">
+						<div className="space-y-2">
+							<label className="block text-sm font-medium">Primary goal</label>
+							<select
+								value={form.primary_goal}
+								onChange={(e) => updateField('primary_goal', e.target.value)}
+								className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+							>
+								<option value="">Select goal...</option>
+								<option value="Awareness">Awareness</option>
+								<option value="Engagement">Engagement</option>
+								<option value="Traffic">Traffic</option>
+								<option value="Leads">Leads</option>
+							</select>
+						</div>
+						<div className="space-y-2">
+							<label className="block text-sm font-medium">Success metric</label>
+							<select
+								value={form.success_metric}
+								onChange={(e) => updateField('success_metric', e.target.value)}
+								className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+							>
+								<option value="">Select metric...</option>
+								<option value="CTR">CTR</option>
+								<option value="comments">Comments</option>
+								<option value="followers">Followers</option>
+								<option value="leads">Leads</option>
+							</select>
+						</div>
+					</div>
+
+					{/* CTA & CTA Link */}
+					<div className="grid gap-4 md:grid-cols-2">
+						<div className="space-y-2">
+							<label className="block text-sm font-medium">Call-to-action (optional)</label>
+							<input
+								type="text"
+								value={form.cta}
+								onChange={(e) => updateField('cta', e.target.value)}
+								placeholder="e.g. Sign up now, Learn more, Get started"
+								className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+							/>
+						</div>
+						<div className="space-y-2">
+							<label className="block text-sm font-medium">CTA link (optional)</label>
+							<input
+								type="url"
+								value={form.cta_link}
+								onChange={(e) => updateField('cta_link', e.target.value)}
+								placeholder="https://example.com/signup"
+								className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+							/>
+						</div>
+					</div>
+
+					{/* Offers to Push */}
+					<div className="space-y-2">
+						<label className="block text-sm font-medium">Offers to push (optional)</label>
+						<textarea
+							rows={3}
+							value={form.offers_to_push}
+							onChange={(e) => updateField('offers_to_push', e.target.value)}
+							placeholder="List any special offers, promotions, or products you want to highlight this month"
+							className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+						/>
+					</div>
+
+					{/* Topics to Avoid */}
+					<div className="space-y-2">
+						<label className="block text-sm font-medium">Topics to avoid this month (optional)</label>
+						<textarea
+							rows={3}
+							value={form.topics_to_avoid_this_month}
+							onChange={(e) => updateField('topics_to_avoid_this_month', e.target.value)}
+							placeholder="List any topics, keywords, or themes to avoid in this month's content"
+							className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+						/>
+					</div>
+
+					{/* Competitor/Inspo Links */}
+					<div className="space-y-2">
+						<label className="block text-sm font-medium">Competitor or inspiration links (optional)</label>
+						<textarea
+							rows={3}
+							value={form.competitor_or_inspo_links}
+							onChange={(e) => updateField('competitor_or_inspo_links', e.target.value)}
+							placeholder="Share links to competitor content or inspiration that you'd like us to reference (one per line)"
 							className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
 						/>
 					</div>

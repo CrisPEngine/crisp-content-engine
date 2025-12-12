@@ -158,7 +158,7 @@ export async function POST(req: NextRequest) {
 											contentUrl,
 											brandName: brand_profile_id, // Could fetch actual brand name if needed
 										}),
-										category: 'product',
+										category: 'content',
 									});
 
 									console.log('[CONTENT WEBHOOK] Sent content ready email to:', profile.email);

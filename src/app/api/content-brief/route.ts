@@ -28,8 +28,22 @@ const briefSchema = z.object({
 	worst_performing_post_id: z.string().optional(),
 	best_post_reason: z.string().optional().default(''),
 	worst_post_reason: z.string().optional().default(''),
+	primary_goal: z.enum(['Awareness', 'Engagement', 'Traffic', 'Leads']).optional(),
+	success_metric: z.enum(['CTR', 'comments', 'followers', 'leads']).optional(),
+	cta: z.string().optional().default(''),
+	cta_link: z.string().url().optional().or(z.literal('')),
+	offers_to_push: z.string().optional().default(''),
+	topics_to_avoid_this_month: z.string().optional().default(''),
+	competitor_or_inspo_links: z.string().optional().default(''),
 	attachments: z.array(z.string().url()).optional().default([]),
 }).superRefine((data, ctx) => {
+	if (data.cta_link && data.cta_link !== '' && !z.string().url().safeParse(data.cta_link).success) {
+		ctx.addIssue({
+			path: ['cta_link'],
+			code: z.ZodIssueCode.custom,
+			message: 'Please provide a valid URL',
+		});
+	}
 	if (data.brief_mode === 'feedback') {
 		// For feedback mode, best/worst posts are optional but recommended
 		if (!data.best_performing_post_id && !data.worst_performing_post_id) {
@@ -133,6 +147,13 @@ export async function POST(request: Request) {
 			worst_performing_post_id: data.worst_performing_post_id,
 			best_post_reason: data.best_post_reason,
 			worst_post_reason: data.worst_post_reason,
+			primary_goal: data.primary_goal,
+			success_metric: data.success_metric,
+			cta: data.cta,
+			cta_link: data.cta_link,
+			offers_to_push: data.offers_to_push,
+			topics_to_avoid_this_month: data.topics_to_avoid_this_month,
+			competitor_or_inspo_links: data.competitor_or_inspo_links,
 			attachments: data.attachments,
 			submitted_at: new Date().toISOString(),
 		};
@@ -191,6 +212,13 @@ export async function POST(request: Request) {
 				key_dates: data.key_dates || '',
 				feedback_notes: data.feedback_notes || '',
 				content_preferences: data.content_preferences || '',
+				primary_goal: data.primary_goal || '',
+				success_metric: data.success_metric || '',
+				cta: data.cta || '',
+				cta_link: data.cta_link || '',
+				offers_to_push: data.offers_to_push || '',
+				topics_to_avoid_this_month: data.topics_to_avoid_this_month || '',
+				competitor_or_inspo_links: data.competitor_or_inspo_links || '',
 				status: 'Pending Approval',
 				submitted_at: new Date().toISOString(),
 				strategy_snapshot_json: strategySnapshot,
