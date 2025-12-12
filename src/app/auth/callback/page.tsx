@@ -72,11 +72,9 @@ function CallbackHandler() {
 		// Handle OAuth code exchange
 		if (code && supabase) {
 			console.log('Exchanging OAuth code for session');
-			// Redirect immediately to dashboard with loading state
-			// The dashboard will show skeleton while session is being established
-			router.replace('/dashboard?auth=loading');
 			
-			// Exchange code in background
+			// Exchange code first, then redirect to dashboard
+			// This ensures session is established before redirect
 			supabase.auth.exchangeCodeForSession(code)
 				.then((response: { data: any; error: any }) => {
 					if (response.error) {
@@ -84,8 +82,11 @@ function CallbackHandler() {
 						router.replace('/login?error=oauth_error');
 						return;
 					}
-					// Session established - refresh dashboard to show content
-					router.refresh();
+					
+					// Session established - redirect to dashboard with loading state
+					// Dashboard will show skeleton while content loads
+					console.log('Session established, redirecting to dashboard');
+					router.replace('/dashboard?auth=loading');
 				})
 				.catch((err: unknown) => {
 					console.error('Exception exchanging code:', err);
@@ -121,9 +122,10 @@ function CallbackHandler() {
 	}, [router, searchParams, supabase]);
 
 	return (
-		<div className="flex items-center justify-center min-h-screen">
-			<div className="text-center">
-				<div className="text-text-soft">Processing authentication...</div>
+		<div className="flex items-center justify-center min-h-screen bg-bg">
+			<div className="text-center space-y-4">
+				<div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-primary/30 border-t-primary"></div>
+				<div className="text-text-soft text-sm">Completing sign in...</div>
 			</div>
 		</div>
 	);
@@ -132,9 +134,10 @@ function CallbackHandler() {
 export default function CallbackPage() {
 	return (
 		<Suspense fallback={
-			<div className="flex items-center justify-center min-h-screen">
-				<div className="text-center">
-					<div className="text-text-soft">Loading...</div>
+			<div className="flex items-center justify-center min-h-screen bg-bg">
+				<div className="text-center space-y-4">
+					<div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-primary/30 border-t-primary"></div>
+					<div className="text-text-soft text-sm">Loading...</div>
 				</div>
 			</div>
 		}>

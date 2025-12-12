@@ -153,8 +153,8 @@ export function LoginClient() {
 				options: {
 					redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://app.crispdigital.io/auth/callback',
 					queryParams: {
-						// Only prompt if no existing session
-						prompt: 'select_account', // Use 'select_account' instead of 'consent' to avoid re-prompting
+						// Don't force prompt - let LinkedIn decide based on existing session
+						// This allows users to stay logged in if they're already authenticated with LinkedIn
 					},
 				},
 			});
@@ -178,8 +178,8 @@ export function LoginClient() {
 				options: {
 					redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://app.crispdigital.io/auth/callback',
 					queryParams: {
-						// Only prompt if no existing session
-						prompt: 'select_account', // Use 'select_account' instead of 'consent' to avoid re-prompting
+						// Don't force prompt - let Google decide based on existing session
+						// This allows users to stay logged in if they're already authenticated with Google
 					},
 				},
 			});
