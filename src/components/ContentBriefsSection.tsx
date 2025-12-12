@@ -10,7 +10,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
-import { ClipboardList, Check, Loader2, AlertCircle, Calendar, ArrowRight } from 'lucide-react';
+import { ClipboardList, Check, Loader2, AlertCircle, Calendar, ArrowRight, RotateCw } from 'lucide-react';
 
 type ContentBrief = {
 	id: string;
@@ -38,6 +38,7 @@ export function ContentBriefsSection({ brandProfileId }: ContentBriefsSectionPro
 	const [briefs, setBriefs] = useState<ContentBrief[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [approving, setApproving] = useState<string | null>(null);
+	const [retrying, setRetrying] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
@@ -88,6 +89,31 @@ export function ContentBriefsSection({ brandProfileId }: ContentBriefsSectionPro
 			console.error('Failed to approve brief:', err);
 			setError(err.message || 'Failed to approve brief');
 			setApproving(null);
+		}
+	}
+
+	async function retryBrief(briefId: string) {
+		if (!supabase) return;
+		setRetrying(briefId);
+		setError(null);
+		try {
+			const res = await fetch(`/api/content-brief/${briefId}/retry`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+			});
+
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				throw new Error(data?.error || 'Failed to retry brief');
+			}
+
+			// Reload briefs to show updated status
+			await loadBriefs();
+		} catch (err: any) {
+			console.error('Failed to retry brief:', err);
+			setError(err.message || 'Failed to retry brief');
+			setRetrying(null);
 		}
 	}
 
@@ -215,7 +241,7 @@ export function ContentBriefsSection({ brandProfileId }: ContentBriefsSectionPro
 							</div>
 							{latestBrief.status === 'Generation Completed' && (
 								<a
-									href={`/content/approval?brand_profile_id=${brandProfileId}`}
+									href={`/content/approval?brand_profile_id=${brandProfileId}${latestBrief.id ? `&content_brief_id=${latestBrief.id}` : ''}`}
 									className="inline-flex items-center gap-2 text-sm text-primary hover:text-primary/80"
 								>
 									Review Content
@@ -223,13 +249,53 @@ export function ContentBriefsSection({ brandProfileId }: ContentBriefsSectionPro
 								</a>
 							)}
 							{latestBrief.status === 'Sent to Make' && (
-								<div className="text-xs text-text-dim">
-									Content generation in progress...
+								<div className="flex items-center justify-between">
+									<div className="text-xs text-text-dim">
+										Content generation in progress...
+									</div>
+									<button
+										onClick={() => retryBrief(latestBrief.id)}
+										disabled={retrying === latestBrief.id}
+										className="px-3 py-1.5 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-xs"
+									>
+										{retrying === latestBrief.id ? (
+											<>
+												<Loader2 className="w-3 h-3 animate-spin" />
+												Retrying...
+											</>
+										) : (
+											<>
+												<RotateCw className="w-3 h-3" />
+												Retry
+											</>
+										)}
+									</button>
 								</div>
 							)}
-							{latestBrief.status === 'Failed' && latestBrief.last_error && (
-								<div className="text-xs text-danger">
-									Error: {latestBrief.last_error}
+							{latestBrief.status === 'Failed' && (
+								<div className="space-y-2">
+									{latestBrief.last_error && (
+										<div className="text-xs text-danger">
+											Error: {latestBrief.last_error}
+										</div>
+									)}
+									<button
+										onClick={() => retryBrief(latestBrief.id)}
+										disabled={retrying === latestBrief.id}
+										className="px-3 py-1.5 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-xs"
+									>
+										{retrying === latestBrief.id ? (
+											<>
+												<Loader2 className="w-3 h-3 animate-spin" />
+												Retrying...
+											</>
+										) : (
+											<>
+												<RotateCw className="w-3 h-3" />
+												Retry
+											</>
+										)}
+									</button>
 								</div>
 							)}
 						</div>

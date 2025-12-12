@@ -44,7 +44,7 @@ export default function StrategyPage() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 
-	// Get brand_profile_id from query params
+	// Get brand_profile_id and tab from query params
 	useEffect(() => {
 		const brandId = searchParams.get('brand_profile_id');
 		if (brandId) {
@@ -52,6 +52,12 @@ export default function StrategyPage() {
 		} else {
 			// If no brand_profile_id, try to get first brand
 			loadFirstBrand();
+		}
+		
+		// Set initial tab from query params
+		const tabParam = searchParams.get('tab');
+		if (tabParam === 'content-briefs') {
+			setActiveTab('content-briefs');
 		}
 	}, [searchParams]);
 
