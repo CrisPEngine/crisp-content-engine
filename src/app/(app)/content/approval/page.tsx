@@ -80,7 +80,10 @@ export default function ContentApprovalPage() {
 				return;
 			}
 
-			const res = await fetch('/api/content/queue?stage=approval', { cache: 'no-store' });
+			const res = await fetch('/api/content/queue?stage=approval', { 
+				cache: 'no-store',
+				credentials: 'include', // Include cookies for authentication
+			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
 				throw new Error(data?.error || 'Failed to load content queue');
@@ -113,6 +116,7 @@ export default function ContentApprovalPage() {
 			const res = await fetch(`/api/content/queue/${id}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include', // Include cookies for authentication
 				body: JSON.stringify({ action: 'approve' }),
 			});
 			if (!res.ok) {
@@ -147,6 +151,7 @@ export default function ContentApprovalPage() {
 			const res = await fetch(`/api/content/queue/${id}`, {
 				method: 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include', // Include cookies for authentication
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
@@ -176,6 +181,7 @@ export default function ContentApprovalPage() {
 				fetch(`/api/content/queue/${id}`, {
 					method: 'PATCH',
 					headers: { 'Content-Type': 'application/json' },
+					credentials: 'include', // Include cookies for authentication
 					body: JSON.stringify({ action: 'approve' }),
 				})
 			);
@@ -207,6 +213,7 @@ export default function ContentApprovalPage() {
 			const res = await fetch(`/api/content/queue/${id}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include', // Include cookies for authentication
 				body: JSON.stringify(payload),
 			});
 			if (!res.ok) {
@@ -249,6 +256,7 @@ export default function ContentApprovalPage() {
 			const res = await fetch(`/api/content/queue/${id}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include', // Include cookies for authentication
 				body: JSON.stringify({ scheduled_time: isoString }),
 			});
 			if (!res.ok) {
@@ -415,6 +423,7 @@ export default function ContentApprovalPage() {
 			const saveRes = await fetch(`/api/content/queue/${contentId}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include', // Include cookies for authentication
 				body: JSON.stringify({
 					imageUrl: secureUrl,
 					cloudinaryId: publicId,
