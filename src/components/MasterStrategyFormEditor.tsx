@@ -270,10 +270,10 @@ export function MasterStrategyFormEditor({ brandProfileId, initialStrategyJson }
 				</section>
 
 				{/* Content Pillars */}
-				{(strategy.pillars || []).length > 0 && (
+				{Array.isArray(strategy.pillars) && strategy.pillars.length > 0 && (
 					<section className="space-y-3">
 						<h3 className="text-lg font-semibold border-b border-edge/60 pb-2">Content Pillars</h3>
-						{(strategy.pillars || []).map((pillar, index) => (
+						{strategy.pillars.map((pillar, index) => (
 							<div key={pillar.id || index} className="p-4 rounded-xl2 border border-edge/60 bg-surface/30">
 								<h4 className="font-medium mb-2">{pillar.title || `Pillar ${index + 1}`}</h4>
 								{pillar.description && <p className="text-sm text-text-soft">{pillar.description}</p>}
@@ -505,11 +505,11 @@ export function MasterStrategyFormEditor({ brandProfileId, initialStrategyJson }
 					</button>
 				</div>
 
-				{(strategy.pillars || []).length === 0 ? (
+				{Array.isArray(strategy.pillars) && strategy.pillars.length === 0 ? (
 					<p className="text-sm text-text-dim">No content pillars yet. Add your first pillar above.</p>
-				) : (
+				) : Array.isArray(strategy.pillars) ? (
 					<div className="space-y-4">
-						{(strategy.pillars || []).map((pillar, index) => (
+						{strategy.pillars.map((pillar, index) => (
 							<div key={pillar.id || index} className="p-4 rounded-xl2 border border-edge/60 bg-bg/50">
 								<div className="flex items-center justify-between mb-3">
 									<h4 className="font-medium">Pillar {index + 1}</h4>
@@ -558,6 +558,8 @@ export function MasterStrategyFormEditor({ brandProfileId, initialStrategyJson }
 							</div>
 						))}
 					</div>
+				) : (
+					<p className="text-sm text-text-dim">No content pillars yet. Add your first pillar above.</p>
 				)}
 			</section>
 
@@ -574,11 +576,11 @@ export function MasterStrategyFormEditor({ brandProfileId, initialStrategyJson }
 					</button>
 				</div>
 
-				{(strategy.platform_cadence || []).length === 0 ? (
+				{Array.isArray(strategy.platform_cadence) && strategy.platform_cadence.length === 0 ? (
 					<p className="text-sm text-text-dim">No platform cadence defined. Add platforms above.</p>
-				) : (
+				) : Array.isArray(strategy.platform_cadence) ? (
 					<div className="space-y-4">
-						{(strategy.platform_cadence || []).map((cadence, index) => (
+						{strategy.platform_cadence.map((cadence, index) => (
 							<div key={index} className="p-4 rounded-xl2 border border-edge/60 bg-bg/50">
 								<div className="flex items-center justify-between mb-3">
 									<h4 className="font-medium">Platform {index + 1}</h4>

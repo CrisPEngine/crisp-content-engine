@@ -154,30 +154,26 @@ export function parseStrategyJson(strategyJson: any): MasterStrategy {
 		personality: parsed.personality || parsed.personal_voice_traits || parsed.voice?.personality || [],
 		style_guidelines: parsed.style_guidelines || parsed.voice?.style_guidelines || '',
 
-		// Content Pillars
-		pillars: parsed.pillars || parsed.content_pillars || [],
-		content_pillars: parsed.content_pillars || parsed.pillars || [],
+		// Content Pillars - ensure always arrays
+		pillars: Array.isArray(parsed.pillars) 
+			? parsed.pillars 
+			: (Array.isArray(parsed.content_pillars) ? parsed.content_pillars : []),
+		content_pillars: Array.isArray(parsed.content_pillars) 
+			? parsed.content_pillars 
+			: (Array.isArray(parsed.pillars) ? parsed.pillars : []),
 
-		// Platform Cadence
-		platform_cadence: parsed.platform_cadence || parsed.cadence || [],
-		cadence: parsed.cadence || parsed.platform_cadence || [],
+		// Platform Cadence - ensure always arrays
+		platform_cadence: Array.isArray(parsed.platform_cadence) 
+			? parsed.platform_cadence 
+			: (Array.isArray(parsed.cadence) ? parsed.cadence : []),
+		cadence: Array.isArray(parsed.cadence) 
+			? parsed.cadence 
+			: (Array.isArray(parsed.platform_cadence) ? parsed.platform_cadence : []),
 
 		// Guardrails
 		guardrails: parsed.guardrails || {
-			brand_keywords: Array.isArray(parsed.brand_keywords)
-				? parsed.brand_keywords
-				: (typeof parsed.brand_keywords === 'string' && parsed.brand_keywords.trim()
-					? parsed.brand_keywords.split(',').map((k: string) => k.trim()).filter(Boolean)
-					: []),
-			exclude_keywords: Array.isArray(parsed.exclude_keywords)
-				? parsed.exclude_keywords
-				: (typeof parsed.exclude_keywords === 'string' && parsed.exclude_keywords.trim()
-					? parsed.exclude_keywords.split(',').map((k: string) => k.trim()).filter(Boolean)
-					: (Array.isArray(parsed.personal_exclude_keywords)
-						? parsed.personal_exclude_keywords
-						: (typeof parsed.personal_exclude_keywords === 'string' && parsed.personal_exclude_keywords.trim()
-							? parsed.personal_exclude_keywords.split(',').map((k: string) => k.trim()).filter(Boolean)
-							: []))),
+			brand_keywords: parsed.brand_keywords || [],
+			exclude_keywords: parsed.exclude_keywords || parsed.personal_exclude_keywords || [],
 			content_rules: parsed.content_rules || '',
 			topics_to_avoid: parsed.topics_to_avoid || [],
 			risk_tolerance: parsed.risk_tolerance || parsed.personal_risk_tolerance || '',
