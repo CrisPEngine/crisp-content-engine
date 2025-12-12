@@ -486,12 +486,12 @@ export default async function Dashboard({
 							</p>
 						</a>
 						<a
-							href="/strategy/monthly-update"
+							href="/content-brief"
 							className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border-2 border-dashed border-edge/60"
 						>
-							<h3 className="font-semibold mb-2 text-sm md:text-base">Monthly Strategy Update</h3>
+							<h3 className="font-semibold mb-2 text-sm md:text-base">Monthly Content Brief</h3>
 							<p className="text-xs md:text-sm text-text-dim">
-								Share fresh objectives & themes so we can evolve next month's plan
+								Submit a brief to guide next month's content generation
 							</p>
 						</a>
 					</div>
