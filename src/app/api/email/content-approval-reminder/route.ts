@@ -46,9 +46,13 @@ export async function POST(request: Request) {
 
 		const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io';
 		const now = new Date();
+		const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 days ago
 
-		// Query Airtable for content needing approval
-		const filterFormula = `{status} = "Needs Approval"`;
+		// Query Airtable for content needing approval that is overdue (scheduled + 7 days has passed)
+		// Filter: status = "Needs Approval" AND scheduled_time exists AND scheduled_time < (now - 7 days)
+		// Note: Airtable date comparison - we need to check if scheduled_time + 7 days < now
+		// Since Airtable formulas are limited, we'll filter in code after fetching
+		const filterFormula = `AND({status} = "Needs Approval", {scheduled_time} != "")`;
 		const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
 		url.searchParams.set('filterByFormula', filterFormula);
 		url.searchParams.set('maxRecords', '100');
@@ -76,9 +80,31 @@ export async function POST(request: Request) {
 			return NextResponse.json({ message: 'No content pending approval', sent: 0 });
 		}
 
+		// Filter for content that is overdue (scheduled_time + 7 days < now)
+		// Only send reminders for content that hasn't been approved for 1 week after scheduled date
+		const overdueRecords = records.filter((record: any) => {
+			const scheduledTime = record.fields?.scheduled_time;
+			if (!scheduledTime) return false; // Skip if no scheduled time
+			
+			const scheduledDate = new Date(scheduledTime);
+			const deadlineDate = new Date(scheduledDate.getTime() + 7 * 24 * 60 * 60 * 1000); // scheduled + 7 days
+			
+			// Only include if deadline has passed (content is overdue)
+			return deadlineDate < now;
+		});
+
+		if (overdueRecords.length === 0) {
+			return NextResponse.json({ 
+				message: 'No overdue content pending approval (all pending content is within 7 days of scheduled date)', 
+				sent: 0,
+				totalPending: records.length,
+				overdueCount: 0
+			});
+		}
+
 		// Group by user_id
 		const contentByUser = new Map<string, any[]>();
-		for (const record of records) {
+		for (const record of overdueRecords) {
 			const userId = record.fields?.user_id;
 			if (userId) {
 				if (!contentByUser.has(userId)) {

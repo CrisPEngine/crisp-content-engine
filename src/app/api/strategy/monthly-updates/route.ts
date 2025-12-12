@@ -1,0 +1,152 @@
+/**
+ * Get monthly strategy updates for review and approval
+ * 
+ * Returns strategy updates that are ready for review (status: "Completed" or "Processing")
+ * Filtered by user's brand profiles
+ */
+
+import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
+
+export const runtime = 'nodejs';
+
+export async function GET(request: Request) {
+	try {
+		const cookieStore = await cookies();
+		const supabase = createServerClient(
+			process.env.NEXT_PUBLIC_SUPABASE_URL!,
+			process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+			{
+				cookies: {
+					get(name: string) {
+						return cookieStore.get(name)?.value;
+					},
+					set(name: string, value: string, options: CookieOptions) {
+						cookieStore.set({ name, value, ...options });
+					},
+					remove(name: string, options: CookieOptions) {
+						cookieStore.set({ name, value: '', ...options });
+					},
+				},
+			}
+		);
+
+		const {
+			data: { user },
+			error: userError,
+		} = await supabase.auth.getUser();
+
+		if (userError || !user) {
+			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+		}
+
+		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
+		const BASE_ID = process.env.AIRTABLE_BASE_ID;
+		const STRATEGYUPDATES_TABLE = process.env.AIRTABLE_STRATEGYUPDATES_TABLE;
+		const BRANDPROFILES_TABLE = process.env.AIRTABLE_BRANDPROFILES_TABLE;
+
+		if (!AIRTABLE_TOKEN || !BASE_ID || !STRATEGYUPDATES_TABLE || !BRANDPROFILES_TABLE) {
+			return NextResponse.json(
+				{ error: 'Airtable configuration missing' },
+				{ status: 500 }
+			);
+		}
+
+		// First, get all brand profiles for this user
+		const brandProfilesUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}`);
+		brandProfilesUrl.searchParams.set('filterByFormula', `{user_id} = "${user.id}"`);
+		brandProfilesUrl.searchParams.set('maxRecords', '100');
+
+		const brandProfilesRes = await fetch(brandProfilesUrl.toString(), {
+			headers: {
+				Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+				'Content-Type': 'application/json',
+			},
+		});
+
+		let brandProfileIds: string[] = [];
+		if (brandProfilesRes.ok) {
+			const brandProfilesData = await brandProfilesRes.json();
+			brandProfileIds = (brandProfilesData.records || []).map((r: any) => r.id);
+		}
+
+		if (brandProfileIds.length === 0) {
+			return NextResponse.json({ updates: [] });
+		}
+
+		// Fetch strategy updates for these brand profiles
+		// Get updates that are "Completed" or "Processing" (ready for review)
+		// Also include "Pending" in case they're still processing
+		const updatesUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${STRATEGYUPDATES_TABLE}`);
+		
+		// Build filter formula for brand_profile_id and status
+		const brandFilters = brandProfileIds.map(id => `FIND("${id}", {brand_profile_id})`).join(',');
+		const statusFilter = 'OR({status} = "Completed", {status} = "Processing", {status} = "Pending")';
+		const filterFormula = `AND(OR(${brandFilters}), ${statusFilter})`;
+		
+		updatesUrl.searchParams.set('filterByFormula', filterFormula);
+		updatesUrl.searchParams.set('sort[0][field]', 'created_time');
+		updatesUrl.searchParams.set('sort[0][direction]', 'desc');
+		updatesUrl.searchParams.set('maxRecords', '50');
+
+		const updatesRes = await fetch(updatesUrl.toString(), {
+			headers: {
+				Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+				'Content-Type': 'application/json',
+			},
+		});
+
+		if (!updatesRes.ok) {
+			const errorText = await updatesRes.text();
+			console.error('Failed to fetch strategy updates:', errorText);
+			return NextResponse.json(
+				{ error: 'Failed to fetch strategy updates' },
+				{ status: 502 }
+			);
+		}
+
+		const updatesData = await updatesRes.json();
+		
+		// Map records to a cleaner format
+		const updates = (updatesData.records || []).map((record: any) => {
+			const fields = record.fields || {};
+			
+			// Extract brand_profile_id (could be array from link field)
+			let brandProfileId: string | null = null;
+			if (fields.brand_profile_id) {
+				if (Array.isArray(fields.brand_profile_id)) {
+					brandProfileId = fields.brand_profile_id[0] || null;
+				} else if (typeof fields.brand_profile_id === 'string') {
+					brandProfileId = fields.brand_profile_id;
+				}
+			}
+
+			return {
+				id: record.id,
+				brand_profile_id: brandProfileId,
+				user_id: fields.user_id || user.id,
+				cycle_label: fields.cycle_label || '',
+				monthly_cycle_start: fields.monthly_cycle_start || '',
+				objective: fields.objective || '',
+				themes_focus: fields.themes_focus || '',
+				key_dates: fields.key_dates || '',
+				feedback_notes: fields.feedback_notes || '',
+				content_preferences: fields.content_preferences || '',
+				status: fields.status || 'Pending',
+				error_message: fields.error_message || null,
+				updated_strategy_json: fields.updated_strategy_json || null, // The new strategy generated by Make
+				created_time: fields.created_time || record.createdTime,
+				updated_time: fields.last_modified_time || fields.updated_time || null,
+			};
+		});
+
+		return NextResponse.json({ updates });
+	} catch (error: any) {
+		console.error('Error fetching monthly strategy updates:', error);
+		return NextResponse.json(
+			{ error: error?.message || 'Server error' },
+			{ status: 500 }
+		);
+	}
+}
