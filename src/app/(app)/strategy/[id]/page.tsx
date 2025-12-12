@@ -313,7 +313,7 @@ export default function StrategyReviewPage() {
 								Review Monthly Updates
 							</button>
 							<button
-								onClick={() => router.push('/strategy/monthly-update')}
+								onClick={() => router.push('/content-brief')}
 								className="px-6 py-3 rounded-xl2 border-2 border-primary/50 bg-transparent hover:bg-primary/10 text-primary font-medium flex items-center justify-center gap-2 transition-all"
 							>
 								Submit New Update
