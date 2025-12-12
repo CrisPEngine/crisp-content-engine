@@ -320,7 +320,27 @@ export async function GET(request: Request) {
 			// If item has no brand_profile_id, exclude it (safety measure)
 			if (!item.brand_profile_id) return false;
 			// Only include items linked to user's brand profiles
-			return brandProfileIds.includes(item.brand_profile_id);
+			if (!brandProfileIds.includes(item.brand_profile_id)) return false;
+			
+			// If brand_profile_id filter is provided, match it
+			if (brandProfileId && item.brand_profile_id !== brandProfileId) return false;
+			
+			// If content_brief_id filter is provided, check if item has matching content_brief_id
+			if (contentBriefId) {
+				// Find the original record to check content_brief_id field
+				const originalRecord = airtableResult.records?.find((r: any) => r.id === item.id);
+				if (originalRecord) {
+					const recordBriefId = originalRecord.fields?.content_brief_id;
+					if (!recordBriefId) return false;
+					// Handle both string and array formats
+					const briefId = Array.isArray(recordBriefId) ? recordBriefId[0] : recordBriefId;
+					if (briefId !== contentBriefId) return false;
+				} else {
+					return false; // Can't verify content_brief_id, exclude
+				}
+			}
+			
+			return true;
 		});
 	} else {
 		// If user has no brand profiles, return empty array
