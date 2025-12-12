@@ -315,36 +315,30 @@ export async function POST(req: Request) {
 			payloadSize: JSON.stringify(makePayload).length,
 		});
 
-		Promise.race([
-			fetch(webhookUrl, {
-				method: 'POST',
-				headers,
-				body: JSON.stringify(makePayload),
-			}).catch((fetchError) => {
-				console.error('[Monthly Strategy Update] Fetch error (before race):', {
-					strategyUpdateId: airtableResult.id,
-					error: fetchError?.message,
-					errorType: fetchError?.name,
-					stack: fetchError?.stack?.substring(0, 300),
-				});
-				throw fetchError;
-			}),
-			timeoutPromise,
-		])
-			.then(async (makeRes: any) => {
+		// Use AbortController for proper timeout handling
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => {
+			controller.abort();
+			console.log('[Monthly Strategy Update] Webhook fetch aborted due to timeout (30s)');
+		}, 30000);
+
+		// Make the webhook call with proper error handling
+		fetch(webhookUrl, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify(makePayload),
+			signal: controller.signal,
+		})
+			.then(async (makeRes) => {
+				clearTimeout(timeoutId);
 				console.log('[Monthly Strategy Update] Webhook response received:', {
 					strategyUpdateId: airtableResult.id,
-					isResponse: makeRes && typeof makeRes.ok === 'boolean',
-					status: makeRes?.status,
-					ok: makeRes?.ok,
-					statusText: makeRes?.statusText,
-					type: typeof makeRes,
-					constructor: makeRes?.constructor?.name,
+					status: makeRes.status,
+					ok: makeRes.ok,
+					statusText: makeRes.statusText,
 				});
-
-				// Check if it's a Response object
-				if (makeRes && typeof makeRes.ok === 'boolean') {
-					if (!makeRes.ok) {
+				// Handle response
+				if (!makeRes.ok) {
 						const errorText = await makeRes.text().catch(() => 'Unable to read error response');
 						console.error('[Monthly Strategy Update] Make.com webhook failed:', {
 							strategyUpdateId: airtableResult.id,
@@ -405,23 +399,19 @@ export async function POST(req: Request) {
 						} catch (updateError) {
 							console.error('[Monthly Strategy Update] Exception updating Airtable status to Processing:', updateError);
 						}
-					}
-				} else {
-					console.error('[Monthly Strategy Update] Unexpected response type:', {
-						strategyUpdateId: airtableResult.id,
-						responseType: typeof makeRes,
-						response: makeRes,
-					});
 				}
 			})
 			.catch((error: any) => {
-				console.error('[Monthly Strategy Update] Make.com webhook error (network/timeout):', {
+				clearTimeout(timeoutId);
+				const isAbortError = error?.name === 'AbortError';
+				console.error('[Monthly Strategy Update] Make.com webhook error:', {
 					strategyUpdateId: airtableResult.id,
 					error: error?.message || 'Unknown error',
 					errorType: error?.name,
 					errorCode: error?.code,
+					isAbortError,
+					isTimeout: isAbortError,
 					stack: error?.stack?.substring(0, 500),
-					fullError: JSON.stringify(error, Object.getOwnPropertyNames(error)).substring(0, 500),
 				});
 				// Update Airtable record with error status
 				fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${airtableResult.id}`, {
