@@ -289,6 +289,13 @@ export async function POST(req: Request) {
 			setTimeout(() => reject(new Error('Request timeout')), 30000); // 30 second timeout
 		});
 
+		console.log('[Monthly Strategy Update] Triggering Make.com webhook:', {
+			strategyUpdateId: airtableResult.id,
+			brandProfileId: data.brand_profile_id,
+			userId: user.id,
+			webhookUrl: webhookUrl.substring(0, 50) + '...', // Log partial URL for security
+		});
+
 		Promise.race([
 			fetch(webhookUrl, {
 				method: 'POST',
@@ -302,7 +309,11 @@ export async function POST(req: Request) {
 				if (makeRes && typeof makeRes.ok === 'boolean') {
 					if (!makeRes.ok) {
 						const errorText = await makeRes.text();
-						console.error('Make monthly update error:', errorText);
+						console.error('[Monthly Strategy Update] Make.com webhook failed:', {
+							strategyUpdateId: airtableResult.id,
+							status: makeRes.status,
+							error: errorText.substring(0, 500),
+						});
 						// Update Airtable record with error status
 						try {
 							await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${airtableResult.id}`, {
@@ -322,12 +333,37 @@ export async function POST(req: Request) {
 							console.error('Failed to update Airtable with error status:', updateError);
 						}
 					} else {
-						console.log('Make.com webhook triggered successfully for strategy update:', airtableResult.id);
+						const responseText = await makeRes.text().catch(() => '');
+						console.log('[Monthly Strategy Update] Make.com webhook triggered successfully:', {
+							strategyUpdateId: airtableResult.id,
+							response: responseText.substring(0, 200),
+						});
+						// Update Airtable record status to 'Processing' to indicate Make.com received it
+						try {
+							await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${airtableResult.id}`, {
+								method: 'PATCH',
+								headers: {
+									Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+									'Content-Type': 'application/json',
+								},
+								body: JSON.stringify({
+									fields: {
+										status: 'Processing', // Indicate that Make.com is processing it
+									},
+								}),
+							});
+						} catch (updateError) {
+							console.error('Failed to update Airtable status to Processing:', updateError);
+						}
 					}
 				}
 			})
 			.catch((error: any) => {
-				console.error('Make monthly update error (network/timeout):', error);
+				console.error('[Monthly Strategy Update] Make.com webhook error (network/timeout):', {
+					strategyUpdateId: airtableResult.id,
+					error: error?.message || 'Unknown error',
+					errorType: error?.name,
+				});
 				// Update Airtable record with error status
 				fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${airtableResult.id}`, {
 					method: 'PATCH',
@@ -348,10 +384,18 @@ export async function POST(req: Request) {
 
 		// Return success immediately - Make.com will process in background
 		// The Airtable record is created, so the strategy update is tracked
+		console.log('[Monthly Strategy Update] Successfully created strategy update record:', {
+			strategyUpdateId: airtableResult.id,
+			brandProfileId: data.brand_profile_id,
+			userId: user.id,
+			cycleLabel,
+		});
+		
 		return NextResponse.json({ 
 			ok: true, 
 			strategyUpdateId: airtableResult.id,
 			message: 'Strategy update submitted. Your monthly strategy is being generated and will be ready shortly.',
+			airtableRecordId: airtableResult.id, // Include for debugging
 		});
 	} catch (error: any) {
 		console.error('monthly-update error:', error);
