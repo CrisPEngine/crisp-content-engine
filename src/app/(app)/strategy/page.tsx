@@ -12,7 +12,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
-import { MasterStrategyEditor } from '@/components/MasterStrategyEditor';
+import { MasterStrategyFormEditor } from '@/components/MasterStrategyFormEditor';
 import { ContentBriefsSection } from '@/components/ContentBriefsSection';
 import { Loader2, FileText, ClipboardList, ArrowLeft } from 'lucide-react';
 
@@ -184,7 +184,7 @@ export default function StrategyPage() {
 							{error}
 						</div>
 					) : strategyJson && brandProfileId ? (
-						<MasterStrategyEditor
+						<MasterStrategyFormEditor
 							brandProfileId={brandProfileId}
 							initialStrategyJson={strategyJson}
 						/>
