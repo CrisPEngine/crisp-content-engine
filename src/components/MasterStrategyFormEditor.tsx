@@ -306,13 +306,13 @@ export function MasterStrategyFormEditor({ brandProfileId, initialStrategyJson }
 				{/* Guardrails */}
 				<section className="space-y-3">
 					<h3 className="text-lg font-semibold border-b border-edge/60 pb-2">Guardrails</h3>
-					{(strategy.brand_keywords || []).length > 0 && (
+					{Array.isArray(strategy.brand_keywords) && strategy.brand_keywords.length > 0 && (
 						<div>
 							<strong className="text-sm text-text-dim">Brand Keywords:</strong>
 							<p className="mt-1 text-sm">{strategy.brand_keywords.join(', ')}</p>
 						</div>
 					)}
-					{(strategy.exclude_keywords || []).length > 0 && (
+					{Array.isArray(strategy.exclude_keywords) && strategy.exclude_keywords.length > 0 && (
 						<div>
 							<strong className="text-sm text-text-dim">Exclude Keywords:</strong>
 							<p className="mt-1 text-sm">{strategy.exclude_keywords.join(', ')}</p>
@@ -626,7 +626,7 @@ export function MasterStrategyFormEditor({ brandProfileId, initialStrategyJson }
 						<label className="block text-sm font-medium">Brand Keywords</label>
 						<input
 							type="text"
-							value={Array.isArray(strategy.brand_keywords) ? strategy.brand_keywords.join(', ') : ''}
+							value={Array.isArray(strategy.brand_keywords) ? strategy.brand_keywords.join(', ') : (strategy.brand_keywords || '')}
 							onChange={(e) => {
 								const keywords = e.target.value.split(',').map(k => k.trim()).filter(Boolean);
 								updateField(['brand_keywords'], keywords);
@@ -641,7 +641,7 @@ export function MasterStrategyFormEditor({ brandProfileId, initialStrategyJson }
 						<label className="block text-sm font-medium">Exclude Keywords</label>
 						<input
 							type="text"
-							value={Array.isArray(strategy.exclude_keywords) ? strategy.exclude_keywords.join(', ') : ''}
+							value={Array.isArray(strategy.exclude_keywords) ? strategy.exclude_keywords.join(', ') : (strategy.exclude_keywords || '')}
 							onChange={(e) => {
 								const keywords = e.target.value.split(',').map(k => k.trim()).filter(Boolean);
 								updateField(['exclude_keywords'], keywords);
