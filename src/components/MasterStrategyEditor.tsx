@@ -149,12 +149,12 @@ export function MasterStrategyEditor({ brandProfileId, initialStrategyJson }: Ma
 			</div>
 
 			{error && (
-				<div className="p-3 rounded-xl2 border border-danger/40 bg-danger/10 text-sm text-danger">
+				<div className="p-3 rounded-xl2 border border-danger/40 bg-danger/10 text-sm text-danger mb-4">
 					{error}
 				</div>
 			)}
 
-			<div className="text-sm text-text-dim mb-2">
+			<div className="text-sm text-text-dim mb-4">
 				Edit your master strategy JSON. Changes are auto-saved after 800ms of inactivity.
 			</div>
 

@@ -5,7 +5,7 @@ import { BrandProfilesList } from '@/components/BrandProfilesList';
 import { DashboardTabs } from '@/components/DashboardTabs';
 import { OnboardingDebug } from '@/components/OnboardingDebug';
 import { GenerateContentActions } from '@/components/GenerateContentActions';
-import { DashboardStrategySection } from '@/components/DashboardStrategySection';
+import { StrategyCard } from '@/components/StrategyCard';
 import { CardSkeleton, UsageCardSkeleton } from '@/components/skeletons/Skeleton';
 import { AuthLoadingHandler } from '@/components/AuthLoadingHandler';
 
@@ -466,9 +466,9 @@ export default async function Dashboard({
 						currentBrandCount={currentBrandCount}
 					/>
 
-					{/* Master Strategy & Content Briefs Section - Only show if user has approved strategies */}
+					{/* Strategy Card - Only show if user has approved strategies */}
 					{hasApprovedStrategies && brandProfiles.length > 0 && (
-						<DashboardStrategySection brandProfileId={brandProfiles[0].id} />
+						<StrategyCard brandProfileId={brandProfiles[0].id} />
 					)}
 
 					{/* Quick Actions */}

@@ -190,11 +190,11 @@ export default function ContentBriefPage() {
 				throw new Error(data?.error || 'Failed to submit content brief');
 			}
 
-			setSuccess('Content brief submitted successfully. Redirecting to dashboard...');
+			setSuccess('Content brief submitted successfully. Redirecting to strategy page...');
 			
-			// Redirect to dashboard after short delay
+			// Redirect to strategy page after short delay
 			setTimeout(() => {
-				router.push('/dashboard');
+				router.push(`/strategy?brand_profile_id=${form.brand_profile_id}&tab=content-briefs`);
 			}, 1500);
 		} catch (err: any) {
 			console.error('Content brief error:', err);

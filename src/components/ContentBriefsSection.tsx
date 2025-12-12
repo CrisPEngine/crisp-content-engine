@@ -82,7 +82,7 @@ export function ContentBriefsSection({ brandProfileId }: ContentBriefsSectionPro
 				throw new Error(data?.error || 'Failed to approve brief');
 			}
 
-			// Reload briefs
+			// Reload briefs to show updated status
 			await loadBriefs();
 		} catch (err: any) {
 			console.error('Failed to approve brief:', err);
