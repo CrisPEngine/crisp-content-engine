@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 						const recordFilters = recordIds.map(id => `RECORD_ID() = "${id}"`).join(',');
 						checkUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
 						checkUrl.searchParams.set('filterByFormula', `OR(${recordFilters})`);
-						checkUrl.searchParams.set('maxRecords', recordIds.length);
+						checkUrl.searchParams.set('maxRecords', String(recordIds.length));
 					} else {
 						// Fallback: Check any records for this brand profile
 						checkUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
