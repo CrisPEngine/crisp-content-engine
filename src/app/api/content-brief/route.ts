@@ -128,6 +128,10 @@ export async function POST(request: Request) {
 			);
 		}
 
+		// Extract timezone and language_region from BrandProfiles for snapshot
+		const timezone = brandRecord.fields?.timezone || '';
+		const language_region = brandRecord.fields?.language_region || '';
+
 		// Get current strategy JSON snapshot
 		const strategySnapshotJson = brandRecord.fields?.strategy_json || null;
 		const strategySnapshot = strategySnapshotJson 
@@ -223,6 +227,8 @@ export async function POST(request: Request) {
 				submitted_at: new Date().toISOString(),
 				strategy_snapshot_json: strategySnapshot,
 				brief_snapshot_json: JSON.stringify(briefSnapshot),
+				timezone: timezone, // Snapshot from BrandProfiles
+				language_region: language_region, // Snapshot from BrandProfiles
 			},
 		};
 

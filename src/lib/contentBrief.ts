@@ -168,21 +168,29 @@ export async function triggerContentGenerationFromBrief(briefId: string): Promis
 		}
 	}
 
-	// Get brand type and LinkedIn connection
-	const brandRes = await fetch(
-		`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}/${brandProfileId}`,
-		{
-			headers: {
-				Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-				'Content-Type': 'application/json',
-			},
-		}
-	);
+	// Get timezone and language_region from brief record (snapshot fields)
+	// These are already captured in the brief, so no need to lookup BrandProfiles
+	const timezone = fields.timezone || '';
+	const language_region = fields.language_region || '';
 
-	let brandType = 'company';
-	if (brandRes.ok) {
-		const brandRecord = await brandRes.json();
-		brandType = brandRecord.fields?.brand_type || 'company';
+	// Get brand type from brief or BrandProfiles (fallback for older briefs)
+	let brandType = fields.brand_type || 'company';
+	if (!fields.brand_type) {
+		// Fallback: fetch from BrandProfiles if not in brief (for backward compatibility)
+		const brandRes = await fetch(
+			`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}/${brandProfileId}`,
+			{
+				headers: {
+					Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+					'Content-Type': 'application/json',
+				},
+			}
+		);
+
+		if (brandRes.ok) {
+			const brandRecord = await brandRes.json();
+			brandType = brandRecord.fields?.brand_type || 'company';
+		}
 	}
 
 	const admin = getSupabaseService();
@@ -225,6 +233,8 @@ export async function triggerContentGenerationFromBrief(briefId: string): Promis
 		brand_profile_id: brandProfileId,
 		brand_type: brandType,
 		brief_mode: fields.brief_mode || 'continue',
+		timezone: timezone, // From brief snapshot - no BrandProfiles lookup needed
+		language_region: language_region, // From brief snapshot - no BrandProfiles lookup needed
 		monthly: {
 			objective: briefSnapshot.objective || fields.objective || '',
 			themes_focus: briefSnapshot.themes_focus || fields.themes_focus || '',
