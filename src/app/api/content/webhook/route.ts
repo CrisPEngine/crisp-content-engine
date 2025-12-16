@@ -31,8 +31,9 @@ export async function POST(req: NextRequest) {
 			timestamp,
 		} = body;
 
-		// Log the webhook payload
-		console.log('[CONTENT WEBHOOK] Received:', {
+		// Log the webhook payload with timestamp
+		const receivedAt = new Date().toISOString();
+		console.log('[CONTENT WEBHOOK] Received at', receivedAt, ':', {
 			mode,
 			trigger_type,
 			brief_id,
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
 			user_id,
 			created_posts,
 			created_articles,
-			generated_content_ids,
+			generated_content_ids_count: Array.isArray(generated_content_ids) ? generated_content_ids.length : (generated_content_ids ? 1 : 0),
 			status,
 			timestamp,
 		});
@@ -55,9 +56,21 @@ export async function POST(req: NextRequest) {
 
 				if (AIRTABLE_TOKEN && BASE_ID && TABLE_ID) {
 					// Check if content exists for this brand profile
-					const checkUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
-					checkUrl.searchParams.set('filterByFormula', `{brand_profile_id} = "${brand_profile_id}"`);
-					checkUrl.searchParams.set('maxRecords', '5');
+					// If generated_content_ids is provided, check those specific records instead
+					let checkUrl: URL;
+					if (Array.isArray(generated_content_ids) && generated_content_ids.length > 0) {
+						// Check specific records that Make.com claims to have created
+						const recordIds = generated_content_ids.slice(0, 10); // Limit to 10 for formula length
+						const recordFilters = recordIds.map(id => `RECORD_ID() = "${id}"`).join(',');
+						checkUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
+						checkUrl.searchParams.set('filterByFormula', `OR(${recordFilters})`);
+						checkUrl.searchParams.set('maxRecords', recordIds.length);
+					} else {
+						// Fallback: Check any records for this brand profile
+						checkUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
+						checkUrl.searchParams.set('filterByFormula', `{brand_profile_id} = "${brand_profile_id}"`);
+						checkUrl.searchParams.set('maxRecords', '5');
+					}
 
 					const checkRes = await fetch(checkUrl.toString(), {
 						headers: {
@@ -69,7 +82,17 @@ export async function POST(req: NextRequest) {
 					if (checkRes.ok) {
 						const checkData = await checkRes.json();
 						const records = checkData.records || [];
-						console.log(`[CONTENT WEBHOOK] Found ${records.length} content records in Airtable for brand_profile_id: ${brand_profile_id}`);
+						
+						if (Array.isArray(generated_content_ids) && generated_content_ids.length > 0) {
+							const foundIds = records.map((r: any) => r.id);
+							const missingIds = generated_content_ids.filter((id: string) => !foundIds.includes(id));
+							console.log(`[CONTENT WEBHOOK] Make.com claims ${generated_content_ids.length} records created, found ${records.length} in Airtable`);
+							if (missingIds.length > 0) {
+								console.warn(`[CONTENT WEBHOOK] Missing ${missingIds.length} records that Make.com claims were created:`, missingIds.slice(0, 5));
+							}
+						} else {
+							console.log(`[CONTENT WEBHOOK] Found ${records.length} content records in Airtable for brand_profile_id: ${brand_profile_id}`);
+						}
 						
 						// Log status of each record
 						records.forEach((record: any, index: number) => {
@@ -79,6 +102,7 @@ export async function POST(req: NextRequest) {
 								title: record.fields?.title || record.fields?.post_title || 'NO TITLE',
 								platform: record.fields?.platform || 'NO PLATFORM',
 								brand_profile_id: record.fields?.brand_profile_id || 'NO BRAND_PROFILE_ID',
+								content_brief_id: record.fields?.content_brief_id || 'NO BRIEF_ID',
 							});
 						});
 					} else {
