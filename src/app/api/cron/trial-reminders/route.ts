@@ -11,20 +11,26 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
 	try {
-		// Verify this is called from a cron job (optional: add secret header check)
-		const authHeader = req.headers.get('authorization');
+		// Verify this is called from a cron job
+		// cron-job.org can send a custom header or we can use a secret in the URL
+		const { searchParams } = new URL(req.url);
 		const cronSecret = process.env.CRON_SECRET;
+		const providedSecret = searchParams.get('secret') || req.headers.get('x-cron-secret');
 		
-		if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+		if (cronSecret && providedSecret !== cronSecret) {
 			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 		}
 
 		const admin = getSupabaseService();
 		const now = new Date();
-		const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+		
+		// Allow custom days parameter (default: 7 days)
+		const daysParam = searchParams.get('days');
+		const days = daysParam ? parseInt(daysParam, 10) : 7;
+		const targetDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 
-		// Find subscriptions ending in 7 days (trial subscriptions don't have stripe_subscription_id)
-		// We check for subscriptions with current_period_end between now and 7 days from now
+		// Find subscriptions ending in X days (trial subscriptions don't have stripe_subscription_id)
+		// We check for subscriptions with current_period_end between now and X days from now
 		// and no stripe_subscription_id (indicating it's a trial)
 		const { data: subscriptions, error } = await admin
 			.from('subscriptions')
@@ -38,7 +44,7 @@ export async function GET(req: Request) {
 			`)
 			.is('stripe_subscription_id', null) // Trial subscriptions don't have Stripe subscription
 			.gte('current_period_end', now.toISOString())
-			.lte('current_period_end', sevenDaysFromNow.toISOString());
+			.lte('current_period_end', targetDate.toISOString());
 
 		if (error) {
 			console.error('[Trial Reminders] Error fetching subscriptions:', error);
@@ -47,8 +53,9 @@ export async function GET(req: Request) {
 
 		if (!subscriptions || subscriptions.length === 0) {
 			return NextResponse.json({ 
-				message: 'No trials ending in 7 days',
-				count: 0 
+				message: `No trials ending in ${days} days`,
+				count: 0,
+				days 
 			});
 		}
 
@@ -79,7 +86,7 @@ export async function GET(req: Request) {
 						userEmail: profile.email,
 						trialEndsDate,
 					}),
-					category: 'product',
+					category: 'content',
 				});
 
 				results.push({
@@ -102,9 +109,10 @@ export async function GET(req: Request) {
 		}
 
 		return NextResponse.json({
-			message: `Processed ${subscriptions.length} trials ending in 7 days`,
+			message: `Processed ${subscriptions.length} trials ending in ${days} days`,
 			sent: results.filter(r => r.sent).length,
 			failed: results.filter(r => !r.sent).length,
+			days,
 			results,
 		});
 	} catch (e: any) {

@@ -3,12 +3,6 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "regions": ["iad1"],
-  "crons": [
-    {
-      "path": "/api/cron/trial-reminders",
-      "schedule": "0 9 * * *"
-    }
-  ]
+  "regions": ["iad1"]
 }
 
