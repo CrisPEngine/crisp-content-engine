@@ -210,18 +210,49 @@ export async function POST(req: Request) {
 			);
 		}
 
+		// Parse strategy_json if it's a string
+		let parsedStrategyJson = strategyJson;
+		if (typeof strategyJson === 'string') {
+			try {
+				parsedStrategyJson = JSON.parse(strategyJson);
+			} catch (e) {
+				console.warn('Failed to parse strategy_json, using as-is:', e);
+			}
+		}
+
+		// Get platforms_requested from brand profile
+		const platformsRequested = brandFields.platforms_requested || [];
+		// Handle both array and comma-separated string formats
+		const platformsArray = Array.isArray(platformsRequested) 
+			? platformsRequested 
+			: (typeof platformsRequested === 'string' && platformsRequested.trim() 
+				? platformsRequested.split(',').map(p => p.trim()).filter(Boolean)
+				: []);
+
 		// Prepare payload for Make webhook
+		// When user clicks "Generate Content" from dashboard, they're using existing strategy
+		// This should trigger as "strategy_confirmed" (not "content_brief_approved")
 		const contentPayload = {
+			trigger_type: 'strategy_confirmed', // Make.com router filters on this
 			brand_profile_id: brandProfileId,
 			user_id: user.id,
-				person_urn: personUrn || null,
+			person_urn: personUrn || null,
+			organization_urn: linkedInConnection?.connection_type === 'organization' ? linkedInConnection.organization_urn : null,
 			brand_type: brandType,
-			platform: platform, // LinkedIn, X, Instagram, etc.
-			strategy_json: strategyJson,
+			platform: platform, // LinkedIn, X, Instagram, etc. - specific platform for this generation
+			strategy_json: parsedStrategyJson, // Full strategy object
 			strategy_summary: strategySummary,
+			platforms_requested: platformsArray, // All platforms for this brand
 			triggered_at: new Date().toISOString(),
-			trigger_type: 'manual', // Indicates this was manually triggered by user
 		};
+
+		console.log('[Content Generate] Sending webhook payload:', {
+			trigger_type: contentPayload.trigger_type,
+			brand_profile_id: contentPayload.brand_profile_id,
+			platform: contentPayload.platform,
+			has_strategy_json: !!contentPayload.strategy_json,
+			platforms_requested: contentPayload.platforms_requested,
+		});
 
 		// Call Make webhook
 		const webhookRes = await fetch(webhookUrl, {
@@ -240,17 +271,24 @@ export async function POST(req: Request) {
 
 		if (!webhookRes.ok) {
 			const errorText = await webhookRes.text();
-			console.error('Make content generation webhook failed:', {
+			console.error('[Content Generate] Make webhook failed:', {
 				status: webhookRes.status,
 				statusText: webhookRes.statusText,
 				error: errorText,
-				payload: contentPayload,
+				trigger_type: contentPayload.trigger_type,
+				brand_profile_id: contentPayload.brand_profile_id,
 			});
 			return NextResponse.json(
 				{ error: `Content generation failed: ${errorText}` },
 				{ status: 502 }
 			);
 		}
+
+		const webhookResponse = await webhookRes.text();
+		console.log('[Content Generate] Make webhook response:', {
+			status: webhookRes.status,
+			response: webhookResponse.substring(0, 200), // First 200 chars
+		});
 
 		return NextResponse.json({
 			ok: true,
