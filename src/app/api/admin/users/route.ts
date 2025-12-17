@@ -55,9 +55,17 @@ export async function GET(req: Request) {
 			// Create a map of profile IDs
 			const profileMap = new Map((profiles || []).map(p => [p.id, p]));
 
+			// Get subscriptions for all users
+			const { data: subscriptions } = await admin
+				.from('subscriptions')
+				.select('user_id, plan, cycle, status');
+
+			const subscriptionMap = new Map((subscriptions || []).map(s => [s.user_id, s]));
+
 			// Combine auth users with profiles
 			const combinedUsers = (authUsers || []).map(authUser => {
 				const profile = profileMap.get(authUser.id);
+				const subscription = subscriptionMap.get(authUser.id);
 				return {
 					id: authUser.id,
 					email: authUser.email || authUser.user_metadata?.email || 'no-email',
@@ -67,6 +75,11 @@ export async function GET(req: Request) {
 					has_profile: !!profile,
 					email_confirmed: !!authUser.email_confirmed_at,
 					last_sign_in: authUser.last_sign_in_at || null,
+					subscription: subscription ? {
+						plan: subscription.plan,
+						cycle: subscription.cycle,
+						status: subscription.status,
+					} : null,
 				};
 			});
 
@@ -110,7 +123,27 @@ export async function GET(req: Request) {
 			return NextResponse.json({ error: error.message }, { status: 500 });
 		}
 
-		return NextResponse.json({ users: users || [] });
+		// Get subscriptions for users with profiles
+		const userIds = (users || []).map(u => u.id);
+		const { data: subscriptions } = await admin
+			.from('subscriptions')
+			.select('user_id, plan, cycle, status')
+			.in('user_id', userIds.length > 0 ? userIds : ['']);
+
+		const subscriptionMap = new Map((subscriptions || []).map(s => [s.user_id, s]));
+
+		// Add subscription info to users
+		const usersWithSubs = (users || []).map(user => ({
+			...user,
+			has_profile: true,
+			subscription: subscriptionMap.get(user.id) ? {
+				plan: subscriptionMap.get(user.id)!.plan,
+				cycle: subscriptionMap.get(user.id)!.cycle,
+				status: subscriptionMap.get(user.id)!.status,
+			} : null,
+		}));
+
+		return NextResponse.json({ users: usersWithSubs });
 	} catch (e: any) {
 		return NextResponse.json({ error: e?.message ?? 'Server error' }, { status: 500 });
 	}

@@ -16,6 +16,11 @@ type User = {
 	has_profile?: boolean;
 	email_confirmed?: boolean;
 	last_sign_in?: string | null;
+	subscription?: {
+		plan: string;
+		cycle: string;
+		status?: string;
+	} | null;
 };
 
 type UserDetails = {
@@ -102,7 +107,7 @@ export default function AdminPage() {
 		setLoading(true);
 		try {
 			const url = `/api/admin/users?q=${encodeURIComponent(searchQuery)}${includeAuthOnly ? '&include_auth_only=true' : ''}`;
-			const res = await fetch(url);
+			const res = await fetch(url, { cache: 'no-store' });
 			if (!res.ok) throw new Error('Failed to load users');
 			const data = await res.json();
 			setUsers(data.users || []);
@@ -113,6 +118,7 @@ export default function AdminPage() {
 			}
 		} catch (error) {
 			console.error('Error loading users:', error);
+			alert('Failed to load users. Please try again.');
 		} finally {
 			setLoading(false);
 		}
@@ -459,29 +465,70 @@ export default function AdminPage() {
 								} hover:bg-surface/50 cursor-pointer`}
 								onClick={() => loadUserDetails(user.id)}
 							>
-								<div className="flex-1">
-									<div className="flex items-center gap-2 flex-wrap">
-										<span className="font-medium">{user.email}</span>
+								<div className="flex-1 min-w-0">
+									<div className="flex items-center gap-2 flex-wrap mb-1">
+										<span className="font-medium truncate">{user.email}</span>
 										{user.has_profile === false && (
-											<span className="text-xs px-2 py-0.5 rounded-full bg-warning/15 border border-warning/30 text-warning">
+											<span className="text-xs px-2 py-0.5 rounded-full bg-warning/15 border border-warning/30 text-warning whitespace-nowrap">
 												No Profile
 											</span>
 										)}
 										{user.is_admin && (
-											<span className="text-xs px-2 py-0.5 rounded-full bg-accent/15 border border-accent/30">
+											<span className="text-xs px-2 py-0.5 rounded-full bg-accent/15 border border-accent/30 whitespace-nowrap">
 												Admin
 											</span>
 										)}
+										{user.subscription && (
+											<span className="text-xs px-2 py-0.5 rounded-full bg-primary/15 border border-primary/30 text-primary whitespace-nowrap">
+												{user.subscription.plan?.toUpperCase() || 'N/A'} {user.subscription.cycle ? `(${user.subscription.cycle})` : ''}
+											</span>
+										)}
+										{!user.subscription && user.has_profile !== false && (
+											<span className="text-xs px-2 py-0.5 rounded-full bg-surface/50 border border-edge/30 text-text-dim whitespace-nowrap">
+												No Subscription
+											</span>
+										)}
 									</div>
-									{user.full_name && <div className="text-sm text-text-dim">{user.full_name}</div>}
-									{user.has_profile === false && (
-										<div className="text-xs text-text-dim mt-1">
-											Auth user only • {user.email_confirmed ? 'Email confirmed' : 'Email not confirmed'} 
-											{user.last_sign_in && ` • Last sign in: ${new Date(user.last_sign_in).toLocaleDateString()}`}
-										</div>
-									)}
+									{user.full_name && <div className="text-sm text-text-dim mb-1">{user.full_name}</div>}
+									<div className="flex items-center gap-3 text-xs text-text-dim flex-wrap">
+										{user.has_profile === false ? (
+											<>
+												<span>Auth only</span>
+												<span>•</span>
+												<span>{user.email_confirmed ? 'Email confirmed' : 'Email not confirmed'}</span>
+												{user.last_sign_in && (
+													<>
+														<span>•</span>
+														<span>Last sign in: {new Date(user.last_sign_in).toLocaleDateString()}</span>
+													</>
+												)}
+											</>
+										) : (
+											<>
+												{user.subscription ? (
+													<>
+														<span>Plan: {user.subscription.plan || 'N/A'}</span>
+														{user.subscription.status && (
+															<>
+																<span>•</span>
+																<span>Status: {user.subscription.status}</span>
+															</>
+														)}
+													</>
+												) : (
+													<span className="text-warning">⚠️ No subscription - may have dropped at Stripe</span>
+												)}
+												{user.last_sign_in && (
+													<>
+														<span>•</span>
+														<span>Last active: {new Date(user.last_sign_in).toLocaleDateString()}</span>
+													</>
+												)}
+											</>
+										)}
+									</div>
 								</div>
-								<span className="text-text-soft text-sm">→</span>
+								<span className="text-text-soft text-sm ml-2 flex-shrink-0">→</span>
 							</div>
 						))
 					)}
