@@ -196,7 +196,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ userId: 
 			// Don't fail the request if Airtable fails
 		}
 
-		return NextResponse.json({
+		const response = {
 			profile,
 			subscription,
 			entitlements,
@@ -214,7 +214,18 @@ export async function GET(req: Request, { params }: { params: Promise<{ userId: 
 				email_confirmed: !!authUser?.user?.email_confirmed_at,
 				last_sign_in: authUser?.user?.last_sign_in_at || null,
 			},
+		};
+
+		console.log('[Admin User Details] Response for', userId, {
+			has_profile: response.has_profile,
+			has_user_journey: !!response.user_journey,
+			has_airtable: !!response.airtable,
+			brand_count: response.airtable.brand_profiles.length,
+			content_count: response.airtable.content_count,
+			connections_count: response.social_connections.length,
 		});
+
+		return NextResponse.json(response);
 	} catch (e: any) {
 		return NextResponse.json({ error: e?.message ?? 'Server error' }, { status: 500 });
 	}

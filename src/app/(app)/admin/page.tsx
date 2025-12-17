@@ -126,12 +126,26 @@ export default function AdminPage() {
 
 	async function loadUserDetails(userId: string) {
 		try {
-			const res = await fetch(`/api/admin/users/${userId}`);
+			console.log('[Admin] Loading user details for:', userId);
+			const res = await fetch(`/api/admin/users/${userId}`, { 
+				cache: 'no-store',
+				headers: {
+					'Cache-Control': 'no-cache',
+				}
+			});
 			if (!res.ok) {
 				const errorData = await res.json().catch(() => ({}));
+				console.error('[Admin] Failed to load user details:', errorData);
 				throw new Error(errorData.error || 'Failed to load user details');
 			}
 			const data = await res.json();
+			console.log('[Admin] User details loaded:', {
+				has_profile: data.has_profile,
+				has_user_journey: !!data.user_journey,
+				has_airtable: !!data.airtable,
+				airtable_brands: data.airtable?.brand_profiles?.length || 0,
+				airtable_content: data.airtable?.content_count || 0,
+			});
 			setSelectedUser(data);
 		} catch (error: any) {
 			console.error('Error loading user details:', error);
