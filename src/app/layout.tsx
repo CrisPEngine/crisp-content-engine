@@ -5,6 +5,7 @@ import "./globals.css";
 import { CookieConsent } from "@/components/CookieConsent";
 import { Analytics } from "@/components/Analytics";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { SignOutLink } from "@/components/SignOutLink";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -80,6 +81,7 @@ export default function RootLayout({
                   <Link href="https://www.crispdigital.io/cookies-policy" target="_blank" rel="noopener noreferrer" className="hover:text-text-soft transition">
                     Cookies Policy
                   </Link>
+                  <SignOutLink />
                   <Link href="https://www.crispdigital.io/privacy-policy" target="_blank" rel="noopener noreferrer" className="hover:text-text-soft transition">
                     Privacy Policy
                   </Link>
