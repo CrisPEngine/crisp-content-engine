@@ -451,7 +451,7 @@ export default function AdminPage() {
 						className="flex-1 rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-2 text-text focus:border-primary/60 focus:outline-none"
 					/>
 					<button
-						onClick={loadUsers}
+						onClick={() => loadUsers()}
 						disabled={loading}
 						className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 disabled:opacity-50"
 					>
