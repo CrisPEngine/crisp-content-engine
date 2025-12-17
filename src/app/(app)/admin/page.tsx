@@ -57,6 +57,7 @@ export default function AdminPage() {
 	const [users, setUsers] = useState<User[]>([]);
 	const [searchQuery, setSearchQuery] = useState('');
 	const [selectedUser, setSelectedUser] = useState<UserDetails | null>(null);
+	const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 	const [selectedPlan, setSelectedPlan] = useState<PlanId>('creator');
 	const [selectedCycle, setSelectedCycle] = useState<'monthly' | 'annual'>('monthly');
 	const [refreshLoading, setRefreshLoading] = useState(false);
@@ -66,6 +67,10 @@ export default function AdminPage() {
 	const [createUserCycle, setCreateUserCycle] = useState<'monthly' | 'annual'>('monthly');
 	const [createUserTrialDays, setCreateUserTrialDays] = useState(7);
 	const [creatingUser, setCreatingUser] = useState(false);
+	const [offeringTrial, setOfferingTrial] = useState(false);
+	const [trialPlan, setTrialPlan] = useState<PlanId>('creator');
+	const [trialCycle, setTrialCycle] = useState<'monthly' | 'annual'>('monthly');
+	const [trialDays, setTrialDays] = useState(30);
 
 	useEffect(() => {
 		if (!supabase) return;
@@ -162,6 +167,7 @@ export default function AdminPage() {
 				airtable_content: data.airtable?.content_count || 0,
 			});
 			setSelectedUser(data);
+			setSelectedUserId(userId);
 		} catch (error: any) {
 			console.error('Error loading user details:', error);
 			alert(error.message || 'Failed to load user details');
@@ -570,18 +576,20 @@ export default function AdminPage() {
 				<div className="card p-6 space-y-6">
 					<div className="flex items-center justify-between">
 						<h2 className="text-xl font-medium">User Details</h2>
-						{selectedUser.profile && (
-							<a
-								href={`/api/admin/users/${selectedUser.profile.id}/questionnaire`}
-								download
-								className="px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm flex items-center gap-2"
-							>
-								<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-								</svg>
-								Download Questionnaire
-							</a>
-						)}
+						<div className="flex items-center gap-2">
+							{selectedUser.profile && (
+								<a
+									href={`/api/admin/users/${selectedUser.profile.id}/questionnaire`}
+									download
+									className="px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm flex items-center gap-2"
+								>
+									<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+									</svg>
+									Download Questionnaire
+								</a>
+							)}
+						</div>
 					</div>
 
 					{/* User Journey Status */}
@@ -679,9 +687,65 @@ export default function AdminPage() {
 								)}
 							</div>
 						) : (
-							<div className="text-text-dim text-sm">No subscription - User may have dropped out at Stripe checkout</div>
+							<div className="space-y-3">
+								<div className="text-text-dim text-sm">No subscription - User may have dropped out at Stripe checkout</div>
+								
+								{/* Offer Free Trial Section */}
+								{(!selectedUser.subscription && (selectedUser.has_profile === false || !selectedUser.profile)) && (
+									<div className="p-4 rounded-xl2 border border-accent/40 bg-accent/5">
+										<h4 className="font-medium mb-3 text-sm">Offer Free Trial</h4>
+										<div className="space-y-3">
+											<div className="flex gap-2">
+												<select
+													value={trialPlan}
+													onChange={(e) => setTrialPlan(e.target.value as PlanId)}
+													className="flex-1 rounded-xl2 border border-edge/60 bg-bg/80 px-3 py-2 text-sm text-text focus:border-primary/60 focus:outline-none"
+												>
+													{PRICING.order.map((planId) => (
+														<option key={planId} value={planId}>
+															{PRICING.monthly[planId].name}
+														</option>
+													))}
+												</select>
+												<select
+													value={trialCycle}
+													onChange={(e) => setTrialCycle(e.target.value as 'monthly' | 'annual')}
+													className="rounded-xl2 border border-edge/60 bg-bg/80 px-3 py-2 text-sm text-text focus:border-primary/60 focus:outline-none"
+												>
+													<option value="monthly">Monthly</option>
+													<option value="annual">Annual</option>
+												</select>
+											</div>
+											<div className="flex items-center gap-2">
+												<label className="text-sm text-text-dim">Trial Days:</label>
+												<input
+													type="number"
+													min="1"
+													max="365"
+													value={trialDays}
+													onChange={(e) => setTrialDays(parseInt(e.target.value) || 30)}
+													className="w-20 rounded-xl2 border border-edge/60 bg-bg/80 px-3 py-1.5 text-sm text-text focus:border-primary/60 focus:outline-none"
+												/>
+											</div>
+											<button
+												onClick={() => {
+													if (selectedUserId) {
+														offerTrial(selectedUserId);
+													} else {
+														alert('Cannot offer trial: User ID not found. Please click on the user again to refresh details.');
+													}
+												}}
+												disabled={offeringTrial}
+												className="w-full px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm disabled:opacity-50"
+											>
+												{offeringTrial ? 'Offering Trial...' : `Offer ${trialDays}-Day Free Trial`}
+											</button>
+										</div>
+									</div>
+								)}
+							</div>
 						)}
-						{(selectedUser.profile || selectedUser.diagnostic) && (
+						{(selectedUser.profile || selectedUser.diagnostic) && selectedUser.subscription && (
 							<button
 								onClick={() => {
 									const userId = selectedUser.profile?.id || selectedUser.diagnostic?.user_id;
