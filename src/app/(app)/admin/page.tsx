@@ -103,10 +103,11 @@ export default function AdminPage() {
 
 	const [includeAuthOnly, setIncludeAuthOnly] = useState(false);
 
-	async function loadUsers() {
+	async function loadUsers(forceIncludeAuthOnly?: boolean) {
 		setLoading(true);
 		try {
-			const url = `/api/admin/users?q=${encodeURIComponent(searchQuery)}${includeAuthOnly ? '&include_auth_only=true' : ''}&limit=100`;
+			const include = forceIncludeAuthOnly ?? includeAuthOnly;
+			const url = `/api/admin/users?q=${encodeURIComponent(searchQuery)}${include ? '&include_auth_only=true' : ''}&limit=100`;
 			console.log('[Admin] Loading users from:', url);
 			const res = await fetch(url, { cache: 'no-store' });
 			if (!res.ok) {
@@ -122,7 +123,7 @@ export default function AdminPage() {
 			setUsers(data.users || []);
 			
 			// Show info about users without profiles if included
-			if (includeAuthOnly) {
+			if (include) {
 				const withoutProfiles = data.users_without_profiles || 0;
 				if (withoutProfiles > 0) {
 					console.log(`✓ Found ${withoutProfiles} users without profiles`);
@@ -463,8 +464,9 @@ export default function AdminPage() {
 						id="include-auth-only"
 						checked={includeAuthOnly}
 						onChange={(e) => {
-							setIncludeAuthOnly(e.target.checked);
-							loadUsers();
+							const next = e.target.checked;
+							setIncludeAuthOnly(next);
+							loadUsers(next);
 						}}
 						className="rounded border-edge/60"
 					/>
