@@ -245,6 +245,38 @@ export default function AdminPage() {
 		}
 	}
 
+	async function offerTrial(userId: string) {
+		if (offeringTrial) return;
+		
+		setOfferingTrial(true);
+		try {
+			const res = await fetch(`/api/admin/users/${userId}/offer-trial`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					plan: trialPlan,
+					cycle: trialCycle,
+					trialDays,
+				}),
+			});
+
+			const data = await res.json();
+
+			if (!res.ok) {
+				throw new Error(data.error || 'Failed to offer trial');
+			}
+
+			alert(data.message || `Free trial offered successfully! ${trialDays}-day trial expires on ${new Date(data.trialExpiresAt).toLocaleDateString()}.`);
+			loadUserDetails(userId);
+			loadUsers();
+		} catch (error: any) {
+			console.error('Error offering trial:', error);
+			alert(error.message || 'Failed to offer trial');
+		} finally {
+			setOfferingTrial(false);
+		}
+	}
+
 	async function refreshStripe(userId: string, stripeCustomerId?: string) {
 		setRefreshLoading(true);
 		try {

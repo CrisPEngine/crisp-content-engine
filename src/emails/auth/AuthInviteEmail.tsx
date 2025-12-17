@@ -15,36 +15,60 @@ export function AuthInviteEmail({ inviteUrl, userEmail, trialDays, plan }: AuthI
 	const hasTrial = trialDays && trialDays > 0;
 	
 	return (
-		<EmailLayout preview={hasTrial ? `You've been invited to try CRISP Content Engine - ${trialDays} day free trial!` : "You have been invited to CRISP Content Engine"}>
+		<EmailLayout preview={hasTrial ? "Finish setting up. Your free trial is ready" : "You have been invited to CRISP Content Engine"}>
 			<EmailHeader />
 			<div style={contentStyle}>
-				<h1 style={headingStyle}>
-					{hasTrial ? `You've been invited to try CRISP Content Engine` : 'You have been invited to CRISP Content Engine'}
-				</h1>
-				{hasTrial && (
-					<div style={trialBadgeStyle}>
-						<Text style={trialBadgeTextStyle}>
-							🎉 {trialDays}-Day Free Trial
+				{hasTrial ? (
+					<>
+						<h1 style={headingStyle}>Finish setting up. Your free trial is ready</h1>
+						<Text style={bodyStyle}>
+							You've already completed the first step by submitting your authorisation.
 						</Text>
-						{plan && (
-							<Text style={planTextStyle}>
-								{plan} Plan
+						<Text style={bodyStyle}>
+							The next step is simple, activate your free trial and start generating content immediately.
+						</Text>
+						<Text style={sectionHeadingStyle}>Here's what you get during the trial.</Text>
+						<div style={benefitsListStyle}>
+							<Text style={benefitItemStyle}>
+								<strong>Structured content generation</strong><br />
+								Submit briefs and receive ready to use posts aligned to your brand and objectives.
 							</Text>
-						)}
-					</div>
+							<Text style={benefitItemStyle}>
+								<strong>Automated scheduling</strong><br />
+								Plan and schedule content in advance so posting happens consistently without manual work.
+							</Text>
+							<Text style={benefitItemStyle}>
+								<strong>One workflow, no tools to juggle</strong><br />
+								Brief, generate, review and publish from a single place.
+							</Text>
+						</div>
+						<Text style={bodyStyle}>
+							There's no obligation and no payment required to start the trial. It's simply a chance to see how Content Engine fits into your workflow.
+						</Text>
+						<Text style={bodyStyle}>
+							Activate your free trial now and put the authorisation you've already completed to work.
+						</Text>
+						<div style={buttonContainerStyle}>
+							<EmailButton href={inviteUrl}>Start free trial</EmailButton>
+						</div>
+						<Text style={mutedStyle}>
+							This invitation link will expire in 24 hours. If you did not expect this invitation, you can safely ignore this email.
+						</Text>
+					</>
+				) : (
+					<>
+						<h1 style={headingStyle}>You have been invited to CRISP Content Engine</h1>
+						<Text style={bodyStyle}>
+							You've been invited to join CRISP Content Engine. Click the button below to accept your invitation and set up your account.
+						</Text>
+						<div style={buttonContainerStyle}>
+							<EmailButton href={inviteUrl}>Accept Invite</EmailButton>
+						</div>
+						<Text style={mutedStyle}>
+							This invitation link will expire in 24 hours. If you did not expect this invitation, you can safely ignore this email.
+						</Text>
+					</>
 				)}
-				<Text style={bodyStyle}>
-					{hasTrial 
-						? `You've been invited to try CRISP Content Engine with a ${trialDays}-day free trial. Click the button below to accept your invitation and start your free trial.`
-						: `You've been invited to join CRISP Content Engine. Click the button below to accept your invitation and set up your account.`
-					}
-				</Text>
-				<div style={buttonContainerStyle}>
-					<EmailButton href={inviteUrl}>{hasTrial ? 'Start Free Trial' : 'Accept Invite'}</EmailButton>
-				</div>
-				<Text style={mutedStyle}>
-					This invitation link will expire in 24 hours. If you did not expect this invitation, you can safely ignore this email.
-				</Text>
 			</div>
 			<EmailFooter />
 		</EmailLayout>
@@ -105,6 +129,26 @@ const planTextStyle = {
 	fontSize: '14px',
 	margin: '0',
 	textAlign: 'center' as const,
+};
+
+const sectionHeadingStyle = {
+	color: '#FFFFFF',
+	fontSize: '16px',
+	fontWeight: '600',
+	margin: '24px 0 16px 0',
+	textAlign: 'left' as const,
+};
+
+const benefitsListStyle = {
+	margin: '16px 0 24px 0',
+};
+
+const benefitItemStyle = {
+	color: '#9CA3AF',
+	fontSize: '14px',
+	lineHeight: '20px',
+	margin: '0 0 16px 0',
+	textAlign: 'left' as const,
 };
 
 
