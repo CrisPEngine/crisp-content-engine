@@ -31,15 +31,43 @@ export async function GET(req: Request, { params }: { params: Promise<{ userId: 
 		const admin = getSupabaseService();
 		const { userId } = await params;
 
-		// Get user profile
+		// Get auth user info (even if no profile exists)
+		let authUser: any = null;
+		try {
+			const authResult = await admin.auth.admin.getUserById(userId);
+			authUser = authResult.data;
+		} catch (error) {
+			// User might not exist in auth
+			console.warn(`User ${userId} not found in auth.users:`, error);
+		}
+
+		// Get user profile (may not exist)
 		const { data: profile, error: profileError } = await admin
 			.from('profiles')
 			.select('*')
 			.eq('id', userId)
-			.single();
+			.maybeSingle();
 
-		if (profileError) {
-			return NextResponse.json({ error: profileError.message }, { status: 404 });
+		// If no profile exists, return auth user info with diagnostic data
+		if (!profile) {
+			return NextResponse.json({
+				profile: null,
+				auth_user: authUser?.user ? {
+					id: authUser.user.id,
+					email: authUser.user.email,
+					created_at: authUser.user.created_at,
+					last_sign_in_at: authUser.user.last_sign_in_at,
+					email_confirmed_at: authUser.user.email_confirmed_at,
+				} : null,
+				subscription: null,
+				entitlements: null,
+				has_profile: false,
+				diagnostic: {
+					exists_in_auth: !!authUser?.user,
+					email_confirmed: !!authUser?.user?.email_confirmed_at,
+					last_sign_in: authUser?.user?.last_sign_in_at || null,
+				},
+			});
 		}
 
 		// Get subscription

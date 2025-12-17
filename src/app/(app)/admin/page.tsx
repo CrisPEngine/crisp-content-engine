@@ -13,6 +13,9 @@ type User = {
 	full_name: string | null;
 	is_admin: boolean;
 	created_at: string;
+	has_profile?: boolean;
+	email_confirmed?: boolean;
+	last_sign_in?: string | null;
 };
 
 type UserDetails = {
@@ -72,13 +75,21 @@ export default function AdminPage() {
 		}
 	}
 
+	const [includeAuthOnly, setIncludeAuthOnly] = useState(false);
+
 	async function loadUsers() {
 		setLoading(true);
 		try {
-			const res = await fetch(`/api/admin/users?q=${encodeURIComponent(searchQuery)}`);
+			const url = `/api/admin/users?q=${encodeURIComponent(searchQuery)}${includeAuthOnly ? '&include_auth_only=true' : ''}`;
+			const res = await fetch(url);
 			if (!res.ok) throw new Error('Failed to load users');
 			const data = await res.json();
 			setUsers(data.users || []);
+			
+			// Show info about users without profiles if included
+			if (includeAuthOnly && data.users_without_profiles > 0) {
+				console.log(`Found ${data.users_without_profiles} users without profiles`);
+			}
 		} catch (error) {
 			console.error('Error loading users:', error);
 		} finally {
@@ -387,22 +398,54 @@ export default function AdminPage() {
 						{loading ? 'Loading...' : 'Search'}
 					</button>
 				</div>
+				<div className="flex items-center gap-2">
+					<input
+						type="checkbox"
+						id="include-auth-only"
+						checked={includeAuthOnly}
+						onChange={(e) => {
+							setIncludeAuthOnly(e.target.checked);
+							loadUsers();
+						}}
+						className="rounded border-edge/60"
+					/>
+					<label htmlFor="include-auth-only" className="text-sm text-text-soft cursor-pointer">
+						Include users without profiles (auth-only users)
+					</label>
+				</div>
 
 				{/* User List */}
 				<div className="space-y-2 max-h-96 overflow-y-auto">
 					{users.map((user) => (
 						<div
 							key={user.id}
-							className="flex items-center justify-between p-3 rounded-lg border border-edge/60 hover:bg-surface/50 cursor-pointer"
+							className={`flex items-center justify-between p-3 rounded-lg border ${
+								user.has_profile === false 
+									? 'border-warning/50 bg-warning/5' 
+									: 'border-edge/60'
+							} hover:bg-surface/50 cursor-pointer`}
 							onClick={() => loadUserDetails(user.id)}
 						>
-							<div>
-								<div className="font-medium">{user.email}</div>
+							<div className="flex-1">
+								<div className="flex items-center gap-2">
+									<span className="font-medium">{user.email}</span>
+									{user.has_profile === false && (
+										<span className="text-xs px-2 py-0.5 rounded-full bg-warning/15 border border-warning/30 text-warning">
+											No Profile
+										</span>
+									)}
+									{user.is_admin && (
+										<span className="text-xs px-2 py-0.5 rounded-full bg-accent/15 border border-accent/30">
+											Admin
+										</span>
+									)}
+								</div>
 								{user.full_name && <div className="text-sm text-text-dim">{user.full_name}</div>}
-								{user.is_admin && (
-									<span className="text-xs px-2 py-0.5 rounded-full bg-accent/15 border border-accent/30 mt-1 inline-block">
-										Admin
-									</span>
+								{user.has_profile === false && (
+									<div className="text-xs text-text-dim mt-1">
+										Auth user only • {user.email_confirmed ? 'Email confirmed' : 'Email not confirmed'} 
+										{user.last_sign_in && ` • Last sign in: ${new Date(user.last_sign_in).toLocaleDateString()}`}
+									</div>
 								)}
 							</div>
 							<span className="text-text-soft text-sm">→</span>
