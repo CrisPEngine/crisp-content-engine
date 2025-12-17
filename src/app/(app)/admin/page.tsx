@@ -106,19 +106,33 @@ export default function AdminPage() {
 	async function loadUsers() {
 		setLoading(true);
 		try {
-			const url = `/api/admin/users?q=${encodeURIComponent(searchQuery)}${includeAuthOnly ? '&include_auth_only=true' : ''}`;
+			const url = `/api/admin/users?q=${encodeURIComponent(searchQuery)}${includeAuthOnly ? '&include_auth_only=true' : ''}&limit=100`;
+			console.log('[Admin] Loading users from:', url);
 			const res = await fetch(url, { cache: 'no-store' });
-			if (!res.ok) throw new Error('Failed to load users');
+			if (!res.ok) {
+				const errorData = await res.json().catch(() => ({}));
+				throw new Error(errorData.error || 'Failed to load users');
+			}
 			const data = await res.json();
+			console.log('[Admin] Users loaded:', {
+				total: data.users?.length || 0,
+				without_profiles: data.users_without_profiles || 0,
+				debug: data.debug,
+			});
 			setUsers(data.users || []);
 			
 			// Show info about users without profiles if included
-			if (includeAuthOnly && data.users_without_profiles > 0) {
-				console.log(`Found ${data.users_without_profiles} users without profiles`);
+			if (includeAuthOnly) {
+				const withoutProfiles = data.users_without_profiles || 0;
+				if (withoutProfiles > 0) {
+					console.log(`✓ Found ${withoutProfiles} users without profiles`);
+				} else {
+					console.warn('⚠ No users without profiles found. Check if auth.users has users without profiles.');
+				}
 			}
-		} catch (error) {
+		} catch (error: any) {
 			console.error('Error loading users:', error);
-			alert('Failed to load users. Please try again.');
+			alert(error.message || 'Failed to load users. Please try again.');
 		} finally {
 			setLoading(false);
 		}

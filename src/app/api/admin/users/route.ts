@@ -36,21 +36,43 @@ export async function GET(req: Request) {
 
 		// If including auth-only users, we need to get all auth users and match with profiles
 		if (includeAuthOnly) {
-			// Get all auth users (limited)
-			const { data: { users: authUsers }, error: authError } = await admin.auth.admin.listUsers({
-				page: 1,
-				perPage: limit * 2, // Get more to filter
-			});
+			console.log('[Admin Users] Fetching auth users with includeAuthOnly=true');
+			
+			// Get all auth users - Supabase listUsers has a max perPage of 50, so we need pagination
+			let allAuthUsers: any[] = [];
+			let page = 1;
+			const perPage = 50; // Max allowed by Supabase
+			let hasMore = true;
 
-			if (authError) {
-				console.error('Failed to list auth users:', authError);
-				return NextResponse.json({ error: 'Failed to fetch auth users' }, { status: 500 });
+			while (hasMore && allAuthUsers.length < 500) { // Safety limit
+				const { data: { users: authUsers }, error: authError } = await admin.auth.admin.listUsers({
+					page,
+					perPage,
+				});
+
+				if (authError) {
+					console.error('[Admin Users] Failed to list auth users:', authError);
+					// Don't fail completely, just log and use what we have
+					break;
+				}
+
+				if (!authUsers || authUsers.length === 0) {
+					hasMore = false;
+				} else {
+					allAuthUsers = allAuthUsers.concat(authUsers);
+					hasMore = authUsers.length === perPage; // If we got a full page, there might be more
+					page++;
+				}
 			}
+
+			console.log(`[Admin Users] Fetched ${allAuthUsers.length} auth users from Supabase`);
 
 			// Get all profiles
 			const { data: profiles } = await admin
 				.from('profiles')
 				.select('id, email, full_name, is_admin, created_at');
+
+			console.log(`[Admin Users] Fetched ${profiles?.length || 0} profiles`);
 
 			// Create a map of profile IDs
 			const profileMap = new Map((profiles || []).map(p => [p.id, p]));
@@ -63,7 +85,7 @@ export async function GET(req: Request) {
 			const subscriptionMap = new Map((subscriptions || []).map(s => [s.user_id, s]));
 
 			// Combine auth users with profiles
-			const combinedUsers = (authUsers || []).map(authUser => {
+			const combinedUsers = allAuthUsers.map(authUser => {
 				const profile = profileMap.get(authUser.id);
 				const subscription = subscriptionMap.get(authUser.id);
 				return {
@@ -103,10 +125,18 @@ export async function GET(req: Request) {
 				});
 			}
 
+			const usersWithoutProfiles = filteredUsers.filter(u => !u.has_profile);
+			console.log(`[Admin Users] Found ${usersWithoutProfiles.length} users without profiles out of ${filteredUsers.length} total`);
+
 			return NextResponse.json({ 
 				users: filteredUsers.slice(0, limit),
-				total_auth_users: authUsers?.length || 0,
-				users_without_profiles: filteredUsers.filter(u => !u.has_profile).length,
+				total_auth_users: allAuthUsers.length,
+				users_without_profiles: usersWithoutProfiles.length,
+				debug: {
+					total_auth_fetched: allAuthUsers.length,
+					total_profiles: profiles?.length || 0,
+					users_without_profiles_count: usersWithoutProfiles.length,
+				},
 			});
 		}
 
