@@ -37,10 +37,15 @@ export async function GET(req: Request) {
 		// If including auth-only users, we need to get all auth users and match with profiles
 		if (includeAuthOnly) {
 			// Get all auth users (limited)
-			const { data: { users: authUsers } } = await admin.auth.admin.listUsers({
+			const { data: { users: authUsers }, error: authError } = await admin.auth.admin.listUsers({
 				page: 1,
-				perPage: limit,
+				perPage: limit * 2, // Get more to filter
 			});
+
+			if (authError) {
+				console.error('Failed to list auth users:', authError);
+				return NextResponse.json({ error: 'Failed to fetch auth users' }, { status: 500 });
+			}
 
 			// Get all profiles
 			const { data: profiles } = await admin
@@ -73,6 +78,16 @@ export async function GET(req: Request) {
 					u.email.toLowerCase().includes(lowerQuery) ||
 					(u.full_name && u.full_name.toLowerCase().includes(lowerQuery))
 				);
+			}
+
+			// If no query, show users without profiles first
+			if (!query) {
+				filteredUsers.sort((a, b) => {
+					if (a.has_profile !== b.has_profile) {
+						return a.has_profile ? 1 : -1; // No profile first
+					}
+					return new Date(b.created_at).getTime() - new Date(a.created_at).getTime(); // Newest first
+				});
 			}
 
 			return NextResponse.json({ 

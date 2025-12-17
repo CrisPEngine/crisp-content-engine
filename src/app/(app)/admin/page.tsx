@@ -22,6 +22,27 @@ type UserDetails = {
 	profile: any;
 	subscription: any;
 	entitlements: any;
+	social_connections?: any[];
+	usage?: any[];
+	airtable?: {
+		brand_profiles: any[];
+		content_count: number;
+		pending_content_count: number;
+		content_briefs: any[];
+		has_onboarding: boolean;
+	};
+	user_journey?: {
+		has_auth: boolean;
+		has_profile: boolean;
+		has_subscription: boolean;
+		has_brand: boolean;
+		has_connections: boolean;
+		has_content: boolean;
+		email_confirmed: boolean;
+		last_sign_in: string | null;
+	};
+	has_profile?: boolean;
+	diagnostic?: any;
 };
 
 export default function AdminPage() {
@@ -100,11 +121,15 @@ export default function AdminPage() {
 	async function loadUserDetails(userId: string) {
 		try {
 			const res = await fetch(`/api/admin/users/${userId}`);
-			if (!res.ok) throw new Error('Failed to load user details');
+			if (!res.ok) {
+				const errorData = await res.json().catch(() => ({}));
+				throw new Error(errorData.error || 'Failed to load user details');
+			}
 			const data = await res.json();
 			setSelectedUser(data);
-		} catch (error) {
+		} catch (error: any) {
 			console.error('Error loading user details:', error);
+			alert(error.message || 'Failed to load user details');
 		}
 	}
 
@@ -416,41 +441,50 @@ export default function AdminPage() {
 
 				{/* User List */}
 				<div className="space-y-2 max-h-96 overflow-y-auto">
-					{users.map((user) => (
-						<div
-							key={user.id}
-							className={`flex items-center justify-between p-3 rounded-lg border ${
-								user.has_profile === false 
-									? 'border-warning/50 bg-warning/5' 
-									: 'border-edge/60'
-							} hover:bg-surface/50 cursor-pointer`}
-							onClick={() => loadUserDetails(user.id)}
-						>
-							<div className="flex-1">
-								<div className="flex items-center gap-2">
-									<span className="font-medium">{user.email}</span>
+					{users.length === 0 ? (
+						<div className="text-center py-8 text-text-dim">
+							<p className="text-sm">No users found</p>
+							{includeAuthOnly && (
+								<p className="text-xs mt-1">Try searching for specific emails or check if users exist in Supabase</p>
+							)}
+						</div>
+					) : (
+						users.map((user) => (
+							<div
+								key={user.id}
+								className={`flex items-center justify-between p-3 rounded-lg border ${
+									user.has_profile === false 
+										? 'border-warning/50 bg-warning/5' 
+										: 'border-edge/60'
+								} hover:bg-surface/50 cursor-pointer`}
+								onClick={() => loadUserDetails(user.id)}
+							>
+								<div className="flex-1">
+									<div className="flex items-center gap-2 flex-wrap">
+										<span className="font-medium">{user.email}</span>
+										{user.has_profile === false && (
+											<span className="text-xs px-2 py-0.5 rounded-full bg-warning/15 border border-warning/30 text-warning">
+												No Profile
+											</span>
+										)}
+										{user.is_admin && (
+											<span className="text-xs px-2 py-0.5 rounded-full bg-accent/15 border border-accent/30">
+												Admin
+											</span>
+										)}
+									</div>
+									{user.full_name && <div className="text-sm text-text-dim">{user.full_name}</div>}
 									{user.has_profile === false && (
-										<span className="text-xs px-2 py-0.5 rounded-full bg-warning/15 border border-warning/30 text-warning">
-											No Profile
-										</span>
-									)}
-									{user.is_admin && (
-										<span className="text-xs px-2 py-0.5 rounded-full bg-accent/15 border border-accent/30">
-											Admin
-										</span>
+										<div className="text-xs text-text-dim mt-1">
+											Auth user only • {user.email_confirmed ? 'Email confirmed' : 'Email not confirmed'} 
+											{user.last_sign_in && ` • Last sign in: ${new Date(user.last_sign_in).toLocaleDateString()}`}
+										</div>
 									)}
 								</div>
-								{user.full_name && <div className="text-sm text-text-dim">{user.full_name}</div>}
-								{user.has_profile === false && (
-									<div className="text-xs text-text-dim mt-1">
-										Auth user only • {user.email_confirmed ? 'Email confirmed' : 'Email not confirmed'} 
-										{user.last_sign_in && ` • Last sign in: ${new Date(user.last_sign_in).toLocaleDateString()}`}
-									</div>
-								)}
+								<span className="text-text-soft text-sm">→</span>
 							</div>
-							<span className="text-text-soft text-sm">→</span>
-						</div>
-					))}
+						))
+					)}
 				</div>
 			</div>
 
@@ -459,51 +493,239 @@ export default function AdminPage() {
 				<div className="card p-6 space-y-6">
 					<div className="flex items-center justify-between">
 						<h2 className="text-xl font-medium">User Details</h2>
-						<a
-							href={`/api/admin/users/${selectedUser.profile.id}/questionnaire`}
-							download
-							className="px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm flex items-center gap-2"
-						>
-							<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-							</svg>
-							Download Questionnaire
-						</a>
+						{selectedUser.profile && (
+							<a
+								href={`/api/admin/users/${selectedUser.profile.id}/questionnaire`}
+								download
+								className="px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm flex items-center gap-2"
+							>
+								<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+								</svg>
+								Download Questionnaire
+							</a>
+						)}
 					</div>
+
+					{/* User Journey Status */}
+					{selectedUser.user_journey && (
+						<div className="p-4 rounded-xl2 border border-edge/60 bg-surface/30">
+							<h3 className="font-medium mb-3">User Journey Status</h3>
+							<div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+								<div className={`p-2 rounded-lg ${selectedUser.user_journey.has_auth ? 'bg-accent/10 border border-accent/30' : 'bg-surface/50 border border-edge/30'}`}>
+									<div className="text-xs text-text-dim">Auth Account</div>
+									<div className={`text-sm font-medium ${selectedUser.user_journey.has_auth ? 'text-accent' : 'text-text-dim'}`}>
+										{selectedUser.user_journey.has_auth ? '✓ Created' : '✗ Missing'}
+									</div>
+								</div>
+								<div className={`p-2 rounded-lg ${selectedUser.user_journey.has_profile ? 'bg-accent/10 border border-accent/30' : 'bg-surface/50 border border-edge/30'}`}>
+									<div className="text-xs text-text-dim">Profile</div>
+									<div className={`text-sm font-medium ${selectedUser.user_journey.has_profile ? 'text-accent' : 'text-text-dim'}`}>
+										{selectedUser.user_journey.has_profile ? '✓ Created' : '✗ Missing'}
+									</div>
+								</div>
+								<div className={`p-2 rounded-lg ${selectedUser.user_journey.has_subscription ? 'bg-accent/10 border border-accent/30' : 'bg-surface/50 border border-edge/30'}`}>
+									<div className="text-xs text-text-dim">Subscription</div>
+									<div className={`text-sm font-medium ${selectedUser.user_journey.has_subscription ? 'text-accent' : 'text-text-dim'}`}>
+										{selectedUser.user_journey.has_subscription ? '✓ Active' : '✗ None'}
+									</div>
+								</div>
+								<div className={`p-2 rounded-lg ${selectedUser.user_journey.has_brand ? 'bg-accent/10 border border-accent/30' : 'bg-surface/50 border border-edge/30'}`}>
+									<div className="text-xs text-text-dim">Onboarding</div>
+									<div className={`text-sm font-medium ${selectedUser.user_journey.has_brand ? 'text-accent' : 'text-text-dim'}`}>
+										{selectedUser.user_journey.has_brand ? '✓ Complete' : '✗ Not Started'}
+									</div>
+								</div>
+								<div className={`p-2 rounded-lg ${selectedUser.user_journey.has_connections ? 'bg-accent/10 border border-accent/30' : 'bg-surface/50 border border-edge/30'}`}>
+									<div className="text-xs text-text-dim">Social Connections</div>
+									<div className={`text-sm font-medium ${selectedUser.user_journey.has_connections ? 'text-accent' : 'text-text-dim'}`}>
+										{selectedUser.user_journey.has_connections ? '✓ Connected' : '✗ None'}
+									</div>
+								</div>
+								<div className={`p-2 rounded-lg ${selectedUser.user_journey.has_content ? 'bg-accent/10 border border-accent/30' : 'bg-surface/50 border border-edge/30'}`}>
+									<div className="text-xs text-text-dim">Content Created</div>
+									<div className={`text-sm font-medium ${selectedUser.user_journey.has_content ? 'text-accent' : 'text-text-dim'}`}>
+										{selectedUser.user_journey.has_content ? '✓ Yes' : '✗ None'}
+									</div>
+								</div>
+								<div className={`p-2 rounded-lg ${selectedUser.user_journey.email_confirmed ? 'bg-accent/10 border border-accent/30' : 'bg-warning/10 border border-warning/30'}`}>
+									<div className="text-xs text-text-dim">Email Confirmed</div>
+									<div className={`text-sm font-medium ${selectedUser.user_journey.email_confirmed ? 'text-accent' : 'text-warning'}`}>
+										{selectedUser.user_journey.email_confirmed ? '✓ Confirmed' : '✗ Pending'}
+									</div>
+								</div>
+								<div className="p-2 rounded-lg bg-surface/50 border border-edge/30">
+									<div className="text-xs text-text-dim">Last Sign In</div>
+									<div className="text-sm font-medium text-text-soft">
+										{selectedUser.user_journey.last_sign_in 
+											? new Date(selectedUser.user_journey.last_sign_in).toLocaleDateString()
+											: 'Never'}
+									</div>
+								</div>
+							</div>
+						</div>
+					)}
 
 					{/* Profile Info */}
 					<div>
 						<h3 className="font-medium mb-2">Profile</h3>
 						<div className="space-y-1 text-sm">
-							<div>Email: {selectedUser.profile?.email}</div>
+							<div>Email: {selectedUser.profile?.email || selectedUser.diagnostic?.email || 'N/A'}</div>
 							<div>Name: {selectedUser.profile?.full_name || 'N/A'}</div>
-							<div>User ID: {selectedUser.profile?.id}</div>
+							<div>User ID: {selectedUser.profile?.id || 'N/A'}</div>
+							{selectedUser.has_profile === false && (
+								<div className="text-warning text-xs mt-2">
+									⚠️ User exists in auth.users but has no profile record
+								</div>
+							)}
 						</div>
 					</div>
 
-					{/* Subscription */}
+					{/* Subscription & Plan */}
 					<div>
-						<h3 className="font-medium mb-2">Subscription</h3>
+						<h3 className="font-medium mb-2">Subscription & Plan</h3>
 						{selectedUser.subscription ? (
 							<div className="space-y-1 text-sm">
-								<div>Plan: {selectedUser.subscription.plan}</div>
-								<div>Cycle: {selectedUser.subscription.cycle || 'N/A'}</div>
-								<div>Status: {selectedUser.subscription.status}</div>
+								<div className="flex items-center gap-2">
+									<span>Plan:</span>
+									<span className="font-medium capitalize">{selectedUser.subscription.plan || 'N/A'}</span>
+									<span className="text-text-dim">({selectedUser.subscription.cycle || 'N/A'})</span>
+								</div>
 								{selectedUser.subscription.stripe_customer_id && (
 									<div>Stripe Customer: {selectedUser.subscription.stripe_customer_id}</div>
 								)}
+								{selectedUser.subscription.stripe_subscription_id && (
+									<div>Stripe Subscription: {selectedUser.subscription.stripe_subscription_id}</div>
+								)}
+								{selectedUser.subscription.current_period_end && (
+									<div>Period Ends: {new Date(selectedUser.subscription.current_period_end).toLocaleDateString()}</div>
+								)}
 							</div>
 						) : (
-							<div className="text-text-dim text-sm">No subscription</div>
+							<div className="text-text-dim text-sm">No subscription - User may have dropped out at Stripe checkout</div>
 						)}
-						<button
-							onClick={() => refreshStripe(selectedUser.profile.id, selectedUser.subscription?.stripe_customer_id)}
-							disabled={refreshLoading}
-							className="mt-2 px-3 py-1.5 rounded-lg border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm disabled:opacity-50"
-						>
-							{refreshLoading ? 'Refreshing...' : 'Refresh Stripe Data'}
-						</button>
+						{(selectedUser.profile || selectedUser.diagnostic) && (
+							<button
+								onClick={() => {
+									const userId = selectedUser.profile?.id || selectedUser.diagnostic?.user_id;
+									if (userId) {
+										refreshStripe(userId, selectedUser.subscription?.stripe_customer_id);
+									}
+								}}
+								disabled={refreshLoading}
+								className="mt-2 px-3 py-1.5 rounded-lg border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm disabled:opacity-50"
+							>
+								{refreshLoading ? 'Refreshing...' : 'Refresh Stripe Data'}
+							</button>
+						)}
 					</div>
+
+					{/* Airtable Data */}
+					{selectedUser.airtable && (
+						<div>
+							<h3 className="font-medium mb-2">Airtable Data</h3>
+							<div className="space-y-3">
+								{/* Brand Profiles / Onboarding */}
+								<div>
+									<div className="text-sm font-medium mb-1">Brand Profiles (Onboarding)</div>
+									{selectedUser.airtable.brand_profiles && selectedUser.airtable.brand_profiles.length > 0 ? (
+										<div className="space-y-2">
+											{selectedUser.airtable.brand_profiles.map((brand: any, idx: number) => (
+												<div key={idx} className="p-2 rounded-lg border border-edge/60 bg-surface/30 text-sm">
+													<div className="font-medium">{brand.client_name}</div>
+													<div className="text-text-dim text-xs">
+														Type: {brand.brand_type} • Status: {brand.status}
+													</div>
+												</div>
+											))}
+										</div>
+									) : (
+										<div className="text-text-dim text-sm">No brand profiles - Onboarding not completed</div>
+									)}
+								</div>
+
+								{/* Content Stats */}
+								<div>
+									<div className="text-sm font-medium mb-1">Content Statistics</div>
+									<div className="grid grid-cols-2 gap-2 text-sm">
+										<div className="p-2 rounded-lg border border-edge/60 bg-surface/30">
+											<div className="text-text-dim text-xs">Total Content</div>
+											<div className="font-medium">{selectedUser.airtable.content_count || 0}</div>
+										</div>
+										<div className="p-2 rounded-lg border border-edge/60 bg-surface/30">
+											<div className="text-text-dim text-xs">Pending Approval</div>
+											<div className="font-medium">{selectedUser.airtable.pending_content_count || 0}</div>
+										</div>
+									</div>
+								</div>
+
+								{/* Content Briefs */}
+								<div>
+									<div className="text-sm font-medium mb-1">Content Briefs</div>
+									{selectedUser.airtable.content_briefs && selectedUser.airtable.content_briefs.length > 0 ? (
+										<div className="space-y-2">
+											{selectedUser.airtable.content_briefs.map((brief: any) => (
+												<div key={brief.id} className="p-2 rounded-lg border border-edge/60 bg-surface/30 text-sm">
+													<div className="flex items-center justify-between">
+														<span className="font-medium">{brief.cycle_label || 'Brief'}</span>
+														<span className={`text-xs px-2 py-0.5 rounded-full ${
+															brief.status === 'Generation Completed' ? 'bg-accent/15 text-accent' :
+															brief.status === 'Pending Approval' ? 'bg-primary/15 text-primary' :
+															brief.status === 'Failed' ? 'bg-danger/15 text-danger' :
+															'bg-surface/50 text-text-dim'
+														}`}>
+															{brief.status}
+														</span>
+													</div>
+													{brief.submitted_at && (
+														<div className="text-xs text-text-dim mt-1">
+															Submitted: {new Date(brief.submitted_at).toLocaleDateString()}
+														</div>
+													)}
+												</div>
+											))}
+										</div>
+									) : (
+										<div className="text-text-dim text-sm">No content briefs submitted</div>
+									)}
+								</div>
+							</div>
+						</div>
+					)}
+
+					{/* Social Connections */}
+					{selectedUser.social_connections && selectedUser.social_connections.length > 0 && (
+						<div>
+							<h3 className="font-medium mb-2">Social Connections</h3>
+							<div className="space-y-2">
+								{selectedUser.social_connections.map((conn: any) => (
+									<div key={conn.id} className="p-2 rounded-lg border border-edge/60 bg-surface/30 text-sm">
+										<div className="font-medium capitalize">{conn.provider}</div>
+										<div className="text-text-dim text-xs">
+											Type: {conn.connection_type} • Account: {conn.account_name || 'N/A'}
+										</div>
+									</div>
+								))}
+							</div>
+						</div>
+					)}
+
+					{/* Usage Stats */}
+					{selectedUser.usage && selectedUser.usage.length > 0 && (
+						<div>
+							<h3 className="font-medium mb-2">Usage Statistics</h3>
+							<div className="space-y-2">
+								{selectedUser.usage.slice(0, 6).map((usage: any) => (
+									<div key={usage.id} className="p-2 rounded-lg border border-edge/60 bg-surface/30 text-sm">
+										<div className="flex items-center justify-between">
+											<span>{usage.year_month}</span>
+											<span className="font-medium">{usage.posts || 0} posts</span>
+										</div>
+									</div>
+								))}
+							</div>
+						</div>
+					)}
 
 					{/* Entitlements */}
 					<div>
@@ -521,36 +743,44 @@ export default function AdminPage() {
 					</div>
 
 					{/* Set Plan */}
-					<div className="border-t border-edge/60 pt-4">
-						<h3 className="font-medium mb-3">Set Plan</h3>
-						<div className="flex gap-4 mb-4">
-							<select
-								value={selectedPlan}
-								onChange={(e) => setSelectedPlan(e.target.value as PlanId)}
-								className="rounded-xl2 border border-edge/60 bg-bg/80 px-3 py-2 text-text focus:border-primary/60 focus:outline-none"
-							>
-								{PRICING.order.map((planId) => (
-									<option key={planId} value={planId}>
-										{PRICING.monthly[planId].name}
-									</option>
-								))}
-							</select>
-							<select
-								value={selectedCycle}
-								onChange={(e) => setSelectedCycle(e.target.value as 'monthly' | 'annual')}
-								className="rounded-xl2 border border-edge/60 bg-bg/80 px-3 py-2 text-text focus:border-primary/60 focus:outline-none"
-							>
-								<option value="monthly">Monthly</option>
-								<option value="annual">Annual</option>
-							</select>
-							<button
-								onClick={() => setPlan(selectedUser.profile.id)}
-								className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20"
-							>
-								Set Plan
-							</button>
+					{selectedUser.profile && (
+						<div className="border-t border-edge/60 pt-4">
+							<h3 className="font-medium mb-3">Set Plan</h3>
+							<div className="flex gap-4 mb-4">
+								<select
+									value={selectedPlan}
+									onChange={(e) => setSelectedPlan(e.target.value as PlanId)}
+									className="rounded-xl2 border border-edge/60 bg-bg/80 px-3 py-2 text-text focus:border-primary/60 focus:outline-none"
+								>
+									{PRICING.order.map((planId) => (
+										<option key={planId} value={planId}>
+											{PRICING.monthly[planId].name}
+										</option>
+									))}
+								</select>
+								<select
+									value={selectedCycle}
+									onChange={(e) => setSelectedCycle(e.target.value as 'monthly' | 'annual')}
+									className="rounded-xl2 border border-edge/60 bg-bg/80 px-3 py-2 text-text focus:border-primary/60 focus:outline-none"
+								>
+									<option value="monthly">Monthly</option>
+									<option value="annual">Annual</option>
+								</select>
+								<button
+									onClick={() => {
+										if (selectedUser.profile?.id) {
+											setPlan(selectedUser.profile.id);
+										} else {
+											alert('Cannot set plan: User has no profile. Please create profile first.');
+										}
+									}}
+									className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20"
+								>
+									Set Plan
+								</button>
+							</div>
 						</div>
-					</div>
+					)}
 				</div>
 			)}
 		</div>

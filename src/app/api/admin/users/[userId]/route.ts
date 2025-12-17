@@ -84,10 +84,136 @@ export async function GET(req: Request, { params }: { params: Promise<{ userId: 
 			.eq('user_id', userId)
 			.maybeSingle();
 
+		// Get social connections
+		const { data: connections } = await admin
+			.from('social_connections')
+			.select('*')
+			.eq('user_id', userId);
+
+		// Get usage stats
+		const { data: usage } = await admin
+			.from('usage_posts')
+			.select('*')
+			.eq('user_id', userId)
+			.order('year_month', { ascending: false })
+			.limit(12);
+
+		// Get Airtable data (brand profiles, content, briefs)
+		let airtableData: any = {
+			brand_profiles: [],
+			content_count: 0,
+			pending_content_count: 0,
+			content_briefs: [],
+			has_onboarding: false,
+		};
+
+		try {
+			const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
+			const BASE_ID = process.env.AIRTABLE_BASE_ID;
+			const BRANDPROFILES_TABLE = process.env.AIRTABLE_BRANDPROFILES_TABLE;
+			const CONTENTQUEUE_TABLE = process.env.AIRTABLE_CONTENTQUEUE_TABLE;
+			const CONTENTBRIEFS_TABLE = process.env.AIRTABLE_STRATEGYUPDATES_TABLE;
+
+			if (AIRTABLE_TOKEN && BASE_ID && BRANDPROFILES_TABLE) {
+				// Get brand profiles
+				const brandsUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}`);
+				brandsUrl.searchParams.set('filterByFormula', `{user_id} = "${userId}"`);
+				brandsUrl.searchParams.set('maxRecords', '10');
+
+				const brandsRes = await fetch(brandsUrl.toString(), {
+					headers: {
+						Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+						'Content-Type': 'application/json',
+					},
+				});
+
+				if (brandsRes.ok) {
+					const brandsData = await brandsRes.json();
+					airtableData.brand_profiles = (brandsData.records || []).map((r: any) => ({
+						id: r.id,
+						client_name: r.fields?.client_name || r.fields?.brand_name || 'Unnamed',
+						brand_type: r.fields?.brand_type || 'unknown',
+						status: r.fields?.status || 'unknown',
+						created_time: r.fields?.created_time || r.createdTime,
+					}));
+					airtableData.has_onboarding = airtableData.brand_profiles.length > 0;
+				}
+
+				// Get content count (fetch all to get accurate count)
+				if (CONTENTQUEUE_TABLE) {
+					const contentUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTQUEUE_TABLE}`);
+					contentUrl.searchParams.set('filterByFormula', `{user_id} = "${userId}"`);
+					contentUrl.searchParams.set('maxRecords', '100'); // Get up to 100 to count
+
+					const contentRes = await fetch(contentUrl.toString(), {
+						headers: {
+							Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+							'Content-Type': 'application/json',
+						},
+					});
+
+					if (contentRes.ok) {
+						const contentData = await contentRes.json();
+						const allContent = contentData.records || [];
+						airtableData.content_count = allContent.length;
+
+						// Count pending content
+						airtableData.pending_content_count = allContent.filter((r: any) => {
+							const status = r.fields?.status || '';
+							return status === 'Needs Approval' || status === 'Ready To Publish';
+						}).length;
+					}
+				}
+
+				// Get content briefs
+				if (CONTENTBRIEFS_TABLE) {
+					const briefsUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}`);
+					briefsUrl.searchParams.set('filterByFormula', `{user_id} = "${userId}"`);
+					briefsUrl.searchParams.set('sort[0][field]', 'submitted_at');
+					briefsUrl.searchParams.set('sort[0][direction]', 'desc');
+					briefsUrl.searchParams.set('maxRecords', '5');
+
+					const briefsRes = await fetch(briefsUrl.toString(), {
+						headers: {
+							Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+							'Content-Type': 'application/json',
+						},
+					});
+
+					if (briefsRes.ok) {
+						const briefsData = await briefsRes.json();
+						airtableData.content_briefs = (briefsData.records || []).map((r: any) => ({
+							id: r.id,
+							status: r.fields?.status || 'unknown',
+							cycle_label: r.fields?.cycle_label || '',
+							submitted_at: r.fields?.submitted_at || null,
+						}));
+					}
+				}
+			}
+		} catch (error) {
+			console.error('Failed to fetch Airtable data:', error);
+			// Don't fail the request if Airtable fails
+		}
+
 		return NextResponse.json({
 			profile,
 			subscription,
 			entitlements,
+			social_connections: connections || [],
+			usage: usage || [],
+			airtable: airtableData,
+			has_profile: !!profile,
+			user_journey: {
+				has_auth: !!authUser?.user,
+				has_profile: !!profile,
+				has_subscription: !!subscription,
+				has_brand: airtableData.brand_profiles.length > 0,
+				has_connections: (connections?.length || 0) > 0,
+				has_content: airtableData.content_count > 0,
+				email_confirmed: !!authUser?.user?.email_confirmed_at,
+				last_sign_in: authUser?.user?.last_sign_in_at || null,
+			},
 		});
 	} catch (e: any) {
 		return NextResponse.json({ error: e?.message ?? 'Server error' }, { status: 500 });
