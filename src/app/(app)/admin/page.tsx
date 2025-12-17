@@ -71,6 +71,7 @@ export default function AdminPage() {
 	const [trialPlan, setTrialPlan] = useState<PlanId>('creator');
 	const [trialCycle, setTrialCycle] = useState<'monthly' | 'annual'>('monthly');
 	const [trialDays, setTrialDays] = useState(30);
+	const [sendingPasswordReset, setSendingPasswordReset] = useState(false);
 
 	useEffect(() => {
 		if (!supabase) return;
@@ -274,6 +275,34 @@ export default function AdminPage() {
 			alert(error.message || 'Failed to offer trial');
 		} finally {
 			setOfferingTrial(false);
+		}
+	}
+
+	async function sendPasswordReset(userId: string) {
+		if (sendingPasswordReset) return;
+		
+		if (!confirm('Send password reset email to this user?')) {
+			return;
+		}
+
+		setSendingPasswordReset(true);
+		try {
+			const res = await fetch(`/api/admin/users/${userId}/send-password-reset`, {
+				method: 'POST',
+			});
+
+			const data = await res.json();
+
+			if (!res.ok) {
+				throw new Error(data.error || 'Failed to send password reset email');
+			}
+
+			alert(data.message || 'Password reset email sent successfully!');
+		} catch (error: any) {
+			console.error('Error sending password reset:', error);
+			alert(error.message || 'Failed to send password reset email');
+		} finally {
+			setSendingPasswordReset(false);
 		}
 	}
 
@@ -696,6 +725,15 @@ export default function AdminPage() {
 								</div>
 							)}
 						</div>
+						{selectedUserId && (
+							<button
+								onClick={() => sendPasswordReset(selectedUserId)}
+								disabled={sendingPasswordReset}
+								className="mt-3 px-3 py-1.5 rounded-lg border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm disabled:opacity-50"
+							>
+								{sendingPasswordReset ? 'Sending...' : 'Send Password Reset Email'}
+							</button>
+						)}
 					</div>
 
 					{/* Subscription & Plan */}
