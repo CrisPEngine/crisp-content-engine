@@ -163,9 +163,13 @@ export async function POST(request: Request) {
 			);
 
 			try {
+				// Get user_id from connection
+				const userId = connection.user_id;
+				
 				const retryResult = await retryFailedPostsAfterReconnection({
 					connectionId: connection.id,
 					brandProfileIds,
+					userId: userId,
 				});
 
 				totalPostsReset += retryResult.reset;
