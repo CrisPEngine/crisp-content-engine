@@ -15,6 +15,7 @@ function LinkedInCard({
 	connectionType,
 	connectionId,
 	needsBrandAssignment,
+	expiringSoon,
 }: {
 	connected: boolean;
 	accountName?: string | null;
@@ -24,6 +25,7 @@ function LinkedInCard({
 	connectionType?: 'personal' | 'business';
 	connectionId?: string;
 	needsBrandAssignment?: boolean;
+	expiringSoon?: boolean;
 }) {
 	const connectHref = connectionType === 'business' 
 		? '/api/connections/linkedin/authorize?type=business'
@@ -73,6 +75,14 @@ function LinkedInCard({
 							)}
 						</div>
 					</div>
+					{expiringSoon && (
+						<div className="p-3 rounded-xl2 bg-warning/10 border border-warning/30">
+							<p className="text-warning text-sm font-medium mb-1">⚠️ Reconnection required</p>
+							<p className="text-warning/90 text-sm mb-2">
+								Your LinkedIn connection is expiring soon. To allow publishing to continue, please disconnect and reconnect your account.
+							</p>
+						</div>
+					)}
 					{needsBrandAssignment && (
 						<div className="p-3 rounded-xl2 bg-warning/10 border border-warning/30">
 							<p className="text-warning text-sm mb-2">This connection needs to be assigned to a brand.</p>
@@ -120,7 +130,7 @@ function LinkedInCard({
 	);
 }
 
-export default async function ConnectionsPage({ searchParams }: { searchParams: Promise<{ error?: string; details?: string; connected?: string }> }) {
+export default async function ConnectionsPage({ searchParams }: { searchParams: Promise<{ error?: string; details?: string; connected?: string; reauth?: string }> }) {
 	const supabase = await createClient();
 	const {
 		data: { user },
@@ -140,7 +150,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 	// Member connection (personal profile)
 	const { data: memberConnection } = await admin
 		.from('social_connections')
-		.select('id, account_name, account_avatar, person_urn, organization_urn, organization_name, connection_type, brand_profile_id, metadata')
+		.select('id, account_name, account_avatar, person_urn, organization_urn, organization_name, connection_type, brand_profile_id, metadata, expires_at, needs_reauth')
 		.eq('user_id', user.id)
 		.eq('provider', 'linkedin')
 		.eq('connection_type', 'member')
@@ -149,11 +159,24 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 	// Organization connection (business account)
 	const { data: organizationConnection } = await admin
 		.from('social_connections')
-		.select('id, account_name, account_avatar, person_urn, organization_urn, organization_name, connection_type, brand_profile_id, metadata')
+		.select('id, account_name, account_avatar, person_urn, organization_urn, organization_name, connection_type, brand_profile_id, metadata, expires_at, needs_reauth')
 		.eq('user_id', user.id)
 		.eq('provider', 'linkedin')
 		.eq('connection_type', 'organization')
 		.maybeSingle();
+
+	// Check if tokens are expiring within 2 days
+	const now = new Date();
+	const twoDaysFromNow = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+	
+	const checkExpiring = (connection: typeof memberConnection) => {
+		if (!connection?.expires_at) return false;
+		const expiresAt = new Date(connection.expires_at);
+		return expiresAt <= twoDaysFromNow && expiresAt > now;
+	};
+
+	const personalExpiring = checkExpiring(memberConnection);
+	const businessExpiring = checkExpiring(organizationConnection);
 
 	const personalConnection = memberConnection || null;
 	const businessConnection = organizationConnection || null;
@@ -166,6 +189,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 		connectionType: 'personal' as const,
 		connectionId: personalConnection?.id ?? undefined,
 		needsBrandAssignment: Boolean(personalConnection && !personalConnection.brand_profile_id),
+		expiringSoon: personalExpiring,
 	};
 
 	const businessStatus = {
@@ -177,6 +201,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 		connectionType: 'business' as const,
 		connectionId: businessConnection?.id ?? undefined,
 		needsBrandAssignment: Boolean(businessConnection && !businessConnection.brand_profile_id),
+		expiringSoon: businessExpiring,
 	};
 
 	return (
@@ -205,6 +230,15 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 				</div>
 			)}
 
+			{params?.reauth === 'true' && (
+				<div className="card p-4 border-primary/40 bg-primary/10">
+					<div className="font-medium text-primary mb-1">Reconnect Your LinkedIn Account</div>
+					<div className="text-sm text-text-dim">
+						Please disconnect and reconnect your LinkedIn account to resume publishing. This takes less than a minute.
+					</div>
+				</div>
+			)}
+
 			{(connected === 'linkedin' || connected === 'linkedin_business') && !error && (
 				<div className="card p-4 border-emerald-500/40 bg-emerald-500/10">
 					<div className="font-medium text-emerald-300 mb-1">Successfully Connected!</div>
@@ -223,8 +257,8 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 				</div>
 			)}
 
-			<LinkedInCard {...personalStatus} />
-			<LinkedInCard {...businessStatus} />
+			<LinkedInCard {...personalStatus} expiringSoon={personalExpiring} />
+			<LinkedInCard {...businessStatus} expiringSoon={businessExpiring} />
 
 			<div className="card p-6 bg-primary/5 border-primary/20">
 				<h2 className="font-semibold mb-2">How it works</h2>

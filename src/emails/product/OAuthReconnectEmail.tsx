@@ -5,62 +5,52 @@ import { EmailButton } from '../components/Button';
 import { Text } from '@react-email/components';
 
 export interface OAuthReconnectEmailProps {
-	userName: string;
+	userName?: string;
 	provider: 'linkedin' | 'buffer' | 'x' | 'facebook';
-	issueSummary: string; // "We could not publish 3 LinkedIn posts because your LinkedIn connection has expired."
 	reconnectUrl: string; // link to connection settings page
 	affectedCount?: number;
-	firstFailedAt?: string;
 }
 
 export function OAuthReconnectEmail({
 	userName,
 	provider,
-	issueSummary,
 	reconnectUrl,
-	affectedCount,
-	firstFailedAt,
+	affectedCount = 1,
 }: OAuthReconnectEmailProps) {
-	const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
+	const providerName = provider === 'linkedin' ? 'LinkedIn' : provider.charAt(0).toUpperCase() + provider.slice(1);
 	
 	return (
-		<EmailLayout preview={`Action needed: Reconnect your ${providerName} account`}>
+		<EmailLayout preview="Action required. Reconnect your LinkedIn account to resume publishing">
 			<EmailHeader />
 			<div style={contentStyle}>
-				<h1 style={headingStyle}>Action needed: Reconnect your {providerName} account</h1>
+				<h1 style={headingStyle}>Action required. Reconnect your LinkedIn account to resume publishing</h1>
 				<Text style={bodyStyle}>
-					Hi {userName},
-					<br />
-					<br />
-					We tried to publish your content, but your {providerName} connection has expired or failed.
+					Hi {userName ? userName.split(' ')[0] : 'there'},
 				</Text>
-				<div style={issueBoxStyle}>
-					<Text style={issueTextStyle}>
-						{issueSummary}
-						{affectedCount && affectedCount > 0 && (
-							<>
-								<br />
-								<br />
-								<strong>{affectedCount} post{affectedCount !== 1 ? 's' : ''} {affectedCount === 1 ? 'is' : 'are'} waiting to be published.</strong>
-							</>
-						)}
-						{firstFailedAt && (
-							<>
-								<br />
-								<br />
-								First failed: {firstFailedAt}
-							</>
-						)}
-					</Text>
-				</div>
-				<Text style={warningStyle}>
-					⚠️ Publishing is paused until you reconnect your {providerName} account.
+				<Text style={bodyStyle}>
+					We were unable to publish {affectedCount === 1 ? 'one of your scheduled' : `${affectedCount} of your scheduled`} LinkedIn {affectedCount === 1 ? 'post' : 'posts'} because your LinkedIn connection has expired.
+				</Text>
+				<Text style={bodyStyle}>
+					This happens occasionally when LinkedIn refreshes security permissions or when an account has not been reauthorised for a while. It is a normal LinkedIn requirement and nothing is wrong with your content or your account.
+				</Text>
+				<Text style={sectionHeadingStyle}>What this means</Text>
+				<ul style={listStyle}>
+					<li style={listItemStyle}>Publishing to LinkedIn is temporarily paused</li>
+					<li style={listItemStyle}>{affectedCount} {affectedCount === 1 ? 'post is' : 'posts are'} currently queued and waiting</li>
+					<li style={listItemStyle}>No content will be lost or skipped</li>
+				</ul>
+				<Text style={sectionHeadingStyle}>What to do next</Text>
+				<Text style={bodyStyle}>
+					Reconnecting your LinkedIn account takes less than a minute. Simply disconnect your profile, then reconnect it straightaway.
+				</Text>
+				<Text style={bodyStyle}>
+					Once you reconnect, we will automatically retry publishing your pending posts without you needing to do anything else.
 				</Text>
 				<div style={buttonContainerStyle}>
-					<EmailButton href={reconnectUrl}>Reconnect {providerName}</EmailButton>
+					<EmailButton href={reconnectUrl}>Reconnect LinkedIn</EmailButton>
 				</div>
 				<Text style={mutedStyle}>
-					Once you reconnect, we'll automatically retry publishing your pending posts.
+					Thanks for taking care of this so we can keep your content publishing smoothly.
 				</Text>
 			</div>
 			<EmailFooter />
@@ -122,6 +112,27 @@ const mutedStyle = {
 	lineHeight: '20px',
 	margin: '24px 0 0 0',
 	textAlign: 'center' as const,
+};
+
+const sectionHeadingStyle = {
+	color: '#FFFFFF',
+	fontSize: '16px',
+	fontWeight: '600',
+	margin: '24px 0 12px 0',
+	textAlign: 'left' as const,
+};
+
+const listStyle = {
+	margin: '0 0 20px 0',
+	paddingLeft: '20px',
+};
+
+const listItemStyle = {
+	color: '#9CA3AF',
+	fontSize: '15px',
+	lineHeight: '22px',
+	margin: '8px 0',
+	textAlign: 'left' as const,
 };
 
 

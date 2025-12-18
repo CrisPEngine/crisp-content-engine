@@ -75,11 +75,19 @@ function CallbackHandler() {
 			
 			// Exchange code first, then redirect to dashboard
 			// This ensures session is established before redirect
-			supabase.auth.exchangeCodeForSession(code)
+				supabase.auth.exchangeCodeForSession(code)
 				.then((response: { data: any; error: any }) => {
 					if (response.error) {
 						console.error('Error exchanging code:', response.error);
 						router.replace('/login?error=oauth_error');
+						return;
+					}
+					
+					// Check if we should redirect to connections page (from reauth email)
+					const redirectTo = searchParams.get('redirect_to');
+					if (redirectTo === '/connections' || redirectTo === 'connections') {
+						console.log('Session established, redirecting to connections page');
+						router.replace('/connections?reauth=true');
 						return;
 					}
 					

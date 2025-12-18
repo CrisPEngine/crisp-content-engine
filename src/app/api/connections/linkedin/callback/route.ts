@@ -405,7 +405,7 @@ export async function GET(request: Request) {
 			}
 
 			// Redirect to brand assignment page
-			return NextResponse.redirect(`${redirectBase}/connections/assign-brand?connection_id=${connectionId}&type=personal`);
+			return NextResponse.redirect(`${redirectBase}/connections/assign-brand?connection_id=${connectionId}&type=personal&redirect_to=connections`);
 		}
 	} catch (err: any) {
 		console.error('LinkedIn OAuth callback error:', err);

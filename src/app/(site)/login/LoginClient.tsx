@@ -131,6 +131,17 @@ export function LoginClient() {
 				// Clear URL parameters
 				router.replace('/dashboard');
 			}
+
+			// Check if we should redirect to connections page (from reauth email)
+			if (event === 'SIGNED_IN' && session) {
+				const urlParams = new URLSearchParams(window.location.search);
+				const redirectTo = urlParams.get('redirect_to');
+				if (redirectTo === '/connections' || redirectTo === 'connections') {
+					console.log('Redirecting to connections page after login');
+					router.replace('/connections?reauth=true');
+					return;
+				}
+			}
 		});
 
 		return () => {

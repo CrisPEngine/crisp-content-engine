@@ -54,17 +54,16 @@ async function markConnectionNeedsReauthAndNotify(
 
 		if (profile?.email) {
 			const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io';
-			const reconnectUrl = `${appUrl}/connections`;
+			const reconnectUrl = `${appUrl}/connections?reauth=true`;
 			const providerName = provider === 'linkedin' ? 'LinkedIn' : provider.charAt(0).toUpperCase() + provider.slice(1);
 			
 			// Send reconnection email
 			await sendEmail({
 				to: profile.email,
-				subject: `Action Required: Reconnect Your ${providerName} Account`,
+				subject: 'Action required. Reconnect your LinkedIn account to resume publishing',
 				react: OAuthReconnectEmail({
-					userName: profile.full_name || 'there',
+					userName: profile.full_name || undefined,
 					provider: provider as 'linkedin' | 'facebook' | 'x' | 'buffer',
-					issueSummary: `We could not publish ${affectedCount} ${providerName} post${affectedCount !== 1 ? 's' : ''} because your ${providerName} connection has expired.`,
 					reconnectUrl,
 					affectedCount,
 				}),
