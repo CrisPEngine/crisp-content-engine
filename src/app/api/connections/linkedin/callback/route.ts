@@ -391,17 +391,27 @@ export async function GET(request: Request) {
 				connectionId = newConnection.id;
 			}
 
-			// If this was a reconnection and we have brand_profile_ids, retry failed posts
+			// If this was a reconnection, retry failed posts
 			// Do this in a non-blocking way so it doesn't delay the redirect
-			if (wasReconnection && existingBrandProfileIds.length > 0) {
-				console.log(`[LinkedIn Callback] Reconnection detected for connection ${connectionId}, retrying failed posts for brands: ${existingBrandProfileIds.join(', ')}`);
+			if (wasReconnection) {
+				console.log(`[LinkedIn Callback] Reconnection detected for connection ${connectionId}, retrying failed posts...`);
+				console.log(`[LinkedIn Callback] Brand profile IDs: ${existingBrandProfileIds.length > 0 ? existingBrandProfileIds.join(', ') : 'none (will query by user_id)'}`);
+				
 				retryFailedPostsAfterReconnection({
 					connectionId,
 					brandProfileIds: existingBrandProfileIds,
+					userId: user.id, // Pass user_id as fallback if no brand_profile_ids
+				}).then((result) => {
+					console.log(`[LinkedIn Callback] Retry completed: ${result.reset} posts reset, ${result.errors.length} errors`);
+					if (result.errors.length > 0) {
+						console.error(`[LinkedIn Callback] Retry errors:`, result.errors);
+					}
 				}).catch((error) => {
 					console.error(`[LinkedIn Callback] Failed to retry posts after reconnection:`, error);
 					// Don't throw - this is non-critical
 				});
+			} else {
+				console.log(`[LinkedIn Callback] Not a reconnection (wasReconnection=${wasReconnection}), skipping retry`);
 			}
 
 			// Redirect to brand assignment page

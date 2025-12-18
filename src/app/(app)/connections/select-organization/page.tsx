@@ -110,17 +110,34 @@ async function saveOrganizationConnection(
 		connectionId = newConnection.id;
 	}
 
-	// If this was a reconnection and we have brand_profile_ids, retry failed posts
+	// If this was a reconnection, retry failed posts
 	// Do this in a non-blocking way so it doesn't delay the redirect
-	if (wasReconnection && existingBrandProfileIds.length > 0) {
-		console.log(`[Select Organization] Reconnection detected for connection ${connectionId}, retrying failed posts for brands: ${existingBrandProfileIds.join(', ')}`);
+	if (wasReconnection) {
+		console.log(`[Select Organization] Reconnection detected for connection ${connectionId}, retrying failed posts...`);
+		console.log(`[Select Organization] Brand profile IDs: ${existingBrandProfileIds.length > 0 ? existingBrandProfileIds.join(', ') : 'none (will query by user_id)'}`);
+		
+		// Get user_id from the connection
+		const { data: connectionData } = await admin
+			.from('social_connections')
+			.select('user_id')
+			.eq('id', connectionId)
+			.single();
+		
 		retryFailedPostsAfterReconnection({
 			connectionId,
 			brandProfileIds: existingBrandProfileIds,
+			userId: connectionData?.user_id,
+		}).then((result) => {
+			console.log(`[Select Organization] Retry completed: ${result.reset} posts reset, ${result.errors.length} errors`);
+			if (result.errors.length > 0) {
+				console.error(`[Select Organization] Retry errors:`, result.errors);
+			}
 		}).catch((error) => {
 			console.error(`[Select Organization] Failed to retry posts after reconnection:`, error);
 			// Don't throw - this is non-critical
 		});
+	} else {
+		console.log(`[Select Organization] Not a reconnection (wasReconnection=${wasReconnection}), skipping retry`);
 	}
 
 	return connectionId;

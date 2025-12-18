@@ -9,6 +9,7 @@
 interface RetryFailedPostsParams {
 	connectionId: string;
 	brandProfileIds: string[]; // Array of brand_profile_ids that use this connection
+	userId?: string; // Optional user_id to query posts if brand_profile_ids are empty
 }
 
 /**
@@ -18,11 +19,15 @@ interface RetryFailedPostsParams {
 export async function retryFailedPostsAfterReconnection(
 	params: RetryFailedPostsParams
 ): Promise<{ reset: number; errors: string[] }> {
-	const { connectionId, brandProfileIds } = params;
+	const { connectionId, brandProfileIds, userId } = params;
 
+	// If no brand profiles, try to query by user_id if provided
 	if (brandProfileIds.length === 0) {
-		console.log(`[Retry Failed Posts] No brand profiles for connection ${connectionId}, skipping`);
-		return { reset: 0, errors: [] };
+		if (!userId) {
+			console.log(`[Retry Failed Posts] No brand profiles and no user_id for connection ${connectionId}, skipping`);
+			return { reset: 0, errors: [] };
+		}
+		console.log(`[Retry Failed Posts] No brand profiles for connection ${connectionId}, will query by user_id: ${userId}`);
 	}
 
 	const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
@@ -36,15 +41,6 @@ export async function retryFailedPostsAfterReconnection(
 
 	const errors: string[] = [];
 	let resetCount = 0;
-
-	// Build filter to find posts that:
-	// 1. Are for LinkedIn platform
-	// 2. Belong to one of the brand profiles using this connection
-	// 3. Have status "Failed" OR (status "Ready To Publish" AND publish_attempts >= 3)
-	// 4. Have an error message indicating auth issues
-	const brandProfileFilters = brandProfileIds
-		.map((id) => `{brand_profile_id} = "${id}"`)
-		.join(',');
 
 	// Auth-related error keywords to match
 	const authErrorKeywords = [
@@ -64,17 +60,42 @@ export async function retryFailedPostsAfterReconnection(
 		'oauth',
 	];
 
-	// Build filter formula
-	// Note: Airtable formula doesn't support case-insensitive matching easily,
-	// so we'll filter in code for error messages
-	const filterFormula = `AND(
-		{platform} = "LinkedIn",
-		OR(${brandProfileFilters}),
-		OR(
-			{status} = "Failed",
-			AND({status} = "Ready To Publish", OR({publish_attempts} >= 3, {publish_attempts} = BLANK()))
-		)
-	)`;
+	// Build filter to find posts that:
+	// 1. Are for LinkedIn platform
+	// 2. Belong to one of the brand profiles using this connection (or user_id if no brands)
+	// 3. Have status "Failed" OR (status "Ready To Publish" AND publish_attempts >= 3)
+	// 4. Have an error message indicating auth issues (filtered in code)
+	
+	let filterFormula: string;
+	
+	if (brandProfileIds.length > 0) {
+		// Query by brand_profile_ids
+		const brandProfileFilters = brandProfileIds
+			.map((id) => `{brand_profile_id} = "${id}"`)
+			.join(',');
+		
+		filterFormula = `AND(
+			{platform} = "LinkedIn",
+			OR(${brandProfileFilters}),
+			OR(
+				{status} = "Failed",
+				AND({status} = "Ready To Publish", OR({publish_attempts} >= 3, {publish_attempts} = BLANK()))
+			)
+		)`;
+	} else if (userId) {
+		// Fallback: query by user_id if no brand_profile_ids
+		filterFormula = `AND(
+			{platform} = "LinkedIn",
+			{user_id} = "${userId}",
+			OR(
+				{status} = "Failed",
+				AND({status} = "Ready To Publish", OR({publish_attempts} >= 3, {publish_attempts} = BLANK()))
+			)
+		)`;
+	} else {
+		// No way to query - should have been caught earlier
+		return { reset: 0, errors: ['No brand_profile_ids or user_id provided'] };
+	}
 
 	// Fetch matching records
 	const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
