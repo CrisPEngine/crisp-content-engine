@@ -54,7 +54,8 @@ async function markConnectionNeedsReauthAndNotify(
 
 		if (profile?.email) {
 			const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io';
-			const reconnectUrl = `${appUrl}/connections?reauth=true`;
+			// Include redirect_to parameter so users go to connections page after login
+			const reconnectUrl = `${appUrl}/login?redirect_to=/connections`;
 			const providerName = provider === 'linkedin' ? 'LinkedIn' : provider.charAt(0).toUpperCase() + provider.slice(1);
 			
 			// Send reconnection email

@@ -233,8 +233,13 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 			{params?.reauth === 'true' && (
 				<div className="card p-4 border-primary/40 bg-primary/10">
 					<div className="font-medium text-primary mb-1">Reconnect Your LinkedIn Account</div>
-					<div className="text-sm text-text-dim">
-						Please disconnect and reconnect your LinkedIn account to resume publishing. This takes less than a minute.
+					<div className="text-sm text-text-dim space-y-2">
+						<p>Your LinkedIn connection has expired. To resume publishing:</p>
+						<ol className="list-decimal ml-5 space-y-1">
+							<li>Click "Disconnect" below</li>
+							<li>Then click "Connect" to reconnect your account</li>
+						</ol>
+						<p className="mt-2">This takes less than a minute and your pending posts will automatically publish once reconnected.</p>
 					</div>
 				</div>
 			)}
