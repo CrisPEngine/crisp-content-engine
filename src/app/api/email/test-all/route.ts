@@ -226,14 +226,12 @@ export async function POST(request: Request) {
 		try {
 			const result = await sendEmail({
 				to: testEmail,
-				subject: `[TEST 6/7] ${timestamp} - Action needed: Reconnect your LinkedIn account`,
+				subject: `[TEST 6/7] ${timestamp} - Action required. Reconnect your LinkedIn account to resume publishing`,
 				react: OAuthReconnectEmail({
 					userName: 'Chris',
 					provider: 'linkedin',
-					issueSummary: 'We could not publish 3 LinkedIn posts because your LinkedIn connection has expired.',
-					reconnectUrl: `${APP_URL}/connections`,
+					reconnectUrl: `${APP_URL}/login?redirect_to=/connections`,
 					affectedCount: 3,
-					firstFailedAt: 'March 10, 2024 at 2:30 PM',
 				}),
 				category: 'system',
 			});
