@@ -37,6 +37,13 @@ function PlanCard({
 				</div>
 				<p className="text-3xl mt-2">{plan.priceText}</p>
 				<p className="text-text-dim mt-1">{plan.blurb}</p>
+				{/* Show trial messaging for Creator plan */}
+				{tier === 'creator' && (
+					<div className="mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+						<p className="text-sm font-medium text-emerald-300">Risk Free 14 day free trial</p>
+						<p className="text-xs text-emerald-300/80 mt-1">Cancel anytime</p>
+					</div>
+				)}
 				<ul className="mt-5 space-y-2">
 					{plan.features.map((f: string, i: number) => (
 						<li key={i} className="flex items-start gap-2">
@@ -453,6 +460,11 @@ export default function BillingPage() {
 				<p>
 					Payment is collected via Stripe using a credit or debit card, merchant name on your statement will be ABL International.
 				</p>
+				{currentPlan && currentPlan.plan === 'free' && (
+					<p className="text-emerald-300/80">
+						<strong>Creator plan:</strong> Risk Free 14 day free trial, cancel anytime. Your card will be charged after the trial period ends.
+					</p>
+				)}
 			</div>
 		</div>
 	);
