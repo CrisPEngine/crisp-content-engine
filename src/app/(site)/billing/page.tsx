@@ -161,25 +161,22 @@ export default function BillingPage() {
 
 	const ordered = useMemo(() => PRICING.order, []);
 	const activePlanIds = useMemo(() => ordered.filter((id) => id === "creator"), [ordered]);
+	
+	// Get plan details from PRICING config for coming soon plans
+	const getPlanDetails = (planId: PlanId, cycle: "monthly" | "annual") => {
+		const plan = PRICING[cycle][planId];
+		return {
+			name: plan.name,
+			description: plan.blurb,
+			bullets: plan.features,
+			priceText: plan.priceText,
+		};
+	};
+	
 	const comingSoonPlans = [
-		{
-			name: "Creator+",
-			description: "Everything in Creator plus AI image generation.",
-			bullets: [
-				"All Creator benefits",
-				"AI-generated imagery for social posts",
-				"Advanced scheduling",
-			],
-		},
-		{
-			name: "Growth",
-			description: "Multi-channel automation via Buffer integration.",
-			bullets: [
-				"LinkedIn, Instagram, X, Facebook",
-				"Image support across channels",
-				"Expanded usage limits",
-			],
-		},
+		getPlanDetails("growth", cycle),
+		getPlanDetails("pro", cycle),
+		getPlanDetails("scale", cycle),
 	];
 
 	const toggleWaitlist = (planName: string) => {
@@ -254,12 +251,16 @@ export default function BillingPage() {
 	};
 
 	// Get upgrade options (plans higher than current)
+	// For now, only Creator is available, so only show it if user is on free plan
 	const getUpgradeOptions = () => {
 		if (!currentPlan || currentPlan.plan === 'free') {
-			return PRICING.order;
+			// Only show Creator as available
+			return ['creator'];
 		}
+		// If user has a plan, show available upgrades (currently only Creator)
 		const currentIndex = PRICING.order.indexOf(currentPlan.plan);
-		return PRICING.order.slice(currentIndex + 1);
+		const available = PRICING.order.slice(currentIndex + 1).filter(id => id === 'creator');
+		return available;
 	};
 
 	const upgradeOptions = getUpgradeOptions();
@@ -386,71 +387,78 @@ export default function BillingPage() {
 			)}
 
 			{/* Coming soon */}
-			<section className="mt-8">
-				<h2 className="text-sm font-semibold text-text-soft uppercase tracking-widest mb-3">Coming soon</h2>
-				<div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-					{comingSoonPlans.map((plan) => {
-						const isOpen = waitlistOpenPlan === plan.name;
-						return (
-							<div key={plan.name} className="card p-6 border border-edge/60 bg-surface/30 space-y-4">
-							<div className="flex items-center justify-between">
-								<h3 className="text-lg font-semibold">{plan.name}</h3>
-								<span className="text-xs px-2 py-0.5 rounded-full bg-warning/15 border border-warning/40 text-warning">Soon</span>
-							</div>
-							<p className="text-text-dim mt-2 text-sm">{plan.description}</p>
-							<ul className="mt-4 space-y-2 text-sm">
-								{plan.bullets.map((item) => (
-									<li key={item} className="flex items-start gap-2">
-										<span className="mt-[6px] size-1.5 rounded-full bg-edge/60" />
-										<span>{item}</span>
-									</li>
-								))}
-							</ul>
-							<div className="space-y-3">
-								{isOpen && (
-									<form
-										onSubmit={(e) => {
-											e.preventDefault();
-											submitWaitlist(plan.name);
-										}}
-										className="space-y-2"
-									>
-										<input
-											type="email"
-											value={waitlistEmail}
-											onChange={(e) => setWaitlistEmail(e.target.value)}
-											placeholder="you@example.com"
-											className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-2 text-sm focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-											required
-										/>
+			{comingSoonPlans.length > 0 && (
+				<section className="mt-8">
+					<h2 className="text-sm font-semibold text-text-soft uppercase tracking-widest mb-3">Coming soon</h2>
+					<div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+						{comingSoonPlans.map((plan) => {
+							const isOpen = waitlistOpenPlan === plan.name;
+							return (
+								<div key={plan.name} className="card p-6 border border-edge/60 bg-surface/30 space-y-4">
+									<div className="flex items-center justify-between">
+										<div>
+											<h3 className="text-lg font-semibold">{plan.name}</h3>
+											{plan.priceText && (
+												<p className="text-text-dim text-sm mt-1">{plan.priceText}</p>
+											)}
+										</div>
+										<span className="text-xs px-2 py-0.5 rounded-full bg-warning/15 border border-warning/40 text-warning">Soon</span>
+									</div>
+									<p className="text-text-dim mt-2 text-sm">{plan.description}</p>
+									<ul className="mt-4 space-y-2 text-sm">
+										{plan.bullets.map((item, idx) => (
+											<li key={idx} className="flex items-start gap-2">
+												<span className="mt-[6px] size-1.5 rounded-full bg-edge/60" />
+												<span>{item}</span>
+											</li>
+										))}
+									</ul>
+									<div className="space-y-3">
+										{isOpen && (
+											<form
+												onSubmit={(e) => {
+													e.preventDefault();
+													submitWaitlist(plan.name);
+												}}
+												className="space-y-2"
+											>
+												<input
+													type="email"
+													value={waitlistEmail}
+													onChange={(e) => setWaitlistEmail(e.target.value)}
+													placeholder="you@example.com"
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-2 text-sm focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+													required
+												/>
+												<button
+													type="submit"
+													disabled={waitlistStatus === 'loading'}
+													className="w-full rounded-xl2 border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-text hover:bg-primary/20 transition disabled:opacity-60"
+												>
+													{waitlistStatus === 'loading' ? 'Joining…' : 'Submit'}
+												</button>
+												{waitlistStatus === 'success' && waitlistMessage && (
+													<p className="text-xs text-emerald-400">{waitlistMessage}</p>
+												)}
+												{waitlistStatus === 'error' && waitlistMessage && (
+													<p className="text-xs text-danger">{waitlistMessage}</p>
+												)}
+											</form>
+										)}
 										<button
-											type="submit"
-											disabled={waitlistStatus === 'loading'}
-											className="w-full rounded-xl2 border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-text hover:bg-primary/20 transition disabled:opacity-60"
+											type="button"
+											onClick={() => toggleWaitlist(plan.name)}
+											className="w-full rounded-xl2 border border-edge/60 bg-surface/40 px-4 py-2 text-sm text-text hover:bg-surface/60 transition"
 										>
-											{waitlistStatus === 'loading' ? 'Joining…' : 'Submit'}
+											{isOpen ? 'Close' : 'Join waitlist'}
 										</button>
-										{waitlistStatus === 'success' && waitlistMessage && (
-											<p className="text-xs text-emerald-400">{waitlistMessage}</p>
-										)}
-										{waitlistStatus === 'error' && waitlistMessage && (
-											<p className="text-xs text-danger">{waitlistMessage}</p>
-										)}
-									</form>
-								)}
-								<button
-									type="button"
-									onClick={() => toggleWaitlist(plan.name)}
-									className="w-full rounded-xl2 border border-edge/60 bg-surface/40 px-4 py-2 text-sm text-text hover:bg-surface/60 transition"
-								>
-									{isOpen ? 'Close' : 'Join waitlist'}
-								</button>
-							</div>
-						</div>
-						);
-					})}
-				</div>
-			</section>
+									</div>
+								</div>
+							);
+						})}
+					</div>
+				</section>
+			)}
 
 			{/* Footnotes */}
 			<div className="text-xs text-text-dim mt-6 space-y-2">
