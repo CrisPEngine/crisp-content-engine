@@ -252,14 +252,14 @@ export default function BillingPage() {
 
 	// Get upgrade options (plans higher than current)
 	// For now, only Creator is available, so only show it if user is on free plan
-	const getUpgradeOptions = () => {
+	const getUpgradeOptions = (): PlanId[] => {
 		if (!currentPlan || currentPlan.plan === 'free') {
 			// Only show Creator as available
 			return ['creator'];
 		}
 		// If user has a plan, show available upgrades (currently only Creator)
 		const currentIndex = PRICING.order.indexOf(currentPlan.plan);
-		const available = PRICING.order.slice(currentIndex + 1).filter(id => id === 'creator');
+		const available = PRICING.order.slice(currentIndex + 1).filter(id => id === 'creator') as PlanId[];
 		return available;
 	};
 
