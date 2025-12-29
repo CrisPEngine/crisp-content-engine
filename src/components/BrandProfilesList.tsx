@@ -39,8 +39,11 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 		loadProfiles();
 	}, []);
 
+	const [billingLimitError, setBillingLimitError] = useState(false);
+
 	async function loadProfiles() {
 		setLoading(true);
+		setBillingLimitError(false);
 		try {
 			const res = await fetch('/api/brands', { cache: 'no-store' });
 			const data = await res.json();
@@ -49,9 +52,21 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 					...profile,
 					status: normaliseStatus(profile.status),
 				})));
+				// Check if billing limit error was returned
+				if (data.billingLimitExceeded) {
+					setBillingLimitError(true);
+				}
+			} else if (res.status === 503 && data.billingLimitExceeded) {
+				// Service Unavailable due to billing limit
+				setBillingLimitError(true);
+				setProfiles([]);
+			} else {
+				console.error('Failed to load brand profiles:', data.error || 'Unknown error');
+				setProfiles([]);
 			}
 		} catch (error) {
 			console.error('Failed to load brand profiles:', error);
+			setProfiles([]);
 		} finally {
 			setLoading(false);
 		}
@@ -187,18 +202,37 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 
 				{profiles.length === 0 ? (
 					<div className="text-center py-8">
-						<FileText className="w-12 h-12 text-text-dim mx-auto mb-4" />
-						<p className="text-text-soft mb-2">No brand profiles yet</p>
-						<p className="text-sm text-text-dim mb-4">
-							Create your first brand profile to get started
-						</p>
-						<Link
-							href="/onboarding"
-							onClick={handleNewBrandClick}
-							className="inline-block px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm"
-						>
-							Create Brand Profile
-						</Link>
+						{billingLimitError ? (
+							<>
+								<AlertCircle className="w-12 h-12 text-warning mx-auto mb-4" />
+								<p className="text-text-soft mb-2 font-medium">Brand profiles temporarily unavailable</p>
+								<p className="text-sm text-text-dim mb-4 max-w-md mx-auto">
+									Your brand profiles are safe and haven't been lost. They're temporarily inaccessible due to API usage limits. 
+									Please try again in a few minutes, or contact support if this persists.
+								</p>
+								<button
+									onClick={loadProfiles}
+									className="inline-block px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm"
+								>
+									Retry
+								</button>
+							</>
+						) : (
+							<>
+								<FileText className="w-12 h-12 text-text-dim mx-auto mb-4" />
+								<p className="text-text-soft mb-2">No brand profiles yet</p>
+								<p className="text-sm text-text-dim mb-4">
+									Create your first brand profile to get started
+								</p>
+								<Link
+									href="/onboarding"
+									onClick={handleNewBrandClick}
+									className="inline-block px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm"
+								>
+									Create Brand Profile
+								</Link>
+							</>
+						)}
 					</div>
 				) : (
 					<div className="space-y-3">

@@ -60,8 +60,31 @@ export async function GET(req: Request) {
 
 		if (!airtableRes.ok) {
 			console.error('Airtable error:', airtableResult);
+			
+			// Check for specific Airtable billing limit error
+			const isBillingLimitError = airtableResult?.errors?.some((err: any) => 
+				err.error === 'PUBLIC_API_BILLING_LIMIT_EXCEEDED' || 
+				err.message?.includes('billing plan limit exceeded')
+			);
+			
+			if (isBillingLimitError) {
+				console.error('[Brands API] Airtable billing limit exceeded - brand profiles exist but are temporarily inaccessible');
+				return NextResponse.json(
+					{ 
+						error: 'Airtable API limit exceeded',
+						message: 'Brand profiles are temporarily unavailable due to API usage limits. Please try again later or contact support.',
+						billingLimitExceeded: true,
+						profiles: [] // Return empty array so UI doesn't break
+					},
+					{ status: 503 } // Service Unavailable
+				);
+			}
+			
 			return NextResponse.json(
-				{ error: airtableResult?.error?.message || 'Failed to fetch brand profiles' },
+				{ 
+					error: airtableResult?.error?.message || airtableResult?.errors?.[0]?.message || 'Failed to fetch brand profiles',
+					profiles: [] // Return empty array so UI doesn't break
+				},
 				{ status: 422 }
 			);
 		}

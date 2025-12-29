@@ -147,7 +147,25 @@ export default async function Dashboard({
 
 				if (!airtableRes.ok) {
 					const errorText = await airtableRes.text();
-					console.error('Airtable API error:', airtableRes.status, errorText);
+					let errorData: any = {};
+					try {
+						errorData = JSON.parse(errorText);
+					} catch {
+						errorData = { message: errorText };
+					}
+					
+					// Check for billing limit error
+					const isBillingLimitError = errorData?.errors?.some((err: any) => 
+						err.error === 'PUBLIC_API_BILLING_LIMIT_EXCEEDED' || 
+						err.message?.includes('billing plan limit exceeded')
+					);
+					
+					if (isBillingLimitError) {
+						console.error('[Dashboard] Airtable billing limit exceeded - brand profiles exist but are temporarily inaccessible');
+						// Continue with empty array - will show "No brand profiles" but data isn't lost
+					} else {
+						console.error('Airtable API error:', airtableRes.status, errorText);
+					}
 				} else {
 					const airtableData = await airtableRes.json();
 					const records = airtableData?.records || [];
