@@ -1,8 +1,21 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { listRecords, normalizeLookup } from '@/lib/airtable/client';
 
 export const runtime = 'nodejs';
+
+/**
+ * ContentQueue Lookup Field IDs (from Airtable)
+ * Use these instead of fetching BrandProfiles
+ */
+const LOOKUP_FIELDS = {
+	brand_name_lookup: 'fldDHJ0Rx7Rbzlu4a',
+	user_id_lookup: 'fldXszK9zI99mukqB',
+	timezone_lookup: 'fldekIgjL6u1GnLbo',
+	language_region_lookup: 'fldflM0OxGiaxwVMt',
+	spelling_variant_lookup: 'fldA4YS26SIbZd7Xs',
+};
 
 const mapStatuses = (stage: string | null, statusParam: string | null) => {
 	if (statusParam) {
@@ -55,57 +68,41 @@ export async function GET(request: Request) {
 			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 		}
 
-		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
-		const BASE_ID = process.env.AIRTABLE_BASE_ID;
 		const TABLE_ID = process.env.AIRTABLE_CONTENTQUEUE_TABLE;
-		const BRANDPROFILES_TABLE = process.env.AIRTABLE_BRANDPROFILES_TABLE;
 
-		if (!AIRTABLE_TOKEN || !BASE_ID || !TABLE_ID || !BRANDPROFILES_TABLE) {
+		if (!TABLE_ID) {
 			return NextResponse.json(
 				{ error: 'Airtable configuration missing. Please contact support.' },
 				{ status: 500 }
 			);
 		}
 
-		// First, fetch all brand profiles for this user to get their record IDs
-		// ContentQueue doesn't have user_id, so we filter through brand_profile_id
-		const brandProfilesUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}`);
-		brandProfilesUrl.searchParams.set('filterByFormula', `{user_id} = "${user.id}"`);
-		brandProfilesUrl.searchParams.set('maxRecords', '100'); // Reasonable limit
-
-		const brandProfilesRes = await fetch(brandProfilesUrl.toString(), {
-			headers: {
-				Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-				'Content-Type': 'application/json',
-			},
-		});
-
-		let brandProfileIds: string[] = [];
-		if (brandProfilesRes.ok) {
-			const brandProfilesData = await brandProfilesRes.json();
-			brandProfileIds = (brandProfilesData.records || []).map((r: any) => r.id);
-		} else {
-			const errorText = await brandProfilesRes.text();
-			console.warn('Failed to fetch brand profiles for user filtering:', errorText);
-		}
-
-		const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
 		const { searchParams } = new URL(request.url);
 		const stage = searchParams.get('stage');
 		const statusParam = searchParams.get('status');
 		const brandProfileId = searchParams.get('brand_profile_id');
-		const contentBriefId = searchParams.get('content_brief_id'); // For traceability
+		const contentBriefId = searchParams.get('content_brief_id');
 		const statuses = mapStatuses(stage, statusParam);
 
-		// Build filter formula
-		// Note: brand_profile_id and content_brief_id fields may not exist in ContentQueue yet
-		// We'll filter by status in Airtable, then filter by brand_profile_id and content_brief_id in code
+		// Build filter formula using user_id_lookup (no need to fetch BrandProfiles first)
 		const filters: string[] = [];
 		
-		// Add content_brief_id filter if provided (for traceability)
+		// Filter by user_id_lookup (handles both string and array from Airtable lookup)
+		// Airtable lookup may return array, so we use FIND to check if user_id matches
+		// Note: Airtable FIND is case-sensitive, user_id should be exact match
+		filters.push(`FIND("${user.id}", {${LOOKUP_FIELDS.user_id_lookup}}) > 0`);
+		
+		// Add content_brief_id filter if provided
 		if (contentBriefId) {
 			filters.push(`FIND("${contentBriefId}", {content_brief_id})`);
 		}
+		
+		// Add brand_profile_id filter if provided
+		if (brandProfileId) {
+			filters.push(`FIND("${brandProfileId}", {brand_profile_id})`);
+		}
+		
+		// Add status filter
 		if (statuses && statuses.length > 0) {
 			const statusFormula =
 				statuses.length === 1
@@ -114,240 +111,143 @@ export async function GET(request: Request) {
 			filters.push(statusFormula);
 		}
 
-		// Date filtering - only if scheduled_date field exists in Airtable
-		// Note: If scheduled_date doesn't exist, these filters will be skipped
-		const fromDate = searchParams.get('from');
-		const toDate = searchParams.get('to');
-		// Only add date filters if dates are provided (field may not exist yet)
-		// Commenting out date filters until scheduled_date field is added to Airtable
-		// if (fromDate) {
-		// 	filters.push(`IS_AFTER({scheduled_date}, DATETIME_PARSE("${fromDate}", "YYYY-MM-DD"))`);
-		// }
-		// if (toDate) {
-		// 	filters.push(`IS_BEFORE({scheduled_date}, DATEADD(DATETIME_PARSE("${toDate}", "YYYY-MM-DD"), 1, 'day'))`);
-		// }
+		// SINGLE Airtable call: Fetch ContentQueue with lookup fields
+		// No BrandProfiles queries needed - brand_name_lookup and user_id_lookup are included
+		try {
+			const records = await listRecords({
+				table: TABLE_ID,
+				filterByFormula: filters.length > 0 ? `AND(${filters.join(',')})` : undefined,
+				sort: [{ field: 'created_time', direction: 'desc' }],
+				pageSize: 100,
+				fields: [
+					// Content fields
+					'platform',
+					'status',
+					'hook', // Title/hook
+					'post_content',
+					'content', // Alternative content field
+					'body_draft',
+					'post_title',
+					'hashtags',
+					'scheduled_time',
+					'published_at',
+					'brand_profile_id', // Link field (if needed)
+					'content_brief_id', // For traceability
+					'created_time',
+					'updated_time',
+					'image_reference_url',
+					'image_cloudinary_id',
+					'image_prompt',
+					'image_generation_source',
+					'call_to_action',
+					'summary',
+					'content_type',
+					// Lookup fields (use field IDs)
+					LOOKUP_FIELDS.brand_name_lookup,
+					LOOKUP_FIELDS.user_id_lookup,
+					LOOKUP_FIELDS.timezone_lookup,
+					LOOKUP_FIELDS.language_region_lookup,
+					LOOKUP_FIELDS.spelling_variant_lookup,
+				],
+			});
 
-		if (filters.length > 0) {
-			url.searchParams.set('filterByFormula', filters.length === 1 ? filters[0] : `AND(${filters.join(',')})`);
-		}
+			console.log(`[Content Queue API] Fetched ${records.length} content records in 1 Airtable call`);
 
-		url.searchParams.append('pageSize', '100');
-		// Sort by created_time instead of scheduled_date until scheduled_date field is added to Airtable
-		url.searchParams.append('sort[0][field]', 'created_time');
-		url.searchParams.append('sort[0][direction]', 'desc');
+			type ContentItem = {
+				id: string;
+				title: string;
+				platform: string;
+				status: string;
+				content_type?: string;
+				scheduled_date: string | null;
+				published_at: string | null;
+				brand_profile_id: string | null;
+				brand_name: string;
+				content: string;
+				summary: string;
+				call_to_action: string;
+				hashtags?: string;
+				image_prompt?: string;
+				image_generation_source?: string;
+				image_reference_url?: string;
+				image_cloudinary_id?: string;
+				created_time: string;
+				updated_time: string | null;
+			};
 
-	const airtableRes = await fetch(url.toString(), {
-		method: 'GET',
-		headers: {
-			Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-			'Content-Type': 'application/json',
-		},
-	});
-
-	const airtableResult = await airtableRes.json();
-
-	if (!airtableRes.ok) {
-		console.error('Airtable content queue error:', airtableResult);
-		return NextResponse.json(
-			{ error: airtableResult?.error?.message || 'Failed to fetch content queue' },
-			{ status: 502 }
-		);
-	}
-
-	type ContentItem = {
-		id: string;
-		title: string;
-		platform: string;
-		status: string;
-		content_type?: string;
-		scheduled_date: string | null;
-		published_at: string | null;
-		brand_profile_id: string | null;
-		brand_name: string;
-		content: string;
-		summary: string;
-		call_to_action: string;
-		hashtags?: string;
-		image_prompt?: string;
-		image_generation_source?: string;
-		image_reference_url?: string;
-		image_cloudinary_id?: string;
-		created_time: string;
-		updated_time: string | null;
-	};
-
-	// Fetch brand names for all linked brand profiles
-	const brandProfileIdSet = new Set<string>();
-	(airtableResult.records || []).forEach((record: any) => {
-		const fields = record.fields || {};
-		if (fields.brand_profile_id) {
-			if (Array.isArray(fields.brand_profile_id)) {
-				// Link field returns array - could be record IDs or objects with id property
-				fields.brand_profile_id.forEach((item: any) => {
-					const id = typeof item === 'string' ? item : (item?.id || item);
-					if (id) brandProfileIdSet.add(String(id));
-				});
-			} else if (typeof fields.brand_profile_id === 'string') {
-				brandProfileIdSet.add(fields.brand_profile_id);
-			} else if (fields.brand_profile_id?.id) {
-				// Could be an object with id property
-				brandProfileIdSet.add(String(fields.brand_profile_id.id));
-			}
-		}
-	});
-	console.log(`Found ${brandProfileIdSet.size} unique brand_profile_ids:`, Array.from(brandProfileIdSet));
-
-	// Fetch brand names from BrandProfiles
-	const brandNamesMap = new Map<string, string>();
-	if (brandProfileIdSet.size > 0 && BRANDPROFILES_TABLE) {
-		const brandIds = Array.from(brandProfileIdSet);
-		console.log(`Fetching brand names for ${brandIds.length} brand profile IDs:`, brandIds);
-		
-		// Airtable allows up to 10 IDs in OR formula, so batch if needed
-		for (let i = 0; i < brandIds.length; i += 10) {
-			const batch = brandIds.slice(i, i + 10);
-			const brandFilter = batch.length === 1
-				? `RECORD_ID() = "${batch[0]}"`
-				: `OR(${batch.map((id) => `RECORD_ID() = "${id}"`).join(',')})`;
-			
-			const brandUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}`);
-			brandUrl.searchParams.set('filterByFormula', brandFilter);
-			// Don't use fields[] - fetch all fields to ensure we get client_name
-			// brandUrl.searchParams.set('fields[]', 'client_name');
-			// brandUrl.searchParams.set('fields[]', 'personal_full_name');
-			
-			try {
-				const brandRes = await fetch(brandUrl.toString(), {
-					headers: {
-						Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-						'Content-Type': 'application/json',
-					},
-				});
+			// Map records using lookup fields (no BrandProfiles queries needed)
+			let items: ContentItem[] = records.map((record: any) => {
+				const fields = record.fields || {};
 				
-				if (brandRes.ok) {
-					const brandData = await brandRes.json();
-					console.log(`Fetched ${brandData.records?.length || 0} brand records for batch ${i / 10 + 1}`);
-					(brandData.records || []).forEach((brandRecord: any) => {
-						const brandName = brandRecord.fields?.client_name || 
-						                  brandRecord.fields?.personal_full_name || 
-						                  'Unknown Brand';
-						brandNamesMap.set(brandRecord.id, brandName);
-						console.log(`Mapped brand_profile_id ${brandRecord.id} to brand name: ${brandName}`);
-					});
-				} else {
-					const errorText = await brandRes.text();
-					console.error(`Failed to fetch brand names for batch ${i / 10 + 1}:`, brandRes.status, errorText);
+				// Extract brand_profile_id - could be a link field (array) or string
+				let brandProfileId: string | null = null;
+				if (fields.brand_profile_id) {
+					if (Array.isArray(fields.brand_profile_id)) {
+						const firstItem = fields.brand_profile_id[0];
+						if (firstItem) {
+							brandProfileId = typeof firstItem === 'string' ? firstItem : (firstItem?.id || String(firstItem));
+						}
+					} else if (typeof fields.brand_profile_id === 'string') {
+						brandProfileId = fields.brand_profile_id;
+					} else if (fields.brand_profile_id?.id) {
+						brandProfileId = String(fields.brand_profile_id.id);
+					}
 				}
-			} catch (error) {
-				console.error('Failed to fetch brand names:', error);
+
+				// Use brand_name_lookup (normalize from array if needed)
+				const brandName = normalizeLookup(fields[LOOKUP_FIELDS.brand_name_lookup]) || 'Unknown Brand';
+
+				return {
+					id: record.id,
+					title: fields.hook || fields.title || fields.post_title || 'Untitled',
+					platform: fields.platform || 'Blog',
+					status: fields.status || 'Draft',
+					content_type: fields.content_type || 'Post',
+					scheduled_date: fields.scheduled_time || fields.scheduled_date || null,
+					published_at: fields.published_at || null,
+					brand_profile_id: brandProfileId,
+					brand_name: brandName,
+					content: fields.post_content || fields.content || fields.post_body || '',
+					summary: fields.summary || fields.content_summary || '',
+					call_to_action: fields.call_to_action || '',
+					hashtags: fields.hashtags || '',
+					image_prompt: fields.image_prompt || '',
+					image_generation_source: fields.image_generation_source || '',
+					image_reference_url: fields.image_reference_url || '',
+					image_cloudinary_id: fields.image_cloudinary_id || '',
+					created_time: fields.created_time || record.createdTime,
+					updated_time: fields.last_modified_time || fields.updated_time || null,
+				};
+			});
+
+			// Additional filtering in code (if needed for brand_profile_id or content_brief_id)
+			// Note: user_id filtering is already done in Airtable query via user_id_lookup
+			if (brandProfileId) {
+				items = items.filter((item) => item.brand_profile_id === brandProfileId);
 			}
-		}
-		
-		console.log(`Brand names map created with ${brandNamesMap.size} entries:`, Array.from(brandNamesMap.entries()));
-	}
-
-	let items: ContentItem[] = (airtableResult.records || []).map((record: any) => {
-		const fields = record.fields || {};
-		// Extract brand_profile_id - could be a link field (array) or string
-		let brandProfileId: string | null = null;
-		if (fields.brand_profile_id) {
-			if (Array.isArray(fields.brand_profile_id)) {
-				// Link field returns array - could be record IDs or objects with id property
-				const firstItem = fields.brand_profile_id[0];
-				if (firstItem) {
-					brandProfileId = typeof firstItem === 'string' ? firstItem : (firstItem?.id || String(firstItem));
-				}
-			} else if (typeof fields.brand_profile_id === 'string') {
-				brandProfileId = fields.brand_profile_id;
-			} else if (fields.brand_profile_id?.id) {
-				// Could be an object with id property
-				brandProfileId = String(fields.brand_profile_id.id);
-			}
-		}
-
-		// Get brand name from map or fallback
-		let brandName = 'Unknown Brand';
-		if (brandProfileId) {
-			// First try to get from the brand names map (fetched from BrandProfiles table)
-			brandName = brandNamesMap.get(brandProfileId) || 'Unknown Brand';
 			
-			// If not found in map, log for debugging
-			if (!brandNamesMap.has(brandProfileId)) {
-				console.warn(`Brand name not found for brand_profile_id: ${brandProfileId}. Map size: ${brandNamesMap.size}, Map keys:`, Array.from(brandNamesMap.keys()));
-			}
-		} else {
-			// No brand_profile_id - try to get from content queue fields as fallback
-			brandName = fields.brand_name || fields.client_name || 'Unknown Brand';
-		}
-
-		return {
-			id: record.id,
-			title: fields.hook || fields.title || fields.post_title || 'Untitled',
-			platform: fields.platform || 'Blog',
-			status: fields.status || 'Draft',
-			content_type: fields.content_type || 'Post',
-			scheduled_date: fields.scheduled_time || fields.scheduled_date || null,
-			published_at: fields.published_at || null,
-			brand_profile_id: brandProfileId,
-			brand_name: brandName,
-			content: fields.post_content || fields.content || fields.post_body || '',
-			summary: fields.summary || fields.content_summary || '',
-			call_to_action: fields.call_to_action || '',
-			hashtags: fields.hashtags || '',
-			image_prompt: fields.image_prompt || '',
-			image_generation_source: fields.image_generation_source || '',
-			image_reference_url: fields.image_reference_url || '',
-			image_cloudinary_id: fields.image_cloudinary_id || '',
-			created_time: fields.created_time || record.createdTime,
-			updated_time: fields.last_modified_time || fields.updated_time || null,
-		};
-	});
-
-	// Sort by scheduled_date (earliest first), then by created_time
-	items.sort((a, b) => {
-		if (a.scheduled_date && b.scheduled_date) {
-			return new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime();
-		}
-		if (a.scheduled_date) return -1;
-		if (b.scheduled_date) return 1;
-		return new Date(b.created_time).getTime() - new Date(a.created_time).getTime();
-	});
-
-	// Filter by user's brand profiles in code (since brand_profile_id field may not exist in Airtable yet)
-	// If user has brand profiles, only show content linked to those brands
-	if (brandProfileIds.length > 0) {
-		items = items.filter((item: ContentItem) => {
-			// If item has no brand_profile_id, exclude it (safety measure)
-			if (!item.brand_profile_id) return false;
-			// Only include items linked to user's brand profiles
-			if (!brandProfileIds.includes(item.brand_profile_id)) return false;
-			
-			// If brand_profile_id filter is provided, match it
-			if (brandProfileId && item.brand_profile_id !== brandProfileId) return false;
-			
-			// If content_brief_id filter is provided, check if item has matching content_brief_id
 			if (contentBriefId) {
-				// Find the original record to check content_brief_id field
-				const originalRecord = airtableResult.records?.find((r: any) => r.id === item.id);
-				if (originalRecord) {
-					const recordBriefId = originalRecord.fields?.content_brief_id;
+				items = items.filter((item) => {
+					const record = records.find((r: any) => r.id === item.id);
+					if (!record) return false;
+					const recordBriefId = record.fields?.content_brief_id;
 					if (!recordBriefId) return false;
-					// Handle both string and array formats
 					const briefId = Array.isArray(recordBriefId) ? recordBriefId[0] : recordBriefId;
-					if (briefId !== contentBriefId) return false;
-				} else {
-					return false; // Can't verify content_brief_id, exclude
-				}
+					return briefId === contentBriefId;
+				});
 			}
-			
-			return true;
-		});
-	} else {
-		// If user has no brand profiles, return empty array
-		items = [];
-	}
 
-	return NextResponse.json({ items });
+			// Sort by scheduled_date (earliest first), then by created_time
+			items.sort((a, b) => {
+				if (a.scheduled_date && b.scheduled_date) {
+					return new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime();
+				}
+				if (a.scheduled_date) return -1;
+				if (b.scheduled_date) return 1;
+				return new Date(b.created_time).getTime() - new Date(a.created_time).getTime();
+			});
+
+			return NextResponse.json({ items });
 	} catch (error: any) {
 		console.error('content queue GET error:', error);
 		return NextResponse.json({ error: error?.message || 'Server error' }, { status: 500 });

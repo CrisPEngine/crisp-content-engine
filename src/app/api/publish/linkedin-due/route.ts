@@ -25,6 +25,15 @@ import { getSupabaseService } from '@/lib/supabaseService';
 import { getLinkedInConnectionByBrand, publishToLinkedIn, refreshLinkedInToken } from '@/lib/linkedin/publish';
 import { sendEmail } from '@/lib/email/sendEmail';
 import { OAuthReconnectEmail } from '@/emails/product/OAuthReconnectEmail';
+import { listRecords, batchUpdate, normalizeLookup } from '@/lib/airtable/client';
+
+/**
+ * ContentQueue Lookup Field IDs (from Airtable)
+ */
+const LOOKUP_FIELDS = {
+	user_id_lookup: 'fldXszK9zI99mukqB',
+	brand_name_lookup: 'fldDHJ0Rx7Rbzlu4a',
+};
 
 // Helper function to mark connection as needing reauth and send notification
 async function markConnectionNeedsReauthAndNotify(
@@ -105,34 +114,9 @@ interface ContentRecord {
 }
 
 /**
- * Get user_id from brand_profile_id
+ * REMOVED: getUserIdFromBrandProfile
+ * Now using user_id_lookup field from ContentQueue - no BrandProfiles fetch needed
  */
-async function getUserIdFromBrandProfile(
-	brandProfileId: string,
-	baseId: string,
-	brandProfilesTable: string,
-	token: string
-): Promise<string | null> {
-	try {
-		const url = `https://api.airtable.com/v0/${baseId}/${brandProfilesTable}/${brandProfileId}`;
-		const res = await fetch(url, {
-			headers: {
-				Authorization: `Bearer ${token}`,
-				'Content-Type': 'application/json',
-			},
-		});
-
-		if (!res.ok) {
-			return null;
-		}
-
-		const data = await res.json();
-		return data.fields?.user_id || null;
-	} catch (error) {
-		console.error('Error fetching brand profile:', error);
-		return null;
-	}
-}
 
 /**
  * Update Airtable record with publish result
@@ -242,13 +226,10 @@ async function publishDueContent(): Promise<{
 	failed: number;
 	errors: string[];
 }> {
-	const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
-	const BASE_ID = process.env.AIRTABLE_BASE_ID;
 	const TABLE_ID = process.env.AIRTABLE_CONTENTQUEUE_TABLE;
-	const BRANDPROFILES_TABLE = process.env.AIRTABLE_BRANDPROFILES_TABLE;
 
-	if (!AIRTABLE_TOKEN || !BASE_ID || !TABLE_ID || !BRANDPROFILES_TABLE) {
-		throw new Error('Airtable configuration missing');
+	if (!TABLE_ID) {
+		throw new Error('Airtable configuration missing: AIRTABLE_CONTENTQUEUE_TABLE');
 	}
 
 	const stats = {
@@ -259,8 +240,8 @@ async function publishDueContent(): Promise<{
 	};
 	
 	const admin = getSupabaseService(); // Create admin client once for the function
+	const updateQueue: Array<{ id: string; fields: Record<string, any> }> = []; // Batch update queue
 
-	// Query directly instead of using view to avoid view filter issues
 	// Filter for LinkedIn posts that are Ready To Publish with low attempt count
 	const filterFormula = `AND(
 		{platform} = "LinkedIn",
@@ -268,47 +249,31 @@ async function publishDueContent(): Promise<{
 		OR({publish_attempts} < 3, {publish_attempts} = BLANK())
 	)`;
 
-	// Query directly (bypassing view) to ensure we get all matching records
-	const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
-	url.searchParams.set('filterByFormula', filterFormula);
-	url.searchParams.set('maxRecords', '100'); // Process up to 100 records per run
+	// SINGLE Airtable call: Fetch due LinkedIn posts with lookup fields
+	const records = await listRecords({
+		table: TABLE_ID,
+		filterByFormula: filterFormula,
+		maxRecords: 100,
+		fields: [
+			'platform',
+			'status',
+			'hook',
+			'post_content',
+			'hashtags',
+			'scheduled_time',
+			'brand_profile_id',
+			'publish_attempts',
+			'image_reference_url',
+			'linkedin_post_id',
+			'published_url',
+			'published_at',
+			// Lookup fields (use field IDs)
+			LOOKUP_FIELDS.user_id_lookup,
+			LOOKUP_FIELDS.brand_name_lookup,
+		],
+	}) as ContentRecord[];
 	
-	// Only request fields we need for publishing
-	// Airtable requires each field as a separate query param
-	// Note: 'id' is not a field - it's automatically returned as record.id
-	const fields = [
-		'platform',
-		'status',
-		'hook', // Title/hook field in Airtable
-		'post_content',
-		'hashtags',
-		'scheduled_time',
-		'brand_profile_id',
-		'publish_attempts',
-		'image_reference_url', // Include image URL for posts with images
-		'linkedin_post_id', // Check if already published
-		'published_url', // Check if already published
-	];
-	fields.forEach((field) => {
-		url.searchParams.append('fields[]', field);
-	});
-
-	const response = await fetch(url.toString(), {
-		headers: {
-			Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-			'Content-Type': 'application/json',
-		},
-	});
-
-	if (!response.ok) {
-		const errorText = await response.text();
-		throw new Error(`Failed to fetch content queue: ${errorText}`);
-	}
-
-	const data = await response.json();
-	const records: ContentRecord[] = data.records || [];
-	
-	console.log(`Found ${records.length} records matching filter: platform=LinkedIn, status=Ready To Publish`);
+	console.log(`[Publish Job] Found ${records.length} records matching filter: platform=LinkedIn, status=Ready To Publish`);
 
 	// Process each record
 	for (const record of records) {
@@ -326,17 +291,16 @@ async function publishDueContent(): Promise<{
 			if (fields.linkedin_post_id || fields.published_url) {
 				console.log(`[Publish Job] Record ${record.id} already has published info, syncing status instead of publishing`);
 				
-				// Update status to Published if it's not already
+				// Queue status update to Published if it's not already
 				if (fields.status !== 'Published') {
-					try {
-						await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
+					updateQueue.push({
+						id: record.id,
+						fields: {
 							status: 'Published',
 							published_at: fields.published_at || new Date().toISOString(),
-						});
-						console.log(`[Publish Job] Synced record ${record.id} status to Published`);
-					} catch (syncError: any) {
-						console.error(`[Publish Job] Failed to sync status for record ${record.id}:`, syncError);
-					}
+						},
+					});
+					console.log(`[Publish Job] Queued sync for record ${record.id} status to Published`);
 				}
 				
 				stats.processed--; // Don't count as processed (already published)
@@ -361,32 +325,41 @@ async function publishDueContent(): Promise<{
 				continue; // Skip if not due yet
 			}
 
-			// Get user_id from brand_profile_id
+			// Get user_id from user_id_lookup (no BrandProfiles fetch needed)
+			userId = normalizeLookup(fields[LOOKUP_FIELDS.user_id_lookup]) || fields.user_id || null;
+
+			if (!userId) {
+				// Queue for batch update
+				updateQueue.push({
+					id: record.id,
+					fields: {
+						status: 'Failed',
+						publish_error: 'Could not resolve user_id from lookup field',
+						publish_attempts: (fields.publish_attempts || 0) + 1,
+					},
+				});
+				stats.failed++;
+				stats.errors.push(`Record ${record.id}: Could not resolve user_id`);
+				continue;
+			}
+
+			// Get brand_profile_id from link field
 			brandProfileId = Array.isArray(fields.brand_profile_id)
 				? (fields.brand_profile_id[0] || null)
 				: (fields.brand_profile_id || null);
 
 			if (!brandProfileId) {
-				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
-					status: 'Failed',
-					publish_error: 'No brand_profile_id found',
-					publish_attempts: (fields.publish_attempts || 0) + 1,
+				// Queue for batch update
+				updateQueue.push({
+					id: record.id,
+					fields: {
+						status: 'Failed',
+						publish_error: 'No brand_profile_id found',
+						publish_attempts: (fields.publish_attempts || 0) + 1,
+					},
 				});
 				stats.failed++;
 				stats.errors.push(`Record ${record.id}: No brand_profile_id`);
-				continue;
-			}
-
-			userId = fields.user_id || (await getUserIdFromBrandProfile(brandProfileId, BASE_ID, BRANDPROFILES_TABLE, AIRTABLE_TOKEN));
-
-			if (!userId) {
-				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
-					status: 'Failed',
-					publish_error: 'Could not resolve user_id from brand_profile_id',
-					publish_attempts: (fields.publish_attempts || 0) + 1,
-				});
-				stats.failed++;
-				stats.errors.push(`Record ${record.id}: Could not resolve user_id`);
 				continue;
 			}
 
@@ -396,10 +369,13 @@ async function publishDueContent(): Promise<{
 			
 			if (!connectionResult) {
 				console.error(`[Publish Job] No LinkedIn connection found for brand ${brandProfileId} (record ${record.id}, user ${userId})`);
-				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
-					status: 'Failed',
-					publish_error: 'No LinkedIn connection found for this brand. Please assign a LinkedIn connection to the brand in Settings > Connections.',
-					publish_attempts: (fields.publish_attempts || 0) + 1,
+				updateQueue.push({
+					id: record.id,
+					fields: {
+						status: 'Failed',
+						publish_error: 'No LinkedIn connection found for this brand. Please assign a LinkedIn connection to the brand in Settings > Connections.',
+						publish_attempts: (fields.publish_attempts || 0) + 1,
+					},
 				});
 				stats.failed++;
 				stats.errors.push(`Record ${record.id}: No LinkedIn connection for brand ${brandProfileId}`);
@@ -435,10 +411,13 @@ async function publishDueContent(): Promise<{
 				const attempts = (fields.publish_attempts || 0) + 1;
 				const newStatus = connectionResult.isPermanent ? 'Failed' : 'Ready To Publish';
 
-				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
-					status: newStatus,
-					publish_error: connectionResult.error,
-					publish_attempts: attempts,
+				updateQueue.push({
+					id: record.id,
+					fields: {
+						status: newStatus,
+						publish_error: connectionResult.error,
+						publish_attempts: attempts,
+					},
 				});
 
 				stats.failed++;
@@ -455,10 +434,13 @@ async function publishDueContent(): Promise<{
 			const hashtags = fields.hashtags || '';
 
 			if (!body.trim()) {
-				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
-					status: 'Failed',
-					publish_error: 'Post content is empty',
-					publish_attempts: (fields.publish_attempts || 0) + 1,
+				updateQueue.push({
+					id: record.id,
+					fields: {
+						status: 'Failed',
+						publish_error: 'Post content is empty',
+						publish_attempts: (fields.publish_attempts || 0) + 1,
+					},
 				});
 				stats.failed++;
 				stats.errors.push(`Record ${record.id}: Empty content`);
@@ -473,10 +455,13 @@ async function publishDueContent(): Promise<{
 			// For member connections, we need personUrn
 			if (connection.connectionType === 'organization' && !connection.organizationUrn) {
 				console.error(`[Publish Job] Organization connection missing organizationUrn for record ${record.id}`);
-				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
-					status: 'Failed',
-					publish_error: 'LinkedIn organization connection is missing organization URN. Please reconnect your LinkedIn business account.',
-					publish_attempts: (fields.publish_attempts || 0) + 1,
+				updateQueue.push({
+					id: record.id,
+					fields: {
+						status: 'Failed',
+						publish_error: 'LinkedIn organization connection is missing organization URN. Please reconnect your LinkedIn business account.',
+						publish_attempts: (fields.publish_attempts || 0) + 1,
+					},
 				});
 				stats.failed++;
 				stats.errors.push(`Record ${record.id}: Missing organization URN`);
@@ -485,10 +470,13 @@ async function publishDueContent(): Promise<{
 			
 			if (connection.connectionType === 'member' && !connection.personUrn) {
 				console.error(`[Publish Job] Member connection missing personUrn for record ${record.id}`);
-				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
-					status: 'Failed',
-					publish_error: 'LinkedIn personal connection is missing person URN. Please reconnect your LinkedIn account.',
-					publish_attempts: (fields.publish_attempts || 0) + 1,
+				updateQueue.push({
+					id: record.id,
+					fields: {
+						status: 'Failed',
+						publish_error: 'LinkedIn personal connection is missing person URN. Please reconnect your LinkedIn account.',
+						publish_attempts: (fields.publish_attempts || 0) + 1,
+					},
 				});
 				stats.failed++;
 				stats.errors.push(`Record ${record.id}: Missing person URN`);
@@ -546,10 +534,13 @@ async function publishDueContent(): Promise<{
 					if (dbError || !dbConnection) {
 						console.error(`[Publish Job] Failed to fetch connection ${connection.connectionId}:`, dbError);
 						const errorMessage = `LinkedIn connection not found. Please reconnect your LinkedIn account in Settings > Connections.`;
-						await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
-							status: 'Failed',
-							publish_error: errorMessage,
-							publish_attempts: (fields.publish_attempts || 0) + 1,
+						updateQueue.push({
+							id: record.id,
+							fields: {
+								status: 'Failed',
+								publish_error: errorMessage,
+								publish_attempts: (fields.publish_attempts || 0) + 1,
+							},
 						});
 						stats.failed++;
 						stats.errors.push(`Record ${record.id}: ${errorMessage}`);
@@ -559,10 +550,13 @@ async function publishDueContent(): Promise<{
 					if (!dbConnection.refresh_token) {
 						console.error(`[Publish Job] Connection ${connection.connectionId} (${dbConnection.account_name || 'unknown'}) has no refresh_token. This connection was likely created before refresh tokens were supported, or LinkedIn did not provide a refresh token. User needs to reconnect.`);
 						const errorMessage = `LinkedIn connection expired and cannot be refreshed. Please disconnect and reconnect your LinkedIn account in Settings > Connections.`;
-						await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
-							status: 'Failed',
-							publish_error: errorMessage,
-							publish_attempts: (fields.publish_attempts || 0) + 1,
+						updateQueue.push({
+							id: record.id,
+							fields: {
+								status: 'Failed',
+								publish_error: errorMessage,
+								publish_attempts: (fields.publish_attempts || 0) + 1,
+							},
 						});
 						stats.failed++;
 						stats.errors.push(`Record ${record.id}: ${errorMessage}`);
@@ -573,10 +567,13 @@ async function publishDueContent(): Promise<{
 					if (!refreshToken) {
 						console.error(`[Publish Job] Could not decrypt refresh_token for connection ${connection.connectionId}`);
 						const errorMessage = `LinkedIn connection token decryption failed. Please reconnect your LinkedIn account in Settings > Connections.`;
-						await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
-							status: 'Failed',
-							publish_error: errorMessage,
-							publish_attempts: (fields.publish_attempts || 0) + 1,
+						updateQueue.push({
+							id: record.id,
+							fields: {
+								status: 'Failed',
+								publish_error: errorMessage,
+								publish_attempts: (fields.publish_attempts || 0) + 1,
+							},
 						});
 						stats.failed++;
 						stats.errors.push(`Record ${record.id}: ${errorMessage}`);
@@ -647,32 +644,25 @@ async function publishDueContent(): Promise<{
 			console.log(`[Publish Job] Publish result for record ${record.id}: success=${publishResult.success}, error=${publishResult.error || 'none'}`);
 
 			if (publishResult.success) {
-				// Success: Update Airtable IMMEDIATELY to prevent duplicate processing
-				// Do this before any other network calls
-				try {
-					await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
+				// Success: Queue update (will batch at end)
+				updateQueue.push({
+					id: record.id,
+					fields: {
 						status: 'Published',
 						published_at: new Date().toISOString(),
 						published_url: publishResult.published_url || undefined,
 						linkedin_post_id: publishResult.linkedin_post_id || undefined,
 						publish_attempts: (fields.publish_attempts || 0) + 1,
-					});
-					stats.success++;
-				} catch (updateError: any) {
-					// If Airtable update fails but post was published, log error but don't fail
-					// The post is already on LinkedIn, so we count it as success
-					console.error(`[Publish Job] Post ${record.id} published to LinkedIn but Airtable update failed:`, updateError);
-					stats.success++; // Still count as success since it's published
-					stats.errors.push(`Record ${record.id}: Published but Airtable update failed - ${updateError.message}`);
-				}
+					},
+				});
+				stats.success++;
 
 				// Increment usage (non-blocking - don't fail if this errors)
 				incrementUsage(userId).catch((err) => {
 					console.error(`Failed to increment usage for user ${userId}:`, err);
-					// Status is already Published, so we don't rollback
 				});
 			} else {
-				// Failure: Update Airtable with error
+				// Failure: Queue update with error
 				const attempts = (fields.publish_attempts || 0) + 1;
 				const newStatus = attempts >= 3 ? 'Failed' : 'Ready To Publish';
 
@@ -695,10 +685,13 @@ async function publishDueContent(): Promise<{
 					);
 				}
 
-				await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
-					status: newStatus,
-					publish_error: publishResult.error || 'Unknown error',
-					publish_attempts: attempts,
+				updateQueue.push({
+					id: record.id,
+					fields: {
+						status: newStatus,
+						publish_error: publishResult.error || 'Unknown error',
+						publish_attempts: attempts,
+					},
 				});
 
 				stats.failed++;
@@ -718,14 +711,32 @@ async function publishDueContent(): Promise<{
 				attempts,
 			});
 
-			await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
-				status: newStatus,
-				publish_error: errorMessage,
-				publish_attempts: attempts,
+			updateQueue.push({
+				id: record.id,
+				fields: {
+					status: newStatus,
+					publish_error: errorMessage,
+					publish_attempts: attempts,
+				},
 			});
 
 			stats.failed++;
 			stats.errors.push(`Record ${record.id}: ${errorMessage}`);
+		}
+	}
+
+	// Batch update all queued records (in groups of 10 per Airtable limit)
+	if (updateQueue.length > 0) {
+		console.log(`[Publish Job] Batching ${updateQueue.length} record updates`);
+		try {
+			await batchUpdate({
+				table: TABLE_ID,
+				records: updateQueue,
+			});
+			console.log(`[Publish Job] Successfully batch updated ${updateQueue.length} records`);
+		} catch (batchError: any) {
+			console.error(`[Publish Job] Batch update failed:`, batchError);
+			stats.errors.push(`Batch update failed: ${batchError.message}`);
 		}
 	}
 
