@@ -289,7 +289,7 @@ async function publishDueContent(): Promise<{
 			}
 
 			// Get user_id from user_id_lookup (no BrandProfiles fetch needed)
-			userId = normalizeLookup(fields[LOOKUP_FIELDS.user_id_lookup]) || fields.user_id || null;
+			userId = normalizeLookup((fields as any)[LOOKUP_FIELDS.user_id_lookup]) || fields.user_id || null;
 
 			if (!userId) {
 				// Queue for batch update
