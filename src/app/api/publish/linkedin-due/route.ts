@@ -593,10 +593,13 @@ async function publishDueContent(): Promise<{
 						1 // affectedCount (this post)
 					);
 
-					await updateAirtableRecord(record.id, BASE_ID, TABLE_ID, AIRTABLE_TOKEN, {
-						status: 'Failed',
-						publish_error: errorMessage,
-						publish_attempts: (fields.publish_attempts || 0) + 1,
+					updateQueue.push({
+						id: record.id,
+						fields: {
+							status: 'Failed',
+							publish_error: errorMessage,
+							publish_attempts: (fields.publish_attempts || 0) + 1,
+						},
 					});
 					stats.failed++;
 					stats.errors.push(`Record ${record.id}: ${errorMessage}`);
