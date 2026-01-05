@@ -119,46 +119,9 @@ interface ContentRecord {
  */
 
 /**
- * Update Airtable record with publish result
+ * REMOVED: updateAirtableRecord (single record update)
+ * Now using batchUpdate for efficiency - updates are batched in groups of 10
  */
-async function updateAirtableRecord(
-	recordId: string,
-	baseId: string,
-	tableId: string,
-	token: string,
-	updates: {
-		status?: string;
-		published_at?: string;
-		published_url?: string;
-		linkedin_post_id?: string;
-		publish_error?: string;
-		publish_attempts?: number;
-	}
-): Promise<void> {
-	const fields: Record<string, any> = {};
-	if (updates.status) fields.status = updates.status;
-	if (updates.published_at) fields.published_at = updates.published_at;
-	if (updates.published_url) fields.published_url = updates.published_url;
-	if (updates.linkedin_post_id) fields.linkedin_post_id = updates.linkedin_post_id;
-	if (updates.publish_error !== undefined) fields.publish_error = updates.publish_error;
-	if (updates.publish_attempts !== undefined) fields.publish_attempts = updates.publish_attempts;
-
-	const response = await fetch(`https://api.airtable.com/v0/${baseId}/${tableId}/${recordId}`, {
-		method: 'PATCH',
-		headers: {
-			Authorization: `Bearer ${token}`,
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify({ fields }),
-	});
-
-	if (!response.ok) {
-		const errorText = await response.text();
-		const error = `Failed to update Airtable record ${recordId}: ${response.status} ${errorText}`;
-		console.error(`[Publish Job] ${error}`);
-		throw new Error(error);
-	}
-}
 
 /**
  * Increment usage count for user
