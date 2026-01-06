@@ -47,10 +47,26 @@ const LOOKUP_FIELD_NAMES = {
 /**
  * ContentQueue Field IDs (for accessing responses when returnFieldsByFieldId=true)
  * These are the actual field IDs from Airtable
+ * IMPORTANT: When returnFieldsByFieldId=true, ALL fields are keyed by IDs, not names
  */
 const CONTENTQUEUE_FIELD_IDS = {
 	brand_profile_id: 'fldqCh274V2Ih2PPS', // Link field ID for brand_profile_id
+	post_content: 'fldxVHLUkrlcxx7Ua', // post_content field ID
+	// Add more field IDs as needed - these are the ones we know about
 } as const;
+
+/**
+ * Helper to get field value by ID or name (for backward compatibility)
+ * When returnFieldsByFieldId=true, fields are keyed by ID, not name
+ */
+function getFieldValue(fields: any, fieldId: string | undefined, fieldName: string): any {
+	if (!fieldId) {
+		// No field ID provided, use name only
+		return fields[fieldName];
+	}
+	// Try field ID first (when returnFieldsByFieldId=true), then fallback to name
+	return fields[fieldId] ?? fields[fieldName];
+}
 
 // Helper function to mark connection as needing reauth and send notification
 async function markConnectionNeedsReauthAndNotify(
@@ -300,18 +316,24 @@ async function publishDueContent(): Promise<{
 		try {
 			const fields = record.fields;
 
+			// Helper to access fields - try by ID first (returnFieldsByFieldId=true), then by name
+			const getField = (fieldName: string, fieldId?: string) => getFieldValue(fields, fieldId, fieldName);
+
 			// Check if post is already published (has linkedin_post_id or published_url)
 			// This prevents duplicate publishing if status wasn't updated
-			if (fields.linkedin_post_id || fields.published_url) {
+			const linkedinPostId = getField('linkedin_post_id');
+			const publishedUrl = getField('published_url');
+			if (linkedinPostId || publishedUrl) {
 				console.log(`[Publish Job] Record ${record.id} already has published info, syncing status instead of publishing`);
 				
 				// Queue status update to Published if it's not already
-				if (fields.status !== 'Published') {
+				const status = getField('status');
+				if (status !== 'Published') {
 					updateQueue.push({
 						id: record.id,
 						fields: {
 							status: 'Published',
-							published_at: fields.published_at || new Date().toISOString(),
+							published_at: getField('published_at') || new Date().toISOString(),
 						},
 					});
 					console.log(`[Publish Job] Queued sync for record ${record.id} status to Published`);
@@ -322,15 +344,16 @@ async function publishDueContent(): Promise<{
 			}
 
 			// Check if content is due (scheduled_time is in UTC)
-			const scheduledTime = fields.scheduled_time;
+			const scheduledTime = getField('scheduled_time');
 			const isDue = isContentDue(scheduledTime);
 			const now = new Date().toISOString();
+			const hook = getField('hook') || '';
 			
 			console.log(`[Publish Job] Record ${record.id}:`, {
 				scheduled_time: scheduledTime,
 				isDue,
 				now,
-				hook: fields.hook?.substring(0, 50) || 'no hook',
+				hook: hook.substring(0, 50) || 'no hook',
 			});
 			
 			if (!isDue) {
@@ -341,7 +364,8 @@ async function publishDueContent(): Promise<{
 
 			// Get user_id from user_id_lookup (no BrandProfiles fetch needed)
 			// Access by field ID since returnFieldsByFieldId=true
-			userId = normalizeLookup((fields as any)[LOOKUP_FIELD_IDS.user_id_lookup]) || fields.user_id || null;
+			const userIdLookupValue = (fields as any)[LOOKUP_FIELD_IDS.user_id_lookup];
+			userId = normalizeLookup(userIdLookupValue) || getField('user_id') || null;
 
 			if (!userId) {
 				// Queue for batch update
@@ -350,7 +374,7 @@ async function publishDueContent(): Promise<{
 					fields: {
 						status: 'Failed',
 						publish_error: 'Could not resolve user_id from lookup field',
-						publish_attempts: (fields.publish_attempts || 0) + 1,
+						publish_attempts: (getField('publish_attempts') || 0) + 1,
 					},
 				});
 				stats.failed++;
@@ -361,7 +385,7 @@ async function publishDueContent(): Promise<{
 			// Get brand_profile_id from link field
 			// IMPORTANT: With returnFieldsByFieldId=true, we must access by field ID, not name
 			// The field ID for brand_profile_id is fldqCh274V2Ih2PPS
-			const brandProfileIdField = (fields as any)[CONTENTQUEUE_FIELD_IDS.brand_profile_id] || fields.brand_profile_id;
+			const brandProfileIdField = (fields as any)[CONTENTQUEUE_FIELD_IDS.brand_profile_id] || getField('brand_profile_id');
 			
 			// Airtable link fields can be arrays (multiple links) or single values
 			if (brandProfileIdField) {
@@ -395,7 +419,7 @@ async function publishDueContent(): Promise<{
 					fields: {
 						status: 'Failed',
 						publish_error: 'No brand_profile_id found. Please link this content to a brand profile in Airtable.',
-						publish_attempts: (fields.publish_attempts || 0) + 1,
+						publish_attempts: (getField('publish_attempts') || 0) + 1,
 					},
 				});
 				stats.failed++;
@@ -414,7 +438,7 @@ async function publishDueContent(): Promise<{
 					fields: {
 						status: 'Failed',
 						publish_error: 'No LinkedIn connection found for this brand. Please assign a LinkedIn connection to the brand in Settings > Connections.',
-						publish_attempts: (fields.publish_attempts || 0) + 1,
+						publish_attempts: (getField('publish_attempts') || 0) + 1,
 					},
 				});
 				stats.failed++;
@@ -448,7 +472,7 @@ async function publishDueContent(): Promise<{
 
 			// Check if connection result is an error (permanent failure)
 			if ('error' in connectionResult) {
-				const attempts = (fields.publish_attempts || 0) + 1;
+				const attempts = (getField('publish_attempts') || 0) + 1;
 				const newStatus = connectionResult.isPermanent ? 'Failed' : 'Ready To Publish';
 
 				updateQueue.push({
@@ -468,10 +492,10 @@ async function publishDueContent(): Promise<{
 			const connection = connectionResult; // TypeScript now knows it's LinkedInConnectionResult
 
 			// Build content
-			// Use 'hook' field for title (this is the Airtable field name)
-			const title = fields.hook || fields.post_title || '';
-			const body = fields.post_content || fields.content || fields.post_body || '';
-			const hashtags = fields.hashtags || '';
+			// IMPORTANT: Access fields by ID (returnFieldsByFieldId=true) with fallback to name
+			const title = getField('hook') || getField('post_title') || getField('title') || '';
+			const body = getField('post_content', CONTENTQUEUE_FIELD_IDS.post_content) || getField('content') || getField('post_body') || '';
+			const hashtags = getField('hashtags') || '';
 
 			if (!body.trim()) {
 				updateQueue.push({
@@ -479,7 +503,7 @@ async function publishDueContent(): Promise<{
 					fields: {
 						status: 'Failed',
 						publish_error: 'Post content is empty',
-						publish_attempts: (fields.publish_attempts || 0) + 1,
+						publish_attempts: (getField('publish_attempts') || 0) + 1,
 					},
 				});
 				stats.failed++;
@@ -488,7 +512,7 @@ async function publishDueContent(): Promise<{
 			}
 
 			// Get image URL if available
-			const imageUrl = fields.image_reference_url || '';
+			const imageUrl = getField('image_reference_url') || '';
 
 			// Validate we have the required URN for publishing
 			// For organization connections, we need organizationUrn
@@ -500,7 +524,7 @@ async function publishDueContent(): Promise<{
 					fields: {
 						status: 'Failed',
 						publish_error: 'LinkedIn organization connection is missing organization URN. Please reconnect your LinkedIn business account.',
-						publish_attempts: (fields.publish_attempts || 0) + 1,
+						publish_attempts: (getField('publish_attempts') || 0) + 1,
 					},
 				});
 				stats.failed++;
@@ -515,7 +539,7 @@ async function publishDueContent(): Promise<{
 					fields: {
 						status: 'Failed',
 						publish_error: 'LinkedIn personal connection is missing person URN. Please reconnect your LinkedIn account.',
-						publish_attempts: (fields.publish_attempts || 0) + 1,
+						publish_attempts: (getField('publish_attempts') || 0) + 1,
 					},
 				});
 				stats.failed++;
@@ -579,7 +603,7 @@ async function publishDueContent(): Promise<{
 							fields: {
 								status: 'Failed',
 								publish_error: errorMessage,
-								publish_attempts: (fields.publish_attempts || 0) + 1,
+								publish_attempts: (getField('publish_attempts') || 0) + 1,
 							},
 						});
 						stats.failed++;
@@ -595,7 +619,7 @@ async function publishDueContent(): Promise<{
 							fields: {
 								status: 'Failed',
 								publish_error: errorMessage,
-								publish_attempts: (fields.publish_attempts || 0) + 1,
+								publish_attempts: (getField('publish_attempts') || 0) + 1,
 							},
 						});
 						stats.failed++;
@@ -612,7 +636,7 @@ async function publishDueContent(): Promise<{
 							fields: {
 								status: 'Failed',
 								publish_error: errorMessage,
-								publish_attempts: (fields.publish_attempts || 0) + 1,
+								publish_attempts: (getField('publish_attempts') || 0) + 1,
 							},
 						});
 						stats.failed++;
@@ -706,7 +730,7 @@ async function publishDueContent(): Promise<{
 				});
 			} else {
 				// Failure: Queue update with error
-				const attempts = (fields.publish_attempts || 0) + 1;
+				const attempts = (getField('publish_attempts') || 0) + 1;
 				const newStatus = attempts >= 3 ? 'Failed' : 'Ready To Publish';
 
 				// Check if error is OAuth-related (401, 403, or requires reconnection)
@@ -742,7 +766,10 @@ async function publishDueContent(): Promise<{
 			}
 		} catch (error: any) {
 			// Handle unexpected errors
-			const attempts = (record.fields.publish_attempts || 0) + 1;
+			// Use getField helper even in catch block - need to access fields correctly
+			const errorFields = record.fields;
+			const getErrorField = (fieldName: string, fieldId?: string) => getFieldValue(errorFields, fieldId, fieldName);
+			const attempts = (getErrorField('publish_attempts') || 0) + 1;
 			const newStatus = attempts >= 3 ? 'Failed' : 'Ready To Publish';
 
 			const errorMessage = error?.message || 'Unexpected error during publishing';

@@ -82,7 +82,8 @@ export async function POST(request: Request) {
 					}
 				}
 
-				if (!periodEnd) {
+				if (!periodEnd || isNaN(periodEnd.getTime())) {
+					console.warn(`[Strategy Auto-Continue] Invalid period end date for user ${sub.user_id}, skipping`);
 					stats.skipped++;
 					continue;
 				}
