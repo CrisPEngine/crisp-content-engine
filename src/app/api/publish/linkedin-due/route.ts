@@ -67,6 +67,12 @@ const LOOKUP_FIELD_NAMES = {
  * fldR5AZaDc07gArxv = "publish_text"
  * flduUgRnky0IgKH5K = "record_id"
  * fldqCh274V2Ih2PPS = "brand_profile_id"
+ * fld4HM3lrGKUq92kJ = "call_to_action"
+ * fldf58Nezm4kywo6T = "image_generation_source"
+ * fldRRlsSTQC9IZbt5 = "image_reference_url"
+ * fldILkq0eG4tSV6GC = "approved_at"
+ * fldIT2FuismZkp9ZU = "published_at"
+ * fldCevmF49JFuHkLE = "published_url"
  */
 const CONTENTQUEUE_FIELD_IDS = {
 	// Core fields
@@ -86,6 +92,12 @@ const CONTENTQUEUE_FIELD_IDS = {
 	topic_bucket: 'fldWqjs9EVHNJjV37',
 	publish_text: 'fldR5AZaDc07gArxv',
 	record_id: 'flduUgRnky0IgKH5K',
+	call_to_action: 'fld4HM3lrGKUq92kJ',
+	image_generation_source: 'fldf58Nezm4kywo6T',
+	image_reference_url: 'fldRRlsSTQC9IZbt5',
+	approved_at: 'fldILkq0eG4tSV6GC',
+	published_at: 'fldIT2FuismZkp9ZU',
+	published_url: 'fldCevmF49JFuHkLE',
 } as const;
 
 /**
@@ -356,7 +368,7 @@ async function publishDueContent(): Promise<{
 			// Check if post is already published (has linkedin_post_id or published_url)
 			// This prevents duplicate publishing if status wasn't updated
 			const linkedinPostId = getField('linkedin_post_id');
-			const publishedUrl = getField('published_url');
+			const publishedUrl = getField('published_url', CONTENTQUEUE_FIELD_IDS.published_url);
 			if (linkedinPostId || publishedUrl) {
 				console.log(`[Publish Job] Record ${record.id} already has published info, syncing status instead of publishing`);
 				
@@ -367,7 +379,7 @@ async function publishDueContent(): Promise<{
 						id: record.id,
 						fields: {
 							status: 'Published',
-							published_at: getField('published_at') || new Date().toISOString(),
+							published_at: getField('published_at', CONTENTQUEUE_FIELD_IDS.published_at) || new Date().toISOString(),
 						},
 					});
 					console.log(`[Publish Job] Queued sync for record ${record.id} status to Published`);
@@ -546,7 +558,7 @@ async function publishDueContent(): Promise<{
 			}
 
 			// Get image URL if available
-			const imageUrl = getField('image_reference_url') || '';
+			const imageUrl = getField('image_reference_url', CONTENTQUEUE_FIELD_IDS.image_reference_url) || '';
 
 			// Validate we have the required URN for publishing
 			// For organization connections, we need organizationUrn

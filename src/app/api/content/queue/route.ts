@@ -50,6 +50,12 @@ const LOOKUP_FIELD_NAMES = {
  * fldR5AZaDc07gArxv = "publish_text"
  * flduUgRnky0IgKH5K = "record_id"
  * fldqCh274V2Ih2PPS = "brand_profile_id"
+ * fld4HM3lrGKUq92kJ = "call_to_action"
+ * fldf58Nezm4kywo6T = "image_generation_source"
+ * fldRRlsSTQC9IZbt5 = "image_reference_url"
+ * fldILkq0eG4tSV6GC = "approved_at"
+ * fldIT2FuismZkp9ZU = "published_at"
+ * fldCevmF49JFuHkLE = "published_url"
  */
 const CONTENTQUEUE_FIELD_IDS = {
 	// Core fields
@@ -69,6 +75,12 @@ const CONTENTQUEUE_FIELD_IDS = {
 	topic_bucket: 'fldWqjs9EVHNJjV37',
 	publish_text: 'fldR5AZaDc07gArxv',
 	record_id: 'flduUgRnky0IgKH5K',
+	call_to_action: 'fld4HM3lrGKUq92kJ',
+	image_generation_source: 'fldf58Nezm4kywo6T',
+	image_reference_url: 'fldRRlsSTQC9IZbt5',
+	approved_at: 'fldILkq0eG4tSV6GC',
+	published_at: 'fldIT2FuismZkp9ZU',
+	published_url: 'fldCevmF49JFuHkLE',
 } as const;
 
 /**
@@ -286,20 +298,20 @@ export async function GET(request: Request) {
 				status: getField('status', CONTENTQUEUE_FIELD_IDS.status) || 'Draft',
 				content_type: getField('content_type') || 'Post',
 				scheduled_date: getField('scheduled_time', CONTENTQUEUE_FIELD_IDS.scheduled_time) || getField('scheduled_date') || null,
-				published_at: getField('published_at') || null,
 				brand_profile_id: brandProfileId,
 				brand_name: brandName,
 				// IMPORTANT: 'content' field doesn't exist - only use post_content
 				content: getField('post_content', CONTENTQUEUE_FIELD_IDS.post_content) || getField('post_body') || '',
 				summary: getField('summary') || getField('content_summary') || '',
-				call_to_action: getField('call_to_action') || '',
+				call_to_action: getField('call_to_action', CONTENTQUEUE_FIELD_IDS.call_to_action) || '',
 				hashtags: getField('hashtags', CONTENTQUEUE_FIELD_IDS.hashtags) || '',
 				image_prompt: getField('image_prompt', CONTENTQUEUE_FIELD_IDS.image_prompt) || '',
-				image_generation_source: getField('image_generation_source') || '',
-				image_reference_url: getField('image_reference_url') || '',
+				image_generation_source: getField('image_generation_source', CONTENTQUEUE_FIELD_IDS.image_generation_source) || '',
+				image_reference_url: getField('image_reference_url', CONTENTQUEUE_FIELD_IDS.image_reference_url) || '',
 				image_cloudinary_id: getField('image_cloudinary_id') || '',
 				created_time: getField('created_time', CONTENTQUEUE_FIELD_IDS.created_time) || record.createdTime,
 				updated_time: getField('last_modified', CONTENTQUEUE_FIELD_IDS.last_modified) || getField('updated_time') || null,
+				published_at: getField('published_at', CONTENTQUEUE_FIELD_IDS.published_at) || null,
 			};
 		});
 
