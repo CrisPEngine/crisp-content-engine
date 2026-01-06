@@ -130,12 +130,17 @@ export default async function Dashboard({
 	try {
 		// Use API endpoint instead of direct Airtable call (uses new client with caching)
 		// This ensures consistency and benefits from the optimized /api/brands endpoint
-		const { cookies } = await import('next/headers');
-		const cookieHeader = cookies().toString();
+		const cookieStore = await import('next/headers').then(m => m.cookies());
 		const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 		
+		// Build cookie header properly
+		const cookieHeader: string[] = [];
+		cookieStore.getAll().forEach(cookie => {
+			cookieHeader.push(`${cookie.name}=${cookie.value}`);
+		});
+		
 		const brandsRes = await fetch(`${siteUrl}/api/brands`, {
-			headers: cookieHeader ? { Cookie: cookieHeader } : {},
+			headers: cookieHeader.length > 0 ? { Cookie: cookieHeader.join('; ') } : {},
 			cache: 'no-store',
 		});
 

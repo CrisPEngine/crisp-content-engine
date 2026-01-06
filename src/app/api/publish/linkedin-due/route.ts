@@ -26,14 +26,23 @@ import { getLinkedInConnectionByBrand, publishToLinkedIn, refreshLinkedInToken }
 import { sendEmail } from '@/lib/email/sendEmail';
 import { OAuthReconnectEmail } from '@/emails/product/OAuthReconnectEmail';
 import { listRecords, batchUpdate, normalizeLookup } from '@/lib/airtable/client';
+import { CONTENTQUEUE_LOOKUP_FIELDS } from '@/lib/airtable/field-mapping';
 
 /**
- * ContentQueue Lookup Field IDs (from Airtable)
+ * ContentQueue Lookup Fields
+ * IMPORTANT: Use field NAMES in fields[] parameter, but responses will be keyed by field IDs
  */
-const LOOKUP_FIELDS = {
-	user_id_lookup: 'fldXszK9zI99mukqB',
-	brand_name_lookup: 'fldDHJ0Rx7Rbzlu4a',
-};
+// Field IDs for accessing responses (when returnFieldsByFieldId=true)
+const LOOKUP_FIELD_IDS = {
+	user_id_lookup: CONTENTQUEUE_LOOKUP_FIELDS.user_id_lookup.id,
+	brand_name_lookup: CONTENTQUEUE_LOOKUP_FIELDS.brand_name_lookup.id,
+} as const;
+
+// Field names for use in fields[] parameter
+const LOOKUP_FIELD_NAMES = {
+	user_id_lookup: CONTENTQUEUE_LOOKUP_FIELDS.user_id_lookup.name,
+	brand_name_lookup: CONTENTQUEUE_LOOKUP_FIELDS.brand_name_lookup.name,
+} as const;
 
 // Helper function to mark connection as needing reauth and send notification
 async function markConnectionNeedsReauthAndNotify(
@@ -213,6 +222,7 @@ async function publishDueContent(): Promise<{
 	)`;
 
 	// SINGLE Airtable call: Fetch due LinkedIn posts with lookup fields
+	// IMPORTANT: Use field NAMES in fields[] parameter, responses will be keyed by field IDs
 	const records = await listRecords({
 		table: TABLE_ID,
 		filterByFormula: filterFormula,
@@ -230,10 +240,12 @@ async function publishDueContent(): Promise<{
 			'linkedin_post_id',
 			'published_url',
 			'published_at',
-			// Lookup fields (use field IDs)
-			LOOKUP_FIELDS.user_id_lookup,
-			LOOKUP_FIELDS.brand_name_lookup,
+			// Lookup fields (use field NAMES, not IDs)
+			LOOKUP_FIELD_NAMES.user_id_lookup,
+			LOOKUP_FIELD_NAMES.brand_name_lookup,
 		],
+		returnFieldsByFieldId: true, // Get responses keyed by field IDs
+		endpoint: '/api/publish/linkedin-due',
 	}) as ContentRecord[];
 	
 	console.log(`[Publish Job] Found ${records.length} records matching filter: platform=LinkedIn, status=Ready To Publish`);
@@ -289,7 +301,8 @@ async function publishDueContent(): Promise<{
 			}
 
 			// Get user_id from user_id_lookup (no BrandProfiles fetch needed)
-			userId = normalizeLookup((fields as any)[LOOKUP_FIELDS.user_id_lookup]) || fields.user_id || null;
+			// Access by field ID since returnFieldsByFieldId=true
+			userId = normalizeLookup((fields as any)[LOOKUP_FIELD_IDS.user_id_lookup]) || fields.user_id || null;
 
 			if (!userId) {
 				// Queue for batch update

@@ -6,16 +6,29 @@ import { listRecords, normalizeLookup } from '@/lib/airtable/client';
 export const runtime = 'nodejs';
 
 /**
- * ContentQueue Lookup Field IDs (from Airtable)
- * Use these instead of fetching BrandProfiles
+ * ContentQueue Lookup Fields
+ * IMPORTANT: Use field NAMES in fields[] parameter, but responses will be keyed by field IDs
+ * when returnFieldsByFieldId=true is set
  */
-const LOOKUP_FIELDS = {
-	brand_name_lookup: 'fldDHJ0Rx7Rbzlu4a',
-	user_id_lookup: 'fldXszK9zI99mukqB',
-	timezone_lookup: 'fldekIgjL6u1GnLbo',
-	language_region_lookup: 'fldflM0OxGiaxwVMt',
-	spelling_variant_lookup: 'fldA4YS26SIbZd7Xs',
-};
+import { CONTENTQUEUE_LOOKUP_FIELDS } from '@/lib/airtable/field-mapping';
+
+// Field IDs for accessing responses (when returnFieldsByFieldId=true)
+const LOOKUP_FIELD_IDS = {
+	brand_name_lookup: CONTENTQUEUE_LOOKUP_FIELDS.brand_name_lookup.id,
+	user_id_lookup: CONTENTQUEUE_LOOKUP_FIELDS.user_id_lookup.id,
+	timezone_lookup: CONTENTQUEUE_LOOKUP_FIELDS.timezone_lookup.id,
+	language_region_lookup: CONTENTQUEUE_LOOKUP_FIELDS.language_region_lookup.id,
+	spelling_variant_lookup: CONTENTQUEUE_LOOKUP_FIELDS.spelling_variant_lookup.id,
+} as const;
+
+// Field names for use in fields[] parameter and filter formulas
+const LOOKUP_FIELD_NAMES = {
+	brand_name_lookup: CONTENTQUEUE_LOOKUP_FIELDS.brand_name_lookup.name,
+	user_id_lookup: CONTENTQUEUE_LOOKUP_FIELDS.user_id_lookup.name,
+	timezone_lookup: CONTENTQUEUE_LOOKUP_FIELDS.timezone_lookup.name,
+	language_region_lookup: CONTENTQUEUE_LOOKUP_FIELDS.language_region_lookup.name,
+	spelling_variant_lookup: CONTENTQUEUE_LOOKUP_FIELDS.spelling_variant_lookup.name,
+} as const;
 
 const mapStatuses = (stage: string | null, statusParam: string | null) => {
 	if (statusParam) {
@@ -88,9 +101,15 @@ export async function GET(request: Request) {
 		const filters: string[] = [];
 		
 		// Filter by user_id_lookup (handles both string and array from Airtable lookup)
-		// Airtable lookup may return array, so we use FIND to check if user_id matches
-		// Note: Airtable FIND is case-sensitive, user_id should be exact match
-		filters.push(`FIND("${user.id}", {${LOOKUP_FIELDS.user_id_lookup}}) > 0`);
+		// Airtable lookup fields can return arrays when multiple records match
+		// Use field NAME in formula (not ID) - Airtable formulas require field names
+		// Use ARRAYJOIN to convert lookup array to string, then FIND to search
+		// This handles both single values (strings) and arrays correctly
+		// Escape user.id to prevent formula injection
+		const escapedUserId = user.id.replace(/"/g, '""'); // Escape double quotes
+		// ARRAYJOIN converts array to string, FIND searches within it
+		// If lookup returns single value, ARRAYJOIN still works (converts to string)
+		filters.push(`FIND("${escapedUserId}", ARRAYJOIN({${LOOKUP_FIELD_NAMES.user_id_lookup}}, ",")) > 0`);
 		
 		// Add content_brief_id filter if provided
 		if (contentBriefId) {
@@ -113,13 +132,14 @@ export async function GET(request: Request) {
 
 		// SINGLE Airtable call: Fetch ContentQueue with lookup fields
 		// No BrandProfiles queries needed - brand_name_lookup and user_id_lookup are included
+		// IMPORTANT: Use field NAMES in fields[] parameter, responses will be keyed by field IDs
 		const records = await listRecords({
 			table: TABLE_ID,
 			filterByFormula: filters.length > 0 ? `AND(${filters.join(',')})` : undefined,
 			sort: [{ field: 'created_time', direction: 'desc' }],
 			pageSize: 100,
 			fields: [
-				// Content fields
+				// Content fields (use field names)
 				'platform',
 				'status',
 				'hook', // Title/hook
@@ -141,13 +161,15 @@ export async function GET(request: Request) {
 				'call_to_action',
 				'summary',
 				'content_type',
-				// Lookup fields (use field IDs)
-				LOOKUP_FIELDS.brand_name_lookup,
-				LOOKUP_FIELDS.user_id_lookup,
-				LOOKUP_FIELDS.timezone_lookup,
-				LOOKUP_FIELDS.language_region_lookup,
-				LOOKUP_FIELDS.spelling_variant_lookup,
+				// Lookup fields (use field NAMES, not IDs)
+				LOOKUP_FIELD_NAMES.brand_name_lookup,
+				LOOKUP_FIELD_NAMES.user_id_lookup,
+				LOOKUP_FIELD_NAMES.timezone_lookup,
+				LOOKUP_FIELD_NAMES.language_region_lookup,
+				LOOKUP_FIELD_NAMES.spelling_variant_lookup,
 			],
+			returnFieldsByFieldId: true, // Get responses keyed by field IDs
+			endpoint: '/api/content/queue',
 		});
 
 		console.log(`[Content Queue API] Fetched ${records.length} content records in 1 Airtable call`);
@@ -194,7 +216,8 @@ export async function GET(request: Request) {
 			}
 
 			// Use brand_name_lookup (normalize from array if needed)
-			const brandName = normalizeLookup(fields[LOOKUP_FIELDS.brand_name_lookup]) || 'Unknown Brand';
+			// Access by field ID since returnFieldsByFieldId=true
+			const brandName = normalizeLookup(fields[LOOKUP_FIELD_IDS.brand_name_lookup]) || 'Unknown Brand';
 
 			return {
 				id: record.id,
