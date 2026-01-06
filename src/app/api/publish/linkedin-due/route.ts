@@ -44,6 +44,14 @@ const LOOKUP_FIELD_NAMES = {
 	brand_name_lookup: CONTENTQUEUE_LOOKUP_FIELDS.brand_name_lookup.name,
 } as const;
 
+/**
+ * ContentQueue Field IDs (for accessing responses when returnFieldsByFieldId=true)
+ * These are the actual field IDs from Airtable
+ */
+const CONTENTQUEUE_FIELD_IDS = {
+	brand_profile_id: 'fldqCh274V2Ih2PPS', // Link field ID for brand_profile_id
+} as const;
+
 // Helper function to mark connection as needing reauth and send notification
 async function markConnectionNeedsReauthAndNotify(
 	admin: ReturnType<typeof getSupabaseService>,
@@ -351,26 +359,30 @@ async function publishDueContent(): Promise<{
 			}
 
 			// Get brand_profile_id from link field
+			// IMPORTANT: With returnFieldsByFieldId=true, we must access by field ID, not name
+			// The field ID for brand_profile_id is fldqCh274V2Ih2PPS
+			const brandProfileIdField = (fields as any)[CONTENTQUEUE_FIELD_IDS.brand_profile_id] || fields.brand_profile_id;
+			
 			// Airtable link fields can be arrays (multiple links) or single values
-			if (fields.brand_profile_id) {
-				if (Array.isArray(fields.brand_profile_id)) {
+			if (brandProfileIdField) {
+				if (Array.isArray(brandProfileIdField)) {
 					// Link field returns array - get first linked record ID
-					const firstLink = fields.brand_profile_id[0];
+					const firstLink: any = brandProfileIdField[0];
 					if (typeof firstLink === 'string') {
 						brandProfileId = firstLink;
 					} else if (firstLink && typeof firstLink === 'object' && 'id' in firstLink) {
-						brandProfileId = String(firstLink.id);
+						brandProfileId = String((firstLink as any).id);
 					} else if (firstLink) {
 						brandProfileId = String(firstLink);
 					} else {
 						brandProfileId = null;
 					}
-				} else if (typeof fields.brand_profile_id === 'string') {
-					brandProfileId = fields.brand_profile_id;
-				} else if (fields.brand_profile_id && typeof fields.brand_profile_id === 'object' && 'id' in fields.brand_profile_id) {
-					brandProfileId = String(fields.brand_profile_id.id);
+				} else if (typeof brandProfileIdField === 'string') {
+					brandProfileId = brandProfileIdField;
+				} else if (brandProfileIdField && typeof brandProfileIdField === 'object' && 'id' in (brandProfileIdField as any)) {
+					brandProfileId = String((brandProfileIdField as any).id);
 				} else {
-					brandProfileId = String(fields.brand_profile_id);
+					brandProfileId = String(brandProfileIdField);
 				}
 			} else {
 				brandProfileId = null;
