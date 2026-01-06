@@ -69,7 +69,7 @@ export const BRANDPROFILES_ROLLUP_FIELDS = {
 	},
 	ready_to_publish_count: {
 		id: 'fldlwGSMBUH7OPbjM',
-		name: 'ready_to_publish_count', // TODO: Replace with actual field name from Airtable UI
+		name: 'is_ready_to_publish_count', // Actual field name from Airtable
 	},
 	scheduled_count: {
 		id: 'fldbmS3KCkSmUw5vn',
