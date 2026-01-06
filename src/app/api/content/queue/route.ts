@@ -31,6 +31,47 @@ const LOOKUP_FIELD_NAMES = {
 } as const;
 
 /**
+ * ContentQueue Field IDs (for accessing responses when returnFieldsByFieldId=true)
+ * Field ID to Field Name mapping (from Airtable):
+ * fldtucAvhPkP0ZWY7 = "client_name"
+ * fldDHJ0Rx7Rbzlu4a = "brand_name_lookup"
+ * fldXszK9zI99mukqB = "user_id_lookup"
+ * fldY4TjWWgthnDiw4 = "platform"
+ * fldWqjs9EVHNJjV37 = "topic_bucket"
+ * fldVPEPwwoyfEmjIn = "hook"
+ * fldxVHLUkrlcxx7Ua = "post_content"
+ * fldixSg2juCZLJ7R7 = "hashtags"
+ * fldapoV6GTKnQkzD4 = "image_prompt"
+ * fldYU7HnycHcwrUFH = "status"
+ * fld7ePgW2x14v5e4o = "scheduled_time"
+ * fldnI4lMIwnC6jZbo = "scheduled_timezone"
+ * fldumyzHN5hyImgti = "created_time"
+ * flduEbzJOpC8HYuJn = "last_modified"
+ * fldR5AZaDc07gArxv = "publish_text"
+ * flduUgRnky0IgKH5K = "record_id"
+ * fldqCh274V2Ih2PPS = "brand_profile_id"
+ */
+const CONTENTQUEUE_FIELD_IDS = {
+	// Core fields
+	platform: 'fldY4TjWWgthnDiw4',
+	status: 'fldYU7HnycHcwrUFH',
+	hook: 'fldVPEPwwoyfEmjIn',
+	post_content: 'fldxVHLUkrlcxx7Ua',
+	hashtags: 'fldixSg2juCZLJ7R7',
+	scheduled_time: 'fld7ePgW2x14v5e4o',
+	scheduled_timezone: 'fldnI4lMIwnC6jZbo',
+	image_prompt: 'fldapoV6GTKnQkzD4',
+	brand_profile_id: 'fldqCh274V2Ih2PPS',
+	created_time: 'fldumyzHN5hyImgti',
+	last_modified: 'flduEbzJOpC8HYuJn',
+	// Additional fields
+	client_name: 'fldtucAvhPkP0ZWY7',
+	topic_bucket: 'fldWqjs9EVHNJjV37',
+	publish_text: 'fldR5AZaDc07gArxv',
+	record_id: 'flduUgRnky0IgKH5K',
+} as const;
+
+/**
  * Helper to get field value by ID or name (for backward compatibility)
  * When returnFieldsByFieldId=true, fields are keyed by ID, not name
  * This helper tries ID first, then falls back to name
@@ -153,27 +194,27 @@ export async function GET(request: Request) {
 			sort: [{ field: 'created_time', direction: 'desc' }],
 			pageSize: 100,
 			fields: [
-				// Content fields (use field names - these are sent to Airtable API)
+				// Content fields (use exact field names from Airtable - these are sent to Airtable API)
+				// Only include fields that actually exist in your Airtable table
 				'platform',
 				'status',
-				'hook', // Title/hook
-				'post_content', // Main content field (NOT 'content' - that field doesn't exist)
-				'body_draft',
-				'post_title',
+				'hook',
+				'post_content',
 				'hashtags',
 				'scheduled_time',
-				'published_at',
-				'brand_profile_id', // Link field (if needed)
-				'content_brief_id', // For traceability
+				'brand_profile_id',
+				'image_prompt',
 				'created_time',
-				'updated_time',
+				'last_modified',
+				// Optional fields (only include if they exist in your Airtable table)
+				'published_at',
 				'image_reference_url',
 				'image_cloudinary_id',
-				'image_prompt',
 				'image_generation_source',
 				'call_to_action',
 				'summary',
 				'content_type',
+				'publish_text',
 				// Lookup fields (use field NAMES, not IDs)
 				LOOKUP_FIELD_NAMES.brand_name_lookup,
 				LOOKUP_FIELD_NAMES.user_id_lookup,
@@ -240,25 +281,25 @@ export async function GET(request: Request) {
 
 			return {
 				id: record.id,
-				title: getField('hook') || getField('title') || getField('post_title') || 'Untitled',
-				platform: getField('platform') || 'Blog',
-				status: getField('status') || 'Draft',
+				title: getField('hook', CONTENTQUEUE_FIELD_IDS.hook) || getField('title') || getField('post_title') || 'Untitled',
+				platform: getField('platform', CONTENTQUEUE_FIELD_IDS.platform) || 'Blog',
+				status: getField('status', CONTENTQUEUE_FIELD_IDS.status) || 'Draft',
 				content_type: getField('content_type') || 'Post',
-				scheduled_date: getField('scheduled_time') || getField('scheduled_date') || null,
+				scheduled_date: getField('scheduled_time', CONTENTQUEUE_FIELD_IDS.scheduled_time) || getField('scheduled_date') || null,
 				published_at: getField('published_at') || null,
 				brand_profile_id: brandProfileId,
 				brand_name: brandName,
-				// IMPORTANT: 'content' field doesn't exist - only use post_content, post_body as fallback
-				content: getField('post_content') || getField('post_body') || '',
+				// IMPORTANT: 'content' field doesn't exist - only use post_content
+				content: getField('post_content', CONTENTQUEUE_FIELD_IDS.post_content) || getField('post_body') || '',
 				summary: getField('summary') || getField('content_summary') || '',
 				call_to_action: getField('call_to_action') || '',
-				hashtags: getField('hashtags') || '',
-				image_prompt: getField('image_prompt') || '',
+				hashtags: getField('hashtags', CONTENTQUEUE_FIELD_IDS.hashtags) || '',
+				image_prompt: getField('image_prompt', CONTENTQUEUE_FIELD_IDS.image_prompt) || '',
 				image_generation_source: getField('image_generation_source') || '',
 				image_reference_url: getField('image_reference_url') || '',
 				image_cloudinary_id: getField('image_cloudinary_id') || '',
-				created_time: getField('created_time') || record.createdTime,
-				updated_time: getField('last_modified_time') || getField('updated_time') || null,
+				created_time: getField('created_time', CONTENTQUEUE_FIELD_IDS.created_time) || record.createdTime,
+				updated_time: getField('last_modified', CONTENTQUEUE_FIELD_IDS.last_modified) || getField('updated_time') || null,
 			};
 		});
 

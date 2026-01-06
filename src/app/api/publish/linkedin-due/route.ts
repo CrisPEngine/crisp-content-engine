@@ -48,11 +48,44 @@ const LOOKUP_FIELD_NAMES = {
  * ContentQueue Field IDs (for accessing responses when returnFieldsByFieldId=true)
  * These are the actual field IDs from Airtable
  * IMPORTANT: When returnFieldsByFieldId=true, ALL fields are keyed by IDs, not names
+ * 
+ * Field ID to Field Name mapping (from Airtable):
+ * fldtucAvhPkP0ZWY7 = "client_name"
+ * fldDHJ0Rx7Rbzlu4a = "brand_name_lookup"
+ * fldXszK9zI99mukqB = "user_id_lookup"
+ * fldY4TjWWgthnDiw4 = "platform"
+ * fldWqjs9EVHNJjV37 = "topic_bucket"
+ * fldVPEPwwoyfEmjIn = "hook"
+ * fldxVHLUkrlcxx7Ua = "post_content"
+ * fldixSg2juCZLJ7R7 = "hashtags"
+ * fldapoV6GTKnQkzD4 = "image_prompt"
+ * fldYU7HnycHcwrUFH = "status"
+ * fld7ePgW2x14v5e4o = "scheduled_time"
+ * fldnI4lMIwnC6jZbo = "scheduled_timezone"
+ * fldumyzHN5hyImgti = "created_time"
+ * flduEbzJOpC8HYuJn = "last_modified"
+ * fldR5AZaDc07gArxv = "publish_text"
+ * flduUgRnky0IgKH5K = "record_id"
+ * fldqCh274V2Ih2PPS = "brand_profile_id"
  */
 const CONTENTQUEUE_FIELD_IDS = {
-	brand_profile_id: 'fldqCh274V2Ih2PPS', // Link field ID for brand_profile_id
-	post_content: 'fldxVHLUkrlcxx7Ua', // post_content field ID
-	// Add more field IDs as needed - these are the ones we know about
+	// Core fields
+	platform: 'fldY4TjWWgthnDiw4',
+	status: 'fldYU7HnycHcwrUFH',
+	hook: 'fldVPEPwwoyfEmjIn',
+	post_content: 'fldxVHLUkrlcxx7Ua',
+	hashtags: 'fldixSg2juCZLJ7R7',
+	scheduled_time: 'fld7ePgW2x14v5e4o',
+	scheduled_timezone: 'fldnI4lMIwnC6jZbo',
+	image_prompt: 'fldapoV6GTKnQkzD4',
+	brand_profile_id: 'fldqCh274V2Ih2PPS',
+	created_time: 'fldumyzHN5hyImgti',
+	last_modified: 'flduEbzJOpC8HYuJn',
+	// Additional fields
+	client_name: 'fldtucAvhPkP0ZWY7',
+	topic_bucket: 'fldWqjs9EVHNJjV37',
+	publish_text: 'fldR5AZaDc07gArxv',
+	record_id: 'flduUgRnky0IgKH5K',
 } as const;
 
 /**
@@ -283,6 +316,7 @@ async function publishDueContent(): Promise<{
 		filterByFormula: filterFormula,
 		maxRecords: 100,
 		fields: [
+			// Core content fields (use exact field names from Airtable)
 			'platform',
 			'status',
 			'hook',
@@ -327,7 +361,7 @@ async function publishDueContent(): Promise<{
 				console.log(`[Publish Job] Record ${record.id} already has published info, syncing status instead of publishing`);
 				
 				// Queue status update to Published if it's not already
-				const status = getField('status');
+				const status = getField('status', CONTENTQUEUE_FIELD_IDS.status);
 				if (status !== 'Published') {
 					updateQueue.push({
 						id: record.id,
@@ -344,10 +378,10 @@ async function publishDueContent(): Promise<{
 			}
 
 			// Check if content is due (scheduled_time is in UTC)
-			const scheduledTime = getField('scheduled_time');
+			const scheduledTime = getField('scheduled_time', CONTENTQUEUE_FIELD_IDS.scheduled_time);
 			const isDue = isContentDue(scheduledTime);
 			const now = new Date().toISOString();
-			const hook = getField('hook') || '';
+			const hook = getField('hook', CONTENTQUEUE_FIELD_IDS.hook) || '';
 			
 			console.log(`[Publish Job] Record ${record.id}:`, {
 				scheduled_time: scheduledTime,
@@ -493,9 +527,9 @@ async function publishDueContent(): Promise<{
 
 			// Build content
 			// IMPORTANT: Access fields by ID (returnFieldsByFieldId=true) with fallback to name
-			const title = getField('hook') || getField('post_title') || getField('title') || '';
-			const body = getField('post_content', CONTENTQUEUE_FIELD_IDS.post_content) || getField('content') || getField('post_body') || '';
-			const hashtags = getField('hashtags') || '';
+			const title = getField('hook', CONTENTQUEUE_FIELD_IDS.hook) || getField('post_title') || getField('title') || '';
+			const body = getField('post_content', CONTENTQUEUE_FIELD_IDS.post_content) || getField('post_body') || '';
+			const hashtags = getField('hashtags', CONTENTQUEUE_FIELD_IDS.hashtags) || '';
 
 			if (!body.trim()) {
 				updateQueue.push({
