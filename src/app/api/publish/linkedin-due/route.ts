@@ -356,10 +356,18 @@ async function publishDueContent(): Promise<{
 				if (Array.isArray(fields.brand_profile_id)) {
 					// Link field returns array - get first linked record ID
 					const firstLink = fields.brand_profile_id[0];
-					brandProfileId = typeof firstLink === 'string' ? firstLink : (firstLink?.id || String(firstLink));
+					if (typeof firstLink === 'string') {
+						brandProfileId = firstLink;
+					} else if (firstLink && typeof firstLink === 'object' && 'id' in firstLink) {
+						brandProfileId = String(firstLink.id);
+					} else if (firstLink) {
+						brandProfileId = String(firstLink);
+					} else {
+						brandProfileId = null;
+					}
 				} else if (typeof fields.brand_profile_id === 'string') {
 					brandProfileId = fields.brand_profile_id;
-				} else if (fields.brand_profile_id?.id) {
+				} else if (fields.brand_profile_id && typeof fields.brand_profile_id === 'object' && 'id' in fields.brand_profile_id) {
 					brandProfileId = String(fields.brand_profile_id.id);
 				} else {
 					brandProfileId = String(fields.brand_profile_id);
