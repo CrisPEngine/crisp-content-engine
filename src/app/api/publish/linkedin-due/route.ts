@@ -174,11 +174,21 @@ function isContentDue(scheduledTime: string | null | undefined): boolean {
 		// If that fails, try parsing as a date string (e.g., "7/1/2026 09:00")
 		if (isNaN(scheduledDate.getTime())) {
 			// Try parsing as date string with time
+			// Format could be MM/DD/YYYY HH:MM (US) or DD/MM/YYYY HH:MM (EU)
 			const dateParts = scheduledTime.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})/);
 			if (dateParts) {
-				// Format: MM/DD/YYYY HH:MM
-				const [, month, day, year, hour, minute] = dateParts;
+				const [, part1, part2, year, hour, minute] = dateParts;
+				// Airtable typically uses MM/DD/YYYY format for US bases
+				// Try MM/DD first, if that creates invalid date, try DD/MM
+				const month = part1;
+				const day = part2;
 				scheduledDate = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${minute}:00Z`);
+				
+				// Validate: if month > 12, it's likely DD/MM format
+				if (parseInt(month) > 12) {
+					// Swap: it's DD/MM format
+					scheduledDate = new Date(`${year}-${day.padStart(2, '0')}-${month.padStart(2, '0')}T${hour.padStart(2, '0')}:${minute}:00Z`);
+				}
 			} else {
 				// Try other common formats
 				scheduledDate = new Date(scheduledTime);
@@ -341,9 +351,22 @@ async function publishDueContent(): Promise<{
 			}
 
 			// Get brand_profile_id from link field
-			brandProfileId = Array.isArray(fields.brand_profile_id)
-				? (fields.brand_profile_id[0] || null)
-				: (fields.brand_profile_id || null);
+			// Airtable link fields can be arrays (multiple links) or single values
+			if (fields.brand_profile_id) {
+				if (Array.isArray(fields.brand_profile_id)) {
+					// Link field returns array - get first linked record ID
+					const firstLink = fields.brand_profile_id[0];
+					brandProfileId = typeof firstLink === 'string' ? firstLink : (firstLink?.id || String(firstLink));
+				} else if (typeof fields.brand_profile_id === 'string') {
+					brandProfileId = fields.brand_profile_id;
+				} else if (fields.brand_profile_id?.id) {
+					brandProfileId = String(fields.brand_profile_id.id);
+				} else {
+					brandProfileId = String(fields.brand_profile_id);
+				}
+			} else {
+				brandProfileId = null;
+			}
 
 			if (!brandProfileId) {
 				// Queue for batch update
@@ -351,7 +374,7 @@ async function publishDueContent(): Promise<{
 					id: record.id,
 					fields: {
 						status: 'Failed',
-						publish_error: 'No brand_profile_id found',
+						publish_error: 'No brand_profile_id found. Please link this content to a brand profile in Airtable.',
 						publish_attempts: (fields.publish_attempts || 0) + 1,
 					},
 				});
