@@ -28,23 +28,23 @@ export const CONTENTQUEUE_LOOKUP_FIELDS = {
 	// Field ID -> Field Name mapping
 	brand_name_lookup: {
 		id: 'fldDHJ0Rx7Rbzlu4a',
-		name: 'brand_name_lookup', // TODO: Replace with actual field name from Airtable UI
+		name: 'brand_name_lookup', // Actual field name from Airtable
 	},
 	user_id_lookup: {
 		id: 'fldXszK9zI99mukqB',
-		name: 'user_id_lookup', // TODO: Replace with actual field name from Airtable UI
+		name: 'user_id_lookup', // Actual field name from Airtable
 	},
 	timezone_lookup: {
 		id: 'fldekIgjL6u1GnLbo',
-		name: 'timezone_lookup', // TODO: Replace with actual field name from Airtable UI
+		name: 'timezone_lookup', // Actual field name from Airtable
 	},
 	language_region_lookup: {
 		id: 'fldflM0OxGiaxwVMt',
-		name: 'language_region_lookup', // TODO: Replace with actual field name from Airtable UI
+		name: 'language_region_lookup', // Actual field name from Airtable
 	},
 	spelling_variant_lookup: {
 		id: 'fldA4YS26SIbZd7Xs',
-		name: 'spelling_variant_lookup', // TODO: Replace with actual field name from Airtable UI
+		name: 'spelling_variant_lookup', // Actual field name from Airtable
 	},
 } as const;
 
@@ -65,7 +65,7 @@ export const CONTENTQUEUE_LOOKUP_FIELDS = {
 export const BRANDPROFILES_ROLLUP_FIELDS = {
 	needs_approval_count: {
 		id: 'fldoVhwdnORrAzGte',
-		name: 'needs_approval_count', // TODO: Replace with actual field name from Airtable UI
+		name: 'needs_approval_count', // Actual field name from Airtable
 	},
 	ready_to_publish_count: {
 		id: 'fldlwGSMBUH7OPbjM',
@@ -73,11 +73,11 @@ export const BRANDPROFILES_ROLLUP_FIELDS = {
 	},
 	scheduled_count: {
 		id: 'fldbmS3KCkSmUw5vn',
-		name: 'scheduled_count', // TODO: Replace with actual field name from Airtable UI
+		name: 'is_scheduled_count', // Actual field name from Airtable
 	},
 	published_count: {
 		id: 'fldWwrVyniwGMCS7z',
-		name: 'published_count', // TODO: Replace with actual field name from Airtable UI
+		name: 'is_published_count', // Actual field name from Airtable
 	},
 } as const;
 
