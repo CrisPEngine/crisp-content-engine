@@ -80,21 +80,13 @@ export async function GET(req: Request) {
 				'strategy_meta',
 			];
 			
-			// Filter out placeholder names - if name matches the key, it's still a placeholder
-			// Real field names from Airtable will be different (e.g., "Needs Approval Count" vs "needs_approval_count")
+			// Include all rollup fields - they now have actual field names from Airtable
 			const rollupFieldNames = [
 				ROLLUP_FIELD_NAMES.needs_approval_count,
 				ROLLUP_FIELD_NAMES.ready_to_publish_count,
 				ROLLUP_FIELD_NAMES.scheduled_count,
 				ROLLUP_FIELD_NAMES.published_count,
-			].filter(name => {
-				// If name still matches the placeholder pattern, skip it
-				return name && 
-					name !== 'needs_approval_count' && 
-					name !== 'ready_to_publish_count' && 
-					name !== 'scheduled_count' && 
-					name !== 'published_count';
-			});
+			].filter(Boolean); // Filter out any undefined/null values
 			
 			let records;
 			try {
