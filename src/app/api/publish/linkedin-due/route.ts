@@ -165,7 +165,26 @@ function isContentDue(scheduledTime: string | null | undefined): boolean {
 
 	try {
 		// Parse scheduled_time (Airtable returns ISO string in UTC)
-		const scheduledDate = new Date(scheduledTime);
+		// Handle various date formats that Airtable might return
+		let scheduledDate: Date;
+		
+		// Try parsing as-is first (ISO format)
+		scheduledDate = new Date(scheduledTime);
+		
+		// If that fails, try parsing as a date string (e.g., "7/1/2026 09:00")
+		if (isNaN(scheduledDate.getTime())) {
+			// Try parsing as date string with time
+			const dateParts = scheduledTime.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})/);
+			if (dateParts) {
+				// Format: MM/DD/YYYY HH:MM
+				const [, month, day, year, hour, minute] = dateParts;
+				scheduledDate = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${minute}:00Z`);
+			} else {
+				// Try other common formats
+				scheduledDate = new Date(scheduledTime);
+			}
+		}
+
 		const now = new Date();
 
 		// Check if scheduled date is valid
@@ -179,7 +198,7 @@ function isContentDue(scheduledTime: string | null | undefined): boolean {
 		const bufferMs = 60 * 1000; // 1 minute
 		const isDue = now.getTime() >= (scheduledDate.getTime() - bufferMs);
 		
-		console.log(`[isContentDue] scheduledTime=${scheduledTime}, scheduledDate=${scheduledDate.toISOString()}, now=${now.toISOString()}, isDue=${isDue}`);
+		console.log(`[isContentDue] scheduledTime=${scheduledTime}, scheduledDate=${scheduledDate.toISOString()}, now=${now.toISOString()}, isDue=${isDue}, timeDiff=${(scheduledDate.getTime() - now.getTime()) / 1000 / 60} minutes`);
 		
 		return isDue;
 	} catch (error) {
@@ -215,6 +234,8 @@ async function publishDueContent(): Promise<{
 	const updateQueue: Array<{ id: string; fields: Record<string, any> }> = []; // Batch update queue
 
 	// Filter for LinkedIn posts that are Ready To Publish with low attempt count
+	// Note: We don't filter by scheduled_time here because Airtable date comparisons can be tricky
+	// We'll check scheduled_time in code after fetching to ensure accurate date parsing
 	const filterFormula = `AND(
 		{platform} = "LinkedIn",
 		{status} = "Ready To Publish",
