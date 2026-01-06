@@ -69,30 +69,62 @@ export async function GET(req: Request) {
 		// No additional ContentQueue queries needed - counts come from rollups
 		// IMPORTANT: Use field NAMES in fields[] parameter, responses will be keyed by field IDs
 		try {
-			// Build fields array - use strategy_json (actual field name in Airtable)
-			// Note: Some legacy records may have strategy_payload, but we read that as fallback
-			const records = await listRecords({
-				table: TABLE_ID,
-				filterByFormula: `{user_id} = "${user.id}"`,
-				sort: [{ field: 'created_time', direction: 'desc' }],
-				fields: [
-					'client_name', // Primary name field
-					'status',
-					'created_time',
-					'platforms_requested',
-					'strategy_summary',
-					'strategy_json', // Actual field name (not strategy_payload)
-					'strategy_meta',
-					// Rollup fields (use field NAMES, not IDs)
-					ROLLUP_FIELD_NAMES.needs_approval_count,
-					ROLLUP_FIELD_NAMES.ready_to_publish_count,
-					ROLLUP_FIELD_NAMES.scheduled_count,
-					ROLLUP_FIELD_NAMES.published_count,
-				],
-				cache: true, // Enable caching for BrandProfiles
-				returnFieldsByFieldId: true, // Get responses keyed by field IDs
-				endpoint: '/api/brands',
+			// Base fields that should always exist
+			const baseFields = [
+				'client_name', // Primary name field
+				'status',
+				'created_time',
+				'platforms_requested',
+				'strategy_summary',
+				'strategy_json', // Actual field name (not strategy_payload)
+				'strategy_meta',
+			];
+			
+			// Filter out placeholder names - if name matches the key, it's still a placeholder
+			// Real field names from Airtable will be different (e.g., "Needs Approval Count" vs "needs_approval_count")
+			const rollupFieldNames = [
+				ROLLUP_FIELD_NAMES.needs_approval_count,
+				ROLLUP_FIELD_NAMES.ready_to_publish_count,
+				ROLLUP_FIELD_NAMES.scheduled_count,
+				ROLLUP_FIELD_NAMES.published_count,
+			].filter(name => {
+				// If name still matches the placeholder pattern, skip it
+				return name && 
+					name !== 'needs_approval_count' && 
+					name !== 'ready_to_publish_count' && 
+					name !== 'scheduled_count' && 
+					name !== 'published_count';
 			});
+			
+			let records;
+			try {
+				// First try with all fields including rollups (if they exist)
+				records = await listRecords({
+					table: TABLE_ID,
+					filterByFormula: `{user_id} = "${user.id}"`,
+					sort: [{ field: 'created_time', direction: 'desc' }],
+					fields: rollupFieldNames.length > 0 ? [...baseFields, ...rollupFieldNames] : baseFields,
+					cache: true,
+					returnFieldsByFieldId: true,
+					endpoint: '/api/brands',
+				});
+			} catch (error: any) {
+				// If rollup fields don't exist, fetch without them
+				if (error?.message?.includes('UNKNOWN_FIELD_NAME')) {
+					console.warn('[Brands API] Some rollup fields not found, fetching without them. Please update field-mapping.ts with actual field names.');
+					records = await listRecords({
+						table: TABLE_ID,
+						filterByFormula: `{user_id} = "${user.id}"`,
+						sort: [{ field: 'created_time', direction: 'desc' }],
+						fields: baseFields,
+						cache: true,
+						returnFieldsByFieldId: true,
+						endpoint: '/api/brands',
+					});
+				} else {
+					throw error; // Re-throw if it's a different error
+				}
+			}
 
 			const normaliseStatus = (status: string | undefined) => {
 				if (status === 'Strategy Ready (Awaiting Approval)') return 'Strategy Ready';
@@ -107,9 +139,10 @@ export async function GET(req: Request) {
 				// Use rollup counts to determine if there's pending content
 				// has_pending_content = true if any count > 0 (except published)
 				// Access by field ID since returnFieldsByFieldId=true
-				const needsApproval = Number(fields[ROLLUP_FIELD_IDS.needs_approval_count] || 0) > 0;
-				const readyToPublish = Number(fields[ROLLUP_FIELD_IDS.ready_to_publish_count] || 0) > 0;
-				const scheduled = Number(fields[ROLLUP_FIELD_IDS.scheduled_count] || 0) > 0;
+				// Rollup fields may not exist, so safely access them
+				const needsApproval = Number((fields as any)[ROLLUP_FIELD_IDS.needs_approval_count] || 0) > 0;
+				const readyToPublish = Number((fields as any)[ROLLUP_FIELD_IDS.ready_to_publish_count] || 0) > 0;
+				const scheduled = Number((fields as any)[ROLLUP_FIELD_IDS.scheduled_count] || 0) > 0;
 				const hasPendingContent = needsApproval || readyToPublish || scheduled;
 
 				return {
@@ -124,11 +157,11 @@ export async function GET(req: Request) {
 					// Use strategy_json (actual field name), fallback to strategy_payload for legacy records
 					strategy_payload: fields.strategy_json || fields.strategy_payload || null,
 					strategy_meta: fields.strategy_meta || null,
-					// Include rollup counts for UI display (access by field ID)
-					needs_approval_count: Number(fields[ROLLUP_FIELD_IDS.needs_approval_count] || 0),
-					ready_to_publish_count: Number(fields[ROLLUP_FIELD_IDS.ready_to_publish_count] || 0),
-					scheduled_count: Number(fields[ROLLUP_FIELD_IDS.scheduled_count] || 0),
-					published_count: Number(fields[ROLLUP_FIELD_IDS.published_count] || 0),
+					// Include rollup counts for UI display (access by field ID, default to 0 if missing)
+					needs_approval_count: Number((fields as any)[ROLLUP_FIELD_IDS.needs_approval_count] || 0),
+					ready_to_publish_count: Number((fields as any)[ROLLUP_FIELD_IDS.ready_to_publish_count] || 0),
+					scheduled_count: Number((fields as any)[ROLLUP_FIELD_IDS.scheduled_count] || 0),
+					published_count: Number((fields as any)[ROLLUP_FIELD_IDS.published_count] || 0),
 				};
 			});
 
