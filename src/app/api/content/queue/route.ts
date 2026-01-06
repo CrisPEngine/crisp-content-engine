@@ -30,6 +30,20 @@ const LOOKUP_FIELD_NAMES = {
 	spelling_variant_lookup: CONTENTQUEUE_LOOKUP_FIELDS.spelling_variant_lookup.name,
 } as const;
 
+/**
+ * Helper to get field value by ID or name (for backward compatibility)
+ * When returnFieldsByFieldId=true, fields are keyed by ID, not name
+ * This helper tries ID first, then falls back to name
+ */
+function getFieldValue(fields: any, fieldId: string | undefined, fieldName: string): any {
+	if (!fieldId) {
+		// No field ID provided, use name only
+		return fields[fieldName];
+	}
+	// Try field ID first (when returnFieldsByFieldId=true), then fallback to name
+	return fields[fieldId] ?? fields[fieldName];
+}
+
 const mapStatuses = (stage: string | null, statusParam: string | null) => {
 	if (statusParam) {
 		return statusParam
@@ -139,12 +153,11 @@ export async function GET(request: Request) {
 			sort: [{ field: 'created_time', direction: 'desc' }],
 			pageSize: 100,
 			fields: [
-				// Content fields (use field names)
+				// Content fields (use field names - these are sent to Airtable API)
 				'platform',
 				'status',
 				'hook', // Title/hook
-				'post_content',
-				'content', // Alternative content field
+				'post_content', // Main content field (NOT 'content' - that field doesn't exist)
 				'body_draft',
 				'post_title',
 				'hashtags',
@@ -200,18 +213,24 @@ export async function GET(request: Request) {
 		let items: ContentItem[] = records.map((record: any) => {
 			const fields = record.fields || {};
 			
+			// Helper to access fields - try by ID first (returnFieldsByFieldId=true), then by name
+			// Note: We don't have field IDs for all regular fields, so we rely on name fallback
+			const getField = (fieldName: string, fieldId?: string) => getFieldValue(fields, fieldId, fieldName);
+			
 			// Extract brand_profile_id - could be a link field (array) or string
+			// With returnFieldsByFieldId=true, we need to check both ID and name
+			const brandProfileIdField = getField('brand_profile_id');
 			let brandProfileId: string | null = null;
-			if (fields.brand_profile_id) {
-				if (Array.isArray(fields.brand_profile_id)) {
-					const firstItem = fields.brand_profile_id[0];
+			if (brandProfileIdField) {
+				if (Array.isArray(brandProfileIdField)) {
+					const firstItem = brandProfileIdField[0];
 					if (firstItem) {
 						brandProfileId = typeof firstItem === 'string' ? firstItem : (firstItem?.id || String(firstItem));
 					}
-				} else if (typeof fields.brand_profile_id === 'string') {
-					brandProfileId = fields.brand_profile_id;
-				} else if (fields.brand_profile_id?.id) {
-					brandProfileId = String(fields.brand_profile_id.id);
+				} else if (typeof brandProfileIdField === 'string') {
+					brandProfileId = brandProfileIdField;
+				} else if (brandProfileIdField?.id) {
+					brandProfileId = String(brandProfileIdField.id);
 				}
 			}
 
@@ -221,24 +240,25 @@ export async function GET(request: Request) {
 
 			return {
 				id: record.id,
-				title: fields.hook || fields.title || fields.post_title || 'Untitled',
-				platform: fields.platform || 'Blog',
-				status: fields.status || 'Draft',
-				content_type: fields.content_type || 'Post',
-				scheduled_date: fields.scheduled_time || fields.scheduled_date || null,
-				published_at: fields.published_at || null,
+				title: getField('hook') || getField('title') || getField('post_title') || 'Untitled',
+				platform: getField('platform') || 'Blog',
+				status: getField('status') || 'Draft',
+				content_type: getField('content_type') || 'Post',
+				scheduled_date: getField('scheduled_time') || getField('scheduled_date') || null,
+				published_at: getField('published_at') || null,
 				brand_profile_id: brandProfileId,
 				brand_name: brandName,
-				content: fields.post_content || fields.content || fields.post_body || '',
-				summary: fields.summary || fields.content_summary || '',
-				call_to_action: fields.call_to_action || '',
-				hashtags: fields.hashtags || '',
-				image_prompt: fields.image_prompt || '',
-				image_generation_source: fields.image_generation_source || '',
-				image_reference_url: fields.image_reference_url || '',
-				image_cloudinary_id: fields.image_cloudinary_id || '',
-				created_time: fields.created_time || record.createdTime,
-				updated_time: fields.last_modified_time || fields.updated_time || null,
+				// IMPORTANT: 'content' field doesn't exist - only use post_content, post_body as fallback
+				content: getField('post_content') || getField('post_body') || '',
+				summary: getField('summary') || getField('content_summary') || '',
+				call_to_action: getField('call_to_action') || '',
+				hashtags: getField('hashtags') || '',
+				image_prompt: getField('image_prompt') || '',
+				image_generation_source: getField('image_generation_source') || '',
+				image_reference_url: getField('image_reference_url') || '',
+				image_cloudinary_id: getField('image_cloudinary_id') || '',
+				created_time: getField('created_time') || record.createdTime,
+				updated_time: getField('last_modified_time') || getField('updated_time') || null,
 			};
 		});
 
