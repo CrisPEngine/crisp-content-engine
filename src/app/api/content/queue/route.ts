@@ -221,12 +221,13 @@ export async function GET(request: Request) {
 				// Optional fields (only include if they exist in your Airtable table)
 				'published_at',
 				'image_reference_url',
-				'image_cloudinary_id',
 				'image_generation_source',
 				'call_to_action',
-				'summary',
-				'content_type',
 				'publish_text',
+				// NOTE: The following fields are NOT in ContentQueue table yet:
+				// 'image_cloudinary_id' - Cloudinary image ID (for future image management)
+				// 'summary' - Content summary/description (for future content previews)
+				// 'content_type' - Type of content like "Post", "Article", "Video" (for future content categorization)
 				// Lookup fields (use field NAMES, not IDs)
 				LOOKUP_FIELD_NAMES.brand_name_lookup,
 				LOOKUP_FIELD_NAMES.user_id_lookup,
