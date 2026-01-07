@@ -138,11 +138,41 @@ export async function GET(req: Request) {
 					return (fields as any)[fieldId] ?? fields[fieldName];
 				};
 				
-				// IMPORTANT: With returnFieldsByFieldId=true, we need field IDs for all fields
-				// For now, we'll try by name as fallback, but we should add field IDs
-				// TODO: Add BrandProfiles field IDs to field-mapping.ts
-				const clientName = getField('client_name');
-				const status = getField('status');
+				// IMPORTANT: With returnFieldsByFieldId=true, ALL fields are keyed by field IDs, not names
+				// We need to access by field ID. Since we don't have BrandProfiles field IDs yet,
+				// we'll try accessing by name as a fallback, but it likely won't work.
+				// The field is probably keyed by something like 'fld...' (field ID)
+				
+				// Try to find client_name by searching all field values
+				// This is a workaround until we have the actual field IDs
+				let clientName: any = undefined;
+				let status: any = undefined;
+				
+				// First, try direct access by name (won't work with returnFieldsByFieldId=true, but worth trying)
+				clientName = fields.client_name;
+				status = fields.status;
+				
+				// If that didn't work, try to find it by value (last resort)
+				// This is inefficient but will work until we have field IDs
+				if (!clientName) {
+					// Log all field keys to help identify the field ID
+					const fieldKeys = Object.keys(fields);
+					console.log(`[Brands API] Record ${record.id} - Field keys (first 10):`, fieldKeys.slice(0, 10));
+					
+					// Try to find a field that looks like a name (string value)
+					// This is a temporary workaround
+					for (const key of fieldKeys) {
+						const value = (fields as any)[key];
+						if (typeof value === 'string' && value.length > 0 && value.length < 100) {
+							// Could be a name - but we can't be sure which field it is
+							// For now, we'll just log it
+							if (key.startsWith('fld')) {
+								console.log(`[Brands API] Found potential name field ${key}:`, value.substring(0, 50));
+							}
+						}
+					}
+				}
+				
 				const normalisedStatus = normaliseStatus(status);
 				
 				// Use rollup counts to determine if there's pending content
