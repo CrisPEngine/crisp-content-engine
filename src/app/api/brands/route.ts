@@ -139,37 +139,73 @@ export async function GET(req: Request) {
 				};
 				
 				// IMPORTANT: With returnFieldsByFieldId=true, ALL fields are keyed by field IDs, not names
-				// We need to access by field ID. Since we don't have BrandProfiles field IDs yet,
-				// we'll try accessing by name as a fallback, but it likely won't work.
-				// The field is probably keyed by something like 'fld...' (field ID)
+				// We need the actual field IDs to access fields. Since we don't have them yet,
+				// we'll iterate through all fields to find the ones we need by their values/characteristics.
 				
-				// Try to find client_name by searching all field values
-				// This is a workaround until we have the actual field IDs
+				// Get all field keys (these are field IDs when returnFieldsByFieldId=true)
+				const fieldKeys = Object.keys(fields);
+				
+				// Try to identify fields by their characteristics
+				// This is a temporary workaround until we have the actual field ID mappings
 				let clientName: any = undefined;
 				let status: any = undefined;
+				let createdTime: any = undefined;
+				let platformsRequested: any = undefined;
+				let strategySummary: any = undefined;
+				let strategyJson: any = undefined;
+				let strategyMeta: any = undefined;
 				
-				// First, try direct access by name (won't work with returnFieldsByFieldId=true, but worth trying)
-				clientName = fields.client_name;
-				status = fields.status;
-				
-				// If that didn't work, try to find it by value (last resort)
-				// This is inefficient but will work until we have field IDs
-				if (!clientName) {
-					// Log all field keys to help identify the field ID
-					const fieldKeys = Object.keys(fields);
-					console.log(`[Brands API] Record ${record.id} - Field keys (first 10):`, fieldKeys.slice(0, 10));
+				// Iterate through fields to find the ones we need
+				for (const fieldId of fieldKeys) {
+					const value = (fields as any)[fieldId];
 					
-					// Try to find a field that looks like a name (string value)
-					// This is a temporary workaround
-					for (const key of fieldKeys) {
-						const value = (fields as any)[key];
-						if (typeof value === 'string' && value.length > 0 && value.length < 100) {
-							// Could be a name - but we can't be sure which field it is
-							// For now, we'll just log it
-							if (key.startsWith('fld')) {
-								console.log(`[Brands API] Found potential name field ${key}:`, value.substring(0, 50));
-							}
+					// client_name: typically a short string (brand name)
+					if (!clientName && typeof value === 'string' && value.length > 0 && value.length < 200 && !value.includes('http')) {
+						// Could be client_name - check if it looks like a brand name
+						// (not a date, not a URL, reasonable length)
+						const isDate = /^\d{4}-\d{2}-\d{2}/.test(value) || /^\d{1,2}\/\d{1,2}\/\d{4}/.test(value);
+						if (!isDate) {
+							clientName = value;
+							console.log(`[Brands API] Identified client_name as field ${fieldId}: ${value.substring(0, 50)}`);
 						}
+					
+					// status: typically one of our known status values
+					} else if (!status && typeof value === 'string' && [
+						'New Brief', 'Strategy Ready', 'Strategy Approved', 'Needs Strategy',
+						'Strategy Ready (Awaiting Approval)', 'Content Review'
+					].some(s => value.includes(s))) {
+						status = value;
+						console.log(`[Brands API] Identified status as field ${fieldId}: ${value}`);
+					
+					// created_time: ISO date string or timestamp
+					} else if (!createdTime && (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) || (value instanceof Date)) {
+						createdTime = value;
+					
+					// platforms_requested: array of strings
+					} else if (!platformsRequested && Array.isArray(value) && value.length > 0 && typeof value[0] === 'string') {
+						platformsRequested = value;
+					
+					// strategy_summary: longer text string
+					} else if (!strategySummary && typeof value === 'string' && value.length > 50) {
+						strategySummary = value;
+					
+					// strategy_json: object or JSON string
+					} else if (!strategyJson && (typeof value === 'object' || (typeof value === 'string' && value.startsWith('{')))) {
+						strategyJson = value;
+					
+					// strategy_meta: object
+					} else if (!strategyMeta && typeof value === 'object' && value !== null && !Array.isArray(value)) {
+						strategyMeta = value;
+					}
+				}
+				
+				// Log if we couldn't find client_name
+				if (!clientName && record.id) {
+					console.warn(`[Brands API] Could not identify client_name for record ${record.id}. Field keys:`, fieldKeys.slice(0, 10));
+					// Log all field values to help identify
+					for (const fieldId of fieldKeys.slice(0, 5)) {
+						const value = (fields as any)[fieldId];
+						console.log(`[Brands API] Field ${fieldId}:`, typeof value === 'string' ? value.substring(0, 100) : value);
 					}
 				}
 				
@@ -190,12 +226,12 @@ export async function GET(req: Request) {
 					status: normalisedStatus,
 					original_status: normalisedStatus,
 					has_pending_content: hasPendingContent,
-					created_time: getField('created_time') || record.createdTime,
-					platforms_requested: getField('platforms_requested') || [],
-					strategy_summary: getField('strategy_summary') || '',
+					created_time: createdTime || record.createdTime,
+					platforms_requested: platformsRequested || [],
+					strategy_summary: strategySummary || '',
 					// Use strategy_json (actual field name), fallback to strategy_payload for legacy records
-					strategy_payload: getField('strategy_json') || getField('strategy_payload') || null,
-					strategy_meta: getField('strategy_meta') || null,
+					strategy_payload: strategyJson || null,
+					strategy_meta: strategyMeta || null,
 					// Include rollup counts for UI display (access by field ID, default to 0 if missing)
 					needs_approval_count: Number((fields as any)[ROLLUP_FIELD_IDS.needs_approval_count] || 0),
 					ready_to_publish_count: Number((fields as any)[ROLLUP_FIELD_IDS.ready_to_publish_count] || 0),
