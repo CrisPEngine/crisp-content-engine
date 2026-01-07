@@ -223,9 +223,9 @@ async function incrementUsage(userId: string): Promise<void> {
 
 /**
  * Check if content is due to be published
- * scheduled_time is stored in UTC, compare directly with UTC now
+ * scheduled_time may be in local timezone, convert to UTC using timezone
  */
-function isContentDue(scheduledTime: string | null | undefined): boolean {
+function isContentDue(scheduledTime: string | null | undefined, timezone?: string | null): boolean {
 	// If no scheduled_time, treat as "publish immediately"
 	if (!scheduledTime) {
 		console.log('[isContentDue] No scheduled_time, treating as due');
@@ -344,6 +344,7 @@ async function publishDueContent(): Promise<{
 			// Lookup fields (use field NAMES, not IDs)
 			LOOKUP_FIELD_NAMES.user_id_lookup,
 			LOOKUP_FIELD_NAMES.brand_name_lookup,
+			LOOKUP_FIELD_NAMES.timezone_lookup, // Need timezone to convert scheduled_time to UTC
 		],
 		returnFieldsByFieldId: true, // Get responses keyed by field IDs
 		endpoint: '/api/publish/linkedin-due',
