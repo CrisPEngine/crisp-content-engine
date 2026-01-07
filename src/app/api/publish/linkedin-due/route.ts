@@ -36,12 +36,14 @@ import { CONTENTQUEUE_LOOKUP_FIELDS } from '@/lib/airtable/field-mapping';
 const LOOKUP_FIELD_IDS = {
 	user_id_lookup: CONTENTQUEUE_LOOKUP_FIELDS.user_id_lookup.id,
 	brand_name_lookup: CONTENTQUEUE_LOOKUP_FIELDS.brand_name_lookup.id,
+	timezone_lookup: CONTENTQUEUE_LOOKUP_FIELDS.timezone_lookup.id,
 } as const;
 
 // Field names for use in fields[] parameter
 const LOOKUP_FIELD_NAMES = {
 	user_id_lookup: CONTENTQUEUE_LOOKUP_FIELDS.user_id_lookup.name,
 	brand_name_lookup: CONTENTQUEUE_LOOKUP_FIELDS.brand_name_lookup.name,
+	timezone_lookup: CONTENTQUEUE_LOOKUP_FIELDS.timezone_lookup.name,
 } as const;
 
 /**
