@@ -126,7 +126,24 @@ export async function GET(req: Request) {
 			// Map Airtable records to our format using rollup fields
 			const profiles = records.map((record: any) => {
 				const fields = record.fields || {};
-				const normalisedStatus = normaliseStatus(fields.status);
+				
+				// Helper to get field value by ID or name (for backward compatibility)
+				// When returnFieldsByFieldId=true, fields are keyed by ID, not name
+				const getField = (fieldName: string, fieldId?: string): any => {
+					if (!fieldId) {
+						// No field ID provided, try name (fallback)
+						return fields[fieldName];
+					}
+					// Try field ID first (when returnFieldsByFieldId=true), then fallback to name
+					return (fields as any)[fieldId] ?? fields[fieldName];
+				};
+				
+				// IMPORTANT: With returnFieldsByFieldId=true, we need field IDs for all fields
+				// For now, we'll try by name as fallback, but we should add field IDs
+				// TODO: Add BrandProfiles field IDs to field-mapping.ts
+				const clientName = getField('client_name');
+				const status = getField('status');
+				const normalisedStatus = normaliseStatus(status);
 				
 				// Use rollup counts to determine if there's pending content
 				// has_pending_content = true if any count > 0 (except published)
@@ -139,16 +156,16 @@ export async function GET(req: Request) {
 
 				return {
 					id: record.id,
-					client_name: fields.client_name || '',
+					client_name: clientName || '',
 					status: normalisedStatus,
 					original_status: normalisedStatus,
 					has_pending_content: hasPendingContent,
-					created_time: fields.created_time || record.createdTime,
-					platforms_requested: fields.platforms_requested || [],
-					strategy_summary: fields.strategy_summary || '',
+					created_time: getField('created_time') || record.createdTime,
+					platforms_requested: getField('platforms_requested') || [],
+					strategy_summary: getField('strategy_summary') || '',
 					// Use strategy_json (actual field name), fallback to strategy_payload for legacy records
-					strategy_payload: fields.strategy_json || fields.strategy_payload || null,
-					strategy_meta: fields.strategy_meta || null,
+					strategy_payload: getField('strategy_json') || getField('strategy_payload') || null,
+					strategy_meta: getField('strategy_meta') || null,
 					// Include rollup counts for UI display (access by field ID, default to 0 if missing)
 					needs_approval_count: Number((fields as any)[ROLLUP_FIELD_IDS.needs_approval_count] || 0),
 					ready_to_publish_count: Number((fields as any)[ROLLUP_FIELD_IDS.ready_to_publish_count] || 0),
