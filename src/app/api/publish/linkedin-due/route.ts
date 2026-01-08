@@ -17,7 +17,8 @@
  * Then checks scheduled_time in code to publish posts that are due.
  * Works for both personal and company brand posts.
  * 
- * Note: scheduled_time is stored in UTC in Airtable. No timezone conversion needed.
+ * Note: scheduled_time may be stored as ISO strings (UTC) or local format strings.
+ * The function uses the user's timezone to correctly interpret local format strings.
  */
 
 import { NextResponse } from 'next/server';
@@ -27,6 +28,7 @@ import { sendEmail } from '@/lib/email/sendEmail';
 import { OAuthReconnectEmail } from '@/emails/product/OAuthReconnectEmail';
 import { listRecords, batchUpdate, normalizeLookup } from '@/lib/airtable/client';
 import { CONTENTQUEUE_LOOKUP_FIELDS } from '@/lib/airtable/field-mapping';
+import { DateTime } from 'luxon';
 
 /**
  * ContentQueue Lookup Fields
@@ -224,68 +226,78 @@ async function incrementUsage(userId: string): Promise<void> {
 }
 
 /**
- * Check if content is due to be published
- * scheduled_time may be in local timezone, convert to UTC using timezone
+ * Check if content is due to be published.
+ * scheduled_time should ideally be an ISO string from Airtable DateTime fields.
+ * If a non-ISO string is encountered, interpret it in the provided timezone.
+ * 
+ * @param scheduledTime - The scheduled time string (ISO or local format)
+ * @param timezone - The timezone to interpret local format strings (e.g., "Asia/Dubai", "America/New_York")
+ * @returns true if content is due to publish, false if not due or unparseable
  */
-function isContentDue(scheduledTime: string | null | undefined, timezone?: string | null): boolean {
+function isContentDue(
+	scheduledTime: string | null | undefined,
+	timezone?: string | null
+): boolean {
 	// If no scheduled_time, treat as "publish immediately"
 	if (!scheduledTime) {
 		console.log('[isContentDue] No scheduled_time, treating as due');
 		return true;
 	}
 
+	const tz = timezone && timezone.trim().length > 0 ? timezone : 'UTC';
+
 	try {
-		// Parse scheduled_time (Airtable returns ISO string in UTC)
-		// Handle various date formats that Airtable might return
-		let scheduledDate: Date;
-		
-		// Try parsing as-is first (ISO format)
-		scheduledDate = new Date(scheduledTime);
-		
-		// If that fails, try parsing as a date string (e.g., "7/1/2026 09:00")
-		if (isNaN(scheduledDate.getTime())) {
-			// Try parsing as date string with time
-			// Format could be MM/DD/YYYY HH:MM (US) or DD/MM/YYYY HH:MM (EU)
-			const dateParts = scheduledTime.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})/);
-			if (dateParts) {
-				const [, part1, part2, year, hour, minute] = dateParts;
-				// Airtable typically uses MM/DD/YYYY format for US bases
-				// Try MM/DD first, if that creates invalid date, try DD/MM
-				const month = part1;
-				const day = part2;
-				scheduledDate = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${minute}:00Z`);
-				
-				// Validate: if month > 12, it's likely DD/MM format
-				if (parseInt(month) > 12) {
-					// Swap: it's DD/MM format
-					scheduledDate = new Date(`${year}-${day.padStart(2, '0')}-${month.padStart(2, '0')}T${hour.padStart(2, '0')}:${minute}:00Z`);
+		const nowUtc = DateTime.utc();
+
+		// 1) If Airtable returns ISO (recommended), parse as absolute time
+		// Examples: 2026-08-01T05:30:00.000Z or 2026-08-01T09:30:00+04:00
+		let scheduledUtc: DateTime | null = null;
+
+		const iso = DateTime.fromISO(scheduledTime, { setZone: true });
+		if (iso.isValid) {
+			scheduledUtc = iso.toUTC();
+		}
+
+		// 2) If not ISO, try strict parsing of known local formats in the provided timezone
+		// Only accept formats that include time. Do not accept date-only.
+		if (!scheduledUtc) {
+			const formats = [
+				'M/d/yyyy HH:mm',
+				'MM/dd/yyyy HH:mm',
+				'd/M/yyyy HH:mm',
+				'dd/MM/yyyy HH:mm',
+			];
+
+			for (const fmt of formats) {
+				const dtLocal = DateTime.fromFormat(scheduledTime, fmt, { zone: tz });
+				if (dtLocal.isValid) {
+					scheduledUtc = dtLocal.toUTC();
+					break;
 				}
-			} else {
-				// Try other common formats
-				scheduledDate = new Date(scheduledTime);
 			}
 		}
 
-		const now = new Date();
-
-		// Check if scheduled date is valid
-		if (isNaN(scheduledDate.getTime())) {
-			console.warn(`[isContentDue] Invalid scheduled_time format: ${scheduledTime}, treating as due`);
-			return true; // If we can't parse, treat as due to avoid blocking
+		// 3) If still not parsed, DO NOT publish
+		if (!scheduledUtc) {
+			console.warn(
+				`[isContentDue] Unparseable scheduled_time: "${scheduledTime}" (tz=${tz}). Treating as NOT due.`
+			);
+			return false;
 		}
 
-		// scheduled_time is in UTC, now is also UTC, direct comparison
-		// Add 1 minute buffer to account for any timezone/parsing issues
-		const bufferMs = 60 * 1000; // 1 minute
-		const isDue = now.getTime() >= (scheduledDate.getTime() - bufferMs);
-		
-		console.log(`[isContentDue] scheduledTime=${scheduledTime}, scheduledDate=${scheduledDate.toISOString()}, now=${now.toISOString()}, isDue=${isDue}, timeDiff=${(scheduledDate.getTime() - now.getTime()) / 1000 / 60} minutes`);
-		
+		// 1 minute buffer is fine
+		const bufferSeconds = 60;
+		const isDue = nowUtc.toSeconds() >= scheduledUtc.minus({ seconds: bufferSeconds }).toSeconds();
+
+		console.log(
+			`[isContentDue] scheduledTime=${scheduledTime}, tz=${tz}, scheduledUtc=${scheduledUtc.toISO()}, nowUtc=${nowUtc.toISO()}, isDue=${isDue}`
+		);
+
 		return isDue;
 	} catch (error) {
 		console.error('[isContentDue] Error parsing scheduled_time:', error, scheduledTime);
-		// If we can't parse, treat as due to avoid blocking posts
-		return true;
+		// On error, DO NOT publish
+		return false;
 	}
 }
 
@@ -392,23 +404,29 @@ async function publishDueContent(): Promise<{
 				continue; // Skip publishing
 			}
 
-			// Check if content is due (scheduled_time is in UTC)
+			// Check if content is due (scheduled_time may be in local timezone)
 			const scheduledTime = getField('scheduled_time', CONTENTQUEUE_FIELD_IDS.scheduled_time);
-			const isDue = isContentDue(scheduledTime);
+			
+			// Retrieve timezone from lookup field (may be array)
+			const timezoneLookupValue = (fields as any)[LOOKUP_FIELD_IDS.timezone_lookup];
+			const timezone = normalizeLookup(timezoneLookupValue) || null;
+			
+			const isDue = isContentDue(scheduledTime, timezone);
 			const now = new Date().toISOString();
 			const hook = getField('hook', CONTENTQUEUE_FIELD_IDS.hook) || '';
 			
 			console.log(`[Publish Job] Record ${record.id}:`, {
 				scheduled_time: scheduledTime,
+				timezone: timezone || 'UTC (default)',
 				isDue,
 				now,
 				hook: hook.substring(0, 50) || 'no hook',
 			});
 			
 			if (!isDue) {
-				console.log(`Skipping record ${record.id}: scheduled_time ${scheduledTime} is not due yet (now: ${now})`);
+				console.log(`Skipping record ${record.id}: scheduled_time ${scheduledTime} not due or invalid (now: ${now})`);
 				stats.processed--; // Don't count skipped records as processed
-				continue; // Skip if not due yet
+				continue; // Skip if not due yet or unparseable
 			}
 
 			// Get user_id from user_id_lookup (no BrandProfiles fetch needed)
