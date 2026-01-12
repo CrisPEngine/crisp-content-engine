@@ -8,16 +8,17 @@ export interface TrialEndingEmailProps {
 	upgradeUrl: string;
 	userEmail: string;
 	trialEndsDate: string;
+	isTrialEnded?: boolean; // If true, trial has ended; if false/undefined, trial is ending soon
 }
 
-export function TrialEndingEmail({ upgradeUrl, userEmail, trialEndsDate }: TrialEndingEmailProps) {
+export function TrialEndingEmail({ upgradeUrl, userEmail, trialEndsDate, isTrialEnded = false }: TrialEndingEmailProps) {
 	return (
-		<EmailLayout preview="Your content pipeline doesn't have to stop here">
+		<EmailLayout preview={isTrialEnded ? "Your free trial has ended" : "Your content pipeline doesn't have to stop here"}>
 			<EmailHeader />
 			<div style={contentStyle}>
 				<h1 style={headingStyle}>Your content pipeline doesn't have to stop here</h1>
 				<Text style={bodyStyle}>
-					Your free trial is almost over.
+					{isTrialEnded ? "Your free trial has ended." : "Your free trial is almost over."}
 				</Text>
 				<Text style={bodyStyle}>
 					If you want to keep generating content and automatically posting without interruption, now is the moment to move to a paid plan.
