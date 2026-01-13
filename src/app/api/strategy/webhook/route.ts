@@ -128,44 +128,114 @@ export async function POST(req: Request) {
 
 		const payload = await req.json();
 		const brandProfileId: string | undefined = payload?.brand_profile_id;
-		if (!brandProfileId) {
-			return NextResponse.json({ ok: false, error: 'Missing brand_profile_id' }, { status: 400 });
+		const strategyUpdateId: string | undefined = payload?.strategy_update_id;
+		const mode: string | undefined = payload?.mode;
+		
+		// For monthly_update mode, we need to update StrategyUpdates table
+		const isMonthlyUpdate = mode === 'monthly_update' || !!strategyUpdateId;
+		
+		if (!brandProfileId && !strategyUpdateId) {
+			return NextResponse.json({ ok: false, error: 'Missing brand_profile_id or strategy_update_id' }, { status: 400 });
 		}
 
 		const airtableToken = process.env.AIRTABLE_PAT;
 		const baseId = process.env.AIRTABLE_BASE_ID;
-		const tableId = process.env.AIRTABLE_BRANDPROFILES_TABLE;
+		const brandProfilesTableId = process.env.AIRTABLE_BRANDPROFILES_TABLE;
+		const strategyUpdatesTableId = process.env.AIRTABLE_STRATEGYUPDATES_TABLE;
 
-		if (!airtableToken || !baseId || !tableId) {
-			console.warn('Airtable credentials missing; skipping Airtable update.');
+		// Update StrategyUpdates table if this is a monthly update
+		if (isMonthlyUpdate && strategyUpdateId) {
+			if (!airtableToken || !baseId || !strategyUpdatesTableId) {
+				console.warn('Airtable credentials missing; skipping StrategyUpdates update.');
+			} else {
+				const status = payload?.status || 'Completed'; // Default to Completed for monthly updates
+				const processedAt = payload?.processed_at || new Date().toISOString();
+
+				const fields: Record<string, any> = {
+					status,
+					processed_at: processedAt,
+				};
+
+				// Include result_payload if provided
+				if (payload?.result_payload) {
+					fields.result_payload = typeof payload.result_payload === 'string' 
+						? payload.result_payload 
+						: JSON.stringify(payload.result_payload);
+				}
+
+				// Include error message if status is Failed
+				if (status === 'Failed' && payload?.error_message) {
+					fields.last_error = payload.error_message;
+				}
+
+				try {
+					const airtableRes = await fetch(`https://api.airtable.com/v0/${baseId}/${strategyUpdatesTableId}/${strategyUpdateId}`, {
+						method: 'PATCH',
+						headers: {
+							Authorization: `Bearer ${airtableToken}`,
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify({ fields }),
+					});
+
+					if (!airtableRes.ok) {
+						const errorText = await airtableRes.text();
+						console.error('Airtable StrategyUpdates update failed:', {
+							strategyUpdateId,
+							status: airtableRes.status,
+							error: errorText,
+						});
+					} else {
+						console.log('[Strategy Webhook] Updated StrategyUpdates record:', {
+							strategyUpdateId,
+							status,
+						});
+					}
+				} catch (error) {
+					console.error('Error updating StrategyUpdates record:', error);
+				}
+			}
+		}
+
+		// Update BrandProfiles table (original behavior)
+		if (!airtableToken || !baseId || !brandProfilesTableId) {
+			if (!isMonthlyUpdate) {
+				console.warn('Airtable credentials missing; skipping Airtable update.');
+			}
 		} else {
 			const recordId = payload?.airtable_record_id || brandProfileId;
-			const status = normaliseStatus(payload?.strategy_status);
-
-			// Parse and validate updated_at date
-			let updatedAt: string;
-			if (payload?.updated_at) {
-				try {
-					// Try to parse the date and convert to ISO string
-					const date = new Date(payload.updated_at);
-					if (isNaN(date.getTime())) {
-						// Invalid date, use current time
-						updatedAt = new Date().toISOString();
-					} else {
-						updatedAt = date.toISOString();
-					}
-				} catch {
-					updatedAt = new Date().toISOString();
+			if (!recordId) {
+				// Skip BrandProfiles update if no recordId (for monthly_update-only callbacks)
+				if (!isMonthlyUpdate) {
+					console.warn('No recordId provided; skipping BrandProfiles update.');
 				}
 			} else {
-				updatedAt = new Date().toISOString();
-			}
+				const status = normaliseStatus(payload?.strategy_status);
 
-			const fields: Record<string, any> = {
-				status,
-				strategy_status: status,
-				strategy_updated_at: updatedAt,
-			};
+				// Parse and validate updated_at date
+				let updatedAt: string;
+				if (payload?.updated_at) {
+					try {
+						// Try to parse the date and convert to ISO string
+						const date = new Date(payload.updated_at);
+						if (isNaN(date.getTime())) {
+							// Invalid date, use current time
+							updatedAt = new Date().toISOString();
+						} else {
+							updatedAt = date.toISOString();
+						}
+					} catch {
+						updatedAt = new Date().toISOString();
+					}
+				} else {
+					updatedAt = new Date().toISOString();
+				}
+
+				const fields: Record<string, any> = {
+					status,
+					strategy_status: status,
+					strategy_updated_at: updatedAt,
+				};
 
 			const strategyPayload =
 				payload?.strategy_payload ||
@@ -213,7 +283,7 @@ export async function POST(req: Request) {
 			);
 
 			try {
-				const airtableRes = await fetch(`https://api.airtable.com/v0/${baseId}/${tableId}/${recordId}`, {
+				const airtableRes = await fetch(`https://api.airtable.com/v0/${baseId}/${brandProfilesTableId}/${recordId}`, {
 					method: 'PATCH',
 					headers: {
 						Authorization: `Bearer ${airtableToken}`,
