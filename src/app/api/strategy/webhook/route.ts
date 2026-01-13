@@ -158,23 +158,43 @@ export async function POST(req: Request) {
 			if (!airtableToken || !baseId || !strategyUpdatesTableId) {
 				console.warn('Airtable credentials missing; skipping StrategyUpdates update.');
 			} else {
-				const status = payload?.status || 'Completed'; // Default to Completed for monthly updates
-				const processedAt = payload?.processed_at || new Date().toISOString();
-
+				// Use status from payload, or default based on strategy_status, or 'Processing'
+				const status = payload?.status 
+					|| (payload?.strategy_status ? normaliseStatus(payload.strategy_status) : null)
+					|| 'Processing'; // Default to Processing if neither provided
+				
 				const fields: Record<string, any> = {
 					status,
-					processed_at: processedAt,
 				};
 
-				// Include result_payload if provided
+				// Only include processed_at if explicitly provided (field might not exist or have different type)
+				// Skip processed_at to avoid field type errors - let Make.com handle it if needed
+				// if (payload?.processed_at) {
+				// 	try {
+				// 		const date = new Date(payload.processed_at);
+				// 		if (!isNaN(date.getTime())) {
+				// 			// Try date-only format (YYYY-MM-DD)
+				// 			fields.processed_at = date.toISOString().split('T')[0];
+				// 		}
+				// 	} catch {
+				// 		// Skip if we can't parse it
+				// 	}
+				// }
+
+				// Include result_payload if provided (field might not exist)
 				if (payload?.result_payload) {
-					fields.result_payload = typeof payload.result_payload === 'string' 
-						? payload.result_payload 
-						: JSON.stringify(payload.result_payload);
+					try {
+						fields.result_payload = typeof payload.result_payload === 'string' 
+							? payload.result_payload 
+							: JSON.stringify(payload.result_payload);
+					} catch {
+						// Skip if serialization fails
+					}
 				}
 
-				// Include error message if status is Failed
-				if (status === 'Failed' && payload?.error_message) {
+				// Include error message if status indicates failure
+				const isFailed = status === 'Failed' || status?.toLowerCase().includes('fail');
+				if (isFailed && payload?.error_message) {
 					fields.last_error = payload.error_message;
 				}
 
