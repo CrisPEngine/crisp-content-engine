@@ -61,8 +61,9 @@ export async function GET(request: Request) {
 
 		// Fetch briefs for this brand profile
 		// Use field names (not returnFieldsByFieldId) since we're filtering by field names
+		// For link fields, use direct equality, not FIND()
 		const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}`);
-		const filterFormula = `AND(FIND("${brandProfileId}", {brand_profile_id}), {user_id} = "${user.id}")`;
+		const filterFormula = `AND({brand_profile_id} = "${brandProfileId}", {user_id} = "${user.id}")`;
 		url.searchParams.set('filterByFormula', filterFormula);
 		url.searchParams.set('sort[0][field]', 'submitted_at');
 		url.searchParams.set('sort[0][direction]', 'desc');
@@ -94,7 +95,7 @@ export async function GET(request: Request) {
 			console.log(`[Content Briefs API] No records found. Checking if brief exists with different filter...`);
 			// Try a simpler query to see if any briefs exist for this brand
 			const testUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}`);
-			testUrl.searchParams.set('filterByFormula', `FIND("${brandProfileId}", {brand_profile_id}) > 0`);
+			testUrl.searchParams.set('filterByFormula', `{brand_profile_id} = "${brandProfileId}"`);
 			testUrl.searchParams.set('maxRecords', '5');
 			
 			const testRes = await fetch(testUrl.toString(), {
