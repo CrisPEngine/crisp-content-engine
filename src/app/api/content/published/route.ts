@@ -61,44 +61,76 @@ export async function GET(request: Request) {
 		}
 
 		// Fetch published posts for this brand profile
-		const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`);
+		// Use the same approach as content queue: filter by user_id_lookup, then filter by brand_profile_id in code
+		// This is more reliable than trying to filter link fields in Airtable formulas
+		const { listRecords } = await import('@/lib/airtable/client');
+		const { CONTENTQUEUE_LOOKUP_FIELDS } = await import('@/lib/airtable/field-mapping');
 		
-		// Filter by brand_profile_id and status = "Published"
-		const filterFormula = `AND(FIND("${brandProfileId}", {brand_profile_id}), {status} = "Published")`;
-		url.searchParams.set('filterByFormula', filterFormula);
-		url.searchParams.set('sort[0][field]', 'published_at');
-		url.searchParams.set('sort[0][direction]', 'desc');
-		url.searchParams.set('maxRecords', '100'); // Get last 100 published posts
+		// Build filter: user owns the content AND status is Published
+		// Use user_id_lookup field name (not ID) for the formula
+		const user_id_lookup_name = CONTENTQUEUE_LOOKUP_FIELDS.user_id_lookup.name;
+		const escapedUserId = user.id.replace(/"/g, '""'); // Escape double quotes for Airtable formula
+		const filterFormula = `AND(
+			FIND("${escapedUserId}", ARRAYJOIN({${user_id_lookup_name}}, ",")) > 0,
+			{status} = "Published"
+		)`;
 
-		const airtableRes = await fetch(url.toString(), {
-			headers: {
-				Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-				'Content-Type': 'application/json',
-			},
+		const records = await listRecords({
+			table: TABLE_ID,
+			filterByFormula: filterFormula,
+			sort: [{ field: 'published_at', direction: 'desc' }],
+			maxRecords: 100,
+			fields: [
+				'hook',
+				'post_content',
+				'published_at',
+				'published_url',
+				'brand_profile_id',
+				'status',
+			],
+			returnFieldsByFieldId: false, // Use field names for simpler access
+			endpoint: '/api/content/published',
 		});
 
-		if (!airtableRes.ok) {
-			const errorText = await airtableRes.text();
-			console.error('Failed to fetch published posts:', errorText);
-			return NextResponse.json(
-				{ error: 'Failed to fetch published posts' },
-				{ status: 502 }
-			);
-		}
+		console.log(`[Published Posts API] Found ${records.length} published records for user ${user.id}`);
 
-		const airtableResult = await airtableRes.json();
-		
-		// Map to simpler format for dropdown
-		const posts = (airtableResult.records || []).map((record: any) => {
-			const fields = record.fields || {};
-			return {
-				id: record.id,
-				title: fields.hook || fields.title || fields.post_title || 'Untitled',
-				content: (fields.post_content || fields.content || fields.post_body || '').substring(0, 100) + '...',
-				published_at: fields.published_at || fields.published_time || null,
-				published_url: fields.published_url || null,
-			};
-		});
+		// Filter by brand_profile_id in code (handles link fields correctly)
+		const posts = records
+			.filter((record: any) => {
+				const fields = record.fields || {};
+				const recordBrandProfileId = Array.isArray(fields.brand_profile_id)
+					? fields.brand_profile_id[0]
+					: fields.brand_profile_id;
+				// Handle both string IDs and object IDs from link fields
+				const brandId = typeof recordBrandProfileId === 'string' 
+					? recordBrandProfileId 
+					: recordBrandProfileId?.id || String(recordBrandProfileId);
+				const matches = brandId === brandProfileId;
+				if (!matches) {
+					console.log(`[Published Posts API] Record ${record.id} brand mismatch: ${brandId} !== ${brandProfileId}`);
+				}
+				return matches;
+			})
+			.map((record: any) => {
+				const fields = record.fields || {};
+				const title = fields.hook || fields.title || fields.post_title || 'Untitled';
+				const content = fields.post_content || fields.content || fields.post_body || '';
+				return {
+					id: record.id,
+					title: title,
+					content: content ? (content.substring(0, 100) + (content.length > 100 ? '...' : '')) : '',
+					published_at: fields.published_at || fields.published_time || null,
+					published_url: fields.published_url || null,
+				};
+			})
+			// Filter out records with no title or content (empty/deleted records)
+			.filter((post: any) => {
+				const hasTitle = post.title && post.title.trim() && post.title !== 'Untitled';
+				const hasContent = post.content && post.content.trim();
+				return hasTitle || hasContent;
+			});
+
+		console.log(`[Published Posts API] Returning ${posts.length} posts for brand ${brandProfileId} (filtered from ${records.length} total published)`);
 
 		return NextResponse.json({ posts });
 	} catch (error: any) {

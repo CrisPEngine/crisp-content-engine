@@ -24,8 +24,9 @@ const briefSchema = z.object({
 	key_dates: z.string().optional().default(''),
 	feedback_notes: z.string().optional().default(''),
 	content_preferences: z.string().optional().default(''),
-	best_performing_post_id: z.string().optional(),
-	worst_performing_post_id: z.string().optional(),
+	// Transform empty strings to undefined for optional fields
+	best_performing_post_id: z.string().optional().transform((val) => (val && val.trim() ? val.trim() : undefined)),
+	worst_performing_post_id: z.string().optional().transform((val) => (val && val.trim() ? val.trim() : undefined)),
 	best_post_reason: z.string().optional().default(''),
 	worst_post_reason: z.string().optional().default(''),
 	primary_goal: z.enum(['Awareness', 'Engagement', 'Traffic', 'Leads']).optional(),
@@ -44,9 +45,15 @@ const briefSchema = z.object({
 			message: 'Please provide a valid URL',
 		});
 	}
+	// Only validate best/worst posts for feedback mode
+	// IMPORTANT: Skip validation entirely if brief_mode is 'continue'
+	// This ensures "Continue same brief" mode doesn't require best/worst posts
 	if (data.brief_mode === 'feedback') {
-		// For feedback mode, best/worst posts are optional but recommended
-		if (!data.best_performing_post_id && !data.worst_performing_post_id) {
+		// For feedback mode, at least one best or worst post is required
+		// After transform, these will be undefined if empty, so check for truthy values
+		const hasBestPost = data.best_performing_post_id && data.best_performing_post_id.trim();
+		const hasWorstPost = data.worst_performing_post_id && data.worst_performing_post_id.trim();
+		if (!hasBestPost && !hasWorstPost) {
 			ctx.addIssue({
 				path: ['best_performing_post_id'],
 				code: z.ZodIssueCode.custom,
@@ -54,6 +61,7 @@ const briefSchema = z.object({
 			});
 		}
 	}
+	// If brief_mode is 'continue', no validation needed for best/worst posts
 });
 
 export async function POST(request: Request) {
@@ -233,11 +241,14 @@ export async function POST(request: Request) {
 		};
 
 		// Add optional fields if provided
-		if (data.best_performing_post_id) {
-			briefPayload.fields.best_performing_post_id = [data.best_performing_post_id];
-		}
-		if (data.worst_performing_post_id) {
-			briefPayload.fields.worst_performing_post_id = [data.worst_performing_post_id];
+		// Only include best/worst post IDs if feedback mode and they are provided
+		if (data.brief_mode === 'feedback') {
+			if (data.best_performing_post_id && data.best_performing_post_id.trim()) {
+				briefPayload.fields.best_performing_post_id = [data.best_performing_post_id];
+			}
+			if (data.worst_performing_post_id && data.worst_performing_post_id.trim()) {
+				briefPayload.fields.worst_performing_post_id = [data.worst_performing_post_id];
+			}
 		}
 		if (data.best_post_reason) {
 			briefPayload.fields.best_post_reason = data.best_post_reason;
