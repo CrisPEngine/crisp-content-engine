@@ -217,7 +217,8 @@ export async function POST(request: Request) {
 				brand_profile_id: [data.brand_profile_id], // Link field
 				user_id: user.id,
 				brief_mode: data.brief_mode,
-				cycle_start_date: data.cycle_start_date,
+				// Use field ID since field name was renamed in Airtable
+				'fldiOJywhukr8acuF': data.cycle_start_date, // cycle_start_date field ID
 				cycle_label: cycleLabel,
 				objective: data.objective || '',
 				themes_focus: data.themes_focus || '',
