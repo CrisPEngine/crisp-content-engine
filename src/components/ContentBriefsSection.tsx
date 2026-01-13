@@ -26,6 +26,7 @@ type ContentBrief = {
 	sent_to_make_at: string | null;
 	generation_completed_at: string | null;
 	last_error: string | null;
+	result_payload_display?: string | null;
 };
 
 type ContentBriefsSectionProps = {

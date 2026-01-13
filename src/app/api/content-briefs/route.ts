@@ -192,6 +192,7 @@ export async function GET(request: Request) {
 				last_error: fields.last_error || null,
 				result_payload: fields.result_payload || null,
 				result_payload_formatted: resultPayloadFormatted,
+				result_payload_display: fields.result_payload_display || null, // Airtable formula field
 			};
 		});
 
