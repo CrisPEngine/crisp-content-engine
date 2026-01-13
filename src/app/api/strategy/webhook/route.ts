@@ -158,10 +158,24 @@ export async function POST(req: Request) {
 			if (!airtableToken || !baseId || !strategyUpdatesTableId) {
 				console.warn('Airtable credentials missing; skipping StrategyUpdates update.');
 			} else {
-				// Use status from payload, or default based on strategy_status, or 'Processing'
-				const status = payload?.status 
-					|| (payload?.strategy_status ? normaliseStatus(payload.strategy_status) : null)
-					|| 'Processing'; // Default to Processing if neither provided
+				// Map status to valid content brief status options
+				// Valid options: 'Draft', 'Pending Approval', 'Approved', 'Sent to Make', 'Generation Completed', 'Failed', 'Processing'
+				let status = payload?.status;
+				if (!status && payload?.strategy_status) {
+					// Map BrandProfiles strategy_status to StrategyUpdates status
+					const strategyStatus = payload.strategy_status.toLowerCase();
+					if (strategyStatus.includes('ready') || strategyStatus.includes('completed')) {
+						status = 'Pending Approval'; // Map strategy ready to pending approval for briefs
+					} else if (strategyStatus.includes('fail')) {
+						status = 'Failed';
+					} else {
+						status = 'Processing'; // Default for other strategy statuses
+					}
+				}
+				// Default to Processing if still no status
+				if (!status) {
+					status = 'Processing';
+				}
 				
 				const fields: Record<string, any> = {
 					status,

@@ -12,7 +12,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { FileUpload } from '@/components/FileUpload';
-import { Loader2, Calendar, Target, ClipboardList, TrendingUp, TrendingDown } from 'lucide-react';
+import { Loader2, Calendar, Target, ClipboardList, TrendingUp, TrendingDown, Sparkles, CheckCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 type BrandProfile = {
 	id: string;
@@ -169,6 +170,10 @@ export default function ContentBriefPage() {
 		}
 
 		setSubmitting(true);
+		setShowLoading(true);
+		setError(null);
+		setSuccess(null);
+		
 		try {
 			const res = await fetch('/api/content-brief', {
 				method: 'POST',
@@ -190,19 +195,93 @@ export default function ContentBriefPage() {
 				throw new Error(data?.error || 'Failed to submit content brief');
 			}
 
-			setSuccess('Content brief submitted successfully. Redirecting to strategy page...');
-			
-			// Redirect to strategy page after short delay
+			// Wait a bit for the loading animation, then redirect
 			setTimeout(() => {
+				setShowLoading(false);
 				router.push(`/strategy?brand_profile_id=${form.brand_profile_id}&tab=content-briefs`);
-			}, 1500);
+			}, 3000);
 		} catch (err: any) {
 			console.error('Content brief error:', err);
+			setShowLoading(false);
 			setError(err.message || 'Something went wrong while submitting your brief.');
-		} finally {
 			setSubmitting(false);
 		}
 	};
+
+	// Loading interstitial while Make.com processes
+	if (showLoading) {
+		const loadingSteps = [
+			{ text: 'Saving your content brief...', duration: 1000 },
+			{ text: 'Sending to content strategy team...', duration: 1500 },
+			{ text: 'Processing your brief...', duration: 2000 },
+		];
+		const [loadingStep, setLoadingStep] = useState(0);
+
+		useEffect(() => {
+			if (!showLoading) return;
+			let currentStep = 0;
+			const timeouts: NodeJS.Timeout[] = [];
+
+			loadingSteps.forEach((step, index) => {
+				const timeout = setTimeout(() => {
+					if (index < loadingSteps.length - 1) {
+						setLoadingStep(index + 1);
+					}
+				}, step.duration + (index > 0 ? loadingSteps.slice(0, index).reduce((acc, s) => acc + s.duration, 0) : 0));
+				timeouts.push(timeout);
+			});
+
+			return () => {
+				timeouts.forEach((timeout) => clearTimeout(timeout));
+			};
+		}, [showLoading]);
+
+		return (
+			<div className="fixed inset-0 z-50 flex items-center justify-center bg-bg/95 backdrop-blur-sm">
+				<motion.div
+					initial={{ opacity: 0, scale: 0.95 }}
+					animate={{ opacity: 1, scale: 1 }}
+					className="card p-12 max-w-md w-full mx-4 text-center space-y-6"
+				>
+					<motion.div
+						animate={{ rotate: 360 }}
+						transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+						className="mx-auto mb-4"
+					>
+						<Sparkles className="w-16 h-16 text-primary" />
+					</motion.div>
+					<h2 className="text-2xl font-semibold mb-2">Submitting Content Brief</h2>
+					<p className="text-text-dim mb-6">
+						We're processing your monthly content brief...
+					</p>
+					<div className="space-y-3">
+						{loadingSteps.map((step, index) => (
+							<div key={index} className="flex items-center gap-3">
+								{index < loadingStep ? (
+									<CheckCircle className="w-5 h-5 text-accent flex-shrink-0" />
+								) : index === loadingStep ? (
+									<Loader2 className="w-5 h-5 text-primary animate-spin flex-shrink-0" />
+								) : (
+									<div className="w-5 h-5 rounded-full border-2 border-edge/60 flex-shrink-0" />
+								)}
+								<p
+									className={`text-sm ${
+										index < loadingStep
+											? 'text-accent'
+											: index === loadingStep
+											? 'text-primary'
+											: 'text-text-dim'
+									}`}
+								>
+									{step.text}
+								</p>
+							</div>
+						))}
+					</div>
+				</motion.div>
+			</div>
+		);
+	}
 
 	if (loading) {
 		return (
