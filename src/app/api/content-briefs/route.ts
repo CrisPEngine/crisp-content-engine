@@ -59,16 +59,14 @@ export async function GET(request: Request) {
 			);
 		}
 
-		// Fetch briefs for this brand profile
-		// Use field names (not returnFieldsByFieldId) since we're filtering by field names
-		// For link fields, use direct equality, not FIND()
+		// Fetch all briefs for this user, then filter by brand_profile_id in code
+		// This approach is more reliable than filtering link fields in Airtable formula
 		const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}`);
-		const filterFormula = `AND({brand_profile_id} = "${brandProfileId}", {user_id} = "${user.id}")`;
-		url.searchParams.set('filterByFormula', filterFormula);
+		url.searchParams.set('filterByFormula', `{user_id} = "${user.id}"`);
 		url.searchParams.set('sort[0][field]', 'submitted_at');
 		url.searchParams.set('sort[0][direction]', 'desc');
-		url.searchParams.set('maxRecords', '20'); // Get last 20 briefs
-		// Don't use returnFieldsByFieldId - we're using field names in filter and accessing fields by name
+		url.searchParams.set('maxRecords', '50'); // Get more records to filter in code
+		// Don't use returnFieldsByFieldId - we're using field names
 
 		const airtableRes = await fetch(url.toString(), {
 			headers: {
@@ -88,69 +86,31 @@ export async function GET(request: Request) {
 
 		const airtableResult = await airtableRes.json();
 
-		console.log(`[Content Briefs API] Found ${airtableResult.records?.length || 0} records for brand ${brandProfileId}, user ${user.id}`);
-		console.log(`[Content Briefs API] Filter formula: AND({brand_profile_id} = "${brandProfileId}", {user_id} = "${user.id}")`);
-		
-		if (airtableResult.records?.length === 0) {
-			console.log(`[Content Briefs API] No records found. Checking if brief exists with different filter...`);
+		console.log(`[Content Briefs API] Found ${airtableResult.records?.length || 0} total briefs for user ${user.id}`);
+
+		// Filter by brand_profile_id in code (more reliable than Airtable formula for link fields)
+		const filteredRecords = (airtableResult.records || []).filter((record: any) => {
+			const fields = record.fields || {};
+			const recordBrandId = Array.isArray(fields.brand_profile_id) 
+				? (typeof fields.brand_profile_id[0] === 'string' 
+					? fields.brand_profile_id[0] 
+					: fields.brand_profile_id[0]?.id)
+				: (typeof fields.brand_profile_id === 'string' 
+					? fields.brand_profile_id 
+					: fields.brand_profile_id?.id);
 			
-			// Try querying by user_id only to see if any briefs exist for this user
-			const userTestUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}`);
-			userTestUrl.searchParams.set('filterByFormula', `{user_id} = "${user.id}"`);
-			userTestUrl.searchParams.set('maxRecords', '10');
-			userTestUrl.searchParams.set('sort[0][field]', 'submitted_at');
-			userTestUrl.searchParams.set('sort[0][direction]', 'desc');
-			
-			const userTestRes = await fetch(userTestUrl.toString(), {
-				headers: {
-					Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-					'Content-Type': 'application/json',
-				},
-			});
-			
-			if (userTestRes.ok) {
-				const userTestData = await userTestRes.json();
-				console.log(`[Content Briefs API] Found ${userTestData.records?.length || 0} briefs for user ${user.id}`);
-				if (userTestData.records?.length > 0) {
-					userTestData.records.forEach((record: any, index: number) => {
-						const fields = record.fields || {};
-						const recordBrandId = Array.isArray(fields.brand_profile_id) 
-							? fields.brand_profile_id[0] 
-							: fields.brand_profile_id;
-						console.log(`[Content Briefs API] Brief ${index + 1}: id=${record.id}, brand_profile_id=${JSON.stringify(recordBrandId)}, user_id=${JSON.stringify(fields.user_id)}, status=${JSON.stringify(fields.status)}`);
-					});
-				}
+			const matches = recordBrandId === brandProfileId;
+			if (!matches && airtableResult.records?.length > 0) {
+				console.log(`[Content Briefs API] Filtering out brief ${record.id}: brand_profile_id=${JSON.stringify(recordBrandId)} !== ${brandProfileId}`);
 			}
-			
-			// Try a simpler query to see if any briefs exist for this brand
-			const testUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}`);
-			testUrl.searchParams.set('filterByFormula', `{brand_profile_id} = "${brandProfileId}"`);
-			testUrl.searchParams.set('maxRecords', '5');
-			
-			const testRes = await fetch(testUrl.toString(), {
-				headers: {
-					Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-					'Content-Type': 'application/json',
-				},
-			});
-			
-			if (testRes.ok) {
-				const testData = await testRes.json();
-				console.log(`[Content Briefs API] Test query found ${testData.records?.length || 0} records for brand ${brandProfileId}`);
-				if (testData.records?.length > 0) {
-					const firstRecord = testData.records[0];
-					const firstFields = firstRecord.fields || {};
-					const firstBrandId = Array.isArray(firstFields.brand_profile_id) 
-						? firstFields.brand_profile_id[0] 
-						: firstFields.brand_profile_id;
-					console.log(`[Content Briefs API] Sample record: brand_profile_id=${JSON.stringify(firstBrandId)}, user_id=${JSON.stringify(firstFields.user_id)}, status=${JSON.stringify(firstFields.status)}`);
-				}
-			}
-		}
+			return matches;
+		});
+
+		console.log(`[Content Briefs API] After filtering by brand ${brandProfileId}: ${filteredRecords.length} briefs`);
 
 		// Map to cleaner format
 		// Fields are keyed by field names (not field IDs) since we didn't use returnFieldsByFieldId
-		const briefs = (airtableResult.records || []).map((record: any) => {
+		const briefs = filteredRecords.map((record: any) => {
 			const fields = record.fields || {};
 			
 			// Extract brand_profile_id (could be array from link field)
