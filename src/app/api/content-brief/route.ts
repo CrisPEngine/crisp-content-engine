@@ -286,17 +286,117 @@ export async function POST(request: Request) {
 		}
 
 		const briefRecord = await createRes.json();
+		const briefId = briefRecord.id;
 
 		console.log('[Content Brief] Created brief:', {
-			briefId: briefRecord.id,
+			briefId,
 			brandProfileId: data.brand_profile_id,
 			userId: user.id,
 			briefMode: data.brief_mode,
 		});
 
+		// Get brand_type from brand profile
+		const brandType = brandRecord.fields?.brand_type || 'company';
+
+		// Trigger Make.com webhook to process the brief
+		// The Make.com scenario will route to monthly_update path based on mode
+		const webhookUrl = process.env.MAKE_STRATEGY_WEBHOOK_URL;
+		if (webhookUrl) {
+			try {
+				// Parse cycle_start_date to ISO string for Make.com
+				const cycleStartDate = data.cycle_start_date 
+					? new Date(data.cycle_start_date).toISOString()
+					: new Date().toISOString();
+
+				const makePayload = {
+					mode: 'monthly_update', // Make.com router uses this to route to monthly update path
+					strategy_update_id: briefId, // The Airtable record ID we just created
+					brand_profile_id: data.brand_profile_id,
+					user_id: user.id,
+					brand_type: brandType,
+					monthly: {
+						objective: data.objective || '',
+						themes_focus: data.themes_focus || '',
+						key_dates: data.key_dates || '',
+						feedback_notes: data.feedback_notes || '',
+						content_preferences: data.content_preferences || '',
+						monthly_cycle_start: cycleStartDate, // Note: Make.com expects monthly_cycle_start
+						cycle_label: cycleLabel,
+						attachments: data.attachments || [],
+					},
+					// Include initial strategy fields as null/empty for consistency (Router will ignore them)
+					brand: null,
+					audience: null,
+					value_props: null,
+					offers: null,
+					brand_goals: null,
+					platforms_requested: null,
+					urls_to_scrape: null,
+					assets: null,
+					strategy_context: null,
+				};
+
+				const headers: Record<string, string> = {
+					'Content-Type': 'application/json',
+				};
+				const outboundSecret = process.env.MAKE_STRATEGY_WEBHOOK_SECRET || process.env.MAKE_SHARED_SECRET;
+				if (outboundSecret) {
+					headers['x-make-secret'] = outboundSecret;
+				}
+				if (process.env.MAKE_API_KEY) {
+					headers['x-api-key'] = process.env.MAKE_API_KEY;
+				}
+
+				console.log('[Content Brief] Triggering Make.com webhook:', {
+					briefId,
+					brandProfileId: data.brand_profile_id,
+					userId: user.id,
+					webhookUrl: webhookUrl.substring(0, 50) + '...',
+					mode: 'monthly_update',
+				});
+
+				// Trigger webhook in background (fire-and-forget, with timeout)
+				const timeoutPromise = new Promise((_, reject) => {
+					setTimeout(() => reject(new Error('Request timeout')), 30000); // 30 second timeout
+				});
+
+				Promise.race([
+					fetch(webhookUrl, {
+						method: 'POST',
+						headers,
+						body: JSON.stringify(makePayload),
+					}),
+					timeoutPromise,
+				])
+					.then(async (response: any) => {
+						if (response.ok) {
+							console.log('[Content Brief] Make.com webhook triggered successfully');
+						} else {
+							const errorText = await response.text().catch(() => '');
+							console.error('[Content Brief] Make.com webhook failed:', {
+								status: response.status,
+								error: errorText,
+							});
+						}
+					})
+					.catch((error: any) => {
+						if (error.message !== 'Request timeout') {
+							console.error('[Content Brief] Make.com webhook error:', error);
+						} else {
+							console.warn('[Content Brief] Make.com webhook timeout (scenario may still be processing)');
+						}
+					});
+			} catch (webhookError: any) {
+				console.error('[Content Brief] Error preparing Make.com webhook:', webhookError);
+				// Don't fail the request if webhook setup fails - record is already created
+			}
+		} else {
+			console.warn('[Content Brief] MAKE_STRATEGY_WEBHOOK_URL not configured - brief created but Make.com webhook not triggered');
+		}
+
 		return NextResponse.json({
 			ok: true,
-			brief_id: briefRecord.id,
+			brief_id: briefId,
 			message: 'Content brief submitted successfully. Redirecting to dashboard...',
 		});
 	} catch (error: any) {
