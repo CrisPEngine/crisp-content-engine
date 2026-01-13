@@ -93,6 +93,35 @@ export async function GET(request: Request) {
 		
 		if (airtableResult.records?.length === 0) {
 			console.log(`[Content Briefs API] No records found. Checking if brief exists with different filter...`);
+			
+			// Try querying by user_id only to see if any briefs exist for this user
+			const userTestUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}`);
+			userTestUrl.searchParams.set('filterByFormula', `{user_id} = "${user.id}"`);
+			userTestUrl.searchParams.set('maxRecords', '10');
+			userTestUrl.searchParams.set('sort[0][field]', 'submitted_at');
+			userTestUrl.searchParams.set('sort[0][direction]', 'desc');
+			
+			const userTestRes = await fetch(userTestUrl.toString(), {
+				headers: {
+					Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+					'Content-Type': 'application/json',
+				},
+			});
+			
+			if (userTestRes.ok) {
+				const userTestData = await userTestRes.json();
+				console.log(`[Content Briefs API] Found ${userTestData.records?.length || 0} briefs for user ${user.id}`);
+				if (userTestData.records?.length > 0) {
+					userTestData.records.forEach((record: any, index: number) => {
+						const fields = record.fields || {};
+						const recordBrandId = Array.isArray(fields.brand_profile_id) 
+							? fields.brand_profile_id[0] 
+							: fields.brand_profile_id;
+						console.log(`[Content Briefs API] Brief ${index + 1}: id=${record.id}, brand_profile_id=${JSON.stringify(recordBrandId)}, user_id=${JSON.stringify(fields.user_id)}, status=${JSON.stringify(fields.status)}`);
+					});
+				}
+			}
+			
 			// Try a simpler query to see if any briefs exist for this brand
 			const testUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}`);
 			testUrl.searchParams.set('filterByFormula', `{brand_profile_id} = "${brandProfileId}"`);
@@ -111,7 +140,10 @@ export async function GET(request: Request) {
 				if (testData.records?.length > 0) {
 					const firstRecord = testData.records[0];
 					const firstFields = firstRecord.fields || {};
-					console.log(`[Content Briefs API] Sample record user_id: ${JSON.stringify(firstFields.user_id)}, status: ${JSON.stringify(firstFields.status)}`);
+					const firstBrandId = Array.isArray(firstFields.brand_profile_id) 
+						? firstFields.brand_profile_id[0] 
+						: firstFields.brand_profile_id;
+					console.log(`[Content Briefs API] Sample record: brand_profile_id=${JSON.stringify(firstBrandId)}, user_id=${JSON.stringify(firstFields.user_id)}, status=${JSON.stringify(firstFields.status)}`);
 				}
 			}
 		}
