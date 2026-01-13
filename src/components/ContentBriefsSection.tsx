@@ -10,7 +10,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
-import { ClipboardList, Check, Loader2, AlertCircle, Calendar, ArrowRight, RotateCw } from 'lucide-react';
+import { ClipboardList, Check, Loader2, AlertCircle, Calendar, ArrowRight, RotateCw, FileText } from 'lucide-react';
 
 type ContentBrief = {
 	id: string;
@@ -199,30 +199,49 @@ export function ContentBriefsSection({ brandProfileId }: ContentBriefsSectionPro
 										<span className="text-xs text-text-dim">· {pendingBrief.cycle_label}</span>
 									)}
 								</div>
-								<button
-									onClick={() => approveBrief(pendingBrief.id)}
-									disabled={approving === pendingBrief.id}
-									className="px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm"
-								>
-									{approving === pendingBrief.id ? (
-										<>
-											<Loader2 className="w-4 h-4 animate-spin" />
-											Approving...
-										</>
-									) : (
-										<>
-											<Check className="w-4 h-4" />
-											Approve & Generate
-										</>
-									)}
-								</button>
-							</div>
-							{pendingBrief.objective && (
-								<div className="text-sm text-text-soft">
-									<strong>Objective:</strong> {pendingBrief.objective.substring(0, 100)}
-									{pendingBrief.objective.length > 100 && '...'}
+								<div className="flex items-center gap-2">
+									<button
+										onClick={() => router.push(`/content-brief/${pendingBrief.id}`)}
+										className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 flex items-center gap-2 text-sm"
+									>
+										<FileText className="w-4 h-4" />
+										Review & Edit
+									</button>
+									<button
+										onClick={() => approveBrief(pendingBrief.id)}
+										disabled={approving === pendingBrief.id}
+										className="px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm"
+									>
+										{approving === pendingBrief.id ? (
+											<>
+												<Loader2 className="w-4 h-4 animate-spin" />
+												Approving...
+											</>
+										) : (
+											<>
+												<Check className="w-4 h-4" />
+												Approve & Generate
+											</>
+										)}
+									</button>
 								</div>
-							)}
+							</div>
+							<button
+								onClick={() => router.push(`/content-brief/${pendingBrief.id}`)}
+								className="text-left w-full hover:opacity-80 transition-opacity"
+							>
+								{pendingBrief.objective && (
+									<div className="text-sm text-text-soft">
+										<strong>Objective:</strong> {pendingBrief.objective.substring(0, 100)}
+										{pendingBrief.objective.length > 100 && '...'}
+									</div>
+								)}
+								{!pendingBrief.objective && (
+									<div className="text-sm text-text-dim italic">
+										Click to review and edit this brief
+									</div>
+								)}
+							</button>
 						</div>
 					)}
 
