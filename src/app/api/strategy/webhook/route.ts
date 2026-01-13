@@ -127,6 +127,16 @@ export async function POST(req: Request) {
 		}
 
 		const payload = await req.json();
+		
+		// Log the payload for debugging
+		console.log('[Strategy Webhook] Received callback:', {
+			mode: payload?.mode,
+			strategy_update_id: payload?.strategy_update_id,
+			brand_profile_id: payload?.brand_profile_id,
+			status: payload?.status,
+			strategy_status: payload?.strategy_status,
+		});
+		
 		const brandProfileId: string | undefined = payload?.brand_profile_id;
 		const strategyUpdateId: string | undefined = payload?.strategy_update_id;
 		const mode: string | undefined = payload?.mode;
