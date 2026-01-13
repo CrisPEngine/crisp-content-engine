@@ -89,7 +89,7 @@ export async function GET(request: Request) {
 		const airtableResult = await airtableRes.json();
 
 		console.log(`[Content Briefs API] Found ${airtableResult.records?.length || 0} records for brand ${brandProfileId}, user ${user.id}`);
-		console.log(`[Content Briefs API] Filter formula: AND(FIND("${brandProfileId}", {brand_profile_id}), {user_id} = "${user.id}")`);
+		console.log(`[Content Briefs API] Filter formula: AND({brand_profile_id} = "${brandProfileId}", {user_id} = "${user.id}")`);
 		
 		if (airtableResult.records?.length === 0) {
 			console.log(`[Content Briefs API] No records found. Checking if brief exists with different filter...`);
@@ -170,6 +170,51 @@ export async function GET(request: Request) {
 			// Handle cycle_start_date - check both field ID (fldiOJywhukr8acuF) and field name
 			const cycleStartDate = fields['fldiOJywhukr8acuF'] || fields.cycle_start_date || '';
 
+			// Format result_payload JSON for display
+			let resultPayloadFormatted = null;
+			if (fields.result_payload) {
+				try {
+					const payload = typeof fields.result_payload === 'string' 
+						? JSON.parse(fields.result_payload) 
+						: fields.result_payload;
+					
+					// Extract key information for display
+					const monthlyStrategy = payload?.monthly_strategy;
+					if (monthlyStrategy) {
+						const lines: string[] = [];
+						if (monthlyStrategy.objective) {
+							lines.push(`Objective: ${monthlyStrategy.objective}`);
+						}
+						if (monthlyStrategy.themes && Array.isArray(monthlyStrategy.themes)) {
+							lines.push(`Themes: ${monthlyStrategy.themes.join(', ')}`);
+						}
+						if (monthlyStrategy.core_messaging) {
+							lines.push(`Core Messaging: ${monthlyStrategy.core_messaging}`);
+						}
+						if (monthlyStrategy.pillars && Array.isArray(monthlyStrategy.pillars)) {
+							lines.push(`\nContent Pillars:`);
+							monthlyStrategy.pillars.forEach((pillar: any, index: number) => {
+								if (pillar.name) {
+									lines.push(`${index + 1}. ${pillar.name}`);
+									if (pillar.why) {
+										lines.push(`   ${pillar.why}`);
+									}
+								}
+							});
+						}
+						resultPayloadFormatted = lines.join('\n');
+					} else {
+						// Fallback: just stringify the whole payload
+						resultPayloadFormatted = JSON.stringify(payload, null, 2);
+					}
+				} catch (error) {
+					// If parsing fails, use the raw string
+					resultPayloadFormatted = typeof fields.result_payload === 'string' 
+						? fields.result_payload 
+						: JSON.stringify(fields.result_payload);
+				}
+			}
+
 			return {
 				id: record.id,
 				brand_profile_id: brandProfileId,
@@ -185,6 +230,8 @@ export async function GET(request: Request) {
 				sent_to_make_at: fields.sent_to_make_at || null,
 				generation_completed_at: fields.generation_completed_at || null,
 				last_error: fields.last_error || null,
+				result_payload: fields.result_payload || null,
+				result_payload_formatted: resultPayloadFormatted,
 			};
 		});
 
