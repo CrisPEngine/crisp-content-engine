@@ -60,14 +60,14 @@ export async function GET(request: Request) {
 		}
 
 		// Fetch briefs for this brand profile
-		// Use returnFieldsByFieldId=true to get responses keyed by field IDs (more stable)
+		// Use field names (not returnFieldsByFieldId) since we're filtering by field names
 		const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}`);
 		const filterFormula = `AND(FIND("${brandProfileId}", {brand_profile_id}), {user_id} = "${user.id}")`;
 		url.searchParams.set('filterByFormula', filterFormula);
 		url.searchParams.set('sort[0][field]', 'submitted_at');
 		url.searchParams.set('sort[0][direction]', 'desc');
 		url.searchParams.set('maxRecords', '20'); // Get last 20 briefs
-		url.searchParams.set('returnFieldsByFieldId', 'true'); // Get responses keyed by field IDs
+		// Don't use returnFieldsByFieldId - we're using field names in filter and accessing fields by name
 
 		const airtableRes = await fetch(url.toString(), {
 			headers: {
@@ -116,60 +116,37 @@ export async function GET(request: Request) {
 		}
 
 		// Map to cleaner format
-		// Note: With returnFieldsByFieldId=true, fields are keyed by field IDs
-		// We need to handle both field IDs and field names for compatibility
+		// Fields are keyed by field names (not field IDs) since we didn't use returnFieldsByFieldId
 		const briefs = (airtableResult.records || []).map((record: any) => {
 			const fields = record.fields || {};
 			
 			// Extract brand_profile_id (could be array from link field)
-			// With returnFieldsByFieldId=true, we need to check both field ID and field name
 			let brandProfileId: string | null = null;
-			const brandProfileField = fields.brand_profile_id || Object.values(fields).find((v: any) => 
-				Array.isArray(v) && v.some((item: any) => 
-					typeof item === 'string' ? item === brandProfileId : item?.id === brandProfileId
-				)
-			);
-			
-			if (brandProfileField) {
-				if (Array.isArray(brandProfileField)) {
-					brandProfileId = typeof brandProfileField[0] === 'string' 
-						? brandProfileField[0] 
-						: brandProfileField[0]?.id || null;
-				} else if (typeof brandProfileField === 'string') {
-					brandProfileId = brandProfileField;
-				} else if (brandProfileField?.id) {
-					brandProfileId = brandProfileField.id;
+			if (fields.brand_profile_id) {
+				if (Array.isArray(fields.brand_profile_id)) {
+					brandProfileId = typeof fields.brand_profile_id[0] === 'string'
+						? fields.brand_profile_id[0]
+						: fields.brand_profile_id[0]?.id || null;
+				} else if (typeof fields.brand_profile_id === 'string') {
+					brandProfileId = fields.brand_profile_id;
+				} else if (fields.brand_profile_id?.id) {
+					brandProfileId = fields.brand_profile_id.id;
 				}
 			}
 
-			// Handle cycle_start_date - it's stored with field ID fldiOJywhukr8acuF
-			// But also check by field name for backward compatibility
+			// Handle cycle_start_date - check both field ID (fldiOJywhukr8acuF) and field name
 			const cycleStartDate = fields['fldiOJywhukr8acuF'] || fields.cycle_start_date || '';
-
-			// Handle user_id - check both field ID and field name
-			let userId: string | null = null;
-			const userIdField = fields.user_id || Object.values(fields).find((v: any) => 
-				typeof v === 'string' && v === user.id
-			);
-			if (userIdField) {
-				userId = typeof userIdField === 'string' ? userIdField : userIdField?.id || null;
-			}
-
-			// Handle status - check both field ID and field name
-			const statusField = fields.status || Object.values(fields).find((v: any) => 
-				typeof v === 'string' && ['Pending Approval', 'Approved', 'Sent to Make', 'Generation Completed', 'Failed', 'Draft', 'Processing'].includes(v)
-			);
 
 			return {
 				id: record.id,
 				brand_profile_id: brandProfileId,
-				user_id: userId || fields.user_id || null,
+				user_id: fields.user_id || null,
 				brief_mode: fields.brief_mode || 'continue',
 				cycle_start_date: cycleStartDate,
 				cycle_label: fields.cycle_label || '',
 				objective: fields.objective || '',
 				themes_focus: fields.themes_focus || '',
-				status: (typeof statusField === 'string' ? statusField : statusField?.id) || fields.status || 'Draft',
+				status: fields.status || 'Draft',
 				submitted_at: fields.submitted_at || null,
 				approved_at: fields.approved_at || null,
 				sent_to_make_at: fields.sent_to_make_at || null,
