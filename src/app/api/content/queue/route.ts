@@ -264,57 +264,71 @@ export async function GET(request: Request) {
 		};
 
 		// Map records using lookup fields (no BrandProfiles queries needed)
-		let items: ContentItem[] = records.map((record: any) => {
-			const fields = record.fields || {};
-			
-			// Helper to access fields - try by ID first (returnFieldsByFieldId=true), then by name
-			// Note: We don't have field IDs for all regular fields, so we rely on name fallback
-			const getField = (fieldName: string, fieldId?: string) => getFieldValue(fields, fieldId, fieldName);
-			
-			// Extract brand_profile_id - could be a link field (array) or string
-			// With returnFieldsByFieldId=true, we need to check both ID and name
-			const brandProfileIdField = getField('brand_profile_id');
-			let brandProfileId: string | null = null;
-			if (brandProfileIdField) {
-				if (Array.isArray(brandProfileIdField)) {
-					const firstItem = brandProfileIdField[0];
-					if (firstItem) {
-						brandProfileId = typeof firstItem === 'string' ? firstItem : (firstItem?.id || String(firstItem));
+		let items: ContentItem[] = records
+			.map((record: any) => {
+				const fields = record.fields || {};
+				
+				// Helper to access fields - try by ID first (returnFieldsByFieldId=true), then by name
+				// Note: We don't have field IDs for all regular fields, so we rely on name fallback
+				const getField = (fieldName: string, fieldId?: string) => getFieldValue(fields, fieldId, fieldName);
+				
+				// Extract brand_profile_id - could be a link field (array) or string
+				// With returnFieldsByFieldId=true, we need to check both ID and name
+				const brandProfileIdField = getField('brand_profile_id');
+				let brandProfileId: string | null = null;
+				if (brandProfileIdField) {
+					if (Array.isArray(brandProfileIdField)) {
+						const firstItem = brandProfileIdField[0];
+						if (firstItem) {
+							brandProfileId = typeof firstItem === 'string' ? firstItem : (firstItem?.id || String(firstItem));
+						}
+					} else if (typeof brandProfileIdField === 'string') {
+						brandProfileId = brandProfileIdField;
+					} else if (brandProfileIdField?.id) {
+						brandProfileId = String(brandProfileIdField.id);
 					}
-				} else if (typeof brandProfileIdField === 'string') {
-					brandProfileId = brandProfileIdField;
-				} else if (brandProfileIdField?.id) {
-					brandProfileId = String(brandProfileIdField.id);
 				}
-			}
 
-			// Use brand_name_lookup (normalize from array if needed)
-			// Access by field ID since returnFieldsByFieldId=true
-			const brandName = normalizeLookup(fields[LOOKUP_FIELD_IDS.brand_name_lookup]) || 'Unknown Brand';
+				// Use brand_name_lookup (normalize from array if needed)
+				// Access by field ID since returnFieldsByFieldId=true
+				const brandName = normalizeLookup(fields[LOOKUP_FIELD_IDS.brand_name_lookup]) || 'Unknown Brand';
 
-			return {
-				id: record.id,
-				title: getField('hook', CONTENTQUEUE_FIELD_IDS.hook) || getField('title') || getField('post_title') || 'Untitled',
-				platform: getField('platform', CONTENTQUEUE_FIELD_IDS.platform) || 'Blog',
-				status: getField('status', CONTENTQUEUE_FIELD_IDS.status) || 'Draft',
-				content_type: getField('content_type') || 'Post',
-				scheduled_date: getField('scheduled_time', CONTENTQUEUE_FIELD_IDS.scheduled_time) || getField('scheduled_date') || null,
-				brand_profile_id: brandProfileId,
-				brand_name: brandName,
-				// IMPORTANT: 'content' field doesn't exist - only use post_content
-				content: getField('post_content', CONTENTQUEUE_FIELD_IDS.post_content) || getField('post_body') || '',
-				summary: getField('summary') || getField('content_summary') || '',
-				call_to_action: getField('call_to_action', CONTENTQUEUE_FIELD_IDS.call_to_action) || '',
-				hashtags: getField('hashtags', CONTENTQUEUE_FIELD_IDS.hashtags) || '',
-				image_prompt: getField('image_prompt', CONTENTQUEUE_FIELD_IDS.image_prompt) || '',
-				image_generation_source: getField('image_generation_source', CONTENTQUEUE_FIELD_IDS.image_generation_source) || '',
-				image_reference_url: getField('image_reference_url', CONTENTQUEUE_FIELD_IDS.image_reference_url) || '',
-				image_cloudinary_id: getField('image_cloudinary_id') || '',
-				created_time: getField('created_time', CONTENTQUEUE_FIELD_IDS.created_time) || record.createdTime,
-				updated_time: getField('last_modified', CONTENTQUEUE_FIELD_IDS.last_modified) || getField('updated_time') || null,
-				published_at: getField('published_at', CONTENTQUEUE_FIELD_IDS.published_at) || null,
-			};
-		});
+				const title = getField('hook', CONTENTQUEUE_FIELD_IDS.hook) || getField('title') || getField('post_title') || '';
+				const content = getField('post_content', CONTENTQUEUE_FIELD_IDS.post_content) || getField('post_body') || '';
+
+				return {
+					id: record.id,
+					title: title || 'Untitled',
+					platform: getField('platform', CONTENTQUEUE_FIELD_IDS.platform) || 'Blog',
+					status: getField('status', CONTENTQUEUE_FIELD_IDS.status) || 'Draft',
+					content_type: getField('content_type') || 'Post',
+					scheduled_date: getField('scheduled_time', CONTENTQUEUE_FIELD_IDS.scheduled_time) || getField('scheduled_date') || null,
+					brand_profile_id: brandProfileId,
+					brand_name: brandName,
+					// IMPORTANT: 'content' field doesn't exist - only use post_content
+					content: content,
+					summary: getField('summary') || getField('content_summary') || '',
+					call_to_action: getField('call_to_action', CONTENTQUEUE_FIELD_IDS.call_to_action) || '',
+					hashtags: getField('hashtags', CONTENTQUEUE_FIELD_IDS.hashtags) || '',
+					image_prompt: getField('image_prompt', CONTENTQUEUE_FIELD_IDS.image_prompt) || '',
+					image_generation_source: getField('image_generation_source', CONTENTQUEUE_FIELD_IDS.image_generation_source) || '',
+					image_reference_url: getField('image_reference_url', CONTENTQUEUE_FIELD_IDS.image_reference_url) || '',
+					image_cloudinary_id: getField('image_cloudinary_id') || '',
+					created_time: getField('created_time', CONTENTQUEUE_FIELD_IDS.created_time) || record.createdTime,
+					updated_time: getField('last_modified', CONTENTQUEUE_FIELD_IDS.last_modified) || getField('updated_time') || null,
+					published_at: getField('published_at', CONTENTQUEUE_FIELD_IDS.published_at) || null,
+				};
+			})
+			// Filter out records with no content (deleted/empty records)
+			// Airtable may return records that have been soft-deleted (fields cleared but record exists)
+			.filter((item) => {
+				// Keep records that have either a meaningful title or content
+				const hasTitle = item.title && item.title.trim() && item.title !== 'Untitled';
+				const hasContent = item.content && item.content.trim();
+				// Filter out records where both title and content are empty/blank
+				// This handles cases where records were deleted but still exist in Airtable
+				return hasTitle || hasContent;
+			});
 
 		// Additional filtering in code (if needed for brand_profile_id or content_brief_id)
 		// Note: user_id filtering is already done in Airtable query via user_id_lookup

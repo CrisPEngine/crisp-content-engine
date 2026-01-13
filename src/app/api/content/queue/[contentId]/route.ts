@@ -365,7 +365,9 @@ export async function DELETE(request: Request, context: { params: Promise<{ cont
 		// Verify user owns this content before deleting
 		const record = await fetchRecordForUser(contentId, user.id, BASE_ID, TABLE_ID, BRANDPROFILES_TABLE, AIRTABLE_TOKEN);
 		if (!record) {
-			return NextResponse.json({ error: 'Content item not found or unauthorized' }, { status: 404 });
+			// Record doesn't exist or user doesn't own it - return success (idempotent delete)
+			// This handles the case where record was already deleted from Airtable
+			return NextResponse.json({ ok: true, message: 'Content item not found (may have been already deleted)' });
 		}
 
 		// Delete the record from Airtable
@@ -378,6 +380,11 @@ export async function DELETE(request: Request, context: { params: Promise<{ cont
 		});
 
 		if (!deleteRes.ok) {
+			// If record was already deleted (404), treat as success (idempotent)
+			if (deleteRes.status === 404) {
+				return NextResponse.json({ ok: true, message: 'Content already deleted' });
+			}
+			
 			const deleteResult = await deleteRes.json();
 			console.error('Airtable delete error:', deleteResult);
 			return NextResponse.json(
