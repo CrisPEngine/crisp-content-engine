@@ -86,6 +86,8 @@ export default function ContentBriefPage() {
 	const [loadingPosts, setLoadingPosts] = useState(false);
 	const [loading, setLoading] = useState(true);
 	const [submitting, setSubmitting] = useState(false);
+	const [showLoading, setShowLoading] = useState(false);
+	const [loadingStep, setLoadingStep] = useState(0);
 	const [form, setForm] = useState<FormState>(() => initialFormState());
 	const [error, setError] = useState<string | null>(null);
 	const [success, setSuccess] = useState<string | null>(null);
