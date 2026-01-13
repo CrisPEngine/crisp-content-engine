@@ -60,12 +60,14 @@ export async function GET(request: Request) {
 		}
 
 		// Fetch briefs for this brand profile
+		// Use returnFieldsByFieldId=true to get responses keyed by field IDs (more stable)
 		const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}`);
 		const filterFormula = `AND(FIND("${brandProfileId}", {brand_profile_id}), {user_id} = "${user.id}")`;
 		url.searchParams.set('filterByFormula', filterFormula);
 		url.searchParams.set('sort[0][field]', 'submitted_at');
 		url.searchParams.set('sort[0][direction]', 'desc');
 		url.searchParams.set('maxRecords', '20'); // Get last 20 briefs
+		url.searchParams.set('returnFieldsByFieldId', 'true'); // Get responses keyed by field IDs
 
 		const airtableRes = await fetch(url.toString(), {
 			headers: {
@@ -85,7 +87,11 @@ export async function GET(request: Request) {
 
 		const airtableResult = await airtableRes.json();
 
+		console.log(`[Content Briefs API] Found ${airtableResult.records?.length || 0} records for brand ${brandProfileId}, user ${user.id}`);
+
 		// Map to cleaner format
+		// Note: With returnFieldsByFieldId=true, fields are keyed by field IDs
+		// We need to handle both field IDs and field names for compatibility
 		const briefs = (airtableResult.records || []).map((record: any) => {
 			const fields = record.fields || {};
 			
@@ -99,12 +105,16 @@ export async function GET(request: Request) {
 				}
 			}
 
+			// Handle cycle_start_date - it's stored with field ID fldiOJywhukr8acuF
+			// But also check by field name for backward compatibility
+			const cycleStartDate = fields['fldiOJywhukr8acuF'] || fields.cycle_start_date || '';
+
 			return {
 				id: record.id,
 				brand_profile_id: brandProfileId,
 				user_id: fields.user_id,
 				brief_mode: fields.brief_mode || 'continue',
-				cycle_start_date: fields.cycle_start_date || '',
+				cycle_start_date: cycleStartDate,
 				cycle_label: fields.cycle_label || '',
 				objective: fields.objective || '',
 				themes_focus: fields.themes_focus || '',

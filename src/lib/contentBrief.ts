@@ -46,6 +46,10 @@ export async function triggerContentGenerationFromBrief(briefId: string): Promis
 
 	const briefData = await briefRes.json();
 	const fields = briefData.fields || {};
+	
+	// Handle cycle_start_date field ID (fldiOJywhukr8acuF) - check both ID and name for compatibility
+	// When returnFieldsByFieldId is used, fields are keyed by IDs
+	const cycleStartDate = fields['fldiOJywhukr8acuF'] || fields.cycle_start_date || '';
 
 	// Idempotency check: Don't allow triggering if already sent or completed
 	const currentStatus = fields.status || '';
@@ -241,7 +245,7 @@ export async function triggerContentGenerationFromBrief(briefId: string): Promis
 			key_dates: briefSnapshot.key_dates || fields.key_dates || '',
 			feedback_notes: briefSnapshot.feedback_notes || fields.feedback_notes || '',
 			content_preferences: briefSnapshot.content_preferences || fields.content_preferences || '',
-			cycle_start_date: briefSnapshot.cycle_start_date || fields.cycle_start_date || '',
+			cycle_start_date: briefSnapshot.cycle_start_date || cycleStartDate || '',
 			cycle_label: fields.cycle_label || '',
 			primary_goal: briefSnapshot.primary_goal || fields.primary_goal || '',
 			success_metric: briefSnapshot.success_metric || fields.success_metric || '',
