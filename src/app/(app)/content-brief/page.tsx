@@ -208,33 +208,39 @@ export default function ContentBriefPage() {
 		}
 	};
 
+	// Loading steps for interstitial
+	const loadingSteps = [
+		{ text: 'Saving your content brief...', duration: 1000 },
+		{ text: 'Sending to content strategy team...', duration: 1500 },
+		{ text: 'Processing your brief...', duration: 2000 },
+	];
+
+	// Handle loading step progression
+	useEffect(() => {
+		if (!showLoading) {
+			setLoadingStep(0);
+			return;
+		}
+
+		const timeouts: NodeJS.Timeout[] = [];
+		let currentStep = 0;
+
+		loadingSteps.forEach((step, index) => {
+			const timeout = setTimeout(() => {
+				if (index < loadingSteps.length - 1) {
+					setLoadingStep(index + 1);
+				}
+			}, step.duration + (index > 0 ? loadingSteps.slice(0, index).reduce((acc, s) => acc + s.duration, 0) : 0));
+			timeouts.push(timeout);
+		});
+
+		return () => {
+			timeouts.forEach((timeout) => clearTimeout(timeout));
+		};
+	}, [showLoading]);
+
 	// Loading interstitial while Make.com processes
 	if (showLoading) {
-		const loadingSteps = [
-			{ text: 'Saving your content brief...', duration: 1000 },
-			{ text: 'Sending to content strategy team...', duration: 1500 },
-			{ text: 'Processing your brief...', duration: 2000 },
-		];
-		const [loadingStep, setLoadingStep] = useState(0);
-
-		useEffect(() => {
-			if (!showLoading) return;
-			let currentStep = 0;
-			const timeouts: NodeJS.Timeout[] = [];
-
-			loadingSteps.forEach((step, index) => {
-				const timeout = setTimeout(() => {
-					if (index < loadingSteps.length - 1) {
-						setLoadingStep(index + 1);
-					}
-				}, step.duration + (index > 0 ? loadingSteps.slice(0, index).reduce((acc, s) => acc + s.duration, 0) : 0));
-				timeouts.push(timeout);
-			});
-
-			return () => {
-				timeouts.forEach((timeout) => clearTimeout(timeout));
-			};
-		}, [showLoading]);
 
 		return (
 			<div className="fixed inset-0 z-50 flex items-center justify-center bg-bg/95 backdrop-blur-sm">
