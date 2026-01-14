@@ -239,7 +239,8 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 						{profiles.map((profile) => {
 							const normalisedStatus = normaliseStatus(profile.status);
 							const isContentReview = normalisedStatus === 'Content Review';
-							const isStrategyReady = (normalisedStatus === 'Strategy Ready' || normalisedStatus === 'Strategy Ready For Approval') && normalisedStatus !== 'Strategy Approved';
+							// Strategy is ready if it's ready status AND not already approved
+							const isStrategyReady = (normalisedStatus === 'Strategy Ready' || normalisedStatus === 'Strategy Ready For Approval') && profile.original_status !== 'Strategy Approved';
 							const isStrategyApproved = profile.original_status === 'Strategy Approved' || normalisedStatus === 'Strategy Approved';
 							const hasPendingContent = profile.has_pending_content === true;
 							

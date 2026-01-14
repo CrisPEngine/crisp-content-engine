@@ -197,6 +197,29 @@ export async function POST(req: NextRequest) {
 											.maybeSingle();
 
 										if (profile?.email) {
+											// Fetch brand name from Airtable
+											let brandName: string | undefined = undefined;
+											if (brand_profile_id && AIRTABLE_TOKEN && BASE_ID && BRANDPROFILES_TABLE) {
+												try {
+													const brandRes = await fetch(
+														`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}/${brand_profile_id}`,
+														{
+															headers: {
+																Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+																'Content-Type': 'application/json',
+															},
+														}
+													);
+													if (brandRes.ok) {
+														const brandData = await brandRes.json();
+														brandName = brandData.fields?.client_name || brandData.fields?.brand_name || undefined;
+													}
+												} catch (brandError) {
+													console.warn('[CONTENT WEBHOOK] Failed to fetch brand name:', brandError);
+													// Continue without brand name if fetch fails
+												}
+											}
+
 											const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io';
 											// Include content_brief_id in deep link for traceability
 											const contentUrl = `${appUrl}/content/approval?brand_profile_id=${brand_profile_id}${brief_id ? `&content_brief_id=${brief_id}` : ''}`;
@@ -207,7 +230,7 @@ export async function POST(req: NextRequest) {
 												react: ContentReadyEmail({
 													userName: profile.full_name || 'there',
 													contentUrl,
-													brandName: brand_profile_id, // Could fetch actual brand name if needed
+													brandName: brandName || undefined,
 												}),
 												category: 'content',
 											});
