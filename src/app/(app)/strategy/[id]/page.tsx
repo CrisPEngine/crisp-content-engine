@@ -105,16 +105,43 @@ export default function StrategyReviewPage() {
 				throw new Error(errorMessage);
 			}
 
-			// Show loading animation
-			setShowLoading(true);
-			// Redirect to content approval with generating flag after loading completes
+			// Wait 5 seconds with button loading, then show interstitial
 			setTimeout(() => {
-				router.push('/content/approval?generating=true');
-			}, 6000); // After loading animation completes
+				setApproving(false);
+				setShowLoading(true);
+			}, 5000);
 		} catch (err: any) {
 			console.error('Failed to approve strategy:', err);
 			setError(err.message || 'Failed to approve strategy. Please try again.');
 			setApproving(false);
+		}
+	}
+
+	// Poll function for ContentGenerationLoading
+	async function pollForCompletion(): Promise<boolean> {
+		if (!strategy) return false;
+		
+		try {
+			// Check if content has been created for this brand
+			const contentRes = await fetch(
+				`/api/content/queue?stage=approval&brand_profile_id=${strategy.id}`,
+				{ cache: 'no-store' }
+			);
+			
+			if (contentRes.ok) {
+				const contentData = await contentRes.json();
+				const items = contentData.items || [];
+				
+				// If content exists, generation is complete
+				if (items.length > 0) {
+					return true;
+				}
+			}
+			
+			return false;
+		} catch (error) {
+			console.error('Error polling for completion:', error);
+			return false;
 		}
 	}
 
@@ -243,7 +270,13 @@ export default function StrategyReviewPage() {
 	};
 
 	if (showLoading) {
-		return <ContentGenerationLoading onComplete={handleContentGenerationComplete} />;
+		return (
+			<ContentGenerationLoading 
+				onComplete={handleContentGenerationComplete}
+				pollForCompletion={pollForCompletion}
+				brandProfileId={strategy?.id}
+			/>
+		);
 	}
 
 	return (

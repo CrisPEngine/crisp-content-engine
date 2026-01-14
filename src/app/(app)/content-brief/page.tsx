@@ -172,7 +172,6 @@ export default function ContentBriefPage() {
 		}
 
 		setSubmitting(true);
-		setShowLoading(true);
 		setError(null);
 		setSuccess(null);
 		
@@ -197,11 +196,17 @@ export default function ContentBriefPage() {
 				throw new Error(data?.error || 'Failed to submit content brief');
 			}
 
-			// Wait a bit for the loading animation, then redirect
+			// Wait 5 seconds with button loading, then show interstitial
 			setTimeout(() => {
-				setShowLoading(false);
-				router.push(`/strategy?brand_profile_id=${form.brand_profile_id}&tab=content-briefs`);
-			}, 3000);
+				setSubmitting(false);
+				setShowLoading(true);
+				
+				// Wait a bit for the loading animation, then redirect
+				setTimeout(() => {
+					setShowLoading(false);
+					router.push(`/strategy?brand_profile_id=${form.brand_profile_id}&tab=content-briefs`);
+				}, 3000);
+			}, 5000);
 		} catch (err: any) {
 			console.error('Content brief error:', err);
 			setShowLoading(false);

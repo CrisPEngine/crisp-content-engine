@@ -11,15 +11,31 @@ type Step = {
 };
 
 const steps: Step[] = [
-	{ id: 'approve', label: 'Approving strategy...', status: 'pending' },
+	{ id: 'approve', label: 'Approving...', status: 'pending' },
 	{ id: 'generate', label: 'AI generating content...', status: 'pending' },
 	{ id: 'schedule', label: 'Scheduling posts...', status: 'pending' },
-	{ id: 'complete', label: 'Content generation has started', status: 'pending' },
+	{ id: 'complete', label: 'Content generation complete', status: 'pending' },
 ];
 
-export function ContentGenerationLoading({ onComplete }: { onComplete?: () => void }) {
+type ContentGenerationLoadingProps = {
+	onComplete?: () => void;
+	/** Poll function that returns true when generation is complete */
+	pollForCompletion?: () => Promise<boolean>;
+	/** Brief ID to check status for (optional) */
+	briefId?: string;
+	/** Brand profile ID to check content for (optional) */
+	brandProfileId?: string;
+};
+
+export function ContentGenerationLoading({ 
+	onComplete, 
+	pollForCompletion,
+	briefId,
+	brandProfileId,
+}: ContentGenerationLoadingProps) {
 	const [currentStep, setCurrentStep] = useState(0);
 	const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
+	const [isComplete, setIsComplete] = useState(false);
 
 	useEffect(() => {
 		// Simulate step progression
@@ -49,20 +65,71 @@ export function ContentGenerationLoading({ onComplete }: { onComplete?: () => vo
 			}, 4000)
 		);
 
-		// Step 4: Complete (redirect after 1 second)
-		timers.push(
-			setTimeout(() => {
-				setCompletedSteps((prev) => new Set([...prev, 'complete']));
-				if (onComplete) {
-					setTimeout(() => onComplete(), 1000);
+		// Poll for completion if pollForCompletion is provided
+		if (pollForCompletion) {
+			let pollCount = 0;
+			const maxPolls = 120; // 10 minutes max (120 * 5 seconds)
+			
+			const pollInterval = setInterval(async () => {
+				pollCount++;
+				
+				try {
+					const completed = await pollForCompletion();
+					if (completed) {
+						clearInterval(pollInterval);
+						setCompletedSteps((prev) => new Set([...prev, 'complete']));
+						setCurrentStep(4);
+						setIsComplete(true);
+						
+						// Call onComplete after a brief delay
+						if (onComplete) {
+							setTimeout(() => onComplete(), 1500);
+						}
+					}
+				} catch (error) {
+					console.error('Error polling for completion:', error);
+					// Continue polling on error
 				}
-			}, 5000)
-		);
+				
+				// Stop polling after max attempts
+				if (pollCount >= maxPolls) {
+					clearInterval(pollInterval);
+					setCompletedSteps((prev) => new Set([...prev, 'complete']));
+					setCurrentStep(4);
+					setIsComplete(true);
+					
+					// Call onComplete anyway
+					if (onComplete) {
+						setTimeout(() => onComplete(), 1500);
+					}
+				}
+			}, 5000); // Poll every 5 seconds
+			
+			timers.push(pollInterval as any);
+		} else {
+			// Fallback: Complete after 5 seconds if no polling function
+			timers.push(
+				setTimeout(() => {
+					setCompletedSteps((prev) => new Set([...prev, 'complete']));
+					setCurrentStep(4);
+					setIsComplete(true);
+					if (onComplete) {
+						setTimeout(() => onComplete(), 1000);
+					}
+				}, 5000)
+			);
+		}
 
 		return () => {
-			timers.forEach((timer) => clearTimeout(timer));
+			timers.forEach((timer) => {
+				if (typeof timer === 'number') {
+					clearTimeout(timer);
+				} else {
+					clearInterval(timer);
+				}
+			});
 		};
-	}, [onComplete]);
+	}, [onComplete, pollForCompletion]);
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-bg/95 backdrop-blur-sm">

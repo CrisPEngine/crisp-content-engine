@@ -103,63 +103,52 @@ export default function ContentBriefReviewPage() {
 				throw new Error(data?.error || 'Failed to approve content brief');
 			}
 
-			// Show loading animation and poll for content
-			setShowLoading(true);
-			
-			// Poll for content generation completion
-			let pollCount = 0;
-			const maxPolls = 60; // 5 minutes max (60 * 5 seconds)
-			const pollInterval = setInterval(async () => {
-				pollCount++;
-				
-				try {
-					// Check if content has been created
-					const contentRes = await fetch(
-						`/api/content/queue?stage=approval&brand_profile_id=${brief.brand_profile_id}&content_brief_id=${brief.id}`,
-						{ cache: 'no-store' }
-					);
-					
-					if (contentRes.ok) {
-						const contentData = await contentRes.json();
-						const items = contentData.items || [];
-						
-						// If content exists, redirect to approval page
-						if (items.length > 0) {
-							clearInterval(pollInterval);
-							setShowLoading(false);
-							router.push(`/content/approval?brand_profile_id=${brief.brand_profile_id}&content_brief_id=${brief.id}&generating=true`);
-							return;
-						}
-					}
-					
-					// Also check brief status to see if generation completed or failed
-					const briefRes = await fetch(`/api/content-brief/${brief.id}`, { cache: 'no-store' });
-					if (briefRes.ok) {
-						const briefData = await briefRes.json();
-						if (briefData.status === 'Generation Completed' || briefData.status === 'Failed') {
-							clearInterval(pollInterval);
-							setShowLoading(false);
-							router.push(`/content/approval?brand_profile_id=${brief.brand_profile_id}&content_brief_id=${brief.id}&generating=true`);
-							return;
-						}
-					}
-					
-					// Stop polling after max attempts
-					if (pollCount >= maxPolls) {
-						clearInterval(pollInterval);
-						setShowLoading(false);
-						// Redirect anyway - user can refresh if needed
-						router.push(`/content/approval?brand_profile_id=${brief.brand_profile_id}&content_brief_id=${brief.id}&generating=true`);
-					}
-				} catch (pollError) {
-					console.error('Error polling for content:', pollError);
-					// Continue polling on error
-				}
-			}, 5000); // Poll every 5 seconds
+			// Wait 5 seconds with button loading, then show interstitial
+			setTimeout(() => {
+				setApproving(false);
+				setShowLoading(true);
+			}, 5000);
 		} catch (err: any) {
 			console.error('Failed to approve content brief:', err);
 			setError(err.message || 'Failed to approve content brief. Please try again.');
 			setApproving(false);
+		}
+	}
+
+	// Poll function for ContentGenerationLoading
+	async function pollForCompletion(): Promise<boolean> {
+		if (!brief) return false;
+		
+		try {
+			// Check if content has been created
+			const contentRes = await fetch(
+				`/api/content/queue?stage=approval&brand_profile_id=${brief.brand_profile_id}&content_brief_id=${brief.id}`,
+				{ cache: 'no-store' }
+			);
+			
+			if (contentRes.ok) {
+				const contentData = await contentRes.json();
+				const items = contentData.items || [];
+				
+				// If content exists, generation is complete
+				if (items.length > 0) {
+					return true;
+				}
+			}
+			
+			// Also check brief status to see if generation completed or failed
+			const briefRes = await fetch(`/api/content-brief/${brief.id}`, { cache: 'no-store' });
+			if (briefRes.ok) {
+				const briefData = await briefRes.json();
+				if (briefData.status === 'Generation Completed' || briefData.status === 'Failed') {
+					return true;
+				}
+			}
+			
+			return false;
+		} catch (error) {
+			console.error('Error polling for completion:', error);
+			return false;
 		}
 	}
 
@@ -235,7 +224,14 @@ export default function ContentBriefReviewPage() {
 	}
 
 	if (showLoading) {
-		return <ContentGenerationLoading onComplete={() => router.push(`/content/approval?brand_profile_id=${brief?.brand_profile_id}`)} />;
+		return (
+			<ContentGenerationLoading 
+				onComplete={() => router.push(`/content/approval?brand_profile_id=${brief?.brand_profile_id}&content_brief_id=${brief?.id}&generating=true`)}
+				pollForCompletion={pollForCompletion}
+				briefId={brief?.id}
+				brandProfileId={brief?.brand_profile_id || undefined}
+			/>
+		);
 	}
 
 	if (loading) {
