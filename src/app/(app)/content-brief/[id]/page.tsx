@@ -112,6 +112,7 @@ export default function ContentBriefReviewPage() {
 			console.error('Failed to approve content brief:', err);
 			setError(err.message || 'Failed to approve content brief. Please try again.');
 			setApproving(false);
+			setShowLoading(false);
 		}
 	}
 
@@ -132,6 +133,7 @@ export default function ContentBriefReviewPage() {
 				
 				// If content exists, generation is complete
 				if (items.length > 0) {
+					console.log(`[Content Brief] Polling found ${items.length} content items - generation complete`);
 					return true;
 				}
 			}
@@ -141,6 +143,7 @@ export default function ContentBriefReviewPage() {
 			if (briefRes.ok) {
 				const briefData = await briefRes.json();
 				if (briefData.status === 'Generation Completed' || briefData.status === 'Failed') {
+					console.log(`[Content Brief] Polling found brief status: ${briefData.status} - generation complete`);
 					return true;
 				}
 			}

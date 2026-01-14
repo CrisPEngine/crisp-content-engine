@@ -239,7 +239,7 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 						{profiles.map((profile) => {
 							const normalisedStatus = normaliseStatus(profile.status);
 							const isContentReview = normalisedStatus === 'Content Review';
-							const isStrategyReady = normalisedStatus === 'Strategy Ready' || normalisedStatus === 'Strategy Ready For Approval';
+							const isStrategyReady = (normalisedStatus === 'Strategy Ready' || normalisedStatus === 'Strategy Ready For Approval') && normalisedStatus !== 'Strategy Approved';
 							const isStrategyApproved = profile.original_status === 'Strategy Approved' || normalisedStatus === 'Strategy Approved';
 							const hasPendingContent = profile.has_pending_content === true;
 							
@@ -247,8 +247,29 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 							let href = `/strategy/${profile.id}`;
 							let actionButton = null;
 
-							if (isContentReview) {
+							// Priority 1: If content exists to review, always show Review Content (even if strategy is ready)
+							if (hasPendingContent || isContentReview) {
 								href = '/content/approval';
+								actionButton = (
+									<Link
+										href="/content/approval"
+										onClick={(e) => e.stopPropagation()}
+										className="px-3 md:px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm text-accent font-medium flex items-center gap-2"
+									>
+										Review Content
+									</Link>
+								);
+							} else if (isStrategyApproved) {
+								// Strategy approved - show Review Content button (even if no content yet)
+								actionButton = (
+									<Link
+										href="/content/approval"
+										onClick={(e) => e.stopPropagation()}
+										className="px-3 md:px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm text-accent font-medium flex items-center gap-2"
+									>
+										Review Content
+									</Link>
+								);
 							} else if (isStrategyReady) {
 								// Strategy Ready - show "Strategy Ready For Approval" button with tooltip
 								actionButton = (
@@ -265,17 +286,6 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 											Review and approve your strategy to generate content
 											<div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1 border-4 border-transparent border-t-edge/60" />
 										</div>
-									</Link>
-								);
-							} else if (isStrategyApproved) {
-								// Strategy approved - always show Review Content button
-								actionButton = (
-									<Link
-										href="/content/approval"
-										onClick={(e) => e.stopPropagation()}
-										className="px-3 md:px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm text-accent font-medium flex items-center gap-2"
-									>
-										Review Content
 									</Link>
 								);
 							}

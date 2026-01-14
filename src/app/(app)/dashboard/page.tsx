@@ -198,22 +198,29 @@ export default async function Dashboard({
 		let currentStep = 1;
 		
 		// Check if any brand has "Strategy Ready" status (means questionnaire is complete, strategy generated)
+		// BUT exclude "Strategy Approved" status - that means it's already approved
 		const hasStrategyReady = brandProfiles.some((p: any) => {
 			const status = (p.status || p.original_status || '').toString();
+			// Don't count "Strategy Approved" as needing approval
+			if (status === 'Strategy Approved') {
+				return false;
+			}
 			return status === 'Strategy Ready' || 
 			       status === 'Strategy Ready (Awaiting Approval)' ||
 			       status === 'Strategy Ready For Approval' ||
-			       status.toLowerCase().includes('strategy ready');
+			       (status.toLowerCase().includes('strategy ready') && !status.toLowerCase().includes('approved'));
 		});
 		
+		// Prioritize content review over strategy approval if content exists
 		if (isLinkedInConnected && !hasBrandProfiles) {
 			currentStep = 2;
+		} else if (isLinkedInConnected && hasBrandProfiles && hasApprovedStrategies && hasContentToReview) {
+			// If strategy is approved AND content exists, show content review (highest priority)
+			currentStep = 4; // Approved, has content to review
 		} else if (isLinkedInConnected && hasBrandProfiles && !hasStrategyReady && !hasApprovedStrategies) {
 			currentStep = 2; // Still need to complete questionnaire (brand created but no strategy yet)
 		} else if (isLinkedInConnected && hasBrandProfiles && hasStrategyReady && !hasApprovedStrategies) {
 			currentStep = 3; // Strategy ready, needs approval
-		} else if (isLinkedInConnected && hasBrandProfiles && hasApprovedStrategies && hasContentToReview) {
-			currentStep = 4; // Approved, has content to review
 		} else if (isLinkedInConnected && hasBrandProfiles && hasApprovedStrategies && !hasContentToReview) {
 			// All steps complete - don't show onboarding
 			currentStep = 0;
