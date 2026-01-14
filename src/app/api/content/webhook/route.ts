@@ -120,6 +120,7 @@ export async function POST(req: NextRequest) {
 			const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
 			const BASE_ID = process.env.AIRTABLE_BASE_ID;
 			const CONTENTBRIEFS_TABLE = process.env.AIRTABLE_STRATEGYUPDATES_TABLE;
+			const BRANDPROFILES_TABLE = process.env.AIRTABLE_BRANDPROFILES_TABLE;
 
 			if (AIRTABLE_TOKEN && BASE_ID && CONTENTBRIEFS_TABLE) {
 				try {
