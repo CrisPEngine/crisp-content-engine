@@ -103,12 +103,59 @@ export default function ContentBriefReviewPage() {
 				throw new Error(data?.error || 'Failed to approve content brief');
 			}
 
-			// Show loading animation
+			// Show loading animation and poll for content
 			setShowLoading(true);
-			// Redirect to content approval with generating flag after loading completes
-			setTimeout(() => {
-				router.push(`/content/approval?brand_profile_id=${brief.brand_profile_id}&generating=true`);
-			}, 6000); // After loading animation completes
+			
+			// Poll for content generation completion
+			let pollCount = 0;
+			const maxPolls = 60; // 5 minutes max (60 * 5 seconds)
+			const pollInterval = setInterval(async () => {
+				pollCount++;
+				
+				try {
+					// Check if content has been created
+					const contentRes = await fetch(
+						`/api/content/queue?stage=approval&brand_profile_id=${brief.brand_profile_id}&content_brief_id=${brief.id}`,
+						{ cache: 'no-store' }
+					);
+					
+					if (contentRes.ok) {
+						const contentData = await contentRes.json();
+						const items = contentData.items || [];
+						
+						// If content exists, redirect to approval page
+						if (items.length > 0) {
+							clearInterval(pollInterval);
+							setShowLoading(false);
+							router.push(`/content/approval?brand_profile_id=${brief.brand_profile_id}&content_brief_id=${brief.id}&generating=true`);
+							return;
+						}
+					}
+					
+					// Also check brief status to see if generation completed or failed
+					const briefRes = await fetch(`/api/content-brief/${brief.id}`, { cache: 'no-store' });
+					if (briefRes.ok) {
+						const briefData = await briefRes.json();
+						if (briefData.status === 'Generation Completed' || briefData.status === 'Failed') {
+							clearInterval(pollInterval);
+							setShowLoading(false);
+							router.push(`/content/approval?brand_profile_id=${brief.brand_profile_id}&content_brief_id=${brief.id}&generating=true`);
+							return;
+						}
+					}
+					
+					// Stop polling after max attempts
+					if (pollCount >= maxPolls) {
+						clearInterval(pollInterval);
+						setShowLoading(false);
+						// Redirect anyway - user can refresh if needed
+						router.push(`/content/approval?brand_profile_id=${brief.brand_profile_id}&content_brief_id=${brief.id}&generating=true`);
+					}
+				} catch (pollError) {
+					console.error('Error polling for content:', pollError);
+					// Continue polling on error
+				}
+			}, 5000); // Poll every 5 seconds
 		} catch (err: any) {
 			console.error('Failed to approve content brief:', err);
 			setError(err.message || 'Failed to approve content brief. Please try again.');
