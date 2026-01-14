@@ -107,14 +107,17 @@ const mapStatuses = (stage: string | null, statusParam: string | null) => {
 
 	switch (stage) {
 		case 'approval':
-			return ['Needs Approval', 'Needs Copy', 'Needs Review'];
+			// Include all statuses that need approval, plus Draft (for newly created content)
+			return ['Needs Approval', 'Needs Copy', 'Needs Review', 'Draft'];
 		case 'schedule':
 			return ['Scheduled', 'Ready To Publish', 'Published', 'Failed'];
 		case 'all':
 			// Return all statuses for dashboard overview
 			return ['Ready To Publish', 'Published', 'Scheduled', 'Needs Approval', 'Needs Copy', 'Needs Review', 'Draft'];
 		default:
-			return undefined;
+			// If no stage specified, show all approval-related statuses by default
+			// This ensures content is visible even if stage param is missing
+			return ['Needs Approval', 'Needs Copy', 'Needs Review', 'Draft'];
 	}
 };
 
