@@ -37,6 +37,7 @@ export default function ContentApprovalPage() {
 	const [editingTitle, setEditingTitle] = useState<string>('');
 	const [editingContent, setEditingContent] = useState<string>('');
 	const [editingHashtags, setEditingHashtags] = useState<string>('');
+	const [editingImagePrompt, setEditingImagePrompt] = useState<string>('');
 	const [editingScheduledTimeId, setEditingScheduledTimeId] = useState<string | null>(null);
 	const [editingScheduledTime, setEditingScheduledTime] = useState<string>('');
 	const [approving, setApproving] = useState<string | null>(null);
@@ -221,6 +222,7 @@ export default function ContentApprovalPage() {
 				content: editingContent,
 				title: editingTitle,
 				hashtags: editingHashtags,
+				image_prompt: editingImagePrompt,
 			};
 
 			const res = await fetch(`/api/content/queue/${id}`, {
@@ -241,6 +243,7 @@ export default function ContentApprovalPage() {
 								content: editingContent,
 								title: editingTitle,
 								hashtags: editingHashtags,
+								image_prompt: editingImagePrompt,
 							}
 						: item
 				)
@@ -249,6 +252,7 @@ export default function ContentApprovalPage() {
 			setEditingContent('');
 			setEditingTitle('');
 			setEditingHashtags('');
+			setEditingImagePrompt('');
 		} catch (err: any) {
 			console.error('Failed to save content:', err);
 			setError(err.message || 'Failed to save content');
@@ -296,6 +300,7 @@ export default function ContentApprovalPage() {
 		setEditingTitle(item.title);
 		setEditingContent(item.content);
 		setEditingHashtags(item.hashtags || '');
+		setEditingImagePrompt(item.image_prompt || '');
 	}
 
 	function startEditScheduledTime(item: ContentItem) {
@@ -741,6 +746,14 @@ export default function ContentApprovalPage() {
 												<span className="font-medium">Hashtags:</span> <span className="break-all">{item.hashtags}</span>
 											</div>
 										)}
+
+										{/* Suggested Image Prompt */}
+										{item.image_prompt && (
+											<div className="text-xs text-text-dim break-words">
+												<span className="font-medium">Suggested image prompt:</span>{' '}
+												<span className="break-all">{item.image_prompt}</span>
+											</div>
+										)}
 									</div>
 
 									{/* Right Column - Compact Image Panel */}
@@ -901,6 +914,7 @@ export default function ContentApprovalPage() {
 															setEditingContent('');
 															setEditingTitle('');
 															setEditingHashtags('');
+															setEditingImagePrompt('');
 														} else {
 															startEdit(item);
 														}
@@ -1010,6 +1024,23 @@ export default function ContentApprovalPage() {
 													/>
 												</div>
 
+												{/* Image Prompt Editor */}
+												<div>
+													<label className="block text-sm font-medium text-text-soft mb-2">
+														Suggested image prompt
+													</label>
+													<textarea
+														value={editingImagePrompt}
+														onChange={(e) => setEditingImagePrompt(e.target.value)}
+														rows={4}
+														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+														placeholder="Enter a suggested image prompt..."
+													/>
+													<p className="mt-2 text-xs text-text-dim">
+														This won't be published. Use it to create your own image.
+													</p>
+												</div>
+
 												<div className="flex gap-2">
 													<button
 														onClick={() => saveContentEdit(item.id)}
@@ -1029,6 +1060,7 @@ export default function ContentApprovalPage() {
 															setEditingContent('');
 															setEditingTitle('');
 															setEditingHashtags('');
+															setEditingImagePrompt('');
 														}}
 														className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50"
 													>

@@ -119,6 +119,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 		const contentUpdate = body?.content; // For editing content
 		const titleUpdate = body?.title; // For editing title (hook field)
 		const hashtagsUpdate = body?.hashtags; // For editing hashtags
+		const imagePromptUpdate = body?.image_prompt; // For editing image prompt
 		const scheduledTime = body?.scheduled_time; // For updating scheduled time
 		const imageUrl = body?.imageUrl; // For image upload
 		const cloudinaryId = body?.cloudinaryId; // For image upload
@@ -191,7 +192,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 		}
 
 		// Handle content editing or scheduled time update
-		if (contentUpdate !== undefined || titleUpdate !== undefined || hashtagsUpdate !== undefined || scheduledTime !== undefined) {
+		if (
+			contentUpdate !== undefined ||
+			titleUpdate !== undefined ||
+			hashtagsUpdate !== undefined ||
+			imagePromptUpdate !== undefined ||
+			scheduledTime !== undefined
+		) {
 			const updateFields: Record<string, any> = {};
 			if (contentUpdate !== undefined) {
 				updateFields.post_content = String(contentUpdate);
@@ -201,6 +208,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 			}
 			if (hashtagsUpdate !== undefined) {
 				updateFields.hashtags = String(hashtagsUpdate);
+			}
+			if (imagePromptUpdate !== undefined) {
+				updateFields.image_prompt = String(imagePromptUpdate);
 			}
 			if (scheduledTime !== undefined) {
 				updateFields.scheduled_time = scheduledTime ? String(scheduledTime) : null;
