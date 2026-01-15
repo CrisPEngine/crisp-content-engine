@@ -49,6 +49,7 @@ export default function ContentApprovalPage() {
 	const [uploadingImage, setUploadingImage] = useState<string | null>(null);
 	const [imageUploadError, setImageUploadError] = useState<Record<string, string>>({});
 	const [imageUploadSuccess, setImageUploadSuccess] = useState<Record<string, boolean>>({});
+	const [copySuccess, setCopySuccess] = useState<Record<string, boolean>>({});
 	const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
 	useEffect(() => {
@@ -183,6 +184,18 @@ export default function ContentApprovalPage() {
 			setError(err.message || 'Failed to reject content');
 		} finally {
 			setRejecting(null);
+		}
+	}
+
+	async function copyImagePrompt(itemId: string, prompt: string) {
+		try {
+			await navigator.clipboard.writeText(prompt);
+			setCopySuccess((prev) => ({ ...prev, [itemId]: true }));
+			setTimeout(() => {
+				setCopySuccess((prev) => ({ ...prev, [itemId]: false }));
+			}, 1500);
+		} catch (error) {
+			console.error('Failed to copy image prompt:', error);
 		}
 	}
 
@@ -749,9 +762,17 @@ export default function ContentApprovalPage() {
 
 										{/* Suggested Image Prompt */}
 										{item.image_prompt && (
-											<div className="text-xs text-text-dim break-words">
+											<div className="text-xs text-text-dim break-words flex items-start gap-2">
 												<span className="font-medium">Suggested image prompt:</span>{' '}
-												<span className="break-all">{item.image_prompt}</span>
+												<span className="break-all flex-1">{item.image_prompt}</span>
+												<button
+													type="button"
+													onClick={() => copyImagePrompt(item.id, item.image_prompt || '')}
+													className="shrink-0 rounded-lg border border-edge/60 bg-surface/30 px-2 py-1 text-[10px] text-text-soft hover:bg-surface/50"
+													aria-label="Copy image prompt"
+												>
+													{copySuccess[item.id] ? 'Copied' : 'Copy'}
+												</button>
 											</div>
 										)}
 									</div>
