@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, Eye, Calendar, Loader2, Edit2, Save, Clock, Upload, Image as ImageIcon } from 'lucide-react';
+import { Check, X, Eye, Calendar, Loader2, Edit2, Save, Clock, Upload, Image as ImageIcon, Copy } from 'lucide-react';
 import { Skeleton, ContentItemSkeleton } from '@/components/skeletons/Skeleton';
 
 type ContentItem = {
@@ -762,17 +762,27 @@ export default function ContentApprovalPage() {
 
 										{/* Suggested Image Prompt */}
 										{item.image_prompt && (
-											<div className="text-xs text-text-dim break-words flex items-start gap-2">
-												<span className="font-medium">Suggested image prompt:</span>{' '}
-												<span className="break-all flex-1">{item.image_prompt}</span>
-												<button
-													type="button"
-													onClick={() => copyImagePrompt(item.id, item.image_prompt || '')}
-													className="shrink-0 rounded-lg border border-edge/60 bg-surface/30 px-2 py-1 text-[10px] text-text-soft hover:bg-surface/50"
-													aria-label="Copy image prompt"
-												>
-													{copySuccess[item.id] ? 'Copied' : 'Copy'}
-												</button>
+											<div className="text-xs text-text-dim break-words">
+												<div className="flex items-center gap-2 mb-1">
+													<span className="font-medium">Suggested image prompt:</span>
+													<button
+														type="button"
+														onClick={() => copyImagePrompt(item.id, item.image_prompt || '')}
+														className="group inline-flex items-center justify-center rounded-md border border-edge/60 bg-surface/30 p-1 text-text-soft hover:bg-surface/50"
+														aria-label="Copy image prompt"
+													>
+														{copySuccess[item.id] ? (
+															<Check className="w-3 h-3 text-accent" />
+														) : (
+															<Copy className="w-3 h-3" />
+														)}
+														<span className="sr-only">Copy image prompt</span>
+														<span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 rounded-md border border-edge/60 bg-surface/90 px-2 py-1 text-[10px] text-text-soft opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+															Copy image prompt
+														</span>
+													</button>
+												</div>
+												<div className="break-all">{item.image_prompt}</div>
 											</div>
 										)}
 									</div>
