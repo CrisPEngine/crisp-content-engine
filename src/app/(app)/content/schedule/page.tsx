@@ -26,6 +26,52 @@ export default function SchedulingDashboard() {
 	const [selectedDate, setSelectedDate] = useState<string>('');
 	const [error, setError] = useState<string | null>(null);
 
+	function formatScheduledDateTime(dateString: string | null | undefined): string {
+		if (!dateString) return 'Not scheduled';
+		try {
+			const date = new Date(dateString);
+			return date.toLocaleString('en-US', {
+				month: 'short',
+				day: 'numeric',
+				year: 'numeric',
+				hour: 'numeric',
+				minute: '2-digit',
+			});
+		} catch {
+			return 'Invalid date';
+		}
+	}
+
+	function formatCountdown(dateString: string | null | undefined): string | null {
+		if (!dateString) return null;
+		try {
+			const date = new Date(dateString);
+			const now = new Date();
+			const diffMs = date.getTime() - now.getTime();
+			const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+			const diffDays = Math.floor(diffHours / 24);
+
+			if (diffMs < 0) {
+				return 'Past due';
+			}
+
+			// Only show countdown for items within 5 days
+			if (diffDays >= 5) {
+				return null;
+			}
+
+			if (diffHours < 1) {
+				return 'Within 1 hour';
+			}
+			if (diffHours < 24) {
+				return `In ${diffHours} hour${diffHours !== 1 ? 's' : ''}`;
+			}
+			return `In ${diffDays} day${diffDays !== 1 ? 's' : ''}`;
+		} catch {
+			return null;
+		}
+	}
+
 	useEffect(() => {
 		if (!supabase) return;
 		loadScheduledContent();
@@ -250,11 +296,14 @@ export default function SchedulingDashboard() {
 									<p className="text-sm text-text-dim mb-2">
 										Brand: {item.brand_name}
 									</p>
-									<div className="flex items-center gap-2 text-sm text-text-dim mb-2">
+									<div className="flex items-center gap-2 text-sm text-text-dim mb-2 flex-wrap">
 										<Calendar className="w-4 h-4" />
-										<span>
-											{new Date(item.scheduled_date).toLocaleString()}
-										</span>
+										<span>{formatScheduledDateTime(item.scheduled_date)}</span>
+										{formatCountdown(item.scheduled_date) && (
+											<span className="px-2 py-0.5 rounded-full text-xs bg-primary/10 border border-primary/30 text-primary">
+												{formatCountdown(item.scheduled_date)}
+											</span>
+										)}
 									</div>
 									<p className="text-sm text-text-soft line-clamp-2">
 										{item.content_preview}

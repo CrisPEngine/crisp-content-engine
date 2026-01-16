@@ -27,8 +27,24 @@ interface DashboardTabsProps {
 	loading?: boolean;
 }
 
-function formatScheduledDate(dateString: string | null | undefined): string {
+function formatScheduledDateTime(dateString: string | null | undefined): string {
 	if (!dateString) return 'Not scheduled';
+	try {
+		const date = new Date(dateString);
+		return date.toLocaleString('en-US', {
+			month: 'short',
+			day: 'numeric',
+			year: 'numeric',
+			hour: 'numeric',
+			minute: '2-digit',
+		});
+	} catch {
+		return 'Invalid date';
+	}
+}
+
+function formatCountdown(dateString: string | null | undefined): string | null {
+	if (!dateString) return null;
 	try {
 		const date = new Date(dateString);
 		const now = new Date();
@@ -38,17 +54,22 @@ function formatScheduledDate(dateString: string | null | undefined): string {
 
 		if (diffMs < 0) {
 			return 'Past due';
-		} else if (diffHours < 1) {
-			return 'Within 1 hour';
-		} else if (diffHours < 24) {
-			return `In ${diffHours} hour${diffHours !== 1 ? 's' : ''}`;
-		} else if (diffDays < 7) {
-			return `In ${diffDays} day${diffDays !== 1 ? 's' : ''}`;
-		} else {
-			return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 		}
+
+		// Only show countdown for items within 5 days
+		if (diffDays >= 5) {
+			return null;
+		}
+
+		if (diffHours < 1) {
+			return 'Within 1 hour';
+		}
+		if (diffHours < 24) {
+			return `In ${diffHours} hour${diffHours !== 1 ? 's' : ''}`;
+		}
+		return `In ${diffDays} day${diffDays !== 1 ? 's' : ''}`;
 	} catch {
-		return 'Invalid date';
+		return null;
 	}
 }
 
@@ -372,9 +393,16 @@ export function DashboardTabs({ activeTab, contentItems: initialContentItems = [
 															<div className="flex items-center gap-3 text-sm text-text-dim">
 																<span>{item.brand_name}</span>
 																{item.scheduled_date ? (
-																	<span className="flex items-center gap-1">
-																		<Clock className="w-3 h-3" />
-																		{formatScheduledDate(item.scheduled_date)}
+																	<span className="flex items-center gap-2 flex-wrap">
+																		<span className="flex items-center gap-1">
+																			<Clock className="w-3 h-3" />
+																			{formatScheduledDateTime(item.scheduled_date)}
+																		</span>
+																		{formatCountdown(item.scheduled_date) && (
+																			<span className="px-2 py-0.5 rounded-full text-xs bg-primary/10 border border-primary/30 text-primary">
+																				{formatCountdown(item.scheduled_date)}
+																			</span>
+																		)}
 																	</span>
 																) : (
 																	<span className="text-warning">Publishing soon</span>
@@ -477,7 +505,7 @@ export function DashboardTabs({ activeTab, contentItems: initialContentItems = [
 										})}
 										{published.length > 5 && (
 											<Link
-												href="/content/approval"
+												href="/content/published"
 												className="block text-center text-sm text-primary hover:underline py-2"
 											>
 												View all {published.length} published items →
