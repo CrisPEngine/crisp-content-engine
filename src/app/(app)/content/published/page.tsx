@@ -70,7 +70,7 @@ export default function PublishedContentPage() {
 		return [...items].sort((a, b) => {
 			const aDate = a.published_at || a.created_time || '';
 			const bDate = b.published_at || b.created_time || '';
-			return new Date(aDate).getTime() - new Date(bDate).getTime();
+			return new Date(bDate).getTime() - new Date(aDate).getTime();
 		});
 	}, [items]);
 
