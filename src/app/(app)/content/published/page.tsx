@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { useRouter } from 'next/navigation';
-import { Calendar, CheckCircle } from 'lucide-react';
+import { Calendar, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { Skeleton, ContentItemSkeleton } from '@/components/skeletons/Skeleton';
 
 type PublishedContent = {
@@ -14,6 +14,9 @@ type PublishedContent = {
 	created_time?: string;
 	brand_name: string;
 	content_preview: string;
+	content: string;
+	hashtags?: string;
+	image_reference_url?: string;
 };
 
 export default function PublishedContentPage() {
@@ -22,6 +25,9 @@ export default function PublishedContentPage() {
 	const [loading, setLoading] = useState(true);
 	const [items, setItems] = useState<PublishedContent[]>([]);
 	const [error, setError] = useState<string | null>(null);
+	const [expanded, setExpanded] = useState<Set<string>>(new Set());
+	const [page, setPage] = useState(1);
+	const pageSize = 20;
 
 	useEffect(() => {
 		if (!supabase) return;
@@ -56,6 +62,9 @@ export default function PublishedContentPage() {
 				created_time: item.created_time,
 				brand_name: item.brand_name,
 				content_preview: item.summary || item.content || '',
+				content: item.content || '',
+				hashtags: item.hashtags || '',
+				image_reference_url: item.image_reference_url || '',
 			}));
 			setItems(publishedItems);
 		} catch (err: any) {
@@ -73,6 +82,30 @@ export default function PublishedContentPage() {
 			return new Date(bDate).getTime() - new Date(aDate).getTime();
 		});
 	}, [items]);
+
+	const totalPages = Math.max(1, Math.ceil(sortedItems.length / pageSize));
+	const pagedItems = useMemo(() => {
+		const start = (page - 1) * pageSize;
+		return sortedItems.slice(start, start + pageSize);
+	}, [sortedItems, page]);
+
+	useEffect(() => {
+		if (page > totalPages) {
+			setPage(totalPages);
+		}
+	}, [page, totalPages]);
+
+	function toggleExpanded(id: string) {
+		setExpanded((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) {
+				next.delete(id);
+			} else {
+				next.add(id);
+			}
+			return next;
+		});
+	}
 
 	function formatDate(dateString: string | null | undefined): string {
 		if (!dateString) return 'Unknown date';
@@ -120,7 +153,7 @@ export default function PublishedContentPage() {
 			<div className="mb-6 space-y-2">
 				<h1 className="text-3xl font-semibold">Published Content</h1>
 				<p className="text-text-dim">
-					All published posts in chronological order
+					All published posts (newest first)
 				</p>
 			</div>
 
@@ -137,13 +170,13 @@ export default function PublishedContentPage() {
 				</div>
 			) : (
 				<div className="space-y-4">
-					{sortedItems.map((item) => (
+					{pagedItems.map((item) => (
 						<div key={item.id} className="card p-6">
 							<div className="flex items-start justify-between">
-								<div className="flex-1">
+								<div className="flex-1 min-w-0">
 									<div className="flex items-center gap-3 mb-2">
 										<CheckCircle className="w-4 h-4 text-accent" />
-										<h3 className="text-lg font-semibold">{item.title}</h3>
+										<h3 className="text-lg font-semibold truncate">{item.title}</h3>
 										<span className="px-2 py-1 rounded-full text-xs bg-primary/15 border border-primary/30 text-primary">
 											{item.platform}
 										</span>
@@ -155,13 +188,80 @@ export default function PublishedContentPage() {
 										<Calendar className="w-4 h-4" />
 										<span>Published {formatDate(item.published_at)}</span>
 									</div>
-									<p className="text-sm text-text-soft line-clamp-3">
-										{item.content_preview}
-									</p>
+									{expanded.has(item.id) ? (
+										<div className="space-y-3">
+											{item.content && (
+												<div>
+													<h5 className="text-sm font-medium text-text-dim mb-1">Content</h5>
+													<p className="text-text-soft whitespace-pre-wrap">{item.content}</p>
+												</div>
+											)}
+											{item.hashtags && (
+												<div>
+													<h5 className="text-sm font-medium text-text-dim mb-1">Hashtags</h5>
+													<p className="text-text-soft break-words">{item.hashtags}</p>
+												</div>
+											)}
+										</div>
+									) : (
+										<p className="text-sm text-text-soft line-clamp-3">
+											{item.content_preview}
+										</p>
+									)}
+								</div>
+								<div className="flex items-center gap-3 ml-4">
+									{item.image_reference_url && (
+										<img
+											src={item.image_reference_url}
+											alt="Post image"
+											className="h-16 w-16 rounded-lg object-cover border border-edge/60"
+											onError={(e) => {
+												const target = e.target as HTMLImageElement;
+												target.style.display = 'none';
+											}}
+										/>
+									)}
+									<button
+										onClick={() => toggleExpanded(item.id)}
+										className="px-3 py-1.5 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 text-sm whitespace-nowrap flex items-center gap-2"
+									>
+										{expanded.has(item.id) ? (
+											<>
+												<ChevronUp className="w-4 h-4" />
+												Hide
+											</>
+										) : (
+											<>
+												<ChevronDown className="w-4 h-4" />
+												View
+											</>
+										)}
+									</button>
 								</div>
 							</div>
 						</div>
 					))}
+					{totalPages > 1 && (
+						<div className="flex items-center justify-between pt-2">
+							<button
+								onClick={() => setPage((p) => Math.max(1, p - 1))}
+								disabled={page === 1}
+								className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								Previous
+							</button>
+							<div className="text-sm text-text-dim">
+								Page {page} of {totalPages}
+							</div>
+							<button
+								onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+								disabled={page === totalPages}
+								className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								Next
+							</button>
+						</div>
+					)}
 				</div>
 			)}
 		</div>
