@@ -85,7 +85,9 @@ export default function PreviewClient() {
   const [goal, setGoal] = useState<string>("");
   const [platform, setPlatform] = useState<(typeof PLATFORMS)[number]>("LinkedIn");
   const [isLoading, setIsLoading] = useState(false);
-  const [loadingText, setLoadingText] = useState("Generating your content pack. This takes ~10 seconds.");
+  const [loadingText, setLoadingText] = useState("Generating your content pack. This takes ~30 seconds.");
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  const [pollStartTime, setPollStartTime] = useState<number | null>(null);
   const [outputs, setOutputs] = useState<PreviewOutput | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previewSessionId, setPreviewSessionId] = useState<string | null>(null);
@@ -112,6 +114,7 @@ export default function PreviewClient() {
     const sessionId = searchParams.get("preview_session_id");
     if (sessionId && sessionId !== previewSessionId) {
       setPreviewSessionId(sessionId);
+      // Check if we should start polling or if already generated
       fetchPreviewOutputs(sessionId);
     }
   }, [searchParams, previewSessionId]);
@@ -153,10 +156,10 @@ export default function PreviewClient() {
 
   useEffect(() => {
     if (isLoading) {
-      setLoadingText("Generating your content pack. This takes ~10 seconds.");
+      setLoadingText("Generating your content pack. This takes ~30 seconds.");
       loadingTimeoutRef.current = setTimeout(() => {
         setLoadingText("Still working. Finalising output.");
-      }, 15000);
+      }, 25000);
     } else {
       if (loadingTimeoutRef.current) {
         clearTimeout(loadingTimeoutRef.current);
@@ -170,54 +173,148 @@ export default function PreviewClient() {
     };
   }, [isLoading]);
 
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+    };
+  }, [pollingInterval]);
+
+  async function pollPreviewStatus(sessionId: string) {
+    const startTime = Date.now();
+    const maxPollTime = 60000; // 60 seconds max
+    setPollStartTime(startTime);
+
+    const poll = async () => {
+      try {
+        const elapsed = Date.now() - startTime;
+        if (elapsed > maxPollTime) {
+          // Timeout
+          if (pollingInterval) {
+            clearInterval(pollingInterval);
+            setPollingInterval(null);
+          }
+          setIsLoading(false);
+          setError("Generation timed out. Please try again.");
+          console.error('[preview_failed]', { error: 'Polling timeout', previewSessionId: sessionId });
+          return;
+        }
+
+        const res = await fetch(`/api/preview/status?previewSessionId=${encodeURIComponent(sessionId)}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+          if (pollingInterval) {
+            clearInterval(pollingInterval);
+            setPollingInterval(null);
+          }
+          setIsLoading(false);
+          setError(data?.error || "Failed to check preview status. Please try again.");
+          console.error('[preview_failed]', { error: data?.error, previewSessionId: sessionId });
+          return;
+        }
+
+        if (data.status === 'generated' && data.outputs) {
+          // Success - stop polling
+          if (pollingInterval) {
+            clearInterval(pollingInterval);
+            setPollingInterval(null);
+          }
+          setIsLoading(false);
+          setPollStartTime(null);
+
+          const sanitized = validateAndSanitizeOutput(data.outputs);
+          if (!sanitized) {
+            console.error('[preview_failed]', { error: 'Invalid output schema', previewSessionId: sessionId });
+            setError("Invalid content format. Please try again.");
+            return;
+          }
+
+          setOutputs(sanitized);
+          console.log('[preview_generated]', { previewSessionId: sessionId });
+        } else if (data.status === 'failed') {
+          // Failed - stop polling
+          if (pollingInterval) {
+            clearInterval(pollingInterval);
+            setPollingInterval(null);
+          }
+          setIsLoading(false);
+          setPollStartTime(null);
+          setError(data?.error || "Generation failed. Please try again.");
+          console.error('[preview_failed]', { error: data?.error, previewSessionId: sessionId });
+        }
+        // If status is 'processing' or 'generating', continue polling
+      } catch (err: any) {
+        // On error, continue polling unless we've timed out
+        const elapsed = Date.now() - startTime;
+        if (elapsed > maxPollTime) {
+          if (pollingInterval) {
+            clearInterval(pollingInterval);
+            setPollingInterval(null);
+          }
+          setIsLoading(false);
+          setPollStartTime(null);
+          setError("Network error while checking status. Please try again.");
+          console.error('[preview_failed]', { error: err?.message || 'Network error', previewSessionId: sessionId });
+        }
+      }
+    };
+
+    // Poll immediately, then every 1 second
+    poll();
+    const interval = setInterval(poll, 1000);
+    setPollingInterval(interval);
+  }
+
   async function fetchPreviewOutputs(sessionId: string) {
     try {
       setIsLoading(true);
       setError(null);
       console.log('[preview_started]', { previewSessionId: sessionId });
 
-      const res = await fetch("/api/preview/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ previewSessionId: sessionId }),
-      });
+      // First check current status
+      const statusRes = await fetch(`/api/preview/status?previewSessionId=${encodeURIComponent(sessionId)}`);
+      const statusData = await statusRes.json();
 
-      let data: any;
-      try {
-        data = await res.json();
-      } catch (parseError) {
-        console.error('[preview_failed]', { error: 'Invalid JSON response', previewSessionId: sessionId });
-        setError("Invalid response from server. Please try again.");
+      if (!statusRes.ok) {
+        setError(statusData?.error || "Failed to check preview status. Please try again.");
+        setIsLoading(false);
         return;
       }
 
-      if (!res.ok) {
-        const errorCode = data?.error || 'generation_failed';
-        const errorMessage = data?.message || data?.error || "Failed to generate preview";
-        console.error('[preview_failed]', { error: errorCode, message: errorMessage, previewSessionId: sessionId });
-        setError(errorMessage);
-        return;
+      if (statusData.status === 'generated' && statusData.outputs) {
+        // Already generated
+        setIsLoading(false);
+        const sanitized = validateAndSanitizeOutput(statusData.outputs);
+        if (sanitized) {
+          setOutputs(sanitized);
+          console.log('[preview_generated]', { previewSessionId: sessionId });
+        } else {
+          setError("Invalid content format. Please try again.");
+        }
+      } else if (statusData.status === 'failed') {
+        // Failed
+        setIsLoading(false);
+        setError(statusData?.error || "Generation failed. Please try again.");
+        console.error('[preview_failed]', { error: statusData?.error, previewSessionId: sessionId });
+      } else {
+        // Generating - start polling
+        // Also trigger generation if status is 'created'
+        if (statusData.status === 'created') {
+          const generateRes = await fetch("/api/preview/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ previewSessionId: sessionId }),
+          });
+          // Don't wait for response, just start polling
+        }
+        await pollPreviewStatus(sessionId);
       }
-
-      if (!data.outputs) {
-        console.error('[preview_failed]', { error: 'Missing outputs', previewSessionId: sessionId });
-        setError("Invalid response format. Please try again.");
-        return;
-      }
-
-      const sanitized = validateAndSanitizeOutput(data.outputs);
-      if (!sanitized) {
-        console.error('[preview_failed]', { error: 'Invalid output schema', previewSessionId: sessionId });
-        setError("Invalid content format. Please try again.");
-        return;
-      }
-
-      setOutputs(sanitized);
-      console.log('[preview_generated]', { previewSessionId: sessionId });
     } catch (err: any) {
       console.error('[preview_failed]', { error: err?.message || 'Network error', previewSessionId: sessionId });
       setError(err?.message || "Network error. Please try again.");
-    } finally {
       setIsLoading(false);
     }
   }
@@ -245,7 +342,8 @@ export default function PreviewClient() {
       setIsLoading(true);
       console.log('[preview_started]', { persona, tone, goal });
 
-      const res = await fetch("/api/preview/create", {
+      // Step 1: Create preview session
+      const createRes = await fetch("/api/preview/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -258,26 +356,29 @@ export default function PreviewClient() {
         }),
       });
 
-      let data: any;
+      let createData: any;
       try {
-        data = await res.json();
+        createData = await createRes.json();
       } catch (parseError) {
         console.error('[preview_failed]', { error: 'Invalid JSON response' });
         setError("Invalid response from server. Please try again.");
+        setIsLoading(false);
         return;
       }
 
-      if (!res.ok) {
-        const errorMessage = data?.error || data?.message || "Failed to start preview";
+      if (!createRes.ok) {
+        const errorMessage = createData?.error || createData?.message || "Failed to start preview";
         console.error('[preview_failed]', { error: errorMessage });
         setError(errorMessage);
+        setIsLoading(false);
         return;
       }
 
-      const sessionId = data.previewSessionId as string;
+      const sessionId = createData.previewSessionId as string;
       if (!sessionId) {
         console.error('[preview_failed]', { error: 'Missing previewSessionId' });
         setError("Invalid response. Please try again.");
+        setIsLoading(false);
         return;
       }
 
@@ -285,11 +386,47 @@ export default function PreviewClient() {
       const params = new URLSearchParams(searchParams.toString());
       params.set("preview_session_id", sessionId);
       router.replace(`/preview?${params.toString()}`);
-      await fetchPreviewOutputs(sessionId);
+
+      // Step 2: Trigger generation (fire-and-forget)
+      const generateRes = await fetch("/api/preview/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ previewSessionId: sessionId }),
+      });
+
+      let generateData: any;
+      try {
+        generateData = await generateRes.json();
+      } catch (parseError) {
+        console.error('[preview_failed]', { error: 'Invalid JSON response from generate' });
+        setError("Invalid response from server. Please try again.");
+        setIsLoading(false);
+        return;
+      }
+
+      if (generateRes.status === 202 || generateData.status === 'generating') {
+        // Successfully started processing, now poll for status
+        await pollPreviewStatus(sessionId);
+      } else if (generateRes.status === 200 && generateData.status === 'generated' && generateData.outputs) {
+        // Already generated (cached)
+        setIsLoading(false);
+        const sanitized = validateAndSanitizeOutput(generateData.outputs);
+        if (sanitized) {
+          setOutputs(sanitized);
+          console.log('[preview_generated]', { previewSessionId: sessionId });
+        } else {
+          setError("Invalid content format. Please try again.");
+        }
+      } else {
+        // Error
+        const errorMessage = generateData?.error || generateData?.message || "Failed to start generation";
+        console.error('[preview_failed]', { error: errorMessage });
+        setError(errorMessage);
+        setIsLoading(false);
+      }
     } catch (err: any) {
       console.error('[preview_failed]', { error: err?.message || 'Network error' });
       setError(err?.message || "Network error. Please try again.");
-    } finally {
       setIsLoading(false);
     }
   }

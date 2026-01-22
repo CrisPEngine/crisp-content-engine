@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { getSupabaseService } from '@/lib/supabaseService';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const requestSchema = z.object({
 	previewSessionId: z.string().min(1),
@@ -218,11 +220,17 @@ export async function POST(req: Request) {
 			return NextResponse.json({ error: 'Preview session not found' }, { status: 404 });
 		}
 
+		// If already generated, return cached
 		if (session.status === 'generated' && session.outputs_json) {
 			const cachedOutputs = typeof session.outputs_json === 'string'
 				? JSON.parse(session.outputs_json)
 				: session.outputs_json;
-			return NextResponse.json({ status: 'generated', outputs: cachedOutputs });
+			return NextResponse.json({ previewSessionId, status: 'generated', outputs: cachedOutputs });
+		}
+
+		// If already generating, return generating status
+		if (session.status === 'generating') {
+			return NextResponse.json({ previewSessionId, status: 'generating' }, { status: 202 });
 		}
 
 		const webhookUrl = process.env.MAKE_PREVIEW_WEBHOOK_URL;
@@ -230,11 +238,13 @@ export async function POST(req: Request) {
 			return NextResponse.json({ error: 'Preview generation webhook not configured' }, { status: 500 });
 		}
 
+		// Update status to generating
 		await admin
 			.from('preview_sessions')
 			.update({ status: 'generating', error: null })
 			.eq('preview_session_id', previewSessionId);
 
+		// Fire-and-forget call to Make webhook
 		const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 		if (process.env.MAKE_PREVIEW_WEBHOOK_KEY) {
 			headers['x-make-apikey'] = process.env.MAKE_PREVIEW_WEBHOOK_KEY;
@@ -250,118 +260,29 @@ export async function POST(req: Request) {
 			utm_campaign: session.utm_campaign,
 		};
 
-		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
-		let webhookRes: Response;
-		try {
-			webhookRes = await fetch(webhookUrl, {
-				method: 'POST',
-				headers,
-				body: JSON.stringify(payload),
-				signal: controller.signal,
-			});
-		} catch (fetchError: any) {
-			clearTimeout(timeoutId);
-			if (fetchError.name === 'AbortError') {
-				await admin
-					.from('preview_sessions')
-					.update({ status: 'failed', error: 'Request timeout' })
-					.eq('preview_session_id', previewSessionId);
-				return NextResponse.json({ error: 'generation_failed', message: 'Request timeout. Please try again.' }, { status: 504 });
-			}
-			await admin
-				.from('preview_sessions')
-				.update({ status: 'failed', error: fetchError?.message || 'Network error' })
-				.eq('preview_session_id', previewSessionId);
-			return NextResponse.json({ error: 'generation_failed', message: 'Network error. Please try again.' }, { status: 502 });
-		}
-		clearTimeout(timeoutId);
-
-		// Log response details on failure
-		const statusCode = webhookRes.status;
-		const contentType = webhookRes.headers.get('content-type') || 'unknown';
-		let responseText = '';
-		try {
-			responseText = await webhookRes.text();
-		} catch (textError) {
-			responseText = 'Unable to read response text';
-		}
-
-		if (!webhookRes.ok) {
-			const logText = responseText.substring(0, 1000);
-			console.error('[Preview Generate] Make webhook failed:', {
+		// Fire-and-forget: don't await the response
+		fetch(webhookUrl, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify(payload),
+		}).catch((error) => {
+			// Log errors but don't block response
+			console.error('[Preview Generate] Fire-and-forget error:', {
 				previewSessionId,
-				statusCode,
-				contentType,
-				responsePreview: logText,
+				error: error?.message || 'Unknown error',
 			});
-			await admin
+			// Update status to failed if webhook call fails
+			getSupabaseService()
 				.from('preview_sessions')
-				.update({ status: 'failed', error: `Make returned ${statusCode}: ${logText.substring(0, 500)}` })
-				.eq('preview_session_id', previewSessionId);
-			return NextResponse.json({ error: 'generation_failed', message: 'Preview generation failed. Please try again.' }, { status: 502 });
-		}
+				.update({ status: 'failed', error: error?.message || 'Webhook call failed' })
+				.eq('preview_session_id', previewSessionId)
+				.catch(() => {
+					// Ignore update errors
+				});
+		});
 
-		// Parse JSON response
-		let webhookData: any;
-		try {
-			webhookData = JSON.parse(responseText);
-		} catch (parseError) {
-			const logText = responseText.substring(0, 1000);
-			console.error('[Preview Generate] Invalid JSON from Make:', {
-				previewSessionId,
-				statusCode,
-				contentType,
-				responsePreview: logText,
-			});
-			await admin
-				.from('preview_sessions')
-				.update({ status: 'failed', error: `Invalid JSON: ${logText.substring(0, 500)}` })
-				.eq('preview_session_id', previewSessionId);
-			return NextResponse.json({ error: 'generation_failed', message: 'Invalid response format. Please try again.' }, { status: 502 });
-		}
-
-		// Normalize response to standard format
-		const normalized = normalizeMakeResponse(webhookData, previewSessionId);
-		if (!normalized) {
-			console.error('[Preview Generate] Unable to normalize Make response:', {
-				previewSessionId,
-				statusCode,
-				contentType,
-				responsePreview: JSON.stringify(webhookData).substring(0, 1000),
-			});
-			await admin
-				.from('preview_sessions')
-				.update({ status: 'failed', error: 'Unable to normalize response structure' })
-				.eq('preview_session_id', previewSessionId);
-			return NextResponse.json({ error: 'invalid_payload', message: 'Invalid response structure from Make webhook' }, { status: 200 });
-		}
-
-		// Validate normalized output
-		const validation = validateOutput(normalized);
-		if (!validation.ok) {
-			console.error('[Preview Generate] Validation failed:', {
-				previewSessionId,
-				error: validation.error,
-			});
-			await admin
-				.from('preview_sessions')
-				.update({ status: 'failed', error: validation.error })
-				.eq('preview_session_id', previewSessionId);
-			return NextResponse.json({ error: 'invalid_payload', message: validation.error }, { status: 200 });
-		}
-
-		await admin
-			.from('preview_sessions')
-			.update({
-				status: 'generated',
-				outputs_json: JSON.stringify(normalized),
-				error: null,
-			})
-			.eq('preview_session_id', previewSessionId);
-
-		return NextResponse.json({ status: 'generated', outputs: normalized });
+		// Return 202 immediately
+		return NextResponse.json({ previewSessionId, status: 'generating' }, { status: 202 });
 	} catch (error: any) {
 		console.error('[Preview Generate] Unexpected error:', error);
 		const admin = getSupabaseService();
