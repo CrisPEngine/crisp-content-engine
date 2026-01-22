@@ -70,9 +70,11 @@ export async function POST(req: Request) {
 			return NextResponse.json({ error: 'Preview session not found' }, { status: 404 });
 		}
 
-		if (session.status === 'converted') {
+		// Idempotent: if already converted, return existing redirect
+		if (session.status === 'converted' && session.user_id === user.id) {
+			// Try to find the brand profile ID from the session or return generic redirect
 			const redirectUrl = `/content/approval`;
-			return NextResponse.json({ redirectUrl });
+			return NextResponse.json({ redirectUrl, alreadyConverted: true });
 		}
 
 		if (session.status !== 'generated' || !session.outputs_json) {

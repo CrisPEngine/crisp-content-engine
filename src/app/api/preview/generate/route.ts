@@ -129,47 +129,85 @@ export async function POST(req: Request) {
 			.update({ status: 'generating', error: null })
 			.eq('preview_session_id', previewSessionId);
 
+		const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+		if (process.env.MAKE_PREVIEW_WEBHOOK_KEY) {
+			headers['x-make-apikey'] = process.env.MAKE_PREVIEW_WEBHOOK_KEY;
+		}
+
 		const payload = {
 			previewSessionId,
 			persona: session.persona,
 			topics: session.topics,
 			tone: session.tone,
 			goal: session.goal,
+			utm_source: session.utm_source,
+			utm_campaign: session.utm_campaign,
 		};
 
-		const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-		if (process.env.MAKE_API_KEY) {
-			headers['x-api-key'] = process.env.MAKE_API_KEY;
-		}
-		const secret = process.env.MAKE_PREVIEW_WEBHOOK_SECRET || process.env.MAKE_SHARED_SECRET;
-		if (secret) {
-			headers['x-make-secret'] = secret;
-		}
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
-		const webhookRes = await fetch(webhookUrl, {
-			method: 'POST',
-			headers,
-			body: JSON.stringify(payload),
-		});
+		let webhookRes: Response;
+		try {
+			webhookRes = await fetch(webhookUrl, {
+				method: 'POST',
+				headers,
+				body: JSON.stringify(payload),
+				signal: controller.signal,
+			});
+		} catch (fetchError: any) {
+			clearTimeout(timeoutId);
+			if (fetchError.name === 'AbortError') {
+				await admin
+					.from('preview_sessions')
+					.update({ status: 'failed', error: 'Request timeout' })
+					.eq('preview_session_id', previewSessionId);
+				return NextResponse.json({ error: 'generation_failed', message: 'Request timeout. Please try again.' }, { status: 504 });
+			}
+			await admin
+				.from('preview_sessions')
+				.update({ status: 'failed', error: fetchError?.message || 'Network error' })
+				.eq('preview_session_id', previewSessionId);
+			return NextResponse.json({ error: 'generation_failed', message: 'Network error. Please try again.' }, { status: 502 });
+		}
+		clearTimeout(timeoutId);
 
 		if (!webhookRes.ok) {
-			const errorText = await webhookRes.text();
+			const errorText = await webhookRes.text().catch(() => 'Unknown error');
 			await admin
 				.from('preview_sessions')
 				.update({ status: 'failed', error: errorText })
 				.eq('preview_session_id', previewSessionId);
-			return NextResponse.json({ error: 'Preview generation failed' }, { status: 502 });
+			return NextResponse.json({ error: 'generation_failed', message: 'Preview generation failed. Please try again.' }, { status: 502 });
 		}
 
-		const webhookData = await webhookRes.json();
+		let webhookData: any;
+		try {
+			webhookData = await webhookRes.json();
+		} catch (parseError) {
+			await admin
+				.from('preview_sessions')
+				.update({ status: 'failed', error: 'Invalid JSON response from webhook' })
+				.eq('preview_session_id', previewSessionId);
+			return NextResponse.json({ error: 'generation_failed', message: 'Invalid response format. Please try again.' }, { status: 502 });
+		}
+
 		const outputs = webhookData?.outputs;
+		if (!outputs) {
+			await admin
+				.from('preview_sessions')
+				.update({ status: 'failed', error: 'Missing outputs in response' })
+				.eq('preview_session_id', previewSessionId);
+			return NextResponse.json({ error: 'generation_failed', message: 'Invalid response format. Please try again.' }, { status: 422 });
+		}
+
 		const validation = validateOutput(outputs);
 		if (!validation.ok) {
 			await admin
 				.from('preview_sessions')
 				.update({ status: 'failed', error: validation.error })
 				.eq('preview_session_id', previewSessionId);
-			return NextResponse.json({ error: validation.error }, { status: 422 });
+			return NextResponse.json({ error: 'generation_failed', message: validation.error }, { status: 422 });
 		}
 
 		await admin
@@ -183,7 +221,21 @@ export async function POST(req: Request) {
 
 		return NextResponse.json({ status: 'generated', outputs });
 	} catch (error: any) {
+		console.error('[Preview Generate] Unexpected error:', error);
+		const admin = getSupabaseService();
+		try {
+			const body = await req.json().catch(() => ({}));
+			const { previewSessionId } = requestSchema.safeParse(body);
+			if (previewSessionId?.previewSessionId) {
+				await admin
+					.from('preview_sessions')
+					.update({ status: 'failed', error: error?.message || 'Unexpected error' })
+					.eq('preview_session_id', previewSessionId.previewSessionId);
+			}
+		} catch (updateError) {
+			// Ignore update errors in catch block
+		}
 		const message = error?.message || 'Failed to generate preview';
-		return NextResponse.json({ error: message }, { status: error instanceof z.ZodError ? 400 : 500 });
+		return NextResponse.json({ error: 'generation_failed', message }, { status: error instanceof z.ZodError ? 400 : 500 });
 	}
 }
