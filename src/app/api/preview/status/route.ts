@@ -4,7 +4,6 @@ import { getSupabaseService } from '@/lib/supabaseService';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
 
 const querySchema = z.object({
 	previewSessionId: z.string().min(1),
