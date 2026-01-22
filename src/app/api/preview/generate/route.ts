@@ -188,7 +188,7 @@ function validateOutput(outputs: { packTitle: string; sections: any[] }): { ok: 
 			if (hasDisallowedText(post.title) || hasDisallowedText(post.body)) {
 				return { ok: false, error: 'Output includes disallowed characters in post content' };
 			}
-			if (post.hooks.some((hook) => hasDisallowedText(hook))) {
+			if (post.hooks.some((hook: string) => hasDisallowedText(hook))) {
 				return { ok: false, error: 'Output includes disallowed characters in hooks' };
 			}
 		}
