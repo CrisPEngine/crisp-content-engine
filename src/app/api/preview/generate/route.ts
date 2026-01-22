@@ -264,20 +264,22 @@ export async function POST(req: Request) {
 			method: 'POST',
 			headers,
 			body: JSON.stringify(payload),
-		}).catch((error) => {
+		}).catch(async (error) => {
 			// Log errors but don't block response
 			console.error('[Preview Generate] Fire-and-forget error:', {
 				previewSessionId,
 				error: error?.message || 'Unknown error',
 			});
 			// Update status to failed if webhook call fails
-			getSupabaseService()
-				.from('preview_sessions')
-				.update({ status: 'failed', error: error?.message || 'Webhook call failed' })
-				.eq('preview_session_id', previewSessionId)
-				.catch(() => {
-					// Ignore update errors
-				});
+			try {
+				await getSupabaseService()
+					.from('preview_sessions')
+					.update({ status: 'failed', error: error?.message || 'Webhook call failed' })
+					.eq('preview_session_id', previewSessionId);
+			} catch (updateError) {
+				// Ignore update errors
+				console.error('[Preview Generate] Failed to update session status:', updateError);
+			}
 		});
 
 		// Return 202 immediately
