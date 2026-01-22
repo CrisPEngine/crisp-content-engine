@@ -86,7 +86,7 @@ export default function PreviewClient() {
   const [platform, setPlatform] = useState<(typeof PLATFORMS)[number]>("LinkedIn");
   const [isLoading, setIsLoading] = useState(false);
   const [loadingText, setLoadingText] = useState("Generating your content pack. This takes ~30 seconds.");
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  const [pollingInterval, setPollingInterval] = useState<ReturnType<typeof setInterval> | null>(null);
   const [pollStartTime, setPollStartTime] = useState<number | null>(null);
   const [outputs, setOutputs] = useState<PreviewOutput | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -96,8 +96,8 @@ export default function PreviewClient() {
   const [gateActive, setGateActive] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
   const gateSentinelRef = useRef<HTMLDivElement | null>(null);
-  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const gateTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const utmSource = searchParams.get("utm_source");
   const utmCampaign = searchParams.get("utm_campaign");
