@@ -225,12 +225,12 @@ export async function POST(req: Request) {
 		const admin = getSupabaseService();
 		try {
 			const body = await req.json().catch(() => ({}));
-			const { previewSessionId } = requestSchema.safeParse(body);
-			if (previewSessionId?.previewSessionId) {
+			const parseResult = requestSchema.safeParse(body);
+			if (parseResult.success && parseResult.data.previewSessionId) {
 				await admin
 					.from('preview_sessions')
 					.update({ status: 'failed', error: error?.message || 'Unexpected error' })
-					.eq('preview_session_id', previewSessionId.previewSessionId);
+					.eq('preview_session_id', parseResult.data.previewSessionId);
 			}
 		} catch (updateError) {
 			// Ignore update errors in catch block
