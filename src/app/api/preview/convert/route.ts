@@ -32,6 +32,7 @@ function extractTopics(topics: any): string[] {
 
 export async function POST(req: Request) {
 	try {
+		console.log('[Preview Convert] start');
 		const cookieStore = await cookies();
 		const supabase = createServerClient(
 			process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -59,6 +60,12 @@ export async function POST(req: Request) {
 		const body = await req.json().catch(() => ({}));
 		const { previewSessionId } = requestSchema.parse(body);
 
+		if (!previewSessionId) {
+			return NextResponse.json({ error: 'previewSessionId is required' }, { status: 400 });
+		}
+
+		console.log('[Preview Convert] start', { previewSessionId });
+
 		const admin = getSupabaseService();
 		const { data: session, error: sessionError } = await admin
 			.from('preview_sessions')
@@ -72,7 +79,6 @@ export async function POST(req: Request) {
 
 		// Idempotent: if already converted, return existing redirect
 		if (session.status === 'converted' && session.user_id === user.id) {
-			// Try to find the brand profile ID from the session or return generic redirect
 			const redirectUrl = `/content/approval`;
 			return NextResponse.json({ redirectUrl, alreadyConverted: true });
 		}
@@ -81,9 +87,33 @@ export async function POST(req: Request) {
 			return NextResponse.json({ error: 'Preview not ready for conversion' }, { status: 400 });
 		}
 
-		const outputs = typeof session.outputs_json === 'string'
-			? (JSON.parse(session.outputs_json) as PreviewOutputs)
-			: (session.outputs_json as PreviewOutputs);
+		let outputs: PreviewOutputs;
+		try {
+			outputs = typeof session.outputs_json === 'string'
+				? (JSON.parse(session.outputs_json) as PreviewOutputs)
+				: (session.outputs_json as PreviewOutputs);
+		} catch (parseError) {
+			console.error('[Preview Convert] JSON parse error', { previewSessionId, error: parseError });
+			return NextResponse.json({ error: 'Invalid preview data format' }, { status: 400 });
+		}
+
+		// Validate outputs structure before any external calls
+		if (!outputs || typeof outputs !== 'object') {
+			return NextResponse.json({ error: 'Invalid preview outputs: missing data' }, { status: 400 });
+		}
+		if (!outputs.packTitle || typeof outputs.packTitle !== 'string') {
+			return NextResponse.json({ error: 'Invalid preview outputs: packTitle is required' }, { status: 400 });
+		}
+		if (!Array.isArray(outputs.sections) || outputs.sections.length === 0) {
+			return NextResponse.json({ error: 'Invalid preview outputs: sections array is required' }, { status: 400 });
+		}
+		const postsCount = outputs.sections.reduce((count, section) => {
+			if (!section.posts || !Array.isArray(section.posts)) return count;
+			return count + section.posts.length;
+		}, 0);
+		if (postsCount === 0) {
+			return NextResponse.json({ error: 'Invalid preview outputs: no posts found in sections' }, { status: 400 });
+		}
 
 		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
 		const BASE_ID = process.env.AIRTABLE_BASE_ID;
@@ -125,22 +155,47 @@ export async function POST(req: Request) {
 			},
 		};
 
-		const brandRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}`, {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify(brandPayload),
-		});
+		// Create BrandProfile in Airtable
+		let brandProfileId: string;
+		try {
+			console.log('[Preview Convert] writing Airtable BrandProfile', { previewSessionId });
+			const brandRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}`, {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(brandPayload),
+			});
 
-		const brandData = await brandRes.json();
-		if (!brandRes.ok) {
-			const errorMessage = brandData?.error?.message || 'Failed to create BrandProfile';
-			return NextResponse.json({ error: errorMessage }, { status: 422 });
+			const brandData = await brandRes.json();
+			if (!brandRes.ok) {
+				const errorMessage = brandData?.error?.message || 'Failed to create BrandProfile';
+				const errorType = brandData?.error?.type || 'unknown';
+				console.error('[Preview Convert] Airtable BrandProfile error', {
+					previewSessionId,
+					statusCode: brandRes.status,
+					errorType,
+					errorMessage,
+					airtableError: brandData?.error,
+				});
+				// Return safe error message (no secrets)
+				const safeMessage = errorType === 'INVALID_VALUE_FOR_COLUMN' || errorType === 'UNKNOWN_FIELD_NAME'
+					? `Invalid field in BrandProfile: ${errorMessage}`
+					: 'Failed to create brand profile. Please try again.';
+				return NextResponse.json({ error: safeMessage }, { status: 422 });
+			}
+
+			brandProfileId = brandData.id;
+		} catch (brandError: any) {
+			console.error('[Preview Convert] BrandProfile exception', {
+				previewSessionId,
+				error: brandError?.message || 'Unknown error',
+			});
+			return NextResponse.json({ error: 'Failed to create brand profile. Please try again.' }, { status: 500 });
 		}
 
-		const brandProfileId = brandData.id;
+		// Create ContentQueue records
 		const posts = outputs.sections.flatMap((section) => section.posts);
 		const records = posts.map((post) => ({
 			fields: {
@@ -154,19 +209,51 @@ export async function POST(req: Request) {
 			},
 		}));
 
-		const contentRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTQUEUE_TABLE}`, {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ records }),
-		});
+		try {
+			console.log('[Preview Convert] writing Airtable ContentQueue', {
+				previewSessionId,
+				recordCount: records.length,
+			});
+			const contentRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTQUEUE_TABLE}`, {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ records }),
+			});
 
-		const contentData = await contentRes.json();
-		if (!contentRes.ok) {
-			const errorMessage = contentData?.error?.message || 'Failed to create ContentQueue records';
-			return NextResponse.json({ error: errorMessage }, { status: 422 });
+			const contentData = await contentRes.json();
+			if (!contentRes.ok) {
+				const errorMessage = contentData?.error?.message || 'Failed to create ContentQueue records';
+				const errorType = contentData?.error?.type || 'unknown';
+				console.error('[Preview Convert] Airtable ContentQueue error', {
+					previewSessionId,
+					statusCode: contentRes.status,
+					errorType,
+					errorMessage,
+					airtableError: contentData?.error,
+					recordCount: records.length,
+				});
+				// Return safe error message (no secrets)
+				const safeMessage = errorType === 'INVALID_VALUE_FOR_COLUMN' || errorType === 'UNKNOWN_FIELD_NAME'
+					? `Invalid field in ContentQueue: ${errorMessage}`
+					: 'Failed to create content posts. Please try again.';
+				return NextResponse.json({ error: safeMessage }, { status: 422 });
+			}
+
+			const createdIds = contentData?.records?.map((r: any) => r.id) || [];
+			console.log('[Preview Convert] success', {
+				previewSessionId,
+				brandProfileId,
+				contentQueueRecordCount: createdIds.length,
+			});
+		} catch (contentError: any) {
+			console.error('[Preview Convert] ContentQueue exception', {
+				previewSessionId,
+				error: contentError?.message || 'Unknown error',
+			});
+			return NextResponse.json({ error: 'Failed to create content posts. Please try again.' }, { status: 500 });
 		}
 
 		await admin

@@ -95,6 +95,7 @@ export default function PreviewClient() {
   const [isConverting, setIsConverting] = useState(false);
   const gateSentinelRef = useRef<HTMLDivElement | null>(null);
   const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const gateTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const utmSource = searchParams.get("utm_source");
   const utmCampaign = searchParams.get("utm_campaign");
@@ -115,18 +116,39 @@ export default function PreviewClient() {
     }
   }, [searchParams, previewSessionId]);
 
+  // Gate activation: trigger after scroll past first post OR 10 seconds, whichever comes first
   useEffect(() => {
-    if (!outputs || !gateSentinelRef.current) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setGateActive(true);
+    if (!outputs) return;
+
+    // Set 10-second timer
+    gateTimerRef.current = setTimeout(() => {
+      setGateActive(true);
+    }, 10000);
+
+    // Set up scroll observer for sentinel (after first post)
+    if (gateSentinelRef.current) {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) {
+            setGateActive(true);
+          }
+        },
+        { threshold: 0.1 }
+      );
+      observer.observe(gateSentinelRef.current);
+      return () => {
+        observer.disconnect();
+        if (gateTimerRef.current) {
+          clearTimeout(gateTimerRef.current);
         }
-      },
-      { threshold: 0.1 }
-    );
-    observer.observe(gateSentinelRef.current);
-    return () => observer.disconnect();
+      };
+    }
+
+    return () => {
+      if (gateTimerRef.current) {
+        clearTimeout(gateTimerRef.current);
+      }
+    };
   }, [outputs]);
 
   useEffect(() => {
@@ -514,7 +536,7 @@ export default function PreviewClient() {
               </div>
             </div>
 
-            <div className="mt-6 space-y-6">
+            <div className="mt-6 space-y-6 relative">
               {(() => {
                 let globalIndex = 0;
                 let sentinelPlaced = false;
@@ -526,16 +548,18 @@ export default function PreviewClient() {
                         const postId = `${sectionIndex}-${postIndex}`;
                         const currentIndex = globalIndex;
                         globalIndex += 1;
-                        const showSentinel = !sentinelPlaced && currentIndex === 2;
+                        const isFirstPost = currentIndex === 0;
+                        const showSentinel = !sentinelPlaced && currentIndex === 1; // After first post
                         if (showSentinel) {
                           sentinelPlaced = true;
                         }
+                        const isGated = gateActive && !isFirstPost;
                         return (
                           <article
                             key={postId}
-                            className="rounded-xl bg-neutral-950 p-4 ring-1 ring-neutral-800"
+                            className={`rounded-xl bg-neutral-950 p-4 ring-1 ring-neutral-800 relative ${isGated ? 'opacity-30' : ''}`}
                           >
-                            {showSentinel && <div ref={gateSentinelRef} className="h-0" />}
+                            {showSentinel && <div ref={gateSentinelRef} className="absolute -top-4 left-0 right-0 h-1" />}
                             <div className="flex items-center justify-between gap-4">
                               <div className="text-sm font-semibold text-neutral-100">
                                 {post.title}
@@ -543,7 +567,7 @@ export default function PreviewClient() {
                               <button
                                 type="button"
                                 onClick={() => handleCopy(`${post.title}\n\n${post.body}`, postId)}
-                                disabled={gateActive || copyCount >= 2}
+                                disabled={(gateActive && !isFirstPost) || copyCount >= 2}
                                 className="text-xs font-semibold text-sky-300 hover:text-sky-200 disabled:opacity-40 disabled:cursor-not-allowed"
                               >
                                 {copiedPostId === postId ? "Copied" : "Copy"}
@@ -573,35 +597,51 @@ export default function PreviewClient() {
                   </section>
                 ));
               })()}
-            </div>
 
-            {gateActive && (
-              <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-neutral-950/90 backdrop-blur">
-                <div className="max-w-md space-y-4 text-center">
-                  <h3 className="text-xl font-semibold">Unlock your full content system</h3>
-                  <ul className="space-y-2 text-sm text-neutral-300">
-                    <li>Save all 9 posts to your workspace</li>
-                    <li>Edit and approve inside CRISP</li>
-                    <li>Schedule with Buffer when ready</li>
-                  </ul>
-                  <div className="flex flex-wrap justify-center gap-3">
-                    <button
-                      onClick={handleConvert}
-                      disabled={isConverting}
-                      className="rounded-full bg-sky-400 px-5 py-2 text-sm font-semibold text-neutral-950 hover:bg-sky-300 disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {isConverting ? "Processing..." : "Unlock and save posts"}
-                    </button>
-                    <Link
-                      href={`/sign-in?redirect_to=${encodeURIComponent(`/preview?preview_session_id=${previewSessionId || ""}`)}`}
-                      className="rounded-full px-5 py-2 text-sm font-semibold text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-900"
-                    >
-                      Sign in to continue
-                    </Link>
+              {/* Gate overlay - only covers posts after the first one */}
+              {gateActive && (
+                <>
+                  {/* Blurred fade overlay starting after first post */}
+                  <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none">
+                    {/* Calculate approximate height of first post section - use a reasonable offset */}
+                    <div 
+                      className="absolute left-0 right-0 bg-gradient-to-b from-transparent via-neutral-950/60 to-neutral-950/95 backdrop-blur-sm"
+                      style={{ top: '20%', bottom: 0 }}
+                    />
                   </div>
-                </div>
-              </div>
-            )}
+                  
+                  {/* Unlock banner - positioned to be visible */}
+                  <div className="absolute bottom-8 left-0 right-0 flex justify-center pointer-events-auto z-10">
+                    <div className="max-w-md mx-4 rounded-2xl bg-neutral-950/95 backdrop-blur border border-neutral-800 p-6 space-y-4 text-center shadow-2xl">
+                      <h3 className="text-xl font-semibold">Unlock your full content system</h3>
+                      <p className="text-sm text-neutral-300">
+                        You can read the first post. Unlock to save all posts to your workspace.
+                      </p>
+                      <ul className="space-y-2 text-sm text-neutral-400">
+                        <li>Save all 9 posts to your workspace</li>
+                        <li>Edit and approve inside CRISP</li>
+                        <li>Schedule with Buffer when ready</li>
+                      </ul>
+                      <div className="flex flex-wrap justify-center gap-3 pt-2">
+                        <button
+                          onClick={handleConvert}
+                          disabled={isConverting}
+                          className="rounded-full bg-sky-400 px-5 py-2 text-sm font-semibold text-neutral-950 hover:bg-sky-300 disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          {isConverting ? "Processing..." : "Unlock and save posts"}
+                        </button>
+                        <Link
+                          href={`/sign-in?redirect_to=${encodeURIComponent(`/preview?preview_session_id=${previewSessionId || ""}`)}`}
+                          className="rounded-full px-5 py-2 text-sm font-semibold text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-900"
+                        >
+                          Sign in to continue
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>
