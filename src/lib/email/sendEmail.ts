@@ -1,4 +1,4 @@
-import { resend } from './resendClient';
+import { getResendClient } from './resendClient';
 import { ReactElement } from 'react';
 import { render } from '@react-email/render';
 
@@ -26,6 +26,7 @@ export async function sendEmail({ to, subject, react, category, replyTo }: SendE
 	// Render React component to HTML
 	const html = await render(react);
 
+	const resend = getResendClient();
 	return resend.emails.send({
 		from: `${fromName} <${fromEmail}>`,
 		to,

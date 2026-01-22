@@ -6,8 +6,8 @@ import { usePathname } from 'next/navigation';
 export function AppHeader() {
 	const pathname = usePathname();
 	
-	// Don't show on login/home page
-	if (pathname === '/login' || pathname === '/') {
+	// Don't show on sign-in/home page
+	if (pathname === '/sign-in' || pathname === '/login' || pathname === '/') {
 		return null;
 	}
 

@@ -10,11 +10,15 @@
  * - Uses field names in fields[] parameter, returnFieldsByFieldId=true for response keys
  */
 
-const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
-const BASE_ID = process.env.AIRTABLE_BASE_ID;
+function getAirtableConfig(): { token: string; baseId: string } {
+	const token = process.env.AIRTABLE_PAT;
+	const baseId = process.env.AIRTABLE_BASE_ID;
 
-if (!AIRTABLE_TOKEN || !BASE_ID) {
-	throw new Error('Airtable configuration missing: AIRTABLE_PAT and AIRTABLE_BASE_ID must be set');
+	if (!token || !baseId) {
+		throw new Error('Airtable configuration missing: AIRTABLE_PAT and AIRTABLE_BASE_ID must be set');
+	}
+
+	return { token, baseId };
 }
 
 // In-flight request cache (prevents duplicate concurrent requests)
@@ -196,8 +200,9 @@ export async function listRecords(options: ListOptions): Promise<any[]> {
 		return result;
 	}
 
+	const { token: airtableToken, baseId } = getAirtableConfig();
 	// Build URL
-	const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${table}`);
+	const url = new URL(`https://api.airtable.com/v0/${baseId}/${table}`);
 	if (filterByFormula) {
 		url.searchParams.set('filterByFormula', filterByFormula);
 	}
@@ -225,7 +230,7 @@ export async function listRecords(options: ListOptions): Promise<any[]> {
 	// Create request promise
 	const requestPromise = fetch(url.toString(), {
 		headers: {
-			Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+			Authorization: `Bearer ${airtableToken}`,
 			'Content-Type': 'application/json',
 		},
 	})
@@ -323,8 +328,9 @@ interface GetOptions {
  */
 export async function getRecord(options: GetOptions): Promise<any> {
 	const { table, recordId, fields } = options;
+	const { token: airtableToken, baseId } = getAirtableConfig();
 
-	const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${table}/${recordId}`);
+	const url = new URL(`https://api.airtable.com/v0/${baseId}/${table}/${recordId}`);
 	if (fields && fields.length > 0) {
 		fields.forEach((field) => {
 			url.searchParams.append('fields[]', field);
@@ -333,7 +339,7 @@ export async function getRecord(options: GetOptions): Promise<any> {
 
 	const res = await fetch(url.toString(), {
 		headers: {
-			Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+			Authorization: `Bearer ${airtableToken}`,
 			'Content-Type': 'application/json',
 		},
 	});
@@ -363,12 +369,13 @@ interface CreateOptions {
  */
 export async function createRecord(options: CreateOptions): Promise<any> {
 	const { table, fields } = options;
+	const { token: airtableToken, baseId } = getAirtableConfig();
 
-	const url = `https://api.airtable.com/v0/${BASE_ID}/${table}`;
+	const url = `https://api.airtable.com/v0/${baseId}/${table}`;
 	const res = await fetch(url, {
 		method: 'POST',
 		headers: {
-			Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+			Authorization: `Bearer ${airtableToken}`,
 			'Content-Type': 'application/json',
 		},
 		body: JSON.stringify({
@@ -402,12 +409,13 @@ interface UpdateOptions {
  */
 export async function updateRecord(options: UpdateOptions): Promise<any> {
 	const { table, recordId, fields } = options;
+	const { token: airtableToken, baseId } = getAirtableConfig();
 
-	const url = `https://api.airtable.com/v0/${BASE_ID}/${table}/${recordId}`;
+	const url = `https://api.airtable.com/v0/${baseId}/${table}/${recordId}`;
 	const res = await fetch(url, {
 		method: 'PATCH',
 		headers: {
-			Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+			Authorization: `Bearer ${airtableToken}`,
 			'Content-Type': 'application/json',
 		},
 		body: JSON.stringify({
@@ -440,6 +448,7 @@ interface BatchUpdateOptions {
  */
 export async function batchUpdate(options: BatchUpdateOptions): Promise<any[]> {
 	const { table, records } = options;
+	const { token: airtableToken, baseId } = getAirtableConfig();
 
 	if (records.length === 0) {
 		return [];
@@ -458,11 +467,11 @@ export async function batchUpdate(options: BatchUpdateOptions): Promise<any[]> {
 		return results.flat();
 	}
 
-	const url = `https://api.airtable.com/v0/${BASE_ID}/${table}`;
+	const url = `https://api.airtable.com/v0/${baseId}/${table}`;
 	const res = await fetch(url, {
 		method: 'PATCH',
 		headers: {
-			Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+			Authorization: `Bearer ${airtableToken}`,
 			'Content-Type': 'application/json',
 		},
 		body: JSON.stringify({

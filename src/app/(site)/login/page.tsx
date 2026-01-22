@@ -1,21 +1,21 @@
-import { Suspense } from 'react';
-import { LoginClient } from './LoginClient';
+import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-export default function LoginPage() {
-	return (
-		<Suspense fallback={
-			<div className="mx-auto max-w-lg px-6">
-				<div className="card p-8 mt-16">
-					<div className="text-text-soft">Loading...</div>
-				</div>
-			</div>
-		}>
-			<LoginClient />
-		</Suspense>
-	);
+export default function LoginPage({ searchParams }: { searchParams?: Record<string, string | string[]> }) {
+	const params = new URLSearchParams();
+	if (searchParams) {
+		Object.entries(searchParams).forEach(([key, value]) => {
+			if (Array.isArray(value)) {
+				value.forEach((item) => params.append(key, item));
+			} else if (value) {
+				params.set(key, value);
+			}
+		});
+	}
+	const query = params.toString();
+	redirect(query ? `/sign-in?${query}` : '/sign-in');
 }
 
 

@@ -11,12 +11,12 @@ export function SignOutLink() {
 		e.preventDefault();
 		try {
 			await supabase.auth.signOut();
-			router.push('/login');
+			router.push('/sign-in');
 			router.refresh();
 		} catch (error) {
 			console.error('Error signing out:', error);
 			// Still redirect even if sign out fails
-			router.push('/login');
+			router.push('/sign-in');
 		}
 	};
 

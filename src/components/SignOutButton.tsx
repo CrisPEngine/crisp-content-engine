@@ -9,7 +9,7 @@ export function SignOutButton() {
 			className="rounded-md border px-3 py-1 text-sm"
 			onClick={async () => {
 				await supabase.auth.signOut();
-				window.location.href = '/login';
+				window.location.href = '/sign-in';
 			}}
 		>
 			Sign out

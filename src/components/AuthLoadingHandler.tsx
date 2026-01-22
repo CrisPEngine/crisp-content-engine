@@ -40,11 +40,11 @@ export function AuthLoadingHandler() {
 				} else {
 					// Timeout - redirect to login
 					console.warn('Session not established after timeout, redirecting to login');
-					router.replace('/login?error=session_timeout');
+					router.replace('/sign-in?error=session_timeout');
 				}
 			} catch (error) {
 				console.error('Error checking session:', error);
-				router.replace('/login?error=session_error');
+				router.replace('/sign-in?error=session_error');
 			}
 		};
 

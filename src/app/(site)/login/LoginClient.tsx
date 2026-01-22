@@ -15,6 +15,12 @@ export function LoginClient() {
 	const searchParams = useSearchParams();
 	const [authView, setAuthView] = useState<'sign_in' | 'update_password'>('sign_in');
 	const [isRecoveryFlow, setIsRecoveryFlow] = useState(false);
+	const redirectTo = searchParams?.get('redirect_to');
+	const safeRedirectTo = redirectTo && redirectTo.startsWith('/') ? redirectTo : null;
+	const authCallbackUrl =
+		typeof window !== 'undefined'
+			? `${window.location.origin}/auth/callback${safeRedirectTo ? `?redirect_to=${encodeURIComponent(safeRedirectTo)}` : ''}`
+			: `https://app.crispdigital.io/auth/callback${safeRedirectTo ? `?redirect_to=${encodeURIComponent(safeRedirectTo)}` : ''}`;
 	
 	// Check if user is already signed in and redirect if so (unless in recovery flow)
 	useEffect(() => {
@@ -26,7 +32,11 @@ export function LoginClient() {
 			// If user is signed in and not in recovery flow, redirect to dashboard
 			if (session && type !== 'recovery') {
 				console.log('User already signed in, redirecting to dashboard');
-				router.replace('/dashboard');
+				if (safeRedirectTo === '/connections') {
+					router.replace('/connections?reauth=true');
+					return;
+				}
+				router.replace(safeRedirectTo || '/dashboard');
 			}
 		};
 		
@@ -132,15 +142,12 @@ export function LoginClient() {
 				router.replace('/dashboard');
 			}
 
-			// Check if we should redirect to connections page (from reauth email)
-			if (event === 'SIGNED_IN' && session) {
-				const urlParams = new URLSearchParams(window.location.search);
-				const redirectTo = urlParams.get('redirect_to');
-				if (redirectTo === '/connections' || redirectTo === 'connections') {
-					console.log('Redirecting to connections page after login');
-					router.replace('/connections?reauth=true');
-					return;
-				}
+			// Check if we should redirect after sign-in
+			if (event === 'SIGNED_IN' && session && safeRedirectTo) {
+				const destination = safeRedirectTo === '/connections' ? '/connections?reauth=true' : safeRedirectTo;
+				console.log('Redirecting after login:', destination);
+				router.replace(destination);
+				return;
 			}
 		});
 
@@ -162,7 +169,7 @@ export function LoginClient() {
 			await supabase.auth.signInWithOAuth({
 				provider: 'linkedin_oidc',
 				options: {
-					redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://app.crispdigital.io/auth/callback',
+					redirectTo: authCallbackUrl,
 					queryParams: {
 						// Don't force prompt - let LinkedIn decide based on existing session
 						// This allows users to stay logged in if they're already authenticated with LinkedIn
@@ -187,7 +194,7 @@ export function LoginClient() {
 			await supabase.auth.signInWithOAuth({
 				provider: 'google',
 				options: {
-					redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://app.crispdigital.io/auth/callback',
+					redirectTo: authCallbackUrl,
 					queryParams: {
 						// Don't force prompt - let Google decide based on existing session
 						// This allows users to stay logged in if they're already authenticated with Google
@@ -255,7 +262,7 @@ export function LoginClient() {
 						supabaseClient={supabase}
 						view={authView}
 						providers={[]}
-						redirectTo={typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://app.crispdigital.io/auth/callback'}
+						redirectTo={authCallbackUrl}
 						appearance={{
 							theme: ThemeSupa,
 							variables: {

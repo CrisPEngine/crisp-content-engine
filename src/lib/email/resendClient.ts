@@ -1,9 +1,17 @@
 import { Resend } from 'resend';
 
-if (!process.env.RESEND_API_KEY) {
-	throw new Error('RESEND_API_KEY environment variable is not set');
-}
+let cachedClient: Resend | null = null;
 
-export const resend = new Resend(process.env.RESEND_API_KEY);
+export function getResendClient(): Resend {
+	if (cachedClient) return cachedClient;
+
+	const apiKey = process.env.RESEND_API_KEY;
+	if (!apiKey) {
+		throw new Error('RESEND_API_KEY environment variable is not set');
+	}
+
+	cachedClient = new Resend(apiKey);
+	return cachedClient;
+}
 
 

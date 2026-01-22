@@ -16,33 +16,37 @@ function CallbackHandler() {
 			return;
 		}
 
-		// Handle hash fragments (Supabase sometimes uses these for errors)
-		// Hash fragments are only available client-side
-		const hash = window.location.hash;
-		if (hash) {
-			const hashParams = new URLSearchParams(hash.substring(1));
-			const error = hashParams.get('error');
-			const errorDescription = hashParams.get('error_description');
-			
-			if (error) {
-				console.error('Auth callback hash error:', { error, errorDescription });
-				router.push(`/login?error=${encodeURIComponent(error)}${errorDescription ? `&error_description=${encodeURIComponent(errorDescription)}` : ''}`);
-				return;
-			}
-		}
-
-		// Handle query parameters
+		// Handle query parameters first to get redirectTo
 		const type = searchParams.get('type');
 		const token = searchParams.get('token');
 		const tokenHash = searchParams.get('token_hash');
 		const code = searchParams.get('code');
 		const error = searchParams.get('error');
 		const errorDescription = searchParams.get('error_description');
+		const redirectTo = searchParams.get('redirect_to');
+		const safeRedirectTo = redirectTo && redirectTo.startsWith('/') ? redirectTo : null;
+
+		// Handle hash fragments (Supabase sometimes uses these for errors)
+		// Hash fragments are only available client-side
+		const hash = window.location.hash;
+		if (hash) {
+			const hashParams = new URLSearchParams(hash.substring(1));
+			const hashError = hashParams.get('error');
+			const hashErrorDescription = hashParams.get('error_description');
+			
+			if (hashError) {
+				console.error('Auth callback hash error:', { error: hashError, errorDescription: hashErrorDescription });
+				const redirectParam = safeRedirectTo ? `&redirect_to=${encodeURIComponent(safeRedirectTo)}` : '';
+				router.push(`/sign-in?error=${encodeURIComponent(hashError)}${hashErrorDescription ? `&error_description=${encodeURIComponent(hashErrorDescription)}` : ''}${redirectParam}`);
+				return;
+			}
+		}
 
 		// Handle errors from query params
 		if (error) {
 			console.error('Auth callback query error:', { error, errorDescription });
-			router.push(`/login?error=${encodeURIComponent(error)}${errorDescription ? `&error_description=${encodeURIComponent(errorDescription)}` : ''}`);
+			const redirectParam = safeRedirectTo ? `&redirect_to=${encodeURIComponent(safeRedirectTo)}` : '';
+			router.push(`/sign-in?error=${encodeURIComponent(error)}${errorDescription ? `&error_description=${encodeURIComponent(errorDescription)}` : ''}${redirectParam}`);
 			return;
 		}
 
@@ -62,7 +66,7 @@ function CallbackHandler() {
 			if (tokenHash) {
 				params.set('token_hash', tokenHash);
 			}
-			const loginUrl = `/login?${params.toString()}`;
+			const loginUrl = `/sign-in?${params.toString()}`;
 			console.log('Redirecting to:', loginUrl);
 			// Use replace to avoid adding to history
 			router.replace(loginUrl);
@@ -79,15 +83,15 @@ function CallbackHandler() {
 				.then((response: { data: any; error: any }) => {
 					if (response.error) {
 						console.error('Error exchanging code:', response.error);
-						router.replace('/login?error=oauth_error');
+						const redirectParam = safeRedirectTo ? `&redirect_to=${encodeURIComponent(safeRedirectTo)}` : '';
+						router.replace(`/sign-in?error=oauth_error${redirectParam}`);
 						return;
 					}
 					
-					// Check if we should redirect to connections page (from reauth email)
-					const redirectTo = searchParams.get('redirect_to');
-					if (redirectTo === '/connections' || redirectTo === 'connections') {
-						console.log('Session established, redirecting to connections page');
-						router.replace('/connections?reauth=true');
+					if (safeRedirectTo) {
+						const destination = safeRedirectTo === '/connections' ? '/connections?reauth=true' : safeRedirectTo;
+						console.log('Session established, redirecting:', destination);
+						router.replace(destination);
 						return;
 					}
 					
@@ -98,7 +102,8 @@ function CallbackHandler() {
 				})
 				.catch((err: unknown) => {
 					console.error('Exception exchanging code:', err);
-					router.replace('/login?error=oauth_error');
+					const redirectParam = safeRedirectTo ? `&redirect_to=${encodeURIComponent(safeRedirectTo)}` : '';
+					router.replace(`/sign-in?error=oauth_error${redirectParam}`);
 				});
 			return;
 		}
@@ -116,7 +121,7 @@ function CallbackHandler() {
 			params.set('type', 'recovery');
 			if (urlToken) params.set('token', urlToken);
 			if (urlTokenHash) params.set('token_hash', urlTokenHash);
-			router.replace(`/login?${params.toString()}`);
+			router.replace(`/sign-in?${params.toString()}`);
 			return;
 		}
 
@@ -126,7 +131,7 @@ function CallbackHandler() {
 			console.log('Current URL:', window.location.href);
 			console.log('Search params:', Object.fromEntries(currentUrl.searchParams));
 		}
-		router.replace('/login');
+		router.replace('/sign-in');
 	}, [router, searchParams, supabase]);
 
 	return (
