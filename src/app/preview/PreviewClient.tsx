@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSupabase } from "@/components/SupabaseProvider";
+import { getSupabaseService } from "@/lib/supabaseService";
 
 type PreviewOutput = {
   packTitle: string;
@@ -169,6 +170,11 @@ export default function PreviewClient() {
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [email, setEmail] = useState("");
   const [isSubmittingLead, setIsSubmittingLead] = useState(false);
+  const [previewPackId, setPreviewPackId] = useState<string | null>(null);
+  const [showBrandModal, setShowBrandModal] = useState(false);
+  const [brands, setBrands] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedBrandId, setSelectedBrandId] = useState<string>("");
+  const [loadingBrands, setLoadingBrands] = useState(false);
   const gateSentinelRef = useRef<HTMLDivElement | null>(null);
   const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -176,6 +182,7 @@ export default function PreviewClient() {
 
   const utmSource = searchParams.get("utm_source");
   const utmCampaign = searchParams.get("utm_campaign");
+  const urlPreviewPackId = searchParams.get("preview_pack_id");
 
   // Check authentication status
   useEffect(() => {
@@ -208,14 +215,72 @@ export default function PreviewClient() {
     [selectedTopics, otherTopic]
   );
 
+  // Load from preview_packs if pack ID is in URL
+  useEffect(() => {
+    if (urlPreviewPackId && isAuthenticated === true && supabase) {
+      loadPreviewPack(urlPreviewPackId);
+    }
+  }, [urlPreviewPackId, isAuthenticated, supabase]);
+
+  async function loadPreviewPack(packId: string) {
+    try {
+      setIsLoading(true);
+      setError(null);
+      setPreviewPackId(packId);
+      
+      const admin = getSupabaseService();
+      const { data: pack, error: packError } = await admin
+        .from('preview_packs')
+        .select('*')
+        .eq('id', packId)
+        .maybeSingle();
+
+      if (packError || !pack) {
+        setError('Preview pack not found');
+        setIsLoading(false);
+        return;
+      }
+
+      if (pack.outputs) {
+        const sanitized = validateAndSanitizeOutput(pack.outputs);
+        if (sanitized) {
+          setOutputs(sanitized);
+          setPersona(pack.persona || '');
+          setTone(pack.tone || '');
+          setGoal(pack.goal || '');
+          setPlatform((pack.channel as typeof PLATFORMS[number]) || 'LinkedIn');
+          if (pack.topics && typeof pack.topics === 'object') {
+            const topicsObj = pack.topics as any;
+            if (Array.isArray(topicsObj.selected)) {
+              setSelectedTopics(topicsObj.selected);
+            }
+            if (topicsObj.other) {
+              setOtherTopic(topicsObj.other);
+            }
+          }
+          setIsUnlocked(true); // Already generated, show all
+        } else {
+          setError('Invalid preview data format');
+        }
+      } else {
+        setError('Preview pack has no outputs');
+      }
+    } catch (err: any) {
+      console.error('Failed to load preview pack:', err);
+      setError(err.message || 'Failed to load preview pack');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   useEffect(() => {
     const sessionId = searchParams.get("preview_session_id");
-    if (sessionId && sessionId !== previewSessionId) {
+    if (sessionId && sessionId !== previewSessionId && !urlPreviewPackId) {
       setPreviewSessionId(sessionId);
       // Check if we should start polling or if already generated
       fetchPreviewOutputs(sessionId);
     }
-  }, [searchParams, previewSessionId]);
+  }, [searchParams, previewSessionId, urlPreviewPackId]);
 
   // Gate activation: trigger after scroll past first post OR 10 seconds, whichever comes first
   // But only if not unlocked
@@ -583,12 +648,33 @@ export default function PreviewClient() {
     }
   }
 
+  async function loadBrands() {
+    try {
+      setLoadingBrands(true);
+      const res = await fetch('/api/brands', { cache: 'no-store' });
+      if (!res.ok) {
+        throw new Error('Failed to load brands');
+      }
+      const data = await res.json();
+      const brandList = (data.profiles || []).map((p: any) => ({
+        id: p.id,
+        name: p.client_name || p.name || 'Unnamed Brand',
+      }));
+      setBrands(brandList);
+    } catch (err: any) {
+      console.error('Failed to load brands:', err);
+      setError(err.message || 'Failed to load brands');
+    } finally {
+      setLoadingBrands(false);
+    }
+  }
+
   async function handleUnlockClick() {
-    if (!previewSessionId) return;
+    if (!previewSessionId && !previewPackId) return;
     
     // Check if authenticated
     if (isAuthenticated === false) {
-      // Show email form
+      // Show email form for anonymous users
       setShowEmailForm(true);
       return;
     }
@@ -599,8 +685,9 @@ export default function PreviewClient() {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           setIsAuthenticated(true);
-          // User is authenticated, proceed with convert
-          handleConvert();
+          // User is authenticated, show brand selection
+          await loadBrands();
+          setShowBrandModal(true);
         } else {
           setIsAuthenticated(false);
           setShowEmailForm(true);
@@ -612,9 +699,10 @@ export default function PreviewClient() {
       return;
     }
     
-    // Authenticated - proceed with convert
+    // Authenticated - show brand selection modal
     if (isAuthenticated === true) {
-      handleConvert();
+      await loadBrands();
+      setShowBrandModal(true);
     }
   }
 
@@ -680,17 +768,64 @@ export default function PreviewClient() {
   }
 
   async function handleConvert() {
-    if (!previewSessionId || isConverting) return;
+    if (isConverting) return;
+    if (!previewPackId && !previewSessionId) return;
+    if (!selectedBrandId) {
+      setError("Please select a brand");
+      return;
+    }
     
     try {
       setIsConverting(true);
-      console.log('[preview_convert_clicked]', { previewSessionId });
+      setError(null);
+      console.log('[preview_convert_clicked]', { previewPackId, previewSessionId, brandId: selectedBrandId });
 
-      const res = await fetch("/api/preview/convert", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ previewSessionId }),
-      });
+      // For logged-in users, use previewPackId
+      if (previewPackId) {
+        const res = await fetch("/api/preview/convert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            previewPackId,
+            brandId: selectedBrandId,
+          }),
+        });
+
+        let data: any;
+        try {
+          data = await res.json();
+        } catch (parseError) {
+          console.error('[preview_failed]', { error: 'Invalid JSON response' });
+          setError("Invalid response from server. Please try again.");
+          return;
+        }
+
+        if (!res.ok) {
+          const errorMessage = data?.error || data?.message || "Conversion failed";
+          console.error('[preview_failed]', { error: errorMessage });
+          setError(errorMessage);
+          return;
+        }
+
+        if (data.redirectUrl) {
+          console.log('[preview_converted_success]', { 
+            previewPackId, 
+            redirectUrl: data.redirectUrl, 
+            createdCount: data.createdCount 
+          });
+          // Show success toast, then redirect
+          window.location.href = data.redirectUrl;
+        }
+        return;
+      }
+
+      // Legacy: For anonymous users with previewSessionId (should not happen for logged-in)
+      if (previewSessionId) {
+        const res = await fetch("/api/preview/convert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ previewSessionId }),
+        });
 
       let data: any;
       try {
@@ -715,16 +850,17 @@ export default function PreviewClient() {
         return;
       }
 
-      if (data.redirectUrl) {
-        console.log('[preview_converted_success]', { previewSessionId, redirectUrl: data.redirectUrl, postCount: data.postCount });
-        // Show success message briefly, then redirect
-        window.location.href = data.redirectUrl;
+        if (data.redirectUrl) {
+          console.log('[preview_converted_success]', { previewSessionId, redirectUrl: data.redirectUrl, postCount: data.postCount });
+          window.location.href = data.redirectUrl;
+        }
       }
     } catch (err: any) {
-      console.error('[preview_failed]', { error: err?.message || 'Network error', previewSessionId });
+      console.error('[preview_failed]', { error: err?.message || 'Network error' });
       setError(err?.message || "Network error. Please try again.");
     } finally {
       setIsConverting(false);
+      setShowBrandModal(false);
     }
   }
 
@@ -1063,18 +1199,85 @@ export default function PreviewClient() {
                             >
                               {isConverting ? "Processing..." : "Unlock and save posts"}
                             </button>
-                            <Link
-                              href={`/sign-in?redirect_to=${encodeURIComponent(`/preview?preview_session_id=${previewSessionId || ""}`)}`}
-                              className="rounded-full px-5 py-2 text-sm font-semibold text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-900"
-                            >
-                              I already have an account
-                            </Link>
+                            {isAuthenticated === false && (
+                              <Link
+                                href={`/sign-in?redirect_to=${encodeURIComponent(`/preview?preview_session_id=${previewSessionId || ""}`)}`}
+                                className="rounded-full px-5 py-2 text-sm font-semibold text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-900"
+                              >
+                                I already have an account
+                              </Link>
+                            )}
                           </div>
                         </>
                       )}
                     </div>
                   </div>
                 </>
+              )}
+
+              {/* Brand Selection Modal */}
+              {showBrandModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                  <div className="max-w-md w-full mx-4 rounded-2xl bg-neutral-950 border border-neutral-800 p-6 space-y-4 shadow-2xl">
+                    <h3 className="text-xl font-semibold">Choose brand</h3>
+                    <p className="text-sm text-neutral-300">
+                      Select a brand to save these posts to your workspace.
+                    </p>
+                    
+                    {loadingBrands ? (
+                      <div className="py-8 text-center">
+                        <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-sky-300 border-t-transparent" />
+                        <p className="mt-2 text-sm text-neutral-400">Loading brands...</p>
+                      </div>
+                    ) : brands.length === 0 ? (
+                      <div className="py-8 text-center space-y-4">
+                        <p className="text-sm text-neutral-400">No brands found.</p>
+                        <Link
+                          href="/onboarding"
+                          className="inline-block rounded-full bg-sky-400 px-6 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-sky-300"
+                        >
+                          Create a brand
+                        </Link>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                          {brands.map((brand) => (
+                            <button
+                              key={brand.id}
+                              onClick={() => setSelectedBrandId(brand.id)}
+                              className={`w-full text-left rounded-xl p-3 ring-1 transition ${
+                                selectedBrandId === brand.id
+                                  ? 'bg-sky-400/20 ring-sky-300 text-sky-300'
+                                  : 'bg-neutral-900 ring-neutral-800 text-neutral-100 hover:bg-neutral-800'
+                              }`}
+                            >
+                              {brand.name}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex gap-3 pt-2">
+                          <button
+                            onClick={() => {
+                              setShowBrandModal(false);
+                              setSelectedBrandId("");
+                            }}
+                            className="flex-1 rounded-full px-5 py-2 text-sm font-semibold text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-900"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleConvert}
+                            disabled={!selectedBrandId || isConverting}
+                            className="flex-1 rounded-full bg-sky-400 px-5 py-2 text-sm font-semibold text-neutral-950 hover:bg-sky-300 disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            {isConverting ? "Saving..." : "Save to workspace"}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           </div>

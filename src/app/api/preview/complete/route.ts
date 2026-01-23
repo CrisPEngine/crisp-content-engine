@@ -147,7 +147,7 @@ export async function POST(req: Request) {
 			return NextResponse.json({ error: validation.error }, { status: 422 });
 		}
 
-		// Update session with generated outputs
+		// Update session with generated outputs (for anonymous users)
 		await admin
 			.from('preview_sessions')
 			.update({
@@ -157,8 +157,45 @@ export async function POST(req: Request) {
 			})
 			.eq('preview_session_id', data.previewSessionId);
 
-		console.log('[Preview Complete] Success', { previewSessionId: data.previewSessionId });
-		return NextResponse.json({ ok: true });
+		// If user is logged in, also create a preview_pack
+		let previewPackId: string | null = null;
+		if (session.user_id) {
+			try {
+				const { data: pack, error: packError } = await admin
+					.from('preview_packs')
+					.insert({
+						user_id: session.user_id,
+						persona: session.persona || '',
+						topics: session.topics || {},
+						tone: session.tone || '',
+						goal: session.goal || '',
+						channel: 'LinkedIn', // Default, can be updated later
+						pack_title: data.outputs.packTitle,
+						outputs: data.outputs,
+						status: 'generated',
+					})
+					.select('id')
+					.single();
+
+				if (packError || !pack) {
+					console.error('[Preview Complete] Failed to create preview_pack:', packError);
+					// Don't fail the request, just log the error
+				} else {
+					previewPackId = pack.id;
+					console.log('[Preview Complete] Created preview_pack', { previewPackId, userId: session.user_id });
+				}
+			} catch (packErr: any) {
+				console.error('[Preview Complete] Exception creating preview_pack:', packErr);
+				// Don't fail the request, just log the error
+			}
+		}
+
+		console.log('[Preview Complete] Success', { 
+			previewSessionId: data.previewSessionId,
+			previewPackId,
+			hasUserId: !!session.user_id,
+		});
+		return NextResponse.json({ ok: true, previewPackId });
 	} catch (error: any) {
 		console.error('[Preview Complete] Error:', error);
 		if (error instanceof z.ZodError) {
