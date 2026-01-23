@@ -175,14 +175,42 @@ export default function PreviewClient() {
   const [brands, setBrands] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedBrandId, setSelectedBrandId] = useState<string>("");
   const [loadingBrands, setLoadingBrands] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+  const [packUrl, setPackUrl] = useState<string | null>(null);
   const gateSentinelRef = useRef<HTMLDivElement | null>(null);
   const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Capture attribution on page load
+  const [attribution, setAttribution] = useState<{
+    utm_source: string | null;
+    utm_medium: string | null;
+    utm_campaign: string | null;
+    utm_content: string | null;
+    referrer: string | null;
+    landing_path: string | null;
+    locale: string | null;
+  } | null>(null);
+
   const utmSource = searchParams.get("utm_source");
   const utmCampaign = searchParams.get("utm_campaign");
   const urlPreviewPackId = searchParams.get("preview_pack_id");
+
+  // Capture attribution on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setAttribution({
+        utm_source: searchParams.get("utm_source"),
+        utm_medium: searchParams.get("utm_medium"),
+        utm_campaign: searchParams.get("utm_campaign"),
+        utm_content: searchParams.get("utm_content"),
+        referrer: document.referrer || null,
+        landing_path: window.location.pathname + window.location.search,
+        locale: navigator.language || null,
+      });
+    }
+  }, [searchParams]);
 
   // Check authentication status
   useEffect(() => {
@@ -283,8 +311,18 @@ export default function PreviewClient() {
   }, [searchParams, previewSessionId, urlPreviewPackId]);
 
   // Gate activation: trigger after scroll past first post OR 10 seconds, whichever comes first
-  // But only if not unlocked
+  // But only if not unlocked AND user is anonymous
   useEffect(() => {
+    // Never show gate for logged-in users
+    if (isAuthenticated === true) {
+      if (gateTimerRef.current) {
+        clearTimeout(gateTimerRef.current);
+      }
+      setGateActive(false);
+      setIsUnlocked(true); // Logged-in users see all posts immediately
+      return;
+    }
+
     if (!outputs || isUnlocked) {
       if (gateTimerRef.current) {
         clearTimeout(gateTimerRef.current);
@@ -295,7 +333,7 @@ export default function PreviewClient() {
 
     // Set 30-second timer (give users time to read first post)
     gateTimerRef.current = setTimeout(() => {
-      if (!isUnlocked) {
+      if (!isUnlocked && isAuthenticated !== true) {
         setGateActive(true);
       }
     }, 30000);
@@ -408,6 +446,11 @@ export default function PreviewClient() {
           }
 
           setOutputs(sanitized);
+          // Auto-unlock for logged-in users
+          if (isAuthenticated === true) {
+            setIsUnlocked(true);
+            setGateActive(false);
+          }
           console.log('[preview_generated]', { previewSessionId: sessionId });
         } else if (data.status === 'converted') {
           // Already converted - stop polling and redirect to approvals
@@ -461,6 +504,11 @@ export default function PreviewClient() {
         const sanitized = validateAndSanitizeOutput(statusData.outputs);
         if (sanitized) {
           setOutputs(sanitized);
+          // Auto-unlock for logged-in users
+          if (isAuthenticated === true) {
+            setIsUnlocked(true);
+            setGateActive(false);
+          }
           console.log('[preview_generated]', { previewSessionId: sessionId });
         } else {
           setError("Invalid content format. Please try again.");
@@ -519,7 +567,7 @@ export default function PreviewClient() {
       setIsLoading(true);
       console.log('[preview_started]', { persona, tone, goal });
 
-      // Step 1: Create preview session
+      // Step 1: Create preview session with attribution
       const createRes = await fetch("/api/preview/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -528,8 +576,13 @@ export default function PreviewClient() {
           topics: topicsPayload,
           tone,
           goal,
-          utm_source: utmSource,
-          utm_campaign: utmCampaign,
+          utm_source: attribution?.utm_source || utmSource,
+          utm_medium: attribution?.utm_medium,
+          utm_campaign: attribution?.utm_campaign || utmCampaign,
+          utm_content: attribution?.utm_content,
+          referrer: attribution?.referrer,
+          landing_path: attribution?.landing_path,
+          locale: attribution?.locale,
         }),
       });
 
@@ -590,6 +643,11 @@ export default function PreviewClient() {
         const sanitized = validateAndSanitizeOutput(generateData.outputs);
         if (sanitized) {
           setOutputs(sanitized);
+          // Auto-unlock for logged-in users
+          if (isAuthenticated === true) {
+            setIsUnlocked(true);
+            setGateActive(false);
+          }
           console.log('[preview_generated]', { previewSessionId: sessionId });
         } else {
           setError("Invalid content format. Please try again.");
@@ -708,7 +766,7 @@ export default function PreviewClient() {
 
   async function handleLeadSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!previewSessionId || !email.trim() || isSubmittingLead) return;
+    if ((!previewSessionId && !previewPackId) || !email.trim() || isSubmittingLead) return;
     
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
@@ -719,21 +777,28 @@ export default function PreviewClient() {
     try {
       setIsSubmittingLead(true);
       setError(null);
-      console.log('[preview_lead_submit]', { previewSessionId, email });
+      console.log('[preview_lead_submit]', { previewSessionId, previewPackId, email });
 
       const res = await fetch("/api/preview/lead", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          previewSessionId,
+          previewSessionId: previewSessionId || undefined,
+          previewPackId: previewPackId || undefined,
           email: email.trim(),
           persona,
           topics: topicsPayload,
           tone,
           goal,
-          utm_source: utmSource,
-          utm_campaign: utmCampaign,
-          channel: platform,
+          utm_source: attribution?.utm_source,
+          utm_medium: attribution?.utm_medium,
+          utm_campaign: attribution?.utm_campaign,
+          utm_content: attribution?.utm_content,
+          referrer: attribution?.referrer,
+          landing_path: attribution?.landing_path,
+          locale: attribution?.locale,
+          channel_selected: platform,
+          channel: platform, // Legacy field
         }),
       });
 
@@ -754,10 +819,22 @@ export default function PreviewClient() {
       }
 
       // Success - unlock all posts
-      console.log('[preview_lead_success]', { previewSessionId, email });
+      console.log('[preview_lead_success]', { previewSessionId, previewPackId, email, emailSent: data.emailSent });
       setIsUnlocked(true);
       setGateActive(false);
       setShowEmailForm(false);
+      setEmailSent(data.emailSent || false);
+      
+      // Set pack URL if we got a previewPackId back
+      if (data.previewPackId) {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+        setPackUrl(`${appUrl}/preview?preview_pack_id=${data.previewPackId}`);
+        setPreviewPackId(data.previewPackId);
+      } else if (previewPackId) {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+        setPackUrl(`${appUrl}/preview?preview_pack_id=${previewPackId}`);
+      }
+      
       setError(null);
     } catch (err: any) {
       console.error('[preview_failed]', { error: err?.message || 'Network error' });
@@ -871,12 +948,24 @@ export default function PreviewClient() {
           <Link href="/" className="text-sm text-neutral-300 hover:text-neutral-200">
             Back
           </Link>
-          <Link
-            href="/sign-in"
-            className="rounded-full px-4 py-2 text-sm text-neutral-200 ring-1 ring-neutral-800 hover:bg-neutral-900"
-          >
-            Sign in
-          </Link>
+          <div className="flex items-center gap-3">
+            {isAuthenticated === true && (
+              <Link
+                href="/previews"
+                className="rounded-full px-4 py-2 text-sm text-neutral-200 ring-1 ring-neutral-800 hover:bg-neutral-900"
+              >
+                My previews
+              </Link>
+            )}
+            {isAuthenticated !== true && (
+              <Link
+                href="/sign-in"
+                className="rounded-full px-4 py-2 text-sm text-neutral-200 ring-1 ring-neutral-800 hover:bg-neutral-900"
+              >
+                Sign in
+              </Link>
+            )}
+          </div>
         </div>
 
         <div className="mt-10 rounded-2xl bg-neutral-950/40 p-6 ring-1 ring-neutral-800 backdrop-blur">
@@ -1061,7 +1150,8 @@ export default function PreviewClient() {
                         if (showSentinel) {
                           sentinelPlaced = true;
                         }
-                        const isGated = gateActive && currentIndex > 0 && !isUnlocked; // Gate all posts after first (unless unlocked)
+                        // Never gate for logged-in users, only gate for anonymous users after first post
+                        const isGated = isAuthenticated !== true && gateActive && currentIndex > 0 && !isUnlocked;
                         const canCopy = isUnlocked || currentIndex < 3; // First 3 posts can be copied
                         const formatted = formatPostForChannel(post, platform);
                         return (
@@ -1111,16 +1201,43 @@ export default function PreviewClient() {
                 ));
               })()}
 
-              {/* Copy all button and secondary CTA - shown when unlocked */}
+              {/* Copy all button and pack link - shown when unlocked */}
               {isUnlocked && (
                 <div className="mt-6 space-y-3">
-                  <div className="flex justify-center">
+                  {emailSent && (
+                    <div className="rounded-xl bg-green-950/20 border border-green-800/50 p-4 text-center">
+                      <p className="text-sm text-green-300 mb-2">
+                        ✓ We emailed you this pack link
+                      </p>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap justify-center gap-3">
                     <button
                       onClick={handleCopyAll}
                       className="rounded-full bg-sky-400 px-6 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-sky-300"
                     >
                       {copiedPostId === 'all' ? "All posts copied!" : "Copy all posts"}
                     </button>
+                    {packUrl && (
+                      <>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(packUrl);
+                            setCopiedPostId('link');
+                            setTimeout(() => setCopiedPostId(null), 2000);
+                          }}
+                          className="rounded-full px-6 py-2.5 text-sm font-semibold text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-900"
+                        >
+                          {copiedPostId === 'link' ? "Link copied!" : "Copy pack link"}
+                        </button>
+                        <Link
+                          href={packUrl}
+                          className="rounded-full px-6 py-2.5 text-sm font-semibold text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-900"
+                        >
+                          Open pack link
+                        </Link>
+                      </>
+                    )}
                   </div>
                   {isAuthenticated === false && (
                     <div className="flex justify-center">
@@ -1135,8 +1252,8 @@ export default function PreviewClient() {
                 </div>
               )}
 
-              {/* Gate overlay - only covers posts after the first one */}
-              {gateActive && !isUnlocked && (
+              {/* Gate overlay - only covers posts after the first one, never for logged-in users */}
+              {isAuthenticated !== true && gateActive && !isUnlocked && (
                 <>
                   {/* Blurred fade overlay starting after first post */}
                   <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none">
@@ -1188,8 +1305,8 @@ export default function PreviewClient() {
                         <>
                           <ul className="space-y-2 text-sm text-neutral-400">
                             <li>Access all 9 posts</li>
-                            <li>Edit and approve inside CRISP</li>
-                            <li>Schedule when ready</li>
+                            <li>Copy and use immediately</li>
+                            <li>Save to workspace to edit and manage</li>
                           </ul>
                           <div className="flex flex-col gap-2 pt-2">
                             <button
@@ -1197,7 +1314,7 @@ export default function PreviewClient() {
                               disabled={isConverting || isSubmittingLead}
                               className="rounded-full bg-sky-400 px-5 py-2 text-sm font-semibold text-neutral-950 hover:bg-sky-300 disabled:opacity-60 disabled:cursor-not-allowed"
                             >
-                              {isConverting ? "Processing..." : "Unlock and save posts"}
+                              {isAuthenticated === true ? "Save to workspace" : "Unlock all posts"}
                             </button>
                             {isAuthenticated === false && (
                               <Link

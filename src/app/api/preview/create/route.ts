@@ -11,7 +11,12 @@ const requestSchema = z.object({
 	tone: z.string().min(1),
 	goal: z.string().min(1),
 	utm_source: z.string().optional().nullable(),
+	utm_medium: z.string().optional().nullable(),
 	utm_campaign: z.string().optional().nullable(),
+	utm_content: z.string().optional().nullable(),
+	referrer: z.string().optional().nullable(),
+	landing_path: z.string().optional().nullable(),
+	locale: z.string().optional().nullable(),
 });
 
 export async function POST(req: Request) {
@@ -29,7 +34,9 @@ export async function POST(req: Request) {
 			tone: data.tone,
 			goal: data.goal,
 			utm_source: data.utm_source ?? null,
+			utm_medium: data.utm_medium ?? null,
 			utm_campaign: data.utm_campaign ?? null,
+			utm_content: data.utm_content ?? null,
 		});
 
 		if (error) {
