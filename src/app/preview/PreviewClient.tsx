@@ -237,6 +237,13 @@ export default function PreviewClient() {
 
           setOutputs(sanitized);
           console.log('[preview_generated]', { previewSessionId: sessionId });
+        } else if (data.status === 'converted') {
+          // Already converted - stop polling and redirect to approvals
+          stopPolling();
+          console.log('[preview_converted]', { previewSessionId: sessionId });
+          // Redirect to content approval (the convert endpoint should have created the records)
+          window.location.href = '/content/approval';
+          return;
         } else if (data.status === 'failed') {
           // Failed - stop polling
           stopPolling();
@@ -286,6 +293,12 @@ export default function PreviewClient() {
         } else {
           setError("Invalid content format. Please try again.");
         }
+      } else if (statusData.status === 'converted') {
+        // Already converted - stop polling, don't redirect (let convert endpoint handle redirect)
+        setIsLoading(false);
+        console.log('[preview_converted]', { previewSessionId: sessionId });
+        // Don't redirect here - the convert endpoint will handle it
+        return;
       } else if (statusData.status === 'failed') {
         // Failed
         setIsLoading(false);
@@ -424,7 +437,7 @@ export default function PreviewClient() {
   }
 
   async function handleCopy(content: string, postId: string) {
-    if (gateActive || copyCount >= 2) return;
+    if (copyCount >= 2) return;
     try {
       await navigator.clipboard.writeText(content);
       setCopiedPostId(postId);
@@ -678,11 +691,11 @@ export default function PreviewClient() {
                         const currentIndex = globalIndex;
                         globalIndex += 1;
                         const isFirstPost = currentIndex === 0;
-                        const showSentinel = !sentinelPlaced && currentIndex === 1; // After first post
+                        const showSentinel = !sentinelPlaced && currentIndex === 2; // After first blurred post (index 2 = third post)
                         if (showSentinel) {
                           sentinelPlaced = true;
                         }
-                        const isGated = gateActive && !isFirstPost;
+                        const isGated = gateActive && currentIndex > 0; // Gate all posts after first
                         return (
                           <article
                             key={postId}
@@ -696,7 +709,7 @@ export default function PreviewClient() {
                               <button
                                 type="button"
                                 onClick={() => handleCopy(`${post.title}\n\n${post.body}`, postId)}
-                                disabled={(gateActive && !isFirstPost) || copyCount >= 2}
+                                disabled={copyCount >= 2}
                                 className="text-xs font-semibold text-sky-300 hover:text-sky-200 disabled:opacity-40 disabled:cursor-not-allowed"
                               >
                                 {copiedPostId === postId ? "Copied" : "Copy"}
@@ -732,15 +745,15 @@ export default function PreviewClient() {
                 <>
                   {/* Blurred fade overlay starting after first post */}
                   <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none">
-                    {/* Calculate approximate height of first post section - use a reasonable offset */}
+                    {/* Gradient starts after first post (approximately 25% down) */}
                     <div 
                       className="absolute left-0 right-0 bg-gradient-to-b from-transparent via-neutral-950/60 to-neutral-950/95 backdrop-blur-sm"
-                      style={{ top: '20%', bottom: 0 }}
+                      style={{ top: '25%', bottom: 0 }}
                     />
                   </div>
                   
-                  {/* Unlock banner - positioned to be visible */}
-                  <div className="absolute bottom-8 left-0 right-0 flex justify-center pointer-events-auto z-10">
+                  {/* Unlock banner - positioned after first blurred post */}
+                  <div className="absolute top-[30%] left-0 right-0 flex justify-center pointer-events-auto z-10">
                     <div className="max-w-md mx-4 rounded-2xl bg-neutral-950/95 backdrop-blur border border-neutral-800 p-6 space-y-4 text-center shadow-2xl">
                       <h3 className="text-xl font-semibold">Unlock your full content system</h3>
                       <p className="text-sm text-neutral-300">
