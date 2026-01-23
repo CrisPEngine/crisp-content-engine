@@ -60,6 +60,8 @@ export async function POST(req: Request) {
 			}
 		}
 
+		const convertedAtValue = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD for Airtable Date field
+		
 		const leadPayload = {
 			fields: {
 				email: data.email,
@@ -71,9 +73,11 @@ export async function POST(req: Request) {
 				utm_source: data.utm_source || session.utm_source || null,
 				utm_campaign: data.utm_campaign || session.utm_campaign || null,
 				channel: data.channel || 'LinkedIn',
-				converted_at: new Date().toISOString(),
+				converted_at: convertedAtValue,
 			},
 		};
+
+		console.log('[Preview Lead] Payload converted_at value:', convertedAtValue);
 
 		if (existingRecord) {
 			// Update existing record
@@ -89,6 +93,7 @@ export async function POST(req: Request) {
 			if (!updateRes.ok) {
 				const errorData = await updateRes.json();
 				console.error('[Preview Lead] Airtable update error:', errorData);
+				console.error('[Preview Lead] Payload sent:', JSON.stringify(leadPayload, null, 2));
 				return NextResponse.json({ error: 'Failed to save lead' }, { status: 422 });
 			}
 
@@ -107,6 +112,7 @@ export async function POST(req: Request) {
 			if (!createRes.ok) {
 				const errorData = await createRes.json();
 				console.error('[Preview Lead] Airtable create error:', errorData);
+				console.error('[Preview Lead] Payload sent:', JSON.stringify(leadPayload, null, 2));
 				return NextResponse.json({ error: 'Failed to save lead' }, { status: 422 });
 			}
 
