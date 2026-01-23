@@ -245,7 +245,7 @@ export default function PreviewClient() {
 
   // Load from preview_packs if pack ID is in URL
   useEffect(() => {
-    if (urlPreviewPackId && isAuthenticated === true && supabase) {
+    if (urlPreviewPackId && isAuthenticated && supabase) {
       loadPreviewPack(urlPreviewPackId);
     }
   }, [urlPreviewPackId, isAuthenticated, supabase]);
@@ -314,7 +314,7 @@ export default function PreviewClient() {
   // But only if not unlocked AND user is anonymous
   useEffect(() => {
     // Never show gate for logged-in users
-    if (isAuthenticated === true) {
+    if (isAuthenticated) {
       if (gateTimerRef.current) {
         clearTimeout(gateTimerRef.current);
       }
@@ -447,7 +447,7 @@ export default function PreviewClient() {
 
           setOutputs(sanitized);
           // Auto-unlock for logged-in users
-          if (isAuthenticated === true) {
+          if (isAuthenticated) {
             setIsUnlocked(true);
             setGateActive(false);
           }
@@ -505,7 +505,7 @@ export default function PreviewClient() {
         if (sanitized) {
           setOutputs(sanitized);
           // Auto-unlock for logged-in users
-          if (isAuthenticated === true) {
+          if (isAuthenticated) {
             setIsUnlocked(true);
             setGateActive(false);
           }
@@ -644,7 +644,7 @@ export default function PreviewClient() {
         if (sanitized) {
           setOutputs(sanitized);
           // Auto-unlock for logged-in users
-          if (isAuthenticated === true) {
+          if (isAuthenticated) {
             setIsUnlocked(true);
             setGateActive(false);
           }
@@ -731,7 +731,7 @@ export default function PreviewClient() {
     if (!previewSessionId && !previewPackId) return;
     
     // Check if authenticated
-    if (isAuthenticated === false) {
+    if (!isAuthenticated) {
       // Show email form for anonymous users
       setShowEmailForm(true);
       return;
@@ -758,7 +758,7 @@ export default function PreviewClient() {
     }
     
     // Authenticated - show brand selection modal
-    if (isAuthenticated === true) {
+    if (isAuthenticated) {
       await loadBrands();
       setShowBrandModal(true);
     }
@@ -949,7 +949,7 @@ export default function PreviewClient() {
             Back
           </Link>
           <div className="flex items-center gap-3">
-            {isAuthenticated === true && (
+            {isAuthenticated && (
               <Link
                 href="/previews"
                 className="rounded-full px-4 py-2 text-sm text-neutral-200 ring-1 ring-neutral-800 hover:bg-neutral-900"
@@ -1314,9 +1314,9 @@ export default function PreviewClient() {
                               disabled={isConverting || isSubmittingLead}
                               className="rounded-full bg-sky-400 px-5 py-2 text-sm font-semibold text-neutral-950 hover:bg-sky-300 disabled:opacity-60 disabled:cursor-not-allowed"
                             >
-                              {isAuthenticated === true ? "Save to workspace" : "Unlock all posts"}
+                              {isAuthenticated ? "Save to workspace" : "Unlock all posts"}
                             </button>
-                            {isAuthenticated === false && (
+                            {!isAuthenticated && (
                               <Link
                                 href={`/sign-in?redirect_to=${encodeURIComponent(`/preview?preview_session_id=${previewSessionId || ""}`)}`}
                                 className="rounded-full px-5 py-2 text-sm font-semibold text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-900"
