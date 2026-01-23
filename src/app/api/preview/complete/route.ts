@@ -67,10 +67,23 @@ function validateOutput(outputs: { packTitle: string; sections: any[] }): { ok: 
 
 export async function POST(req: Request) {
 	try {
+		console.log('[Preview Complete] Request received', {
+			method: req.method,
+			url: req.url,
+			headers: {
+				'content-type': req.headers.get('content-type'),
+				'x-make-secret': req.headers.get('x-make-secret') ? 'present' : 'missing',
+			},
+		});
+
 		// Authenticate via MAKE_SHARED_SECRET header
 		const secret = req.headers.get('x-make-secret') || req.headers.get('make-secret');
 		const expectedSecret = process.env.MAKE_SHARED_SECRET;
 		if (!expectedSecret || secret !== expectedSecret) {
+			console.error('[Preview Complete] Authentication failed', {
+				secretProvided: !!secret,
+				expectedSecretSet: !!expectedSecret,
+			});
 			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 		}
 
@@ -112,6 +125,7 @@ export async function POST(req: Request) {
 			})
 			.eq('preview_session_id', data.previewSessionId);
 
+		console.log('[Preview Complete] Success', { previewSessionId: data.previewSessionId });
 		return NextResponse.json({ success: true });
 	} catch (error: any) {
 		console.error('[Preview Complete] Error:', error);
@@ -120,4 +134,17 @@ export async function POST(req: Request) {
 		}
 		return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
 	}
+}
+
+// Handle other methods
+export async function GET() {
+	return NextResponse.json({ error: 'Method not allowed. Use POST.' }, { status: 405 });
+}
+
+export async function PUT() {
+	return NextResponse.json({ error: 'Method not allowed. Use POST.' }, { status: 405 });
+}
+
+export async function DELETE() {
+	return NextResponse.json({ error: 'Method not allowed. Use POST.' }, { status: 405 });
 }
