@@ -52,6 +52,14 @@ export async function GET(req: Request) {
 			response.error = session.error;
 		}
 
+		// Log status for debugging
+		console.log('[Preview Status]', {
+			previewSessionId,
+			status: session.status,
+			hasOutputs: !!response.outputs,
+			error: response.error,
+		});
+
 		return NextResponse.json(response);
 	} catch (error: any) {
 		console.error('[Preview Status] Error:', error);

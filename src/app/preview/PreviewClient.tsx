@@ -86,7 +86,6 @@ export default function PreviewClient() {
   const [platform, setPlatform] = useState<(typeof PLATFORMS)[number]>("LinkedIn");
   const [isLoading, setIsLoading] = useState(false);
   const [loadingText, setLoadingText] = useState("Generating your content pack. This takes ~30 seconds.");
-  const [pollingInterval, setPollingInterval] = useState<ReturnType<typeof setInterval> | null>(null);
   const [pollStartTime, setPollStartTime] = useState<number | null>(null);
   const [outputs, setOutputs] = useState<PreviewOutput | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -176,13 +175,29 @@ export default function PreviewClient() {
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
-      if (pollingInterval) {
-        clearInterval(pollingInterval);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
       }
     };
-  }, [pollingInterval]);
+  }, []);
+
+  function stopPolling() {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    setIsLoading(false);
+    setPollStartTime(null);
+  }
 
   async function pollPreviewStatus(sessionId: string) {
+    // Clear any existing polling
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+
     const startTime = Date.now();
     const maxPollTime = 60000; // 60 seconds max
     setPollStartTime(startTime);
@@ -191,12 +206,8 @@ export default function PreviewClient() {
       try {
         const elapsed = Date.now() - startTime;
         if (elapsed > maxPollTime) {
-          // Timeout
-          if (pollingInterval) {
-            clearInterval(pollingInterval);
-            setPollingInterval(null);
-          }
-          setIsLoading(false);
+          // Timeout - stop polling
+          stopPolling();
           setError("Generation timed out. Please try again.");
           console.error('[preview_failed]', { error: 'Polling timeout', previewSessionId: sessionId });
           return;
@@ -206,11 +217,7 @@ export default function PreviewClient() {
         const data = await res.json();
 
         if (!res.ok) {
-          if (pollingInterval) {
-            clearInterval(pollingInterval);
-            setPollingInterval(null);
-          }
-          setIsLoading(false);
+          stopPolling();
           setError(data?.error || "Failed to check preview status. Please try again.");
           console.error('[preview_failed]', { error: data?.error, previewSessionId: sessionId });
           return;
@@ -218,12 +225,7 @@ export default function PreviewClient() {
 
         if (data.status === 'generated' && data.outputs) {
           // Success - stop polling
-          if (pollingInterval) {
-            clearInterval(pollingInterval);
-            setPollingInterval(null);
-          }
-          setIsLoading(false);
-          setPollStartTime(null);
+          stopPolling();
 
           const sanitized = validateAndSanitizeOutput(data.outputs);
           if (!sanitized) {
@@ -236,12 +238,7 @@ export default function PreviewClient() {
           console.log('[preview_generated]', { previewSessionId: sessionId });
         } else if (data.status === 'failed') {
           // Failed - stop polling
-          if (pollingInterval) {
-            clearInterval(pollingInterval);
-            setPollingInterval(null);
-          }
-          setIsLoading(false);
-          setPollStartTime(null);
+          stopPolling();
           setError(data?.error || "Generation failed. Please try again.");
           console.error('[preview_failed]', { error: data?.error, previewSessionId: sessionId });
         }
@@ -250,12 +247,7 @@ export default function PreviewClient() {
         // On error, continue polling unless we've timed out
         const elapsed = Date.now() - startTime;
         if (elapsed > maxPollTime) {
-          if (pollingInterval) {
-            clearInterval(pollingInterval);
-            setPollingInterval(null);
-          }
-          setIsLoading(false);
-          setPollStartTime(null);
+          stopPolling();
           setError("Network error while checking status. Please try again.");
           console.error('[preview_failed]', { error: err?.message || 'Network error', previewSessionId: sessionId });
         }
@@ -264,8 +256,7 @@ export default function PreviewClient() {
 
     // Poll immediately, then every 1 second
     poll();
-    const interval = setInterval(poll, 1000);
-    setPollingInterval(interval);
+    pollingIntervalRef.current = setInterval(poll, 1000);
   }
 
   async function fetchPreviewOutputs(sessionId: string) {
