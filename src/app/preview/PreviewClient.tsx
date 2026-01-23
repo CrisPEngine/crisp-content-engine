@@ -333,7 +333,7 @@ export default function PreviewClient() {
 
     // Set 30-second timer (give users time to read first post)
     gateTimerRef.current = setTimeout(() => {
-      if (!isUnlocked && isAuthenticated !== true) {
+      if (!isUnlocked && !isAuthenticated) {
         setGateActive(true);
       }
     }, 30000);
@@ -342,7 +342,7 @@ export default function PreviewClient() {
     if (gateSentinelRef.current) {
       const observer = new IntersectionObserver(
         (entries) => {
-          if (entries.some((entry) => entry.isIntersecting) && !isUnlocked) {
+          if (entries.some((entry) => entry.isIntersecting) && !isUnlocked && !isAuthenticated) {
             setGateActive(true);
           }
         },
@@ -1151,7 +1151,7 @@ export default function PreviewClient() {
                           sentinelPlaced = true;
                         }
                         // Never gate for logged-in users, only gate for anonymous users after first post
-                        const isGated = isAuthenticated !== true && gateActive && currentIndex > 0 && !isUnlocked;
+                        const isGated = !isAuthenticated && gateActive && currentIndex > 0 && !isUnlocked;
                         const canCopy = isUnlocked || currentIndex < 3; // First 3 posts can be copied
                         const formatted = formatPostForChannel(post, platform);
                         return (
@@ -1253,7 +1253,7 @@ export default function PreviewClient() {
               )}
 
               {/* Gate overlay - only covers posts after the first one, never for logged-in users */}
-              {isAuthenticated !== true && gateActive && !isUnlocked && (
+              {!isAuthenticated && gateActive && !isUnlocked && (
                 <>
                   {/* Blurred fade overlay starting after first post */}
                   <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none">
