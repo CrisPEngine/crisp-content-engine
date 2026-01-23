@@ -12,7 +12,7 @@ export async function GET(request: Request) {
 	} = await supabase.auth.getUser();
 
 	if (!user) {
-		return NextResponse.redirect(new URL('/login', process.env.NEXT_PUBLIC_SITE_URL || 'https://app.crispdigital.io'));
+		return NextResponse.redirect(new URL('/sign-in', process.env.NEXT_PUBLIC_SITE_URL || 'https://app.crispdigital.io'));
 	}
 
 	const url = new URL(request.url);

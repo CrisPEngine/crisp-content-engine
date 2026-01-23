@@ -230,7 +230,7 @@ export async function POST(request: Request) {
 				react: OAuthReconnectEmail({
 					userName: 'Chris',
 					provider: 'linkedin',
-					reconnectUrl: `${APP_URL}/login?redirect_to=/connections`,
+					reconnectUrl: `${APP_URL}/sign-in?redirect_to=/connections`,
 					affectedCount: 3,
 				}),
 				category: 'system',

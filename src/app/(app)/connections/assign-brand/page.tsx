@@ -28,7 +28,7 @@ export default async function AssignBrandPage({
 	} = await supabase.auth.getUser();
 
 	if (!user) {
-		redirect('/login');
+		redirect('/sign-in');
 	}
 
 	const params = await searchParams;

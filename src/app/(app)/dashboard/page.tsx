@@ -48,7 +48,7 @@ export default async function Dashboard({
 
 	if (authError) {
 		console.error('Auth error in dashboard:', authError);
-		redirect('/login');
+		redirect('/sign-in');
 	}
 
 	if (!user) {
@@ -77,7 +77,7 @@ export default async function Dashboard({
 				</>
 			);
 		}
-		redirect('/login');
+		redirect('/sign-in');
 	}
 
 	try {

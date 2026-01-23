@@ -322,7 +322,7 @@ export default function OnboardingPage() {
 		if (supabase) {
 			supabase.auth.getUser().then((response: any) => {
 				if (!response.data.user) {
-					window.location.href = '/login';
+					window.location.href = '/sign-in';
 				}
 			});
 		}

@@ -248,7 +248,7 @@ export async function GET(request: Request) {
 	} = await supabase.auth.getUser();
 
 	if (!user) {
-		return NextResponse.redirect(`${redirectBase}/login`);
+		return NextResponse.redirect(`${redirectBase}/sign-in`);
 	}
 
 	try {

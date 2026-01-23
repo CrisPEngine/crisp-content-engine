@@ -34,7 +34,7 @@ export async function POST(req: Request) {
             // Redirect to login with return URL
             return NextResponse.json({ 
                 error: 'Not authenticated',
-                redirectTo: `/login?redirect=${encodeURIComponent('/billing')}`
+                redirectTo: `/sign-in?redirect=${encodeURIComponent('/billing')}`
             }, { status: 401 });
         }
 

@@ -62,7 +62,7 @@ export default function ContentBriefReviewPage() {
 		try {
 			const { data: { user } } = await supabase.auth.getUser();
 			if (!user) {
-				window.location.href = '/login';
+				window.location.href = '/sign-in';
 				return;
 			}
 

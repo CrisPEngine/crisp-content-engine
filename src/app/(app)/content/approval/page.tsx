@@ -78,7 +78,7 @@ export default function ContentApprovalPage() {
 				error: userErr,
 			} = await supabase.auth.getUser();
 			if (userErr || !user) {
-				router.push('/login');
+				router.push('/sign-in');
 				return;
 			}
 
