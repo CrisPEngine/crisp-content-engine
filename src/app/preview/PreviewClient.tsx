@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSupabase } from "@/components/SupabaseProvider";
 
 type PreviewOutput = {
   packTitle: string;
@@ -31,6 +32,74 @@ const TOPICS = [
 const TONES = ["Direct", "Thoughtful", "Bold", "Practical"] as const;
 const GOALS = ["Awareness", "Leads", "Trust", "Sales"] as const;
 const PLATFORMS = ["LinkedIn", "X", "Instagram"] as const;
+
+// Channel formatting functions
+type FormattedPost = {
+  title: string;
+  body: string;
+  hooks: [string, string];
+};
+
+function formatPostForChannel(post: { title: string; body: string; hooks: [string, string] }, channel: typeof PLATFORMS[number]): FormattedPost {
+  if (channel === 'LinkedIn') {
+    // LinkedIn: as-is, keep paragraphs
+    return {
+      title: post.title,
+      body: post.body,
+      hooks: post.hooks,
+    };
+  } else if (channel === 'X') {
+    // X: truncate to 280 chars, prioritize hook + key point + CTA
+    const hook = post.hooks[0] || post.title;
+    const bodyLines = post.body.split('\n').filter(line => line.trim().length > 0);
+    const firstKeyPoint = bodyLines[0] || '';
+    const cta = bodyLines[bodyLines.length - 1] || '';
+    
+    // Build X post: hook + first key point + CTA
+    let xPost = `${hook}\n\n${firstKeyPoint}`;
+    if (cta && cta !== firstKeyPoint) {
+      xPost += `\n\n${cta}`;
+    }
+    
+    // Hard limit 280 chars
+    if (xPost.length > 280) {
+      // Prioritize hook, then truncate
+      const hookLength = hook.length;
+      const remaining = 280 - hookLength - 3; // 3 for "\n\n"
+      if (remaining > 0) {
+        xPost = `${hook}\n\n${firstKeyPoint.substring(0, remaining)}`;
+      } else {
+        xPost = hook.substring(0, 280);
+      }
+    }
+    
+    return {
+      title: post.title,
+      body: xPost,
+      hooks: [hook.substring(0, 50), post.hooks[1]?.substring(0, 50) || hook.substring(0, 50)],
+    };
+  } else {
+    // Instagram: 1-2 short paragraphs + optional CTA
+    const bodyLines = post.body.split('\n').filter(line => line.trim().length > 0);
+    const firstParagraph = bodyLines[0] || '';
+    const secondParagraph = bodyLines[1] || '';
+    const cta = bodyLines[bodyLines.length - 1] || '';
+    
+    let instagramBody = firstParagraph;
+    if (secondParagraph && secondParagraph !== cta) {
+      instagramBody += `\n\n${secondParagraph}`;
+    }
+    if (cta && cta !== firstParagraph && cta !== secondParagraph) {
+      instagramBody += `\n\n${cta}`;
+    }
+    
+    return {
+      title: post.title,
+      body: instagramBody,
+      hooks: post.hooks,
+    };
+  }
+}
 
 // Defensive schema validation
 function validateAndSanitizeOutput(data: any): PreviewOutput | null {
@@ -78,6 +147,7 @@ function validateAndSanitizeOutput(data: any): PreviewOutput | null {
 export default function PreviewClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const supabase = useSupabase();
   const [persona, setPersona] = useState<string>("");
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
   const [otherTopic, setOtherTopic] = useState("");
@@ -93,7 +163,12 @@ export default function PreviewClient() {
   const [copyCount, setCopyCount] = useState(0);
   const [copiedPostId, setCopiedPostId] = useState<string | null>(null);
   const [gateActive, setGateActive] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [email, setEmail] = useState("");
+  const [isSubmittingLead, setIsSubmittingLead] = useState(false);
   const gateSentinelRef = useRef<HTMLDivElement | null>(null);
   const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -101,6 +176,29 @@ export default function PreviewClient() {
 
   const utmSource = searchParams.get("utm_source");
   const utmCampaign = searchParams.get("utm_campaign");
+
+  // Check authentication status
+  useEffect(() => {
+    if (!supabase) {
+      setIsAuthenticated(false);
+      return;
+    }
+    const checkAuth = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        setIsAuthenticated(!!user);
+      } catch (err) {
+        setIsAuthenticated(false);
+      }
+    };
+    checkAuth();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      checkAuth();
+    });
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [supabase]);
 
   const topicsPayload = useMemo(
     () => ({
@@ -120,19 +218,28 @@ export default function PreviewClient() {
   }, [searchParams, previewSessionId]);
 
   // Gate activation: trigger after scroll past first post OR 10 seconds, whichever comes first
+  // But only if not unlocked
   useEffect(() => {
-    if (!outputs) return;
+    if (!outputs || isUnlocked) {
+      if (gateTimerRef.current) {
+        clearTimeout(gateTimerRef.current);
+      }
+      setGateActive(false);
+      return;
+    }
 
-    // Set 10-second timer
+    // Set 30-second timer (give users time to read first post)
     gateTimerRef.current = setTimeout(() => {
-      setGateActive(true);
-    }, 10000);
+      if (!isUnlocked) {
+        setGateActive(true);
+      }
+    }, 30000);
 
     // Set up scroll observer for sentinel (after first post)
     if (gateSentinelRef.current) {
       const observer = new IntersectionObserver(
         (entries) => {
-          if (entries.some((entry) => entry.isIntersecting)) {
+          if (entries.some((entry) => entry.isIntersecting) && !isUnlocked) {
             setGateActive(true);
           }
         },
@@ -152,7 +259,7 @@ export default function PreviewClient() {
         clearTimeout(gateTimerRef.current);
       }
     };
-  }, [outputs]);
+  }, [outputs, isUnlocked]);
 
   useEffect(() => {
     if (isLoading) {
@@ -436,19 +543,139 @@ export default function PreviewClient() {
     }
   }
 
-  async function handleCopy(content: string, postId: string) {
-    if (copyCount >= 2) return;
+  async function handleCopy(post: { title: string; body: string; hooks: [string, string] }, postId: string, postIndex: number) {
+    // Only allow copying first 3 posts (indices 0, 1, 2)
+    if (postIndex >= 3 && !isUnlocked) return;
+    if (copyCount >= 3 && !isUnlocked) return;
+    
+    const formatted = formatPostForChannel(post, platform);
+    const content = `${formatted.title}\n\n${formatted.body}`;
+    
     try {
       await navigator.clipboard.writeText(content);
       setCopiedPostId(postId);
       setTimeout(() => setCopiedPostId(null), 1200);
-      const nextCount = copyCount + 1;
-      setCopyCount(nextCount);
-      if (nextCount >= 2) {
-        setGateActive(true);
+      if (!isUnlocked) {
+        const nextCount = copyCount + 1;
+        setCopyCount(nextCount);
+        if (nextCount >= 3) {
+          setGateActive(true);
+        }
       }
     } catch (err) {
       setError("Copy failed. Please try again.");
+    }
+  }
+
+  async function handleCopyAll() {
+    if (!outputs || !isUnlocked) return;
+    try {
+      const allPosts = outputs.sections.flatMap(section => section.posts);
+      const formattedPosts = allPosts.map(post => formatPostForChannel(post, platform));
+      const allContent = formattedPosts.map((post, idx) => 
+        `Post ${idx + 1}: ${post.title}\n\n${post.body}\n\n---\n\n`
+      ).join('\n');
+      await navigator.clipboard.writeText(allContent);
+      setCopiedPostId('all');
+      setTimeout(() => setCopiedPostId(null), 2000);
+    } catch (err) {
+      setError("Copy failed. Please try again.");
+    }
+  }
+
+  async function handleUnlockClick() {
+    if (!previewSessionId) return;
+    
+    // Check if authenticated
+    if (isAuthenticated === false) {
+      // Show email form
+      setShowEmailForm(true);
+      return;
+    }
+    
+    // If auth status unknown, check first
+    if (isAuthenticated === null && supabase) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setIsAuthenticated(true);
+          // User is authenticated, proceed with convert
+          handleConvert();
+        } else {
+          setIsAuthenticated(false);
+          setShowEmailForm(true);
+        }
+      } catch (err) {
+        setIsAuthenticated(false);
+        setShowEmailForm(true);
+      }
+      return;
+    }
+    
+    // Authenticated - proceed with convert
+    if (isAuthenticated === true) {
+      handleConvert();
+    }
+  }
+
+  async function handleLeadSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!previewSessionId || !email.trim() || isSubmittingLead) return;
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      setError("Please enter a valid email address");
+      return;
+    }
+
+    try {
+      setIsSubmittingLead(true);
+      setError(null);
+      console.log('[preview_lead_submit]', { previewSessionId, email });
+
+      const res = await fetch("/api/preview/lead", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          previewSessionId,
+          email: email.trim(),
+          persona,
+          topics: topicsPayload,
+          tone,
+          goal,
+          utm_source: utmSource,
+          utm_campaign: utmCampaign,
+          channel: platform,
+        }),
+      });
+
+      let data: any;
+      try {
+        data = await res.json();
+      } catch (parseError) {
+        console.error('[preview_failed]', { error: 'Invalid JSON response' });
+        setError("Invalid response from server. Please try again.");
+        return;
+      }
+
+      if (!res.ok) {
+        const errorMessage = data?.error || data?.message || "Failed to save email";
+        console.error('[preview_failed]', { error: errorMessage });
+        setError(errorMessage);
+        return;
+      }
+
+      // Success - unlock all posts
+      console.log('[preview_lead_success]', { previewSessionId, email });
+      setIsUnlocked(true);
+      setGateActive(false);
+      setShowEmailForm(false);
+      setError(null);
+    } catch (err: any) {
+      console.error('[preview_failed]', { error: err?.message || 'Network error' });
+      setError(err?.message || "Network error. Please try again.");
+    } finally {
+      setIsSubmittingLead(false);
     }
   }
 
@@ -475,8 +702,9 @@ export default function PreviewClient() {
       }
 
       if (res.status === 401) {
-        const returnTo = encodeURIComponent(`/preview?preview_session_id=${previewSessionId}`);
-        window.location.href = `/sign-in?redirect_to=${returnTo}`;
+        // Should not happen if we checked auth, but handle gracefully
+        setIsAuthenticated(false);
+        setShowEmailForm(true);
         return;
       }
 
@@ -488,7 +716,8 @@ export default function PreviewClient() {
       }
 
       if (data.redirectUrl) {
-        console.log('[preview_converted_success]', { previewSessionId, redirectUrl: data.redirectUrl });
+        console.log('[preview_converted_success]', { previewSessionId, redirectUrl: data.redirectUrl, postCount: data.postCount });
+        // Show success message briefly, then redirect
         window.location.href = data.redirectUrl;
       }
     } catch (err: any) {
@@ -691,39 +920,45 @@ export default function PreviewClient() {
                         const currentIndex = globalIndex;
                         globalIndex += 1;
                         const isFirstPost = currentIndex === 0;
-                        const showSentinel = !sentinelPlaced && currentIndex === 2; // After first blurred post (index 2 = third post)
+                        // Sentinel after second post (index 2) to trigger gate after first blurred post
+                        const showSentinel = !sentinelPlaced && currentIndex === 2;
                         if (showSentinel) {
                           sentinelPlaced = true;
                         }
-                        const isGated = gateActive && currentIndex > 0; // Gate all posts after first
+                        const isGated = gateActive && currentIndex > 0 && !isUnlocked; // Gate all posts after first (unless unlocked)
+                        const canCopy = isUnlocked || currentIndex < 3; // First 3 posts can be copied
+                        const formatted = formatPostForChannel(post, platform);
                         return (
                           <article
                             key={postId}
-                            className={`rounded-xl bg-neutral-950 p-4 ring-1 ring-neutral-800 relative ${isGated ? 'opacity-30' : ''}`}
+                            className={`rounded-xl bg-neutral-950 p-4 ring-1 ring-neutral-800 relative ${isGated ? 'opacity-30' : ''} ${isGated ? 'select-none' : ''}`}
+                            style={isGated ? { userSelect: 'none', WebkitUserSelect: 'none' } : {}}
                           >
                             {showSentinel && <div ref={gateSentinelRef} className="absolute -top-4 left-0 right-0 h-1" />}
                             <div className="flex items-center justify-between gap-4">
                               <div className="text-sm font-semibold text-neutral-100">
-                                {post.title}
+                                {formatted.title}
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleCopy(`${post.title}\n\n${post.body}`, postId)}
-                                disabled={copyCount >= 2}
-                                className="text-xs font-semibold text-sky-300 hover:text-sky-200 disabled:opacity-40 disabled:cursor-not-allowed"
-                              >
-                                {copiedPostId === postId ? "Copied" : "Copy"}
-                              </button>
+                              {canCopy && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopy(post, postId, currentIndex)}
+                                  disabled={!isUnlocked && (currentIndex >= 3 || copyCount >= 3)}
+                                  className="text-xs font-semibold text-sky-300 hover:text-sky-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  {copiedPostId === postId ? "Copied" : "Copy"}
+                                </button>
+                              )}
                             </div>
 
-                            <div className="mt-3 space-y-2 text-sm leading-relaxed text-neutral-300">
-                              {post.body.split("\n").map((line, idx) => (
+                            <div className={`mt-3 space-y-2 text-sm leading-relaxed text-neutral-300 ${isGated ? 'select-none' : ''}`} style={isGated ? { userSelect: 'none', WebkitUserSelect: 'none' } : {}}>
+                              {formatted.body.split("\n").map((line, idx) => (
                                 <p key={`${postId}-line-${idx}`}>{line || '\u00A0'}</p>
                               ))}
                             </div>
 
                             <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-neutral-400">
-                              {post.hooks.map((hook, hookIndex) => (
+                              {formatted.hooks.map((hook, hookIndex) => (
                                 <span
                                   key={`${postId}-hook-${hookIndex}`}
                                   className="rounded-full bg-neutral-900 px-3 py-1 ring-1 ring-neutral-800"
@@ -740,8 +975,32 @@ export default function PreviewClient() {
                 ));
               })()}
 
+              {/* Copy all button and secondary CTA - shown when unlocked */}
+              {isUnlocked && (
+                <div className="mt-6 space-y-3">
+                  <div className="flex justify-center">
+                    <button
+                      onClick={handleCopyAll}
+                      className="rounded-full bg-sky-400 px-6 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-sky-300"
+                    >
+                      {copiedPostId === 'all' ? "All posts copied!" : "Copy all posts"}
+                    </button>
+                  </div>
+                  {isAuthenticated === false && (
+                    <div className="flex justify-center">
+                      <Link
+                        href="/sign-in"
+                        className="rounded-full px-6 py-2.5 text-sm font-semibold text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-900"
+                      >
+                        Create account to edit and manage content
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Gate overlay - only covers posts after the first one */}
-              {gateActive && (
+              {gateActive && !isUnlocked && (
                 <>
                   {/* Blurred fade overlay starting after first post */}
                   <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none">
@@ -757,28 +1016,62 @@ export default function PreviewClient() {
                     <div className="max-w-md mx-4 rounded-2xl bg-neutral-950/95 backdrop-blur border border-neutral-800 p-6 space-y-4 text-center shadow-2xl">
                       <h3 className="text-xl font-semibold">Unlock your full content system</h3>
                       <p className="text-sm text-neutral-300">
-                        You can read the first post. Unlock to save all posts to your workspace.
+                        You can read the first post. Unlock to access all posts.
                       </p>
-                      <ul className="space-y-2 text-sm text-neutral-400">
-                        <li>Save all 9 posts to your workspace</li>
-                        <li>Edit and approve inside CRISP</li>
-                        <li>Schedule with Buffer when ready</li>
-                      </ul>
-                      <div className="flex flex-wrap justify-center gap-3 pt-2">
-                        <button
-                          onClick={handleConvert}
-                          disabled={isConverting}
-                          className="rounded-full bg-sky-400 px-5 py-2 text-sm font-semibold text-neutral-950 hover:bg-sky-300 disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          {isConverting ? "Processing..." : "Unlock and save posts"}
-                        </button>
-                        <Link
-                          href={`/sign-in?redirect_to=${encodeURIComponent(`/preview?preview_session_id=${previewSessionId || ""}`)}`}
-                          className="rounded-full px-5 py-2 text-sm font-semibold text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-900"
-                        >
-                          Sign in to continue
-                        </Link>
-                      </div>
+                      
+                      {showEmailForm ? (
+                        <form onSubmit={handleLeadSubmit} className="space-y-4 pt-2">
+                          <div>
+                            <input
+                              type="email"
+                              value={email}
+                              onChange={(e) => setEmail(e.target.value)}
+                              placeholder="Enter your email"
+                              required
+                              disabled={isSubmittingLead}
+                              className="w-full rounded-xl bg-neutral-900 px-4 py-3 text-sm text-neutral-100 ring-1 ring-neutral-800 placeholder:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-sky-300 disabled:opacity-50"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            <button
+                              type="submit"
+                              disabled={isSubmittingLead || !email.trim()}
+                              className="rounded-full bg-sky-400 px-5 py-2 text-sm font-semibold text-neutral-950 hover:bg-sky-300 disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {isSubmittingLead ? "Unlocking..." : "Unlock all posts"}
+                            </button>
+                            <Link
+                              href={`/sign-in?redirect_to=${encodeURIComponent(`/preview?preview_session_id=${previewSessionId || ""}`)}`}
+                              className="rounded-full px-5 py-2 text-sm font-semibold text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-900"
+                            >
+                              I already have an account
+                            </Link>
+                          </div>
+                        </form>
+                      ) : (
+                        <>
+                          <ul className="space-y-2 text-sm text-neutral-400">
+                            <li>Access all 9 posts</li>
+                            <li>Edit and approve inside CRISP</li>
+                            <li>Schedule when ready</li>
+                          </ul>
+                          <div className="flex flex-col gap-2 pt-2">
+                            <button
+                              onClick={handleUnlockClick}
+                              disabled={isConverting || isSubmittingLead}
+                              className="rounded-full bg-sky-400 px-5 py-2 text-sm font-semibold text-neutral-950 hover:bg-sky-300 disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {isConverting ? "Processing..." : "Unlock and save posts"}
+                            </button>
+                            <Link
+                              href={`/sign-in?redirect_to=${encodeURIComponent(`/preview?preview_session_id=${previewSessionId || ""}`)}`}
+                              className="rounded-full px-5 py-2 text-sm font-semibold text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-900"
+                            >
+                              I already have an account
+                            </Link>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 </>

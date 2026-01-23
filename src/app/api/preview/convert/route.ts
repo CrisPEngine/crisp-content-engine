@@ -201,13 +201,21 @@ export async function POST(req: Request) {
 			fields: {
 				hook: post.title,
 				post_content: post.body,
-				status: 'Needs Approval',
-				platform: 'LinkedIn',
+				status: 'Needs Approval', // Must match approval page filter
+				platform: 'LinkedIn', // Must match expected platform values
 				brand_profile_id: [brandProfileId],
 				objective: session.goal || '',
 				campaign_name: 'Preview Conversion',
 			},
 		}));
+
+		// Log the payload before sending
+		console.log('[Preview Convert] Airtable ContentQueue payload', {
+			previewSessionId,
+			recordCount: records.length,
+			sampleRecord: records[0],
+			brandProfileId,
+		});
 
 		try {
 			console.log('[Preview Convert] writing Airtable ContentQueue', {
@@ -247,6 +255,8 @@ export async function POST(req: Request) {
 				previewSessionId,
 				brandProfileId,
 				contentQueueRecordCount: createdIds.length,
+				createdRecordIds: createdIds,
+				airtableResponse: JSON.stringify(contentData).substring(0, 500),
 			});
 		} catch (contentError: any) {
 			console.error('[Preview Convert] ContentQueue exception', {
@@ -261,8 +271,14 @@ export async function POST(req: Request) {
 			.update({ status: 'converted', user_id: user.id })
 			.eq('preview_session_id', previewSessionId);
 
-		const redirectUrl = `/content/approval?brand_profile_id=${brandProfileId}`;
-		return NextResponse.json({ redirectUrl });
+		// Check if user has valid brand setup - if not, redirect to onboarding
+		// For now, we'll redirect to approval with source=preview to help debugging
+		// If approval page is empty, user should be redirected to onboarding from there
+		const redirectUrl = `/content/approval?brand_profile_id=${brandProfileId}&source=preview`;
+		return NextResponse.json({ 
+			redirectUrl,
+			postCount: records.length,
+		});
 	} catch (error: any) {
 		const message = error?.message || 'Failed to convert preview';
 		return NextResponse.json({ error: message }, { status: error instanceof z.ZodError ? 400 : 500 });
