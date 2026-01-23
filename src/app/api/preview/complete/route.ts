@@ -87,7 +87,39 @@ export async function POST(req: Request) {
 			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 		}
 
-		const body = await req.json().catch(() => ({}));
+		let body: any;
+		try {
+			body = await req.json();
+		} catch (parseError) {
+			console.error('[Preview Complete] Invalid JSON body', { error: parseError });
+			return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+		}
+
+		// Validate required fields before parsing
+		if (!body.previewSessionId) {
+			console.error('[Preview Complete] Missing previewSessionId field');
+			return NextResponse.json({ error: 'Missing previewSessionId field' }, { status: 400 });
+		}
+		if (!body.outputs) {
+			console.error('[Preview Complete] Missing outputs field');
+			return NextResponse.json({ error: 'Missing outputs field' }, { status: 400 });
+		}
+		if (typeof body.outputs.packTitle !== 'string') {
+			console.error('[Preview Complete] Missing or invalid packTitle', { 
+				hasPackTitle: !!body.outputs.packTitle,
+				type: typeof body.outputs.packTitle 
+			});
+			return NextResponse.json({ error: 'Missing or invalid packTitle in outputs' }, { status: 400 });
+		}
+		if (!Array.isArray(body.outputs.sections)) {
+			console.error('[Preview Complete] Missing or invalid sections', { 
+				hasSections: !!body.outputs.sections,
+				type: typeof body.outputs.sections,
+				isArray: Array.isArray(body.outputs.sections)
+			});
+			return NextResponse.json({ error: 'Missing or invalid sections array in outputs' }, { status: 400 });
+		}
+
 		const data = requestSchema.parse(body);
 
 		const admin = getSupabaseService();
@@ -126,7 +158,7 @@ export async function POST(req: Request) {
 			.eq('preview_session_id', data.previewSessionId);
 
 		console.log('[Preview Complete] Success', { previewSessionId: data.previewSessionId });
-		return NextResponse.json({ success: true });
+		return NextResponse.json({ ok: true });
 	} catch (error: any) {
 		console.error('[Preview Complete] Error:', error);
 		if (error instanceof z.ZodError) {
