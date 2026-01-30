@@ -213,6 +213,36 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 				updateFields.image_prompt = String(imagePromptUpdate);
 			}
 			if (scheduledTime !== undefined) {
+				// Validate X content before allowing scheduling
+				const platform = record.fields?.platform || '';
+				const postType = record.fields?.post_type || 'single';
+				const postContent = record.fields?.post_content || '';
+				const charCount = postContent.length;
+
+				// Block scheduling for X threads (export-only in V1)
+				if (platform === 'X' && postType === 'thread') {
+					return NextResponse.json(
+						{ error: 'X threads are export-only and cannot be scheduled. Use copy/paste to publish manually.' },
+						{ status: 400 }
+					);
+				}
+
+				// Block scheduling for X singles that exceed 280 chars
+				if (platform === 'X' && postType === 'single' && charCount > 280) {
+					return NextResponse.json(
+						{ error: `Tweet is ${charCount} characters (max 280). Edit before scheduling.` },
+						{ status: 400 }
+					);
+				}
+
+				// Block scheduling for Blog posts (export-only in V1)
+				if (platform === 'Blog') {
+					return NextResponse.json(
+						{ error: 'Blog posts are export-only and cannot be scheduled. Copy and publish to your blog manually.' },
+						{ status: 400 }
+					);
+				}
+
 				updateFields.scheduled_time = scheduledTime ? String(scheduledTime) : null;
 			}
 
@@ -245,9 +275,30 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 		const fields: Record<string, any> = {};
 
 		if (action === 'approve') {
+			// Validate X content before approving
+			const platform = record.fields?.platform || '';
+			const postType = record.fields?.post_type || 'single';
+			const postContent = record.fields?.post_content || '';
+			const charCount = postContent.length;
+
+			// Block approval for X threads (export-only in V1)
+			if (platform === 'X' && postType === 'thread') {
+				return NextResponse.json(
+					{ error: 'X threads are export-only and cannot be approved for publishing. Use copy/paste to publish manually.' },
+					{ status: 400 }
+				);
+			}
+
+			// Block approval for X singles that exceed 280 chars
+			if (platform === 'X' && postType === 'single' && charCount > 280) {
+				return NextResponse.json(
+					{ error: `Tweet is ${charCount} characters (max 280). Edit before approving.` },
+					{ status: 400 }
+				);
+			}
+
 			// Check if this is a Blog article - if so, mark as Published directly
 			// LinkedIn and other social platforms go to "Ready To Publish" for scheduled publishing
-			const platform = record.fields?.platform || '';
 			if (platform === 'Blog') {
 				fields.status = 'Published';
 				fields.published_at = nowISO;

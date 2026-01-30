@@ -1,4 +1,32 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "CrisP Content Engine",
+  description: "Your entire month of content. Generated once. AI-powered content engine with human approval.",
+  openGraph: {
+    title: "CrisP Content Engine",
+    description: "Your entire month of content. Generated once. AI-powered content engine with human approval.",
+    url: process.env.NEXT_PUBLIC_APP_URL || "https://app.crispdigital.io",
+    siteName: "CrisP Content Engine",
+    images: [
+      {
+        url: "https://res.cloudinary.com/dr75zvtso/image/upload/v1769501243/CCE-opengraph_1200x630_i8eylb.jpg",
+        width: 1200,
+        height: 630,
+        alt: "CrisP Content Engine - Your entire month of content. Generated once.",
+      },
+    ],
+    type: "website",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "CrisP Content Engine",
+    description: "Your entire month of content. Generated once. AI-powered content engine with human approval.",
+    images: ["https://res.cloudinary.com/dr75zvtso/image/upload/v1769501243/CCE-opengraph_1200x630_i8eylb.jpg"],
+  },
+};
 
 type ExamplePost = {
   title: string;

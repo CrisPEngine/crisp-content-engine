@@ -1,0 +1,67 @@
+{
+  "generation_job_id": "test-job-1738000000000",
+  "request_id": "test-request-1738000000000",
+  "user_id": "00000000-0000-0000-0000-000000000001",
+  "brand_profile_id": "recJXC2YIEdUsl0DF",
+  "channels": [
+    { "platform": "X", "count": 3, "keys": ["test-job-1738000000000:X:1", "test-job-1738000000000:X:2", "test-job-1738000000000:X:3"] }
+  ],
+  "brand_voice_context": {
+    "client_name": "Acme Corp",
+    "brand_type": "company",
+    "timezone": "UTC",
+    "website": "https://acme.com",
+    "audience": "B2B decision makers",
+    "value_props": "Speed, reliability, support",
+    "offers": "Enterprise plans, support",
+    "brand_tone": null,
+    "brand_keywords": "innovation, growth",
+    "exclude_keywords": "cheap, discount",
+    "content_rules": "No politics. Fact-based.",
+    "voice_rules": "Professional but approachable. Short sentences.",
+    "compliance_notes": null,
+    "language_region": "US English",
+    "spelling_variant": null,
+    "posting_windows": null,
+    "platforms_requested": ["LinkedIn", "X"],
+    "risk_tolerance": null,
+    "tone_avoid": null,
+    "personal_voice_traits": null,
+    "personal_content_style": null,
+    "brand_goals": "Thought leadership",
+    "additional_info": "",
+    "preferred_image_source": ""
+  },
+  "strategy_json": {
+    "content_pillars": ["Product updates", "Tips"],
+    "content_mix": { "educational": 60, "promotional": 20, "engagement": 20 },
+    "platform_cadence": [
+      { "platform": "LinkedIn", "postsPerWeek": 3 },
+      { "platform": "X", "postsPerWeek": 5 }
+    ]
+  },
+  "strategy_summary": "Focus on product updates and tips. 60% educational, 20% promotional, 20% engagement.",
+  "monthly_brief": null,
+  "previous_content_json": [
+    { "platform": "LinkedIn", "hook": "Last week we launched...", "post_type": "single", "created_time": "2026-01-20T10:00:00.000Z" }
+  ],
+  "scheduling_context": {
+    "timezone": "UTC",
+    "posting_windows": null,
+    "cadence_defaults": { "LinkedIn": 3, "X": 5, "Instagram": 2, "Facebook": 2, "Blog": 1 },
+    "now_iso": "2026-01-21T12:00:00.000Z"
+  },
+  "x_algo_digest": {
+    "version": "2026-01-21",
+    "bullets": [
+      "Engagement signals matter most: replies, retweets, likes (in that order)",
+      "Recency is critical: fresh content ranks higher",
+      "Hook in first line determines scroll-stop rate"
+    ],
+    "guardrails": {
+      "do": ["Hook in the first line (first 140 chars decide whether users engage)", "Use line breaks for skimmability"],
+      "dont": ["Use LinkedIn-style formal language", "Ignore the 280 character limit"]
+    }
+  },
+  "triggered_at": "2026-01-21T12:00:00.000Z"
+}

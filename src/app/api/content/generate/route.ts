@@ -1,15 +1,31 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { enforceCaps } from '@/lib/enforceCaps';
-import dayjs from 'dayjs';
+import { enforceCaps, getEntitlements, getMonthUsage } from '@/lib/enforceCaps';
+import { getSupabaseService } from '@/lib/supabaseService';
+import { X_ALGO_DIGEST } from '@/lib/channels/x-algo-digest';
+import { CAPS } from '@/config/pricing';
+import type { MultiChannelMakePayload, BrandVoiceContext, MonthlyBrief, PreviousContentItem, SchedulingContext } from '@/lib/makeMultiChannelPayload';
+import { z } from 'zod';
+import { randomUUID } from 'crypto';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+// Request schema for multi-channel generation
+const generateSchema = z.object({
+	brandProfileId: z.string().min(1),
+	channels: z.array(z.object({
+		platform: z.enum(['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog']),
+		count: z.number().int().min(1).max(50), // Max 50 per channel per request
+	})).min(1),
+	strategyId: z.string().optional(),
+});
 
 /**
- * Generate more content for a brand
+ * Generate content for multiple channels
  * POST /api/content/generate
- * Body: { brandProfileId: string, platform: string, strategyId?: string }
+ * Body: { brandProfileId: string, channels: [{platform, count}], strategyId?: string }
  */
 export async function POST(req: Request) {
 	try {
@@ -38,16 +54,27 @@ export async function POST(req: Request) {
 		}
 
 		const body = await req.json().catch(() => ({}));
-		const { brandProfileId, platform, strategyId } = body;
+		const parseResult = generateSchema.safeParse(body);
 
-		if (!brandProfileId || !platform) {
+		if (!parseResult.success) {
 			return NextResponse.json(
-				{ error: 'Missing required fields: brandProfileId and platform are required' },
+				{ error: 'Invalid request body', details: parseResult.error.issues },
 				{ status: 400 }
 			);
 		}
 
-		// Get user's plan and usage
+		const { brandProfileId, channels, strategyId } = parseResult.data;
+
+		// Calculate total requested count
+		const totalRequested = channels.reduce((sum, ch) => sum + ch.count, 0);
+
+		console.log('[Content Generate] Request:', {
+			brandProfileId,
+			channels,
+			totalRequested,
+		});
+
+		// Get user's plan and quota
 		const { data: subscription } = await supabase
 			.from('subscriptions')
 			.select('plan')
@@ -56,24 +83,50 @@ export async function POST(req: Request) {
 
 		const plan = (subscription?.plan as 'creator' | 'growth' | 'pro' | 'scale') || 'creator';
 
-		// Get current usage from usage_posts table
-		const ym = dayjs().format('YYYY-MM');
-		const { data: usage } = await supabase
-			.from('usage_posts')
-			.select('posts')
-			.eq('user_id', user.id)
-			.eq('year_month', ym)
-			.maybeSingle();
+		// Get entitlements and current usage
+		const entitlements = await getEntitlements(user.id);
+		const postsUsed = await getMonthUsage(user.id);
+		const maxPostsPerMonth = entitlements?.posts_per_month || CAPS[plan].postsPerMonth;
+		const postsRemaining = typeof maxPostsPerMonth === 'number' ? maxPostsPerMonth - postsUsed : 999999;
 
-		const mtdPostCount = usage?.posts || 0;
-
-		// Check usage limits using enforceCaps
-		const capsCheck = await enforceCaps(user.id);
-		if (!capsCheck.ok) {
+		// Pre-check quota
+		if (totalRequested > postsRemaining) {
 			return NextResponse.json(
-				{ error: capsCheck.reason || 'Post limit reached. Upgrade to generate more content.' },
+				{
+					error: `This would exceed your monthly limit. You have ${postsRemaining} posts remaining, but requested ${totalRequested}.`,
+					posts_remaining: postsRemaining,
+					posts_requested: totalRequested,
+				},
 				{ status: 403 }
 			);
+		}
+
+		// Filter channels by plan (check includedPlatforms)
+		const planCaps = CAPS[plan];
+		const allowedPlatforms = planCaps.includedPlatforms.map((p) => {
+			if (p === 'linkedin') return 'LinkedIn';
+			if (p === 'x') return 'X';
+			if (p === 'instagram') return 'Instagram';
+			if (p === 'facebook') return 'Facebook';
+			if (p === 'blog') return 'Blog';
+			return p;
+		});
+
+		const filteredChannels = channels.filter((ch) => allowedPlatforms.includes(ch.platform));
+
+		if (filteredChannels.length === 0) {
+			return NextResponse.json(
+				{ error: 'None of the requested channels are available on your plan. Upgrade to access more channels.' },
+				{ status: 403 }
+			);
+		}
+
+		if (filteredChannels.length < channels.length) {
+			console.warn('[Content Generate] Some channels filtered by plan:', {
+				requested: channels.map((ch) => ch.platform),
+				allowed: filteredChannels.map((ch) => ch.platform),
+				plan,
+			});
 		}
 
 		// Verify user owns this brand profile
@@ -158,54 +211,29 @@ export async function POST(req: Request) {
 			);
 		}
 
-		// Get LinkedIn connection assigned to this brand
-		const { data: linkedInConnection } = await supabase
-			.from('social_connections')
-			.select('person_urn, organization_urn, connection_type')
-			.eq('brand_profile_id', brandProfileId)
-			.eq('provider', 'linkedin')
-			.maybeSingle();
+		// Generate idempotency keys
+		const generation_job_id = randomUUID();
+		const request_id = generation_job_id; // Can be same or different
 
-		// If no connection assigned to brand, fall back to member connection for user
-		let personUrn: string | undefined;
-		if (!linkedInConnection) {
-			const { data: fallbackConnection } = await supabase
-				.from('social_connections')
-				.select('person_urn, organization_urn, connection_type')
-				.eq('user_id', user.id)
-				.eq('provider', 'linkedin')
-				.eq('connection_type', 'member')
-				.maybeSingle();
-			
-			if (fallbackConnection) {
-				personUrn = fallbackConnection.person_urn || undefined;
+		// Pre-generate content_item_key values for each item
+		const channelsWithKeys = filteredChannels.map((ch) => {
+			const keys: string[] = [];
+			for (let i = 1; i <= ch.count; i++) {
+				keys.push(`${generation_job_id}:${ch.platform}:${i}`);
 			}
-		} else {
-			// Use organization_urn if it's an organization connection, otherwise person_urn
-			personUrn = linkedInConnection.connection_type === 'organization' && linkedInConnection.organization_urn
-				? linkedInConnection.organization_urn
-				: linkedInConnection.person_urn || undefined;
-		}
+			return {
+				platform: ch.platform,
+				count: ch.count,
+				keys,
+			};
+		});
 
-		// Determine which webhook to use based on plan
-		// For now, use creator webhook for all plans (as per user's request)
-		// In the future, this can be expanded to use different webhooks per plan
-		let webhookUrl = process.env.MAKE_CONTENT_GENERATION_WEBHOOK_URL;
-		
-		// Future: Add plan-specific webhooks
-		// if (plan === 'creator') {
-		//   webhookUrl = process.env.MAKE_CREATOR_CONTENT_WEBHOOK_URL;
-		// } else if (plan === 'growth') {
-		//   webhookUrl = process.env.MAKE_GROWTH_CONTENT_WEBHOOK_URL;
-		// } else if (plan === 'pro') {
-		//   webhookUrl = process.env.MAKE_PRO_CONTENT_WEBHOOK_URL;
-		// } else if (plan === 'scale') {
-		//   webhookUrl = process.env.MAKE_SCALE_CONTENT_WEBHOOK_URL;
-		// }
+		// Multi-channel flow uses dedicated webhook (Creator flow unchanged)
+		const webhookUrl = process.env.MAKE_MULTI_CHANNEL_CONTENT_GENERATION_WEBHOOK_URL;
 
 		if (!webhookUrl) {
 			return NextResponse.json(
-				{ error: 'Content generation webhook not configured' },
+				{ error: 'Multi-channel content generation webhook not configured (MAKE_MULTI_CHANNEL_CONTENT_GENERATION_WEBHOOK_URL)' },
 				{ status: 500 }
 			);
 		}
@@ -220,53 +248,231 @@ export async function POST(req: Request) {
 			}
 		}
 
-		// Get platforms_requested from brand profile
-		const platformsRequested = brandFields.platforms_requested || [];
-		// Handle both array and comma-separated string formats
-		const platformsArray = Array.isArray(platformsRequested) 
-			? platformsRequested 
-			: (typeof platformsRequested === 'string' && platformsRequested.trim() 
-				? platformsRequested.split(',').map(p => p.trim()).filter(Boolean)
-				: []);
-
-		// Prepare payload for Make webhook
-		// When user clicks "Generate Content" from dashboard, they're using existing strategy
-		// This should trigger as "strategy_confirmed" (not "content_brief_approved")
-		const contentPayload = {
-			trigger_type: 'strategy_confirmed', // Make.com router filters on this
-			brand_profile_id: brandProfileId,
+		// Create generation job in Supabase (for idempotency tracking and progress)
+		const admin = getSupabaseService();
+		await admin.from('generation_jobs').insert({
+			generation_job_id,
 			user_id: user.id,
-			person_urn: personUrn || null,
-			organization_urn: linkedInConnection?.connection_type === 'organization' ? linkedInConnection.organization_urn : null,
-			brand_type: brandType,
-			platform: platform, // LinkedIn, X, Instagram, etc. - specific platform for this generation
-			strategy_json: parsedStrategyJson, // Full strategy object
-			strategy_summary: strategySummary,
-			platforms_requested: platformsArray, // All platforms for this brand
+			brand_profile_id: brandProfileId,
+			channels: JSON.stringify(channelsWithKeys),
+			requested_count: totalRequested,
+			expected_platforms: channelsWithKeys.map((ch) => ch.platform),
+			completed_platforms: [],
+			status: 'in_progress',
+			created_counts: {},
+			record_ids: {},
+		});
+
+		console.log('[Content Generate] Created generation job:', {
+			generation_job_id,
+			requested_count: totalRequested,
+		});
+
+		// --- Brand voice context (all known BrandProfiles fields, null/empty when missing) ---
+		const brandVoiceContext: BrandVoiceContext = {
+			client_name: brandFields.client_name ?? null,
+			brand_type: brandType ?? null,
+			timezone: brandFields.timezone ?? 'UTC',
+			website: brandFields.website ?? null,
+			audience: brandFields.audience ?? null,
+			value_props: brandFields.value_props ?? null,
+			offers: brandFields.offers ?? null,
+			brand_tone: brandFields.brand_tone ?? null,
+			brand_keywords: brandFields.brand_keywords ?? null,
+			exclude_keywords: brandFields.exclude_keywords ?? null,
+			content_rules: brandFields.content_rules ?? null,
+			voice_rules: brandFields.voice_rules ?? null,
+			compliance_notes: brandFields.compliance_notes ?? null,
+			language_region: brandFields.language_region ?? 'US English',
+			spelling_variant: brandFields.spelling_variant ?? null,
+			posting_windows: brandFields.posting_windows ?? null,
+			platforms_requested: Array.isArray(brandFields.platforms_requested) ? brandFields.platforms_requested : null,
+			risk_tolerance: brandFields.risk_tolerance ?? brandFields.personal_risk_tolerance ?? null,
+			tone_avoid: Array.isArray(brandFields.personal_tone_avoid) ? brandFields.personal_tone_avoid : (Array.isArray(brandFields.tone_avoid) ? brandFields.tone_avoid : null),
+			personal_voice_traits: Array.isArray(brandFields.personal_voice_traits) ? brandFields.personal_voice_traits : null,
+			personal_content_style: Array.isArray(brandFields.personal_content_style) ? brandFields.personal_content_style : null,
+			brand_goals: brandFields.brand_goals ?? null,
+			additional_info: brandFields.additional_info ?? null,
+			preferred_image_source: brandFields.preferred_image_source ?? null,
+		};
+		if (brandType === 'personal') {
+			brandVoiceContext.personal_full_name = brandFields.personal_full_name ?? null;
+			brandVoiceContext.personal_job_title = brandFields.personal_job_title ?? null;
+			brandVoiceContext.personal_industry = brandFields.personal_industry ?? null;
+			brandVoiceContext.personal_links = brandFields.personal_links ?? null;
+			brandVoiceContext.personal_headline = brandFields.personal_headline ?? null;
+			brandVoiceContext.personal_audience = brandFields.personal_audience ?? null;
+			brandVoiceContext.personal_expertise = brandFields.personal_expertise ?? null;
+			brandVoiceContext.personal_goals = brandFields.personal_goals ?? null;
+			brandVoiceContext.personal_story = brandFields.personal_story ?? null;
+		}
+
+		// --- Monthly brief (latest for this brand, or null) ---
+		let monthly_brief: MonthlyBrief | null = null;
+		const CONTENTBRIEFS_TABLE = process.env.AIRTABLE_STRATEGYUPDATES_TABLE;
+		const CONTENTQUEUE_TABLE = process.env.AIRTABLE_CONTENTQUEUE_TABLE;
+		if (CONTENTBRIEFS_TABLE && AIRTABLE_TOKEN && BASE_ID) {
+			try {
+				const briefsUrl = `https://api.airtable.com/v0/${BASE_ID}/${CONTENTBRIEFS_TABLE}?filterByFormula=${encodeURIComponent(`FIND("${brandProfileId}", {brand_profile_id})`)}&sort[0][field]=created_time&sort[0][direction]=desc&maxRecords=1`;
+				const briefsRes = await fetch(briefsUrl, {
+					headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' },
+				});
+				if (briefsRes.ok) {
+					const briefsData = await briefsRes.json();
+					const briefRecord = briefsData.records?.[0];
+					if (briefRecord?.fields) {
+						const f = briefRecord.fields as Record<string, unknown>;
+						const bestId = Array.isArray(f.best_performing_post_id) ? (f.best_performing_post_id[0] as string) : (f.best_performing_post_id as string);
+						const worstId = Array.isArray(f.worst_performing_post_id) ? (f.worst_performing_post_id[0] as string) : (f.worst_performing_post_id as string);
+						let best_post: MonthlyBrief['best_post'] = null;
+						let worst_post: MonthlyBrief['worst_post'] = null;
+						if (CONTENTQUEUE_TABLE && (bestId || worstId)) {
+							if (bestId) {
+								const bestRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTQUEUE_TABLE}/${bestId}`, {
+									headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' },
+								});
+								if (bestRes.ok) {
+									const bestData = await bestRes.json();
+									const bf = (bestData.fields || {}) as Record<string, unknown>;
+									best_post = {
+										title: (bf.hook as string) || (bf.post_title as string) || '',
+										body_draft: (bf.post_content as string) || (bf.post_body as string) || '',
+										reason: (f.best_post_reason as string) || '',
+									};
+								}
+							}
+							if (worstId) {
+								const worstRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${CONTENTQUEUE_TABLE}/${worstId}`, {
+									headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' },
+								});
+								if (worstRes.ok) {
+									const worstData = await worstRes.json();
+									const wf = (worstData.fields || {}) as Record<string, unknown>;
+									worst_post = {
+										title: (wf.hook as string) || (wf.post_title as string) || '',
+										body_draft: (wf.post_content as string) || (wf.post_body as string) || '',
+										reason: (f.worst_post_reason as string) || '',
+									};
+								}
+							}
+						}
+						monthly_brief = {
+							objective: (f.objective as string) ?? null,
+							themes_focus: (f.themes_focus as string) ?? null,
+							key_dates: (f.key_dates as string) ?? null,
+							feedback_notes: (f.feedback_notes as string) ?? null,
+							content_preferences: (f.content_preferences as string) ?? null,
+							primary_goal: (f.primary_goal as string) ?? null,
+							success_metric: (f.success_metric as string) ?? null,
+							cycle_label: (f.cycle_label as string) ?? null,
+							cycle_start_date: (f.cycle_start_date as string) ?? null,
+							cta: (f.cta as string) ?? null,
+							cta_link: (f.cta_link as string) ?? null,
+							offers_to_push: (f.offers_to_push as string) ?? null,
+							topics_to_avoid_this_month: (f.topics_to_avoid_this_month as string) ?? null,
+							competitor_or_inspo_links: (f.competitor_or_inspo_links as string) ?? null,
+							best_post,
+							worst_post,
+						};
+					}
+				}
+			} catch (e) {
+				console.warn('[Content Generate] Monthly brief fetch failed, sending null:', e);
+			}
+		}
+
+		// --- Previous content (dedupe snapshot: last 30–60 items, compact) ---
+		let previous_content_json: PreviousContentItem[] = [];
+		if (CONTENTQUEUE_TABLE && AIRTABLE_TOKEN && BASE_ID) {
+			try {
+				const queueUrl = `https://api.airtable.com/v0/${BASE_ID}/${CONTENTQUEUE_TABLE}?filterByFormula=${encodeURIComponent(`FIND("${brandProfileId}", {brand_profile_id})`)}&sort[0][field]=created_time&sort[0][direction]=desc&maxRecords=60&fields[]=platform&fields[]=hook&fields[]=post_type&fields[]=created_time&fields[]=topic_bucket&fields[]=one_line_summary`;
+				const queueRes = await fetch(queueUrl, {
+					headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' },
+				});
+				if (queueRes.ok) {
+					const queueData = await queueRes.json();
+					previous_content_json = (queueData.records || []).map((r: { id: string; fields: Record<string, unknown>; createdTime?: string }) => {
+						const f = r.fields || {};
+						return {
+							platform: (f.platform as string) || '',
+							hook: (f.hook as string) || '',
+							post_type: f.post_type as string | undefined,
+							topic_bucket: (f.topic_bucket as string) ?? null,
+							created_time: (f.created_time as string) || r.createdTime || '',
+							one_line_summary: (f.one_line_summary as string) ?? null,
+						};
+					});
+				}
+			} catch (e) {
+				console.warn('[Content Generate] Previous content fetch failed, sending empty array:', e);
+			}
+		}
+
+		// --- Scheduling context (do not ask OpenAI to schedule) ---
+		const tz = brandVoiceContext.timezone || 'UTC';
+		const now = new Date();
+		const cadenceFromStrategy = parsedStrategyJson && typeof parsedStrategyJson === 'object'
+			? (parsedStrategyJson as { platform_cadence?: Array<{ platform?: string; postsPerWeek?: number }>; cadence?: Array<{ platform?: string; postsPerWeek?: number }> }).platform_cadence
+				|| (parsedStrategyJson as { cadence?: Array<{ platform?: string; postsPerWeek?: number }> }).cadence
+			: undefined;
+		const cadence_defaults: SchedulingContext['cadence_defaults'] = {};
+		if (Array.isArray(cadenceFromStrategy)) {
+			for (const entry of cadenceFromStrategy) {
+				const platform = entry?.platform as string | undefined;
+				const num = entry?.postsPerWeek ?? (entry as { postsPerWeek?: number }).postsPerWeek;
+				if (platform && typeof num === 'number') {
+					if (platform.toLowerCase() === 'linkedin') cadence_defaults.LinkedIn = num;
+					else if (platform.toLowerCase() === 'x' || platform === 'Twitter') cadence_defaults.X = num;
+					else if (platform.toLowerCase() === 'instagram') cadence_defaults.Instagram = num;
+					else if (platform.toLowerCase() === 'facebook') cadence_defaults.Facebook = num;
+					else if (platform.toLowerCase() === 'blog') cadence_defaults.Blog = num;
+				}
+			}
+		}
+		const scheduling_context: SchedulingContext = {
+			timezone: tz,
+			posting_windows: brandVoiceContext.posting_windows ?? null,
+			...(Object.keys(cadence_defaults).length > 0 ? { cadence_defaults } : {}),
+			now_iso: now.toISOString(),
+		};
+
+		// --- Assemble multi-channel payload for Make ---
+		const makePayload: MultiChannelMakePayload = {
+			generation_job_id,
+			request_id,
+			user_id: user.id,
+			brand_profile_id: brandProfileId,
+			channels: channelsWithKeys,
+			brand_voice_context: brandVoiceContext,
+			strategy_json: parsedStrategyJson as Record<string, unknown> | null,
+			strategy_summary: strategySummary || null,
+			monthly_brief,
+			previous_content_json,
+			scheduling_context,
+			x_algo_digest: {
+				version: X_ALGO_DIGEST.version,
+				bullets: X_ALGO_DIGEST.bullets,
+				guardrails: X_ALGO_DIGEST.guardrails,
+			},
 			triggered_at: new Date().toISOString(),
 		};
 
-		console.log('[Content Generate] Sending webhook payload:', {
-			trigger_type: contentPayload.trigger_type,
-			brand_profile_id: contentPayload.brand_profile_id,
-			platform: contentPayload.platform,
-			has_strategy_json: !!contentPayload.strategy_json,
-			platforms_requested: contentPayload.platforms_requested,
+		console.log('[Content Generate] Sending multi-channel webhook:', {
+			generation_job_id,
+			channels: channelsWithKeys.map((ch) => ({ platform: ch.platform, count: ch.count })),
+			total_keys: channelsWithKeys.reduce((sum, ch) => sum + ch.keys.length, 0),
 		});
 
-		// Call Make webhook
+		// Call Make webhook (fire-and-forget)
 		const webhookRes = await fetch(webhookUrl, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
 				...(process.env.MAKE_API_KEY && {
-					'x-api-key': process.env.MAKE_API_KEY,
+					'x-make-apikey': process.env.MAKE_API_KEY,
 				}),
-				...(process.env.MAKE_CONTENT_WEBHOOK_SECRET || process.env.MAKE_SHARED_SECRET ? {
-					'x-make-secret': process.env.MAKE_CONTENT_WEBHOOK_SECRET || process.env.MAKE_SHARED_SECRET,
-				} : {}),
 			},
-			body: JSON.stringify(contentPayload),
+			body: JSON.stringify(makePayload),
 		});
 
 		if (!webhookRes.ok) {
@@ -275,24 +481,31 @@ export async function POST(req: Request) {
 				status: webhookRes.status,
 				statusText: webhookRes.statusText,
 				error: errorText,
-				trigger_type: contentPayload.trigger_type,
-				brand_profile_id: contentPayload.brand_profile_id,
+				generation_job_id,
 			});
+			
+			// Mark job as failed
+			await admin
+				.from('generation_jobs')
+				.update({ completed_at: new Date().toISOString() })
+				.eq('generation_job_id', generation_job_id);
+			
 			return NextResponse.json(
 				{ error: `Content generation failed: ${errorText}` },
 				{ status: 502 }
 			);
 		}
 
-		const webhookResponse = await webhookRes.text();
-		console.log('[Content Generate] Make webhook response:', {
+		console.log('[Content Generate] Make webhook accepted:', {
+			generation_job_id,
 			status: webhookRes.status,
-			response: webhookResponse.substring(0, 200), // First 200 chars
 		});
 
 		return NextResponse.json({
 			ok: true,
-			message: 'Content generation started. New content will appear in your approval queue shortly.',
+			generation_job_id,
+			message: `Generating ${totalRequested} posts across ${filteredChannels.length} channels. New content will appear in your approval queue shortly.`,
+			channels: channelsWithKeys.map((ch) => ({ platform: ch.platform, count: ch.count })),
 		});
 	} catch (error: any) {
 		console.error('Content generation error:', error);

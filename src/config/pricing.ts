@@ -19,9 +19,9 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		notes: "LinkedIn + Blog (Medium cross-post).",
 	},
 	growth: {
-		maxBrands: 2,
+		maxBrands: 1,
 		maxChannels: 6,
-		postsPerMonth: 60,
+		postsPerMonth: 150,
 		includedImageGen: true,
 		includedPlatforms: ["linkedin","instagram","facebook","x","blog","medium"],
 	},

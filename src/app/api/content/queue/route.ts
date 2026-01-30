@@ -165,6 +165,7 @@ export async function GET(request: Request) {
 		const statusParam = searchParams.get('status');
 		const brandProfileId = searchParams.get('brand_profile_id');
 		const contentBriefId = searchParams.get('content_brief_id');
+		const platformFilter = searchParams.get('platform'); // New: for channel tabs
 		const statuses = mapStatuses(stage, statusParam);
 
 		// Build filter formula using user_id_lookup (no need to fetch BrandProfiles first)
@@ -180,6 +181,17 @@ export async function GET(request: Request) {
 		// ARRAYJOIN converts array to string, FIND searches within it
 		// If lookup returns single value, ARRAYJOIN still works (converts to string)
 		filters.push(`FIND("${escapedUserId}", ARRAYJOIN({${LOOKUP_FIELD_NAMES.user_id_lookup}}, ",")) > 0`);
+		
+		// Add platform filter (for channel tabs)
+		if (platformFilter) {
+			// Support "Meta" as shorthand for Instagram+Facebook
+			if (platformFilter === 'Meta') {
+				filters.push(`OR({platform}="Instagram",{platform}="Facebook")`);
+			} else {
+				const escapedPlatform = platformFilter.replace(/"/g, '""');
+				filters.push(`{platform}="${escapedPlatform}"`);
+			}
+		}
 		
 		// Add content_brief_id filter if provided
 		if (contentBriefId) {
@@ -221,6 +233,14 @@ export async function GET(request: Request) {
 				'image_prompt',
 				'created_time',
 				'last_modified',
+				// Multi-channel fields (new)
+				'post_type',
+				'thread_group_id',
+				'thread_index',
+				'character_count',
+				'visual_brief',
+				'generation_job_id',
+				'content_item_key',
 				// Optional fields (only include if they exist in your Airtable table)
 				'published_at',
 				'image_reference_url',
@@ -264,6 +284,14 @@ export async function GET(request: Request) {
 			image_cloudinary_id?: string;
 			created_time: string;
 			updated_time: string | null;
+			// Multi-channel fields
+			post_type?: string;
+			thread_group_id?: string | null;
+			thread_index?: number | null;
+			character_count?: number | null;
+			visual_brief?: string | null;
+			generation_job_id?: string | null;
+			content_item_key?: string | null;
 		};
 
 		// Map records using lookup fields (no BrandProfiles queries needed)
@@ -320,6 +348,14 @@ export async function GET(request: Request) {
 					created_time: getField('created_time', CONTENTQUEUE_FIELD_IDS.created_time) || record.createdTime,
 					updated_time: getField('last_modified', CONTENTQUEUE_FIELD_IDS.last_modified) || getField('updated_time') || null,
 					published_at: getField('published_at', CONTENTQUEUE_FIELD_IDS.published_at) || null,
+					// Multi-channel fields
+					post_type: getField('post_type') || 'single',
+					thread_group_id: getField('thread_group_id') || null,
+					thread_index: getField('thread_index') ? Number(getField('thread_index')) : null,
+					character_count: getField('character_count') ? Number(getField('character_count')) : null,
+					visual_brief: getField('visual_brief') || null,
+					generation_job_id: getField('generation_job_id') || null,
+					content_item_key: getField('content_item_key') || null,
 				};
 			})
 			// Filter out records with no content (deleted/empty records)

@@ -25,13 +25,24 @@ type ContentItem = {
 	image_generation_source?: string;
 	image_reference_url?: string;
 	image_cloudinary_id?: string;
+	// Multi-channel fields
+	post_type?: string;
+	thread_group_id?: string | null;
+	thread_index?: number | null;
+	character_count?: number | null;
+	visual_brief?: string | null;
+	generation_job_id?: string | null;
+	content_item_key?: string | null;
 };
+
+type ChannelTab = 'LinkedIn' | 'X' | 'Meta' | 'Blog';
 
 export default function ContentApprovalPage() {
 	const supabase = useSupabase();
 	const router = useRouter();
 	const [loading, setLoading] = useState(true);
 	const [contentItems, setContentItems] = useState<ContentItem[]>([]);
+	const [selectedTab, setSelectedTab] = useState<ChannelTab>('LinkedIn');
 	const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 	const [editingItem, setEditingItem] = useState<string | null>(null);
 	const [editingTitle, setEditingTitle] = useState<string>('');
@@ -50,12 +61,14 @@ export default function ContentApprovalPage() {
 	const [imageUploadError, setImageUploadError] = useState<Record<string, string>>({});
 	const [imageUploadSuccess, setImageUploadSuccess] = useState<Record<string, boolean>>({});
 	const [copySuccess, setCopySuccess] = useState<Record<string, boolean>>({});
+	const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null);
 	const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
 	useEffect(() => {
 		if (!supabase) return;
 		loadContent();
-	}, [supabase]);
+		loadQuota();
+	}, [supabase, selectedTab]); // Reload when tab changes
 
 	// Poll for content if generating
 	useEffect(() => {
@@ -67,6 +80,18 @@ export default function ContentApprovalPage() {
 
 		return () => clearInterval(pollInterval);
 	}, [isGenerating, supabase]);
+
+	async function loadQuota() {
+		try {
+			const res = await fetch('/api/content/quota', { cache: 'no-store' });
+			if (res.ok) {
+				const data = await res.json();
+				setQuotaRemaining(data.posts_remaining || 0);
+			}
+		} catch (err) {
+			console.error('Failed to load quota:', err);
+		}
+	}
 
 	async function loadContent() {
 		if (!supabase) return;
@@ -88,6 +113,10 @@ export default function ContentApprovalPage() {
 			const contentBriefId = urlParams.get('content_brief_id');
 			
 			let apiUrl = '/api/content/queue?stage=approval';
+			
+			// Add platform filter based on selected tab
+			apiUrl += `&platform=${encodeURIComponent(selectedTab)}`;
+			
 			if (brandProfileId) {
 				apiUrl += `&brand_profile_id=${encodeURIComponent(brandProfileId)}`;
 			}
@@ -564,15 +593,47 @@ export default function ContentApprovalPage() {
 			</div>
 
 			<div className="mb-6 space-y-3">
-				<h1 className="text-3xl font-semibold mb-2">Content Approval Queue</h1>
-				<p className="text-text-dim">
-					Review and approve content before it's published. Approved content will be published automatically at the scheduled time.
-				</p>
+				<div className="flex items-center justify-between">
+					<div>
+						<h1 className="text-3xl font-semibold mb-2">Content Approval Queue</h1>
+						<p className="text-text-dim">
+							Review and approve content before it's published.
+						</p>
+					</div>
+					{quotaRemaining !== null && (
+						<div className="text-right">
+							<div className="text-2xl font-bold text-primary">{quotaRemaining}</div>
+							<div className="text-xs text-text-dim">Posts remaining</div>
+						</div>
+					)}
+				</div>
 				{error && (
 					<div className="border border-danger/30 bg-danger/10 text-danger text-sm rounded-xl2 p-3">
 						{error}
 					</div>
 				)}
+			</div>
+
+			{/* Channel Tabs */}
+			<div className="mb-6">
+				<div className="flex gap-2 border-b border-edge/60">
+					{(['LinkedIn', 'X', 'Meta', 'Blog'] as ChannelTab[]).map((tab) => (
+						<button
+							key={tab}
+							onClick={() => {
+								setSelectedTab(tab);
+								setSelectedItems(new Set()); // Clear selection when changing tabs
+							}}
+							className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+								selectedTab === tab
+									? 'border-primary text-text'
+									: 'border-transparent text-text-dim hover:text-text-soft'
+							}`}
+						>
+							{tab}
+						</button>
+					))}
+				</div>
 			</div>
 
 			{/* Status Summary */}
@@ -687,6 +748,31 @@ export default function ContentApprovalPage() {
 											<span className="px-2.5 py-1 rounded-full text-xs font-medium bg-primary/15 border border-primary/30 text-primary">
 												{item.platform}
 											</span>
+											{item.post_type && item.post_type !== 'single' && (
+												<span className="px-2.5 py-1 rounded-full text-xs font-medium bg-accent/15 border border-accent/30 text-accent">
+													{item.post_type}
+													{item.thread_index && ` ${item.thread_index}`}
+												</span>
+											)}
+											{item.platform === 'X' && typeof item.character_count === 'number' && (
+												<span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+													item.character_count > 280
+														? 'bg-danger/15 border-danger/30 text-danger'
+														: 'bg-surface/50 border-edge/60 text-text-soft'
+												}`}>
+													{item.character_count}/280
+												</span>
+											)}
+											{item.status === 'Needs Copy' && (
+												<span className="px-2.5 py-1 rounded-full text-xs font-medium bg-warning/15 border border-warning/30 text-warning">
+													Needs editing
+												</span>
+											)}
+											{item.visual_brief && (
+												<span className="px-2.5 py-1 rounded-full text-xs font-medium bg-surface/50 border border-edge/60 text-text-soft">
+													Visual suggested
+												</span>
+											)}
 											{item.content_type && (
 												<span className="px-2.5 py-1 rounded-full text-xs font-medium bg-surface/50 border border-edge/60 text-text-soft">
 													{item.content_type}
@@ -696,6 +782,15 @@ export default function ContentApprovalPage() {
 												{item.brand_name}
 											</span>
 										</div>
+
+										{/* Export-only warning for X threads and Blog */}
+										{((item.platform === 'X' && item.post_type === 'thread') || item.platform === 'Blog') && (
+											<div className="px-3 py-2 rounded-lg bg-warning/10 border border-warning/30 text-warning text-xs">
+												{item.platform === 'X' && item.post_type === 'thread' 
+													? '📋 Threads are export-only. Copy and paste to publish manually.'
+													: '📋 Blog posts are export-only. Copy and publish to your blog manually.'}
+											</div>
+										)}
 
 										{/* Status Badge - Show prominently if Ready To Publish or Published */}
 										{item.status === 'Ready To Publish' && (
@@ -976,7 +1071,22 @@ export default function ContentApprovalPage() {
 												<div className="flex gap-2">
 													<button
 														onClick={() => approveContent(item.id)}
-														disabled={approving === item.id || rejecting === item.id || saving === item.id || uploadingImage === item.id}
+														disabled={
+															approving === item.id || 
+															rejecting === item.id || 
+															saving === item.id || 
+															uploadingImage === item.id ||
+															// Disable approve for validation failures
+															(item.platform === 'X' && typeof item.character_count === 'number' && item.character_count > 280) ||
+															item.status === 'Needs Copy'
+														}
+														title={
+															(item.platform === 'X' && typeof item.character_count === 'number' && item.character_count > 280)
+																? 'Tweet exceeds 280 characters. Edit before approving.'
+																: item.status === 'Needs Copy'
+																? 'This content needs editing before approval.'
+																: undefined
+														}
 														className="flex-1 px-3 py-2 rounded-xl2 bg-gradient-to-r from-accent/90 to-accent/70 hover:from-accent hover:to-accent/90 text-white text-sm font-medium shadow-lg shadow-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
 													>
 														{approving === item.id ? (
