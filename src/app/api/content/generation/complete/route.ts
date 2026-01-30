@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 
 const completionSchema = z.object({
 	generation_job_id: z.string().uuid(),
-	created: z.record(z.number()), // { "LinkedIn": 3, "X": 10, ... }
+	created: z.record(z.string(), z.number()), // { "LinkedIn": 3, "X": 10, ... }
 	record_ids: z.array(z.string()),
 });
 
