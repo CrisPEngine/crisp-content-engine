@@ -198,12 +198,9 @@ export async function GET(request: Request) {
 			filters.push(`FIND("${contentBriefId}", {content_brief_id})`);
 		}
 		
-		// Add brand_profile_id filter if provided
-		// brand_profile_id is a linked record field (array), use ARRAYJOIN or direct comparison
-		if (brandProfileId) {
-			// For linked record fields, Airtable stores as array. Use ARRAYJOIN to convert to searchable string.
-			filters.push(`FIND("${brandProfileId}", ARRAYJOIN({brand_profile_id}))`);
-		}
+		// Note: brand_profile_id filtering is done in JavaScript after fetching records
+		// This is more reliable than Airtable formula filtering for linked record fields
+		// See JavaScript filter below around line 380
 		
 		// Add status filter
 		if (statuses && statuses.length > 0) {
