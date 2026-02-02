@@ -13,11 +13,12 @@ export function SubmissionLoading({ brandName, onComplete }: SubmissionLoadingPr
 	const [step, setStep] = useState(0);
 	const [completed, setCompleted] = useState(false);
 
+	// Longer durations so the interstitial stays up while the backend persists the brand and triggers strategy
 	const steps = [
-		{ text: 'Saving your brand profile...', duration: 1500 },
-		{ text: 'AI is analyzing your brand...', duration: 2000 },
-		{ text: 'Creating your content strategy...', duration: 2500 },
-		{ text: 'Almost ready...', duration: 1000 },
+		{ text: 'Saving your brand profile...', duration: 2500 },
+		{ text: 'AI is analyzing your brand...', duration: 3500 },
+		{ text: 'Creating your content strategy...', duration: 4500 },
+		{ text: 'Almost ready...', duration: 2000 },
 	];
 
 	useEffect(() => {
@@ -32,10 +33,10 @@ export function SubmissionLoading({ brandName, onComplete }: SubmissionLoadingPr
 					setStep(index + 1);
 				} else {
 					setCompleted(true);
-					// Wait a bit before calling onComplete
+					// Hold on success state so user sees "Brand Profile Created!" before redirect
 					setTimeout(() => {
 						onComplete?.();
-					}, 1500);
+					}, 2500);
 				}
 			}, s.duration + (index > 0 ? steps.slice(0, index).reduce((acc, step) => acc + step.duration, 0) : 0));
 

@@ -89,14 +89,17 @@ function CallbackHandler() {
 					}
 					
 					if (safeRedirectTo) {
-						const destination = safeRedirectTo === '/connections' ? '/connections?reauth=true' : safeRedirectTo;
+						// Keep auth=loading so destination shows interstitial until session is ready
+						const destination = safeRedirectTo === '/connections'
+							? '/connections?reauth=true&auth=loading'
+							: `${safeRedirectTo}${safeRedirectTo.includes('?') ? '&' : '?'}auth=loading`;
 						console.log('Session established, redirecting:', destination);
 						router.replace(destination);
 						return;
 					}
 					
 					// Session established - redirect to dashboard with loading state
-					// Dashboard will show skeleton while content loads
+					// Dashboard shows interstitial (skeleton) until session is ready; does not drop to sign-in
 					console.log('Session established, redirecting to dashboard');
 					router.replace('/dashboard?auth=loading');
 				})

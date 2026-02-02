@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseService } from '@/lib/supabaseService';
+import { AuthLoadingHandler } from '@/components/AuthLoadingHandler';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -130,17 +131,32 @@ function LinkedInCard({
 	);
 }
 
-export default async function ConnectionsPage({ searchParams }: { searchParams: Promise<{ error?: string; details?: string; connected?: string; reauth?: string }> }) {
+export default async function ConnectionsPage({ searchParams }: { searchParams: Promise<{ error?: string; details?: string; connected?: string; reauth?: string; auth?: string }> }) {
 	const supabase = await createClient();
+	const params = await searchParams;
+	const isAuthLoading = params?.auth === 'loading';
 	const {
 		data: { user },
 	} = await supabase.auth.getUser();
 
 	if (!user) {
+		// Keep interstitial until session is ready – do not drop to sign-in during OAuth
+		if (isAuthLoading) {
+			return (
+				<>
+					<AuthLoadingHandler redirectTo="/connections?reauth=true" />
+					<div className="flex items-center justify-center min-h-[60vh]">
+						<div className="text-center space-y-4">
+							<div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
+							<p className="text-text-soft text-sm">Completing sign in...</p>
+						</div>
+					</div>
+				</>
+			);
+		}
 		redirect('/sign-in');
 	}
 
-	const params = await searchParams;
 	const error = params?.error;
 	const errorDetails = params?.details;
 	const connected = params?.connected;

@@ -205,6 +205,20 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 			}
 		}
 
+		// Require strategy content before triggering content generation
+		const hasStrategyContent =
+			(strategySummary && String(strategySummary).trim().length > 50) ||
+			(strategyJson && (typeof strategyJson === 'string' ? strategyJson.trim().length > 20 : Object.keys(strategyJson).length > 0));
+		if (!hasStrategyContent) {
+			return NextResponse.json(
+				{
+					error: 'Strategy content is not ready yet. Our AI is still generating your strategy. Please wait a minute or two and refresh the page, then try approving again.',
+					hint: 'If the strategy page shows "Strategy Ready" but no content, the strategy callback from Make may not have included the strategy. Check that your Make strategy scenario sends strategy_update_id, strategy_payload or strategy_summary in the webhook callback.',
+				},
+				{ status: 400 }
+			);
+		}
+
 		// Trigger content generation in Make (optional - won't fail if not configured)
 		const MAKE_CONTENT_WEBHOOK_URL = process.env.MAKE_CONTENT_GENERATION_WEBHOOK_URL;
 		if (MAKE_CONTENT_WEBHOOK_URL) {

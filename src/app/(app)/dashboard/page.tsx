@@ -8,6 +8,8 @@ import { GenerateContentActions } from '@/components/GenerateContentActions';
 import { StrategyCard } from '@/components/StrategyCard';
 import { CardSkeleton, UsageCardSkeleton } from '@/components/skeletons/Skeleton';
 import { AuthLoadingHandler } from '@/components/AuthLoadingHandler';
+import { NewBrandCallout } from '@/components/NewBrandCallout';
+import { Suspense } from 'react';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -52,26 +54,29 @@ export default async function Dashboard({
 	}
 
 	if (!user) {
-		// If we're in auth loading state, show skeleton while session establishes
-		// Give it a moment for the session to be established after OAuth callback
+		// If we're in auth loading state, show dashboard loading interstitial (not auth page)
+		// So user sees "Loading your dashboard" immediately after OAuth, not a confusing auth screen
 		if (isAuthLoading) {
 			return (
 				<>
 					<AuthLoadingHandler />
-					<main className="p-4 md:p-6 space-y-4 md:space-y-6">
-						<div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-							<div className="flex-1">
-								<CardSkeleton />
+					<main className="flex flex-col items-center justify-center min-h-[70vh] p-6">
+						<div className="text-center space-y-4 max-w-sm">
+							<div className="inline-block h-10 w-10 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
+							<h2 className="text-lg font-semibold text-text">Loading your dashboard</h2>
+							<p className="text-sm text-text-dim">Preparing your workspace...</p>
+						</div>
+						<div className="mt-10 w-full max-w-2xl space-y-4 opacity-60">
+							<div className="h-24 rounded-xl2 bg-surface/50 border border-edge/60 animate-pulse" />
+							<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+								<div className="h-32 rounded-xl2 bg-surface/50 border border-edge/60 animate-pulse" />
+								<div className="h-32 rounded-xl2 bg-surface/50 border border-edge/60 animate-pulse" />
 							</div>
-						</div>
-						<div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-							<UsageCardSkeleton />
-							<CardSkeleton />
-						</div>
-						<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-							<CardSkeleton />
-							<CardSkeleton />
-							<CardSkeleton />
+							<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+								<div className="h-28 rounded-xl2 bg-surface/50 border border-edge/60 animate-pulse" />
+								<div className="h-28 rounded-xl2 bg-surface/50 border border-edge/60 animate-pulse" />
+								<div className="h-28 rounded-xl2 bg-surface/50 border border-edge/60 animate-pulse" />
+							</div>
 						</div>
 					</main>
 				</>
@@ -324,6 +329,11 @@ export default async function Dashboard({
 					<p className="text-warning font-medium text-sm md:text-base">An error was encountered during strategy or content development. Please try again or contact support.</p>
 				</div>
 			)}
+
+			{/* New brand callout: refresh hint when landing from onboarding */}
+			<Suspense fallback={null}>
+				<NewBrandCallout />
+			</Suspense>
 
 			<DashboardTabs activeTab={activeTab} />
 

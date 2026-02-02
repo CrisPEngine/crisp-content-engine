@@ -578,7 +578,7 @@ export default function OnboardingPage() {
 	};
 
 	const handleLoadingComplete = () => {
-		window.location.href = '/dashboard';
+		window.location.href = '/dashboard?new_brand=1';
 	};
 
 	if (!mounted) {

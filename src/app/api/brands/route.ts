@@ -91,12 +91,13 @@ export async function GET(req: Request) {
 			let records;
 			try {
 				// First try with all fields including rollups (if they exist)
+				// cache: false so new brands show immediately after onboarding (no stale list)
 				records = await listRecords({
 					table: TABLE_ID,
 					filterByFormula: `{user_id} = "${user.id}"`,
 					sort: [{ field: 'created_time', direction: 'desc' }],
 					fields: rollupFieldNames.length > 0 ? [...baseFields, ...rollupFieldNames] : baseFields,
-					cache: true,
+					cache: false,
 					returnFieldsByFieldId: true,
 					endpoint: '/api/brands',
 				});
@@ -109,7 +110,7 @@ export async function GET(req: Request) {
 						filterByFormula: `{user_id} = "${user.id}"`,
 						sort: [{ field: 'created_time', direction: 'desc' }],
 						fields: baseFields,
-						cache: true,
+						cache: false,
 						returnFieldsByFieldId: true,
 						endpoint: '/api/brands',
 					});

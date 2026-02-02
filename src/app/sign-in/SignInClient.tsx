@@ -73,6 +73,19 @@ export default function SignInClient() {
     }
   }
 
+  // Full-screen interstitial while signing in – do not drop back to form or show reauth
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-sky-300 border-t-transparent" />
+          <p className="text-sm text-neutral-300">Signing you in...</p>
+          <p className="text-xs text-neutral-500">Please wait while we complete sign in.</p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-100">
       <div className="mx-auto w-full max-w-md px-6 py-12">

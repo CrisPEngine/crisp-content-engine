@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, Check, Sparkles } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 type Step = {
 	id: string;
@@ -27,6 +27,10 @@ type ContentGenerationLoadingProps = {
 	brandProfileId?: string;
 };
 
+const POLL_INTERVAL_MS = 5000;
+const MAX_POLLS = 120; // 10 minutes max
+const ESCAPE_HATCH_AFTER_POLLS = 18; // Show "Close anyway" after ~90 seconds
+
 export function ContentGenerationLoading({ 
 	onComplete, 
 	pollForCompletion,
@@ -36,6 +40,13 @@ export function ContentGenerationLoading({
 	const [currentStep, setCurrentStep] = useState(0);
 	const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
 	const [isComplete, setIsComplete] = useState(false);
+	const [showEscapeHatch, setShowEscapeHatch] = useState(false);
+
+	// Keep latest poll/onComplete in refs so effect runs once and doesn't reset interval on re-render
+	const pollRef = useRef(pollForCompletion);
+	const onCompleteRef = useRef(onComplete);
+	pollRef.current = pollForCompletion;
+	onCompleteRef.current = onComplete;
 
 	useEffect(() => {
 		// Simulate step progression
@@ -68,44 +79,41 @@ export function ContentGenerationLoading({
 		// Poll for completion if pollForCompletion is provided
 		if (pollForCompletion) {
 			let pollCount = 0;
-			const maxPolls = 120; // 10 minutes max (120 * 5 seconds)
-			
-			const pollInterval = setInterval(async () => {
+			let intervalId: ReturnType<typeof setInterval> | null = null;
+
+			const tick = async () => {
 				pollCount++;
-				
+				if (pollCount >= ESCAPE_HATCH_AFTER_POLLS) {
+					setShowEscapeHatch(true);
+				}
+
 				try {
-					const completed = await pollForCompletion();
-					if (completed) {
-						clearInterval(pollInterval);
+					const completed = await (pollRef.current?.() ?? Promise.resolve(false));
+					if (completed && intervalId) {
+						clearInterval(intervalId);
+						intervalId = null;
 						setCompletedSteps((prev) => new Set([...prev, 'complete']));
 						setCurrentStep(4);
 						setIsComplete(true);
-						
-						// Call onComplete after a brief delay
-						if (onComplete) {
-							setTimeout(() => onComplete(), 1500);
-						}
+						setTimeout(() => onCompleteRef.current?.(), 1500);
+						return;
 					}
 				} catch (error) {
 					console.error('Error polling for completion:', error);
-					// Continue polling on error
 				}
-				
-				// Stop polling after max attempts
-				if (pollCount >= maxPolls) {
-					clearInterval(pollInterval);
+
+				if (pollCount >= MAX_POLLS && intervalId) {
+					clearInterval(intervalId);
+					intervalId = null;
 					setCompletedSteps((prev) => new Set([...prev, 'complete']));
 					setCurrentStep(4);
 					setIsComplete(true);
-					
-					// Call onComplete anyway
-					if (onComplete) {
-						setTimeout(() => onComplete(), 1500);
-					}
+					setTimeout(() => onCompleteRef.current?.(), 1500);
 				}
-			}, 5000); // Poll every 5 seconds
-			
-			timers.push(pollInterval as any);
+			};
+
+			intervalId = setInterval(tick, POLL_INTERVAL_MS);
+			timers.push(intervalId);
 		} else {
 			// Fallback: Complete after 5 seconds if no polling function
 			timers.push(
@@ -113,9 +121,7 @@ export function ContentGenerationLoading({
 					setCompletedSteps((prev) => new Set([...prev, 'complete']));
 					setCurrentStep(4);
 					setIsComplete(true);
-					if (onComplete) {
-						setTimeout(() => onComplete(), 1000);
-					}
+					setTimeout(() => onCompleteRef.current?.(), 1000);
 				}, 5000)
 			);
 		}
@@ -129,7 +135,7 @@ export function ContentGenerationLoading({
 				}
 			});
 		};
-	}, [onComplete, pollForCompletion]);
+	}, []); // Run once; we use refs for latest callbacks
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-bg/95 backdrop-blur-sm">
@@ -149,6 +155,24 @@ export function ContentGenerationLoading({
 					<h2 className="text-2xl font-semibold mb-2">Creating Your Content</h2>
 					<p className="text-text-dim text-sm">This will take just a moment...</p>
 				</div>
+
+				{showEscapeHatch && !isComplete && (
+					<div className="mb-4 p-3 rounded-xl2 border border-edge/60 bg-surface/30">
+						<p className="text-sm text-text-dim mb-2">Taking longer than usual?</p>
+						<button
+							type="button"
+							onClick={() => {
+								setIsComplete(true);
+								setCompletedSteps((prev) => new Set([...prev, 'complete']));
+								setCurrentStep(4);
+								onComplete?.();
+							}}
+							className="text-sm text-primary hover:underline"
+						>
+							Close and go to content
+						</button>
+					</div>
+				)}
 
 				<div className="space-y-4">
 					<AnimatePresence>

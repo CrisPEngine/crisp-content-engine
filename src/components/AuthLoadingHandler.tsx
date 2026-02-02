@@ -6,9 +6,15 @@ import { useSupabase } from './SupabaseProvider';
 
 /**
  * Client-side component that waits for session to be established
- * after OAuth callback, then refreshes the page to show content
+ * after OAuth callback, then redirects to the target URL (without auth=loading).
+ * Keeps the interstitial visible until session is ready so we never drop to sign-in/reauth.
  */
-export function AuthLoadingHandler() {
+type AuthLoadingHandlerProps = {
+	/** Where to redirect once session is established. Defaults to /dashboard. */
+	redirectTo?: string;
+};
+
+export function AuthLoadingHandler({ redirectTo = '/dashboard' }: AuthLoadingHandlerProps) {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const supabase = useSupabase();
@@ -27,9 +33,9 @@ export function AuthLoadingHandler() {
 				const { data: { session } } = await supabase.auth.getSession();
 				
 				if (session) {
-					// Session established - remove auth=loading param and refresh
-					console.log('Session established, refreshing page');
-					router.replace('/dashboard');
+					// Session established - remove auth=loading and show destination
+					console.log('Session established, redirecting to', redirectTo);
+					router.replace(redirectTo);
 					return;
 				}
 
@@ -54,7 +60,7 @@ export function AuthLoadingHandler() {
 		return () => {
 			if (timeoutId) clearTimeout(timeoutId);
 		};
-	}, [isAuthLoading, supabase, router]);
+	}, [isAuthLoading, supabase, router, redirectTo]);
 
 	return null; // This component doesn't render anything
 }

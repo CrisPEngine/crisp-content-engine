@@ -184,6 +184,17 @@ export default function StrategyReviewPage() {
 		: null;
 	const createdAtKey = strategy?.created_at ? String(strategy.created_at) : null;
 	
+	// Strategy has real content (from Make) - required before approval
+	const hasStrategyContent = useMemo(() => {
+		if (!strategy) return false;
+		const content = (strategy.content || strategy.strategy_summary || '').trim();
+		if (content.length > 50) return true; // Summary has substance
+		const json = strategy.strategy_json;
+		if (!json) return false;
+		const parsed = typeof json === 'string' ? (() => { try { return JSON.parse(json); } catch { return null; } })() : json;
+		return parsed && typeof parsed === 'object' && (parsed.pillars?.length > 0 || parsed.brand_summary || parsed.brand_understanding);
+	}, [strategy?.content, strategy?.strategy_summary, strategy?.strategy_json]);
+
 	// Parse strategy_json to extract snapshot data - use stable string key
 	const strategySnapshot = useMemo(() => {
 		if (!strategyJsonKey || !strategy?.strategy_json) return null;
@@ -355,19 +366,22 @@ export default function StrategyReviewPage() {
 					)}
 					{!editing && strategy.status !== 'Strategy Approved' && (
 						<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
-							<button
-								onClick={() => {
-									setEditedContent(strategy.content);
-									setEditing(true);
-								}}
-								className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 flex items-center justify-center gap-2"
-							>
-								<Edit className="w-4 h-4" />
-								Edit
-							</button>
+							{hasStrategyContent && (
+								<button
+									onClick={() => {
+										setEditedContent(strategy.content || '');
+										setEditing(true);
+									}}
+									className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 flex items-center justify-center gap-2"
+								>
+									<Edit className="w-4 h-4" />
+									Edit
+								</button>
+							)}
 							<button
 								onClick={approveStrategy}
-								disabled={approving}
+								disabled={approving || !hasStrategyContent}
+								title={!hasStrategyContent ? 'Strategy content is still being generated. Please wait or refresh.' : undefined}
 								className="px-6 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
 							>
 								{approving ? (
@@ -439,6 +453,23 @@ export default function StrategyReviewPage() {
 				</motion.div>
 			)}
 
+			{/* Strategy not ready yet - show waiting message */}
+			{!hasStrategyContent && strategy.status !== 'Strategy Approved' && (
+				<motion.div
+					initial={{ opacity: 0, y: 10 }}
+					animate={{ opacity: 1, y: 0 }}
+					className="mb-6 card p-6 border-primary/30 bg-primary/5 flex items-start gap-3"
+				>
+					<AlertCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+					<div>
+						<p className="font-medium text-text mb-1">Strategy is still being generated</p>
+						<p className="text-sm text-text-dim">
+							Our AI is creating your content strategy. This usually takes a minute or two. Refresh the page to see updates, or check back shortly.
+						</p>
+					</div>
+				</motion.div>
+			)}
+
 			{/* Strategy Content Section */}
 			<motion.div
 				initial={{ opacity: 0, y: 10 }}
@@ -480,7 +511,7 @@ export default function StrategyReviewPage() {
 					) : (
 						<div className="rounded-xl2 border border-edge/60 bg-bg/80 p-6">
 							<div className="prose prose-invert max-w-none text-text whitespace-pre-wrap">
-								{strategy.content.split('\n').map((line: string, idx: number) => {
+								{(strategy.content || '').split('\n').map((line: string, idx: number) => {
 									// Simple markdown-like rendering
 									if (line.startsWith('## ')) {
 										return (
@@ -545,7 +576,8 @@ export default function StrategyReviewPage() {
 						<div className="flex pt-4 border-t border-edge/60">
 							<button
 								onClick={approveStrategy}
-								disabled={approving}
+								disabled={approving || !hasStrategyContent}
+								title={!hasStrategyContent ? 'Strategy content is still being generated.' : undefined}
 								className="flex-1 px-6 py-3 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
 							>
 								{approving ? (

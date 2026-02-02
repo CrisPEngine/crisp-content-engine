@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { generateStrategySummary } from './generateStrategySummary';
 
 export const runtime = 'nodejs';
 
@@ -12,108 +13,6 @@ const serialiseField = (value: unknown) => {
 	if (value === null || value === undefined) return undefined;
 	if (typeof value === 'string') return value;
 	return JSON.stringify(value);
-};
-
-const generateStrategySummary = (strategy: any): string => {
-	if (!strategy || typeof strategy !== 'object') return '';
-	
-	const lines: string[] = [];
-	
-	// Brand Summary
-	if (strategy.brand_summary) {
-		if (strategy.brand_summary.one_liner) {
-			lines.push(`📌 ${strategy.brand_summary.one_liner}`);
-		}
-		if (strategy.brand_summary.positioning) {
-			lines.push(`\n${strategy.brand_summary.positioning}`);
-		}
-	}
-	
-	// Brand Understanding
-	if (strategy.brand_understanding) {
-		if (strategy.brand_understanding.summary) {
-			lines.push(`\n\n## Brand Understanding\n${strategy.brand_understanding.summary}`);
-		}
-		if (strategy.brand_understanding.perceived_audience) {
-			lines.push(`\n**Target Audience:** ${strategy.brand_understanding.perceived_audience}`);
-		}
-		if (strategy.brand_understanding.tone_description) {
-			lines.push(`\n**Tone:** ${strategy.brand_understanding.tone_description}`);
-		}
-	}
-	
-	// Content Pillars
-	if (strategy.pillars && Array.isArray(strategy.pillars) && strategy.pillars.length > 0) {
-		lines.push(`\n\n## Content Pillars`);
-		strategy.pillars.forEach((pillar: any, index: number) => {
-			if (pillar.name) {
-				lines.push(`\n${index + 1}. **${pillar.name}**`);
-				if (pillar.why) {
-					lines.push(`   ${pillar.why}`);
-				}
-			}
-		});
-	}
-	
-	// Posting Cadence
-	if (strategy.cadence) {
-		lines.push(`\n\n## Posting Schedule`);
-		Object.entries(strategy.cadence).forEach(([platform, frequency]) => {
-			if (frequency && String(frequency).trim()) {
-				lines.push(`- **${platform}:** ${frequency}`);
-			}
-		});
-	}
-	
-	// Content Mix
-	if (strategy.post_mix) {
-		lines.push(`\n\n## Content Mix`);
-		if (strategy.post_mix.thought_leadership_pct) {
-			lines.push(`- Thought Leadership: ${strategy.post_mix.thought_leadership_pct}%`);
-		}
-		if (strategy.post_mix.educational_pct) {
-			lines.push(`- Educational: ${strategy.post_mix.educational_pct}%`);
-		}
-		if (strategy.post_mix.promo_pct) {
-			lines.push(`- Promotional: ${strategy.post_mix.promo_pct}%`);
-		}
-		if (strategy.post_mix.community_pct) {
-			lines.push(`- Community: ${strategy.post_mix.community_pct}%`);
-		}
-	}
-	
-	// Voice Guidelines
-	if (strategy.voice) {
-		lines.push(`\n\n## Voice Guidelines`);
-		if (strategy.voice.summary) {
-			lines.push(`\n${strategy.voice.summary}`);
-		}
-		if (strategy.voice.dos && Array.isArray(strategy.voice.dos) && strategy.voice.dos.length > 0) {
-			lines.push(`\n**Do:**`);
-			strategy.voice.dos.forEach((doItem: string) => {
-				lines.push(`- ${doItem}`);
-			});
-		}
-		if (strategy.voice.donts && Array.isArray(strategy.voice.donts) && strategy.voice.donts.length > 0) {
-			lines.push(`\n**Don't:**`);
-			strategy.voice.donts.forEach((dont: string) => {
-				lines.push(`- ${dont}`);
-			});
-		}
-	}
-	
-	// KPIs
-	if (strategy.kpis) {
-		lines.push(`\n\n## Key Performance Indicators`);
-		if (strategy.kpis.primary) {
-			lines.push(`- **Primary:** ${strategy.kpis.primary}`);
-		}
-		if (strategy.kpis.secondary) {
-			lines.push(`- **Secondary:** ${strategy.kpis.secondary}`);
-		}
-	}
-	
-	return lines.join('\n').trim();
 };
 
 export async function POST(req: Request) {
@@ -287,19 +186,20 @@ export async function POST(req: Request) {
 					payload?.strategy_sections ||
 					payload?.strategy_content;
 				
-				// Generate human-readable summary from strategy JSON if not provided
+				// When Make sends the full strategy JSON (strategy_payload), generate the full human-readable summary from it
+				// so the strategy page shows the complete strategy. Only use payload.strategy_summary if no payload or generation fails.
 				let summary = payload?.strategy_summary || payload?.summary;
-				if (!summary && strategyPayload) {
+				if (strategyPayload) {
 					try {
-						const strategyData = typeof strategyPayload === 'string' 
-							? JSON.parse(strategyPayload) 
+						const strategyData = typeof strategyPayload === 'string'
+							? JSON.parse(strategyPayload)
 							: strategyPayload;
-						summary = generateStrategySummary(strategyData);
+						const generated = generateStrategySummary(strategyData);
+						if (generated) summary = generated;
 					} catch (error) {
 						console.warn('Failed to generate strategy summary:', error);
 					}
 				}
-				
 				if (summary) {
 					fields.strategy_summary = summary;
 				}
