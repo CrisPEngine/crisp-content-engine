@@ -666,6 +666,7 @@ export default function OnboardingPage() {
 												<label className="block text-sm font-semibold mb-2">Full name? *</label>
 												<input
 													{...register('personal_full_name')}
+													data-testid="onboarding-personal-full-name"
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
 													placeholder="e.g. Jordan Chen"
 												/>
@@ -679,6 +680,7 @@ export default function OnboardingPage() {
 													<label className="block text-sm font-semibold mb-2">Job title/role *</label>
 													<input
 														{...register('personal_job_title')}
+														data-testid="onboarding-personal-job-title"
 														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
 														placeholder="e.g. Marketing Director"
 													/>
@@ -691,6 +693,7 @@ export default function OnboardingPage() {
 													<label className="block text-sm font-semibold mb-2">Industry *</label>
 													<input
 														{...register('personal_industry')}
+														data-testid="onboarding-personal-industry"
 														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
 														placeholder="e.g. Technology, Finance, Healthcare"
 													/>
@@ -705,6 +708,7 @@ export default function OnboardingPage() {
 												<input
 													type="url"
 													{...register('personal_links')}
+													data-testid="onboarding-personal-website"
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
 													placeholder="https://yourwebsite.com"
 												/>
@@ -718,6 +722,7 @@ export default function OnboardingPage() {
 												<label className="block text-sm font-semibold mb-2">Describe yourself in one sentence *</label>
 												<input
 													{...register('personal_headline')}
+													data-testid="onboarding-personal-headline"
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
 													placeholder="Helping founders scale through data-driven marketing"
 												/>
@@ -730,6 +735,7 @@ export default function OnboardingPage() {
 												<label className="block text-sm font-semibold mb-2">Who is your primary audience? *</label>
 												<textarea
 													{...register('personal_audience')}
+													data-testid="onboarding-personal-audience"
 													rows={3}
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
 													placeholder="Describe your ideal audience"
@@ -743,6 +749,7 @@ export default function OnboardingPage() {
 												<label className="block text-sm font-semibold mb-2">What subjects or themes do you want to post about regularly? *</label>
 												<textarea
 													{...register('personal_expertise')}
+													data-testid="onboarding-personal-expertise"
 													rows={3}
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
 													placeholder="Digital marketing, leadership, productivity, AI tools..."
@@ -756,6 +763,7 @@ export default function OnboardingPage() {
 												<label className="block text-sm font-semibold mb-2">What do you want to achieve with your content? *</label>
 												<textarea
 													{...register('personal_goals')}
+													data-testid="onboarding-personal-goals"
 													rows={3}
 													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
 													placeholder="Grow authority, attract clients, build community..."

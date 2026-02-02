@@ -40,8 +40,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 		}
 
-		// Check if LinkedIn is connected (personal or business)
 		const admin = getSupabaseService();
+
+		// User plan: Creator tier uses Creator Make scenario; other tiers use multichannel Make scenario
+		const { data: subscription } = await supabase
+			.from('subscriptions')
+			.select('plan')
+			.eq('user_id', user.id)
+			.maybeSingle();
+		const plan = (subscription?.plan as 'creator' | 'growth' | 'pro' | 'scale') || 'creator';
+
+		// Check if LinkedIn is connected (personal or business)
 		const { data: linkedInConnections } = await admin
 			.from('social_connections')
 			.select('person_urn, organization_urn, connection_type, brand_profile_id')
@@ -219,59 +228,85 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 			);
 		}
 
-		// Trigger content generation in Make (optional - won't fail if not configured)
-		const MAKE_CONTENT_WEBHOOK_URL = process.env.MAKE_CONTENT_GENERATION_WEBHOOK_URL;
-		if (MAKE_CONTENT_WEBHOOK_URL) {
+		// Trigger content generation: Creator tier → Creator Make scenario; other tiers → multichannel Make scenario
+		if (plan === 'creator') {
+			// Creator tier: call Creator Make scenario (MAKE_CONTENT_GENERATION_WEBHOOK_URL)
+			const MAKE_CONTENT_WEBHOOK_URL = process.env.MAKE_CONTENT_GENERATION_WEBHOOK_URL;
+			if (MAKE_CONTENT_WEBHOOK_URL) {
+				try {
+					const personUrn = linkedInConnection.person_urn || null;
+					const organizationUrn = linkedInConnection.organization_urn || null;
+					const contentPayload = {
+						brand_profile_id: brandProfileId,
+						user_id: user.id,
+						person_urn: personUrn,
+						organization_urn: organizationUrn,
+						brand_type: brandType,
+						strategy_json: strategyJson,
+						strategy_summary: strategySummary,
+						triggered_at: new Date().toISOString(),
+					};
+					const webhookRes = await fetch(MAKE_CONTENT_WEBHOOK_URL, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							...(process.env.MAKE_API_KEY && { 'x-api-key': process.env.MAKE_API_KEY }),
+							...(process.env.MAKE_CONTENT_WEBHOOK_SECRET || process.env.MAKE_SHARED_SECRET ? {
+								'x-make-secret': process.env.MAKE_CONTENT_WEBHOOK_SECRET || process.env.MAKE_SHARED_SECRET,
+							} : {}),
+						},
+						body: JSON.stringify(contentPayload),
+					});
+					if (!webhookRes.ok) {
+						const errorText = await webhookRes.text();
+						console.error('Make content generation webhook failed:', {
+							status: webhookRes.status,
+							error: errorText,
+							payload: contentPayload,
+						});
+					} else {
+						console.log('Content generation webhook triggered successfully (Creator tier)');
+					}
+				} catch (webhookError: any) {
+					console.error('Make content generation webhook error:', webhookError);
+				}
+			} else {
+				console.warn('MAKE_CONTENT_GENERATION_WEBHOOK_URL is not configured. Strategy approved but Creator content webhook was not triggered.');
+			}
+		} else {
+			// Growth / Pro / Scale: use multichannel Make scenario via POST /api/content/generate
+			const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+			const cookieHeader = request.headers.get('cookie') || '';
+			// Default channels for first content after strategy approval (LinkedIn + Blog)
+			const defaultChannels = [
+				{ platform: 'LinkedIn' as const, count: 2 },
+				{ platform: 'Blog' as const, count: 1 },
+			];
 			try {
-				// Determine which URN to use based on connection type
-				const personUrn = linkedInConnection.person_urn || null;
-				const organizationUrn = linkedInConnection.organization_urn || null;
-				
-				const contentPayload = {
-					brand_profile_id: brandProfileId,
-					user_id: user.id,
-					person_urn: personUrn,
-					organization_urn: organizationUrn,
-					brand_type: brandType,
-					strategy_json: strategyJson,
-					strategy_summary: strategySummary,
-					triggered_at: new Date().toISOString(),
-				};
-
-				const webhookRes = await fetch(MAKE_CONTENT_WEBHOOK_URL, {
+				const genRes = await fetch(`${siteUrl}/api/content/generate`, {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json',
-						...(process.env.MAKE_API_KEY && {
-							'x-api-key': process.env.MAKE_API_KEY,
-						}),
-						...(process.env.MAKE_CONTENT_WEBHOOK_SECRET || process.env.MAKE_SHARED_SECRET ? {
-							'x-make-secret': process.env.MAKE_CONTENT_WEBHOOK_SECRET || process.env.MAKE_SHARED_SECRET,
-						} : {}),
+						...(cookieHeader ? { Cookie: cookieHeader } : {}),
 					},
-					body: JSON.stringify(contentPayload),
+					body: JSON.stringify({ brandProfileId, channels: defaultChannels }),
 				});
-
-				if (!webhookRes.ok) {
-					const errorText = await webhookRes.text();
-					console.error('Make content generation webhook failed:', {
-						status: webhookRes.status,
-						statusText: webhookRes.statusText,
-						error: errorText,
-						payload: contentPayload,
+				const genData = await genRes.json().catch(() => ({}));
+				if (!genRes.ok) {
+					console.error('Multichannel content generation (post-approve) failed:', {
+						status: genRes.status,
+						error: genData?.error,
+						plan,
 					});
-					// Still return success to user, but log the error
-					// The webhook might be processing asynchronously
 				} else {
-					console.log('Content generation webhook triggered successfully');
+					console.log('Content generation webhook triggered successfully (multichannel tier)', {
+						plan,
+						generation_job_id: genData?.generation_job_id,
+					});
 				}
-			} catch (webhookError: any) {
-				console.error('Make content generation webhook error:', webhookError);
-				// Log but don't fail the request if webhook fails
-				// The webhook might be processing asynchronously
+			} catch (err: any) {
+				console.error('Multichannel content generation (post-approve) error:', err?.message || err);
 			}
-		} else {
-			console.warn('MAKE_CONTENT_GENERATION_WEBHOOK_URL is not configured. Strategy approved but content generation webhook was not triggered.');
 		}
 
 		return NextResponse.json({
