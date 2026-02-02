@@ -199,8 +199,10 @@ export async function GET(request: Request) {
 		}
 		
 		// Add brand_profile_id filter if provided
+		// brand_profile_id is a linked record field (array), use ARRAYJOIN or direct comparison
 		if (brandProfileId) {
-			filters.push(`FIND("${brandProfileId}", {brand_profile_id})`);
+			// For linked record fields, Airtable stores as array. Use ARRAYJOIN to convert to searchable string.
+			filters.push(`FIND("${brandProfileId}", ARRAYJOIN({brand_profile_id}))`);
 		}
 		
 		// Add status filter
@@ -327,10 +329,13 @@ export async function GET(request: Request) {
 				const title = getField('hook', CONTENTQUEUE_FIELD_IDS.hook) || getField('title') || getField('post_title') || '';
 				const content = getField('post_content', CONTENTQUEUE_FIELD_IDS.post_content) || getField('post_body') || '';
 
+				// Default platform to 'Blog' if empty (for Creator tier content where Make might not set it)
+				const platform = getField('platform', CONTENTQUEUE_FIELD_IDS.platform) || 'Blog';
+				
 				return {
 					id: record.id,
 					title: title || 'Untitled',
-					platform: getField('platform', CONTENTQUEUE_FIELD_IDS.platform) || 'Blog',
+					platform,
 					status: getField('status', CONTENTQUEUE_FIELD_IDS.status) || 'Draft',
 					content_type: getField('content_type') || 'Post',
 					scheduled_date: getField('scheduled_time', CONTENTQUEUE_FIELD_IDS.scheduled_time) || getField('scheduled_date') || null,

@@ -85,15 +85,16 @@ export default function ContentApprovalPage() {
 		loadQuota();
 	}, [supabase, selectedTab, selectedBrandId]); // Reload when tab or brand changes
 
-	// Set initial brand from URL param
+	// Set initial brand from URL param (only once when brands load)
 	useEffect(() => {
+		if (brands.length === 0) return;
+		
 		const brandParam = searchParams.get('brand_profile_id');
 		if (brandParam && brands.some((b) => b.id === brandParam)) {
 			setSelectedBrandId(brandParam);
-		} else if (brands.length > 0 && selectedBrandId === 'all') {
-			// Default to most recent brand (first in list)
-			setSelectedBrandId(brands[0].id);
 		}
+		// If no brand param and selectedBrandId is still 'all', keep it as 'all'
+		// Don't auto-select a brand unless explicitly requested via URL
 	}, [searchParams, brands]);
 
 	// Poll for content if generating
@@ -656,13 +657,13 @@ export default function ContentApprovalPage() {
 			{/* Brand Filter (if user has multiple brands) */}
 			{brands.length > 1 && (
 				<div className="mb-6">
-					<label className="block text-sm font-medium text-text-soft mb-2">
+					<label className="block text-sm font-medium text-text mb-2">
 						Filter by Brand
 					</label>
 					<select
 						value={selectedBrandId}
 						onChange={(e) => setSelectedBrandId(e.target.value)}
-						className="w-full max-w-sm px-4 py-2.5 rounded-xl2 border border-edge/60 bg-surface/30 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+						className="w-full max-w-sm px-4 py-3 rounded-xl2 border-2 border-white/40 bg-surface/50 text-text font-medium focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 shadow-sm"
 					>
 						<option value="all">All Brands</option>
 						{brands.map((brand) => (
