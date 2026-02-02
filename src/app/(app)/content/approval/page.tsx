@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSupabase } from '@/components/SupabaseProvider';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, X, Eye, Calendar, Loader2, Edit2, Save, Clock, Upload, Image as ImageIcon, Copy } from 'lucide-react';
 import { Skeleton, ContentItemSkeleton } from '@/components/skeletons/Skeleton';
@@ -37,11 +37,19 @@ type ContentItem = {
 
 type ChannelTab = 'LinkedIn' | 'X' | 'Meta' | 'Blog';
 
+type BrandOption = {
+	id: string;
+	client_name: string;
+};
+
 export default function ContentApprovalPage() {
 	const supabase = useSupabase();
 	const router = useRouter();
+	const searchParams = useSearchParams();
 	const [loading, setLoading] = useState(true);
 	const [contentItems, setContentItems] = useState<ContentItem[]>([]);
+	const [brands, setBrands] = useState<BrandOption[]>([]);
+	const [selectedBrandId, setSelectedBrandId] = useState<string>('all');
 	const [selectedTab, setSelectedTab] = useState<ChannelTab>('LinkedIn');
 	const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 	const [editingItem, setEditingItem] = useState<string | null>(null);
@@ -64,11 +72,29 @@ export default function ContentApprovalPage() {
 	const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null);
 	const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
+	// Load brands on mount
+	useEffect(() => {
+		if (!supabase) return;
+		loadBrands();
+	}, [supabase]);
+
+	// Load content when brand or tab changes
 	useEffect(() => {
 		if (!supabase) return;
 		loadContent();
 		loadQuota();
-	}, [supabase, selectedTab]); // Reload when tab changes
+	}, [supabase, selectedTab, selectedBrandId]); // Reload when tab or brand changes
+
+	// Set initial brand from URL param
+	useEffect(() => {
+		const brandParam = searchParams.get('brand_profile_id');
+		if (brandParam && brands.some((b) => b.id === brandParam)) {
+			setSelectedBrandId(brandParam);
+		} else if (brands.length > 0 && selectedBrandId === 'all') {
+			// Default to most recent brand (first in list)
+			setSelectedBrandId(brands[0].id);
+		}
+	}, [searchParams, brands]);
 
 	// Poll for content if generating
 	useEffect(() => {
@@ -80,6 +106,21 @@ export default function ContentApprovalPage() {
 
 		return () => clearInterval(pollInterval);
 	}, [isGenerating, supabase]);
+
+	async function loadBrands() {
+		try {
+			const res = await fetch('/api/brands', { cache: 'no-store' });
+			if (!res.ok) throw new Error('Failed to load brands');
+			const data = await res.json();
+			const profiles = (data.profiles || []).map((p: any) => ({
+				id: p.id,
+				client_name: p.client_name || 'Unknown Brand',
+			}));
+			setBrands(profiles);
+		} catch (err: any) {
+			console.error(err);
+		}
+	}
 
 	async function loadQuota() {
 		try {
@@ -107,18 +148,16 @@ export default function ContentApprovalPage() {
 				return;
 			}
 
-			// Check for content_brief_id in URL params for traceability
-			const urlParams = new URLSearchParams(window.location.search);
-			const brandProfileId = urlParams.get('brand_profile_id');
-			const contentBriefId = urlParams.get('content_brief_id');
+			const contentBriefId = searchParams.get('content_brief_id');
 			
 			let apiUrl = '/api/content/queue?stage=approval';
 			
 			// Add platform filter based on selected tab
 			apiUrl += `&platform=${encodeURIComponent(selectedTab)}`;
 			
-			if (brandProfileId) {
-				apiUrl += `&brand_profile_id=${encodeURIComponent(brandProfileId)}`;
+			// Add brand filter if not "all"
+			if (selectedBrandId && selectedBrandId !== 'all') {
+				apiUrl += `&brand_profile_id=${encodeURIComponent(selectedBrandId)}`;
 			}
 			if (contentBriefId) {
 				apiUrl += `&content_brief_id=${encodeURIComponent(contentBriefId)}`;
@@ -613,6 +652,27 @@ export default function ContentApprovalPage() {
 					</div>
 				)}
 			</div>
+
+			{/* Brand Filter (if user has multiple brands) */}
+			{brands.length > 1 && (
+				<div className="mb-6">
+					<label className="block text-sm font-medium text-text-soft mb-2">
+						Filter by Brand
+					</label>
+					<select
+						value={selectedBrandId}
+						onChange={(e) => setSelectedBrandId(e.target.value)}
+						className="w-full max-w-sm px-4 py-2.5 rounded-xl2 border border-edge/60 bg-surface/30 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+					>
+						<option value="all">All Brands</option>
+						{brands.map((brand) => (
+							<option key={brand.id} value={brand.id}>
+								{brand.client_name}
+							</option>
+						))}
+					</select>
+				</div>
+			)}
 
 			{/* Channel Tabs */}
 			<div className="mb-6">

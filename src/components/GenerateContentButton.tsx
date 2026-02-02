@@ -1,9 +1,8 @@
 'use client';
 
-import { useState } from 'react';
 import { Sparkles } from 'lucide-react';
-import { GenerateContentModal } from './GenerateContentModal';
 import { useUsage } from '@/lib/useUsage';
+import Link from 'next/link';
 
 type BrandProfile = {
 	id: string;
@@ -18,7 +17,6 @@ type GenerateContentButtonProps = {
 };
 
 export function GenerateContentButton({ brandProfiles }: GenerateContentButtonProps) {
-	const [modalOpen, setModalOpen] = useState(false);
 	const { data: usageData } = useUsage();
 
 	// Check if user has remaining posts
@@ -45,21 +43,15 @@ export function GenerateContentButton({ brandProfiles }: GenerateContentButtonPr
 							</p>
 						)}
 					</div>
-					<button
-						onClick={() => setModalOpen(true)}
-						className="w-full sm:w-auto px-6 md:px-8 py-3 rounded-xl2 bg-gradient-to-r from-primary/90 to-primary/70 hover:from-primary hover:to-primary/90 text-white font-semibold whitespace-nowrap shadow-lg shadow-primary/20 hover:shadow-xl transition-all flex items-center gap-2"
+					<Link
+						href="/content/generate"
+						className="w-full sm:w-auto px-6 md:px-8 py-3 rounded-xl2 bg-gradient-to-r from-primary/90 to-primary/70 hover:from-primary hover:to-primary/90 text-white font-semibold whitespace-nowrap shadow-lg shadow-primary/20 hover:shadow-xl transition-all flex items-center justify-center gap-2"
 					>
 						<Sparkles className="w-4 h-4" />
 						Generate Content
-					</button>
+					</Link>
 				</div>
 			</div>
-
-			<GenerateContentModal
-				isOpen={modalOpen}
-				onClose={() => setModalOpen(false)}
-				brandProfiles={brandProfiles}
-			/>
 		</>
 	);
 }

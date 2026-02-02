@@ -105,11 +105,19 @@ export default function StrategyReviewPage() {
 				throw new Error(errorMessage);
 			}
 
-			// Wait 5 seconds with button loading, then show interstitial
-			setTimeout(() => {
-				setApproving(false);
-				setShowLoading(true);
-			}, 5000);
+			// Redirect based on plan: Creator → interstitial; non-Creator → content generate page
+			if (data.redirect_to && data.plan !== 'creator') {
+				// Non-Creator: redirect to content generation page
+				setTimeout(() => {
+					router.push(data.redirect_to);
+				}, 1500);
+			} else {
+				// Creator: show loading interstitial as before
+				setTimeout(() => {
+					setApproving(false);
+					setShowLoading(true);
+				}, 5000);
+			}
 		} catch (err: any) {
 			console.error('Failed to approve strategy:', err);
 			setError(err.message || 'Failed to approve strategy. Please try again.');

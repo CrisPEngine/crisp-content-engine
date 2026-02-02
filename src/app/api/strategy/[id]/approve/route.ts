@@ -312,6 +312,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 		return NextResponse.json({
 			ok: true,
 			message: 'Strategy approved. Content generation started.',
+			plan, // Return plan so client knows which flow was used
+			redirect_to: plan === 'creator' ? '/content/approval' : `/content/generate?brand=${brandProfileId}`,
 		});
 	} catch (error: any) {
 		console.error('Strategy approval error:', error);

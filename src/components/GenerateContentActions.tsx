@@ -1,8 +1,6 @@
 'use client';
 
-import { useState } from 'react';
 import { Sparkles, Calendar } from 'lucide-react';
-import { GenerateContentModal } from './GenerateContentModal';
 import { useUsage } from '@/lib/useUsage';
 import Link from 'next/link';
 
@@ -19,7 +17,6 @@ type GenerateContentActionsProps = {
 };
 
 export function GenerateContentActions({ brandProfiles }: GenerateContentActionsProps) {
-	const [modalOpen, setModalOpen] = useState(false);
 	const { data: usageData, loading } = useUsage();
 
 	// Check if user has remaining posts
@@ -63,13 +60,13 @@ export function GenerateContentActions({ brandProfiles }: GenerateContentActions
 								<span className="font-medium text-primary">{remainingPosts}</span> posts remaining this month
 							</p>
 						)}
-						<button
-							onClick={() => setModalOpen(true)}
+						<Link
+							href="/content/generate"
 							className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs flex items-center justify-center gap-1.5"
 						>
 							<Sparkles className="w-3 h-3" />
 							Generate Content
-						</button>
+						</Link>
 					</div>
 
 					{/* Monthly Strategy Update */}
@@ -88,12 +85,6 @@ export function GenerateContentActions({ brandProfiles }: GenerateContentActions
 					</div>
 				</div>
 			</div>
-
-			<GenerateContentModal
-				isOpen={modalOpen}
-				onClose={() => setModalOpen(false)}
-				brandProfiles={brandProfiles}
-			/>
 		</>
 	);
 }
