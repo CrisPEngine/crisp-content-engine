@@ -76,9 +76,14 @@ export default function ContentGeneratePage() {
 		[brands, selectedBrand]
 	);
 
-	const postsRemaining = usageData?.posts_remaining ?? 0;
+	// Calculate remaining posts from caps and usage
+	const postsCap = usageData?.caps?.posts_per_month ?? 0;
+	const postsUsed = usageData?.usage?.posts ?? 0;
+	const isUnlimited = !postsCap || postsCap === 999999 || postsCap >= 999999;
+	const postsRemaining = isUnlimited ? 999999 : Math.max(0, postsCap - postsUsed);
+	
 	const totalRequested = Object.values(quantities).reduce((sum, qty) => sum + qty, 0);
-	const canSubmit = selectedBrand && totalRequested > 0 && totalRequested <= postsRemaining;
+	const canSubmit = selectedBrand && totalRequested > 0 && (isUnlimited || totalRequested <= postsRemaining);
 
 	async function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
