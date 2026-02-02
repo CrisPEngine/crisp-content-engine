@@ -71,6 +71,7 @@ export default function ContentApprovalPage() {
 	const [copySuccess, setCopySuccess] = useState<Record<string, boolean>>({});
 	const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null);
 	const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+	const hasInitializedBrand = useRef(false); // Track if we've set initial brand from URL
 
 	// Load brands on mount
 	useEffect(() => {
@@ -85,16 +86,16 @@ export default function ContentApprovalPage() {
 		loadQuota();
 	}, [supabase, selectedTab, selectedBrandId]); // Reload when tab or brand changes
 
-	// Set initial brand from URL param (only once when brands load)
+	// Set initial brand from URL param (only once when brands first load)
 	useEffect(() => {
-		if (brands.length === 0) return;
+		if (brands.length === 0 || hasInitializedBrand.current) return;
 		
 		const brandParam = searchParams.get('brand_profile_id');
 		if (brandParam && brands.some((b) => b.id === brandParam)) {
 			setSelectedBrandId(brandParam);
 		}
-		// If no brand param and selectedBrandId is still 'all', keep it as 'all'
-		// Don't auto-select a brand unless explicitly requested via URL
+		hasInitializedBrand.current = true; // Mark as initialized
+		// After this runs once, manual selections won't be overridden
 	}, [searchParams, brands]);
 
 	// Poll for content if generating
