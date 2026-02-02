@@ -112,6 +112,19 @@ export default function ContentApprovalPage() {
 		return () => clearInterval(pollInterval);
 	}, [isGenerating, supabase]);
 
+	function handleBrandChange(brandId: string) {
+		setSelectedBrandId(brandId);
+		// Update URL to persist selection across re-renders and page refreshes
+		const params = new URLSearchParams(searchParams.toString());
+		if (brandId === 'all') {
+			params.delete('brand_profile_id');
+		} else {
+			params.set('brand_profile_id', brandId);
+		}
+		const qs = params.toString();
+		router.replace(`/content/approval${qs ? `?${qs}` : ''}`, { scroll: false });
+	}
+
 	async function loadBrands() {
 		try {
 			const res = await fetch('/api/brands', { cache: 'no-store' });
@@ -666,7 +679,7 @@ export default function ContentApprovalPage() {
 					</label>
 					<select
 						value={selectedBrandId}
-						onChange={(e) => setSelectedBrandId(e.target.value)}
+						onChange={(e) => handleBrandChange(e.target.value)}
 						className="w-full max-w-sm px-4 py-3 rounded-xl2 border-2 border-white/40 bg-surface/50 text-text font-medium focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 shadow-sm"
 					>
 						<option value="all">All Brands</option>

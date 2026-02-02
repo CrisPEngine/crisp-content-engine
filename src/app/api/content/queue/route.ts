@@ -303,8 +303,8 @@ export async function GET(request: Request) {
 				const getField = (fieldName: string, fieldId?: string) => getFieldValue(fields, fieldId, fieldName);
 				
 				// Extract brand_profile_id - could be a link field (array) or string
-				// With returnFieldsByFieldId=true, we need to check both ID and name
-				const brandProfileIdField = getField('brand_profile_id');
+				// CRITICAL: Must pass field ID - with returnFieldsByFieldId=true, fields are keyed by ID
+				const brandProfileIdField = getField('brand_profile_id', CONTENTQUEUE_FIELD_IDS.brand_profile_id);
 				let brandProfileId: string | null = null;
 				if (brandProfileIdField) {
 					if (Array.isArray(brandProfileIdField)) {
