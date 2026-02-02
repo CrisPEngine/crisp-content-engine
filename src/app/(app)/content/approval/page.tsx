@@ -87,16 +87,19 @@ export default function ContentApprovalPage() {
 	}, [supabase, selectedTab, selectedBrandId]); // Reload when tab or brand changes
 
 	// Set initial brand from URL param (only once when brands first load)
+	// Extract the param value outside the effect to avoid searchParams reference changes
+	const brandParamFromUrl = searchParams.get('brand_profile_id');
+	
 	useEffect(() => {
 		if (brands.length === 0 || hasInitializedBrand.current) return;
 		
-		const brandParam = searchParams.get('brand_profile_id');
-		if (brandParam && brands.some((b) => b.id === brandParam)) {
-			setSelectedBrandId(brandParam);
+		if (brandParamFromUrl && brands.some((b) => b.id === brandParamFromUrl)) {
+			setSelectedBrandId(brandParamFromUrl);
 		}
 		hasInitializedBrand.current = true; // Mark as initialized
 		// After this runs once, manual selections won't be overridden
-	}, [searchParams, brands]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [brands]); // Only depend on brands, not searchParams
 
 	// Poll for content if generating
 	useEffect(() => {
