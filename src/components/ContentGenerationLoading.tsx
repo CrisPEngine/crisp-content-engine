@@ -30,6 +30,8 @@ type ContentGenerationLoadingProps = {
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLLS = 120; // 10 minutes max
 const ESCAPE_HATCH_AFTER_POLLS = 18; // Show "Close anyway" after ~90 seconds
+const MIN_DISPLAY_MS = 20000; // Keep loading screen at least 20s so Make has time; user sees progress
+const POST_COMPLETE_DELAY_MS = 2500; // Show "complete" state briefly before redirecting
 
 export function ContentGenerationLoading({ 
 	onComplete, 
@@ -41,6 +43,9 @@ export function ContentGenerationLoading({
 	const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
 	const [isComplete, setIsComplete] = useState(false);
 	const [showEscapeHatch, setShowEscapeHatch] = useState(false);
+	const minDisplayReached = useRef(false);
+	const contentReadyRef = useRef(false);
+	const intervalIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
 	// Keep latest poll/onComplete in refs so effect runs once and doesn't reset interval on re-render
 	const pollRef = useRef(pollForCompletion);
@@ -48,38 +53,63 @@ export function ContentGenerationLoading({
 	pollRef.current = pollForCompletion;
 	onCompleteRef.current = onComplete;
 
+	const runCompletion = useRef(() => {
+		if (intervalIdRef.current) {
+			clearInterval(intervalIdRef.current);
+			intervalIdRef.current = null;
+		}
+		setCompletedSteps((prev) => new Set([...prev, 'complete']));
+		setCurrentStep(4);
+		setIsComplete(true);
+		setTimeout(() => onCompleteRef.current?.(), POST_COMPLETE_DELAY_MS);
+	});
+
 	useEffect(() => {
-		// Simulate step progression
+		// Simulate step progression over ~18 seconds so user sees progress while Make runs
 		const timers: NodeJS.Timeout[] = [];
 
-		// Step 1: Approve (immediate)
+		// Step 1: Approve (1s)
 		timers.push(
 			setTimeout(() => {
 				setCompletedSteps((prev) => new Set([...prev, 'approve']));
 				setCurrentStep(1);
-			}, 500)
+			}, 1000)
 		);
 
-		// Step 2: Generate (2-3 seconds)
+		// Step 2: Generate (6s) – "AI generating content" stays visible longer
 		timers.push(
 			setTimeout(() => {
 				setCompletedSteps((prev) => new Set([...prev, 'generate']));
 				setCurrentStep(2);
-			}, 2500)
+			}, 6000)
 		);
 
-		// Step 3: Schedule (1-2 seconds)
+		// Step 3: Schedule (12s)
 		timers.push(
 			setTimeout(() => {
 				setCompletedSteps((prev) => new Set([...prev, 'schedule']));
 				setCurrentStep(3);
-			}, 4000)
+			}, 12000)
+		);
+
+		// Enforce minimum display time, then complete if content already ready
+		timers.push(
+			setTimeout(() => {
+				minDisplayReached.current = true;
+				if (contentReadyRef.current) {
+					runCompletion.current();
+				}
+			}, MIN_DISPLAY_MS)
 		);
 
 		// Poll for completion if pollForCompletion is provided
 		if (pollForCompletion) {
 			let pollCount = 0;
-			let intervalId: ReturnType<typeof setInterval> | null = null;
+
+			const tryComplete = () => {
+				if (!contentReadyRef.current || !minDisplayReached.current) return;
+				runCompletion.current();
+			};
 
 			const tick = async () => {
 				pollCount++;
@@ -89,40 +119,29 @@ export function ContentGenerationLoading({
 
 				try {
 					const completed = await (pollRef.current?.() ?? Promise.resolve(false));
-					if (completed && intervalId) {
-						clearInterval(intervalId);
-						intervalId = null;
-						setCompletedSteps((prev) => new Set([...prev, 'complete']));
-						setCurrentStep(4);
-						setIsComplete(true);
-						setTimeout(() => onCompleteRef.current?.(), 1500);
+					if (completed) {
+						contentReadyRef.current = true;
+						tryComplete();
 						return;
 					}
 				} catch (error) {
 					console.error('Error polling for completion:', error);
 				}
 
-				if (pollCount >= MAX_POLLS && intervalId) {
-					clearInterval(intervalId);
-					intervalId = null;
-					setCompletedSteps((prev) => new Set([...prev, 'complete']));
-					setCurrentStep(4);
-					setIsComplete(true);
-					setTimeout(() => onCompleteRef.current?.(), 1500);
+				if (pollCount >= MAX_POLLS) {
+					runCompletion.current();
 				}
 			};
 
-			intervalId = setInterval(tick, POLL_INTERVAL_MS);
-			timers.push(intervalId);
+			const id = setInterval(tick, POLL_INTERVAL_MS);
+			intervalIdRef.current = id;
+			timers.push(id);
 		} else {
-			// Fallback: Complete after 5 seconds if no polling function
+			// Fallback: show for minimum time then complete
 			timers.push(
 				setTimeout(() => {
-					setCompletedSteps((prev) => new Set([...prev, 'complete']));
-					setCurrentStep(4);
-					setIsComplete(true);
-					setTimeout(() => onCompleteRef.current?.(), 1000);
-				}, 5000)
+					runCompletion.current();
+				}, MIN_DISPLAY_MS + 1000)
 			);
 		}
 
@@ -134,6 +153,7 @@ export function ContentGenerationLoading({
 					clearInterval(timer);
 				}
 			});
+			intervalIdRef.current = null;
 		};
 	}, []); // Run once; we use refs for latest callbacks
 
@@ -153,7 +173,7 @@ export function ContentGenerationLoading({
 						<Sparkles className="w-12 h-12 text-primary" />
 					</motion.div>
 					<h2 className="text-2xl font-semibold mb-2">Creating Your Content</h2>
-					<p className="text-text-dim text-sm">This will take just a moment...</p>
+					<p className="text-text-dim text-sm">This usually takes 20–60 seconds. We’ll take you to the content when it’s ready.</p>
 				</div>
 
 				{showEscapeHatch && !isComplete && (

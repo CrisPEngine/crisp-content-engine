@@ -120,6 +120,22 @@ export default function ContentGeneratePage() {
 		}
 	}
 
+	async function pollForCompletion(): Promise<boolean> {
+		if (!selectedBrand) return false;
+		try {
+			const res = await fetch(
+				`/api/content/queue?stage=approval&brand_profile_id=${selectedBrand}`,
+				{ cache: 'no-store' }
+			);
+			if (!res.ok) return false;
+			const data = await res.json();
+			const items = Array.isArray(data.items) ? data.items : [];
+			return items.length > 0;
+		} catch {
+			return false;
+		}
+	}
+
 	function handleContentGenerationComplete() {
 		router.push(`/content/approval?brand_profile_id=${selectedBrand}`);
 	}
@@ -128,6 +144,7 @@ export default function ContentGeneratePage() {
 		return (
 			<ContentGenerationLoading
 				onComplete={handleContentGenerationComplete}
+				pollForCompletion={pollForCompletion}
 				brandProfileId={selectedBrand}
 			/>
 		);
