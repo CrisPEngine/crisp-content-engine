@@ -231,7 +231,7 @@ async function publishJob(
 				throw new Error(result.error || 'Instagram publish failed');
 			}
 
-			remotePostId = result.mediaId || '';
+			remotePostId = result.postId || '';
 		} else {
 			throw new Error(`Unsupported platform: ${platform}`);
 		}
