@@ -76,6 +76,7 @@ export default function ContentApprovalPage() {
 	const [imageUploadSuccess, setImageUploadSuccess] = useState<Record<string, boolean>>({});
 	const [copySuccess, setCopySuccess] = useState<Record<string, boolean>>({});
 	const [copyContentSuccess, setCopyContentSuccess] = useState<Record<string, boolean>>({});
+	const [expandedImagePrompts, setExpandedImagePrompts] = useState<Set<string>>(new Set());
 	const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null);
 	const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 	const hasInitializedBrand = useRef(false); // Track if we've set initial brand from URL
@@ -349,6 +350,19 @@ export default function ContentApprovalPage() {
 			return title ? `${title}\n\n${body}` : body;
 		}
 		return item.content || '';
+	}
+
+	/** Toggle image prompt expanded/collapsed */
+	function toggleImagePrompt(itemId: string) {
+		setExpandedImagePrompts((prev) => {
+			const next = new Set(prev);
+			if (next.has(itemId)) {
+				next.delete(itemId);
+			} else {
+				next.add(itemId);
+			}
+			return next;
+		});
 	}
 
 	async function bulkApprove() {
@@ -1067,15 +1081,18 @@ export default function ContentApprovalPage() {
 											</div>
 										)}
 
-										{/* Suggested Image Prompt */}
+										{/* Suggested Image Prompt - Collapsible */}
 										{item.image_prompt && (
-											<div className="text-xs text-text-dim break-words">
+											<div className="text-xs text-text-dim">
 												<div className="flex items-center gap-2 mb-1">
 													<span className="font-medium">Suggested image prompt:</span>
 													<button
 														type="button"
-														onClick={() => copyImagePrompt(item.id, item.image_prompt || '')}
-														className="group inline-flex items-center justify-center rounded-md border border-edge/60 bg-surface/30 p-1 text-text-soft hover:bg-surface/50"
+														onClick={(e) => {
+															e.stopPropagation();
+															copyImagePrompt(item.id, item.image_prompt || '');
+														}}
+														className="group relative inline-flex items-center justify-center rounded-md border border-edge/60 bg-surface/30 p-1 text-text-soft hover:bg-surface/50"
 														aria-label="Copy image prompt"
 													>
 														{copySuccess[item.id] ? (
@@ -1084,12 +1101,46 @@ export default function ContentApprovalPage() {
 															<Copy className="w-3 h-3" />
 														)}
 														<span className="sr-only">Copy image prompt</span>
-														<span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 rounded-md border border-edge/60 bg-surface/90 px-2 py-1 text-[10px] text-text-soft opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+														<span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 rounded-md border border-edge/60 bg-surface/90 px-2 py-1 text-[10px] text-text-soft opacity-0 shadow-sm transition-opacity group-hover:opacity-100 whitespace-nowrap">
 															Copy image prompt
 														</span>
 													</button>
 												</div>
-												<div className="break-all">{item.image_prompt}</div>
+												{/* Collapsible prompt text */}
+												<div 
+													className="relative cursor-pointer hover:opacity-80 transition-opacity"
+													onClick={(e) => {
+														e.stopPropagation();
+														toggleImagePrompt(item.id);
+													}}
+												>
+													{expandedImagePrompts.has(item.id) ? (
+														// Expanded: show full text
+														<div className="break-words whitespace-pre-wrap">
+															{item.image_prompt}
+														</div>
+													) : (
+														// Collapsed: show 3 lines with fade
+														<>
+															<div 
+																className="break-words"
+																style={{
+																	display: '-webkit-box',
+																	WebkitLineClamp: 3,
+																	WebkitBoxOrient: 'vertical',
+																	overflow: 'hidden',
+																	maxHeight: '4.5rem',
+																}}
+															>
+																{item.image_prompt}
+															</div>
+															<div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-bg to-transparent pointer-events-none" />
+														</>
+													)}
+													<div className="mt-1 text-[10px] text-text-dim italic">
+														{expandedImagePrompts.has(item.id) ? 'Click to collapse' : 'Click to expand'}
+													</div>
+												</div>
 											</div>
 										)}
 									</div>
