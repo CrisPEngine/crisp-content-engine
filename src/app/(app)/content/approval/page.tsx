@@ -7,6 +7,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Check, X, Eye, Calendar, Loader2, Edit2, Save, Clock, Upload, Image as ImageIcon, Copy } from 'lucide-react';
 import { Skeleton, ContentItemSkeleton } from '@/components/skeletons/Skeleton';
 
+// Check if Meta publishing is enabled (client-side)
+const isMetaPublishingEnabled = () => {
+	if (typeof window === 'undefined') return false;
+	return process.env.NEXT_PUBLIC_META_PUBLISHING_ENABLED === 'true';
+};
+
 type ContentItem = {
 	id: string;
 	title: string;
@@ -69,14 +75,27 @@ export default function ContentApprovalPage() {
 	const [imageUploadError, setImageUploadError] = useState<Record<string, string>>({});
 	const [imageUploadSuccess, setImageUploadSuccess] = useState<Record<string, boolean>>({});
 	const [copySuccess, setCopySuccess] = useState<Record<string, boolean>>({});
+	const [copyContentSuccess, setCopyContentSuccess] = useState<Record<string, boolean>>({});
 	const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null);
 	const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 	const hasInitializedBrand = useRef(false); // Track if we've set initial brand from URL
+	
+	// Meta connection state
+	const [metaConnected, setMetaConnected] = useState<boolean>(false);
+	const [metaSelectedPage, setMetaSelectedPage] = useState<string | null>(null);
+	const [metaSelectedInstagram, setMetaSelectedInstagram] = useState<string | null>(null);
+	const [metaStatusLoading, setMetaStatusLoading] = useState<boolean>(false);
 
 	// Load brands on mount
 	useEffect(() => {
 		if (!supabase) return;
 		loadBrands();
+	}, [supabase]);
+
+	// Load Meta connection status on mount (if feature flag enabled)
+	useEffect(() => {
+		if (!supabase || !isMetaPublishingEnabled()) return;
+		loadMetaStatus();
 	}, [supabase]);
 
 	// Load content when brand or tab changes
@@ -149,6 +168,25 @@ export default function ContentApprovalPage() {
 			}
 		} catch (err) {
 			console.error('Failed to load quota:', err);
+		}
+	}
+
+	async function loadMetaStatus() {
+		if (!isMetaPublishingEnabled()) return;
+		
+		setMetaStatusLoading(true);
+		try {
+			const res = await fetch('/api/meta/status', { cache: 'no-store', credentials: 'include' });
+			if (res.ok) {
+				const data = await res.json();
+				setMetaConnected(data.connected || false);
+				setMetaSelectedPage(data.selectedPage?.pageName || null);
+				setMetaSelectedInstagram(data.selectedInstagram?.igUsername || null);
+			}
+		} catch (err) {
+			console.error('Failed to load Meta status:', err);
+		} finally {
+			setMetaStatusLoading(false);
 		}
 	}
 
@@ -283,6 +321,34 @@ export default function ContentApprovalPage() {
 		} catch (error) {
 			console.error('Failed to copy image prompt:', error);
 		}
+	}
+
+	/** Copy full post or article text to clipboard (X export-only, Blog export-only) */
+	async function copyContentToClipboard(itemId: string, text: string) {
+		try {
+			await navigator.clipboard.writeText(text);
+			setCopyContentSuccess((prev) => ({ ...prev, [itemId]: true }));
+			setTimeout(() => {
+				setCopyContentSuccess((prev) => ({ ...prev, [itemId]: false }));
+			}, 1500);
+		} catch (error) {
+			console.error('Failed to copy content:', error);
+		}
+	}
+
+	/** Full text to copy for X (post + hashtags) or Blog (title + content) */
+	function getCopyableContent(item: ContentItem): string {
+		if (item.platform === 'X') {
+			const post = item.content || '';
+			const hashtags = item.hashtags || '';
+			return hashtags ? `${post}\n\n${hashtags}` : post;
+		}
+		if (item.platform === 'Blog') {
+			const title = item.title || '';
+			const body = item.content || '';
+			return title ? `${title}\n\n${body}` : body;
+		}
+		return item.content || '';
 	}
 
 	async function bulkApprove() {
@@ -714,6 +780,18 @@ export default function ContentApprovalPage() {
 				</div>
 			</div>
 
+			{/* Export-only notice when viewing X or Blog */}
+			{selectedTab === 'X' && (
+				<div className="mb-4 px-4 py-3 rounded-xl2 bg-warning/10 border border-warning/30 text-warning text-sm">
+					X posts are currently export-only. Copy and publish these to your account manually.
+				</div>
+			)}
+			{selectedTab === 'Blog' && (
+				<div className="mb-4 px-4 py-3 rounded-xl2 bg-warning/10 border border-warning/30 text-warning text-sm">
+					Blog posts are currently export-only. Copy and publish to your blog manually.
+				</div>
+			)}
+
 			{/* Status Summary */}
 			{contentItems.length > 0 && (
 				<div className="card p-4 mb-4 grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -870,6 +948,37 @@ export default function ContentApprovalPage() {
 											</div>
 										)}
 
+										{/* Meta Connection CTA - Show if Facebook or Instagram and not connected */}
+										{isMetaPublishingEnabled() && (item.platform === 'Facebook' || item.platform === 'Instagram') && !metaConnected && item.status !== 'Ready To Publish' && item.status !== 'Published' && (
+											<div className="px-3 py-2 rounded-lg bg-primary/10 border border-primary/30 text-primary text-xs flex items-center justify-between">
+												<span>🔗 Connect Meta to publish to {item.platform}</span>
+												<a 
+													href="/connections"
+													className="ml-2 px-2 py-1 rounded-md bg-primary/20 hover:bg-primary/30 font-medium text-xs"
+												>
+													Connect
+												</a>
+											</div>
+										)}
+
+										{/* Meta Connection Status - Show if connected */}
+										{isMetaPublishingEnabled() && (item.platform === 'Facebook' || item.platform === 'Instagram') && metaConnected && item.status !== 'Ready To Publish' && item.status !== 'Published' && (
+											<div className="px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs">
+												{item.platform === 'Facebook' && metaSelectedPage && (
+													<span>✓ Publishing to Facebook Page: {metaSelectedPage}</span>
+												)}
+												{item.platform === 'Facebook' && !metaSelectedPage && (
+													<span>⚠️ No Facebook Page selected. <a href="/connections" className="underline">Select one</a></span>
+												)}
+												{item.platform === 'Instagram' && metaSelectedInstagram && (
+													<span>✓ Publishing to Instagram: @{metaSelectedInstagram}</span>
+												)}
+												{item.platform === 'Instagram' && !metaSelectedInstagram && (
+													<span>⚠️ No Instagram account selected. <a href="/connections" className="underline">Select one</a></span>
+												)}
+											</div>
+										)}
+
 										{/* Status Badge - Show prominently if Ready To Publish or Published */}
 										{item.status === 'Ready To Publish' && (
 											<div className="flex items-center gap-2">
@@ -925,6 +1034,31 @@ export default function ContentApprovalPage() {
 											</div>
 											<div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-bg to-transparent pointer-events-none" />
 										</div>
+
+										{/* Copy post/article (X and Blog export-only) */}
+										{(item.platform === 'X' || item.platform === 'Blog') && (
+											<div className="flex items-center gap-2 mt-2">
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														copyContentToClipboard(item.id, getCopyableContent(item));
+													}}
+													className="inline-flex items-center gap-1.5 rounded-md border border-edge/60 bg-surface/30 px-2 py-1.5 text-xs font-medium text-text-soft hover:bg-surface/50"
+													aria-label={item.platform === 'X' ? 'Copy post' : 'Copy article'}
+												>
+													{copyContentSuccess[item.id] ? (
+														<Check className="w-3 h-3 text-accent" />
+													) : (
+														<Copy className="w-3 h-3" />
+													)}
+													{item.platform === 'X' ? 'Copy post' : 'Copy article'}
+												</button>
+												{copyContentSuccess[item.id] && (
+													<span className="text-xs text-accent">Copied</span>
+												)}
+											</div>
+										)}
 
 										{/* Hashtags */}
 										{item.hashtags && (

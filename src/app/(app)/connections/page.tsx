@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { AuthLoadingHandler } from '@/components/AuthLoadingHandler';
 import Link from 'next/link';
+import { isMetaPublishingEnabledClient } from '@/lib/featureFlags';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -131,6 +132,106 @@ function LinkedInCard({
 	);
 }
 
+function MetaCard({
+	connected,
+	selectedPage,
+	selectedInstagram,
+	tokenExpiresAt,
+}: {
+	connected: boolean;
+	selectedPage?: { pageId: string; pageName: string } | null;
+	selectedInstagram?: { igUserId: string; igUsername: string } | null;
+	tokenExpiresAt?: string | null;
+}) {
+	const connectHref = '/api/meta/oauth/start';
+	
+	// Check if token is expiring soon (within 7 days)
+	const expiringSoon = tokenExpiresAt ? (new Date(tokenExpiresAt).getTime() - Date.now()) < (7 * 24 * 60 * 60 * 1000) : false;
+
+	return (
+		<div className="card p-6 space-y-4">
+			<div className="flex items-center justify-between">
+				<div className="flex items-center gap-3">
+					<span className="text-4xl">📱</span>
+					<div>
+						<h2 className="text-xl font-semibold">Meta (Facebook & Instagram)</h2>
+						<p className="text-sm text-text-dim">Publish to Facebook Pages and Instagram Business accounts.</p>
+					</div>
+				</div>
+				{connected && (
+					<div className="text-xs px-2 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300">
+						Connected
+					</div>
+				)}
+			</div>
+
+			{connected ? (
+				<div className="space-y-3">
+					<div className="text-sm space-y-3">
+						{selectedPage && (
+							<div className="flex items-start gap-2">
+								<span className="text-blue-400">📘</span>
+								<div>
+									<div className="font-medium">Facebook Page</div>
+									<div className="text-text-dim text-xs">{selectedPage.pageName}</div>
+								</div>
+							</div>
+						)}
+						{selectedInstagram && (
+							<div className="flex items-start gap-2">
+								<span className="text-pink-400">📷</span>
+								<div>
+									<div className="font-medium">Instagram Business</div>
+									<div className="text-text-dim text-xs">@{selectedInstagram.igUsername}</div>
+								</div>
+							</div>
+						)}
+						{!selectedPage && !selectedInstagram && (
+							<div className="text-text-dim text-xs italic">No destinations selected yet.</div>
+						)}
+					</div>
+					{expiringSoon && (
+						<div className="p-3 rounded-xl2 bg-warning/10 border border-warning/30">
+							<p className="text-warning text-sm font-medium mb-1">⚠️ Reconnection required</p>
+							<p className="text-warning/90 text-sm mb-2">
+								Your Meta connection is expiring soon. To allow publishing to continue, please disconnect and reconnect your account.
+							</p>
+						</div>
+					)}
+					<div className="p-3 rounded-xl2 bg-blue-500/10 border border-blue-500/20 text-sm text-text-dim">
+						<strong className="text-text">Phase 1:</strong> CRISP publishes to one Facebook Page and one Instagram account per workspace. 
+						Change your selections by disconnecting and reconnecting.
+					</div>
+				</div>
+			) : (
+				<p className="text-sm text-text-dim">
+					Connect your Meta account to publish content to your Facebook Page and Instagram Business account directly from CRISP.
+				</p>
+			)}
+
+			<div className="flex gap-3">
+				{connected ? (
+					<form action="/api/meta/disconnect" method="post">
+						<button
+							type="submit"
+							className="px-4 py-2 rounded-xl2 border border-danger/40 bg-danger/10 hover:bg-danger/20 text-sm"
+						>
+							Disconnect
+						</button>
+					</form>
+				) : (
+					<a
+						href={connectHref}
+						className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm"
+					>
+						Connect Meta Account
+					</a>
+				)}
+			</div>
+		</div>
+	);
+}
+
 export default async function ConnectionsPage({ searchParams }: { searchParams: Promise<{ error?: string; details?: string; connected?: string; reauth?: string; auth?: string }> }) {
 	const supabase = await createClient();
 	const params = await searchParams;
@@ -196,6 +297,57 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 
 	const personalConnection = memberConnection || null;
 	const businessConnection = organizationConnection || null;
+
+	// Fetch Meta connection status (if feature flag enabled)
+	let metaStatus: {
+		connected: boolean;
+		selectedPage?: { pageId: string; pageName: string } | null;
+		selectedInstagram?: { igUserId: string; igUsername: string } | null;
+		tokenExpiresAt?: string | null;
+	} = { connected: false };
+
+	if (isMetaPublishingEnabledClient()) {
+		const { data: metaConnection } = await admin
+			.from('meta_connections')
+			.select('facebook_user_id, token_expires_at')
+			.eq('user_id', user.id)
+			.maybeSingle();
+
+		if (metaConnection) {
+			metaStatus.connected = true;
+			metaStatus.tokenExpiresAt = metaConnection.token_expires_at;
+
+			// Fetch selected page
+			const { data: selectedPage } = await admin
+				.from('meta_pages')
+				.select('page_id, page_name')
+				.eq('user_id', user.id)
+				.eq('is_selected', true)
+				.maybeSingle();
+
+			if (selectedPage) {
+				metaStatus.selectedPage = {
+					pageId: selectedPage.page_id,
+					pageName: selectedPage.page_name,
+				};
+			}
+
+			// Fetch selected Instagram account
+			const { data: selectedIg } = await admin
+				.from('meta_instagram_accounts')
+				.select('ig_user_id, ig_username')
+				.eq('user_id', user.id)
+				.eq('is_selected', true)
+				.maybeSingle();
+
+			if (selectedIg) {
+				metaStatus.selectedInstagram = {
+					igUserId: selectedIg.ig_user_id,
+					igUsername: selectedIg.ig_username,
+				};
+			}
+		}
+	}
 
 	const personalStatus = {
 		connected: Boolean(personalConnection?.brand_profile_id) || (connected === 'linkedin' && Boolean(personalConnection?.brand_profile_id)),
@@ -280,6 +432,8 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 
 			<LinkedInCard {...personalStatus} expiringSoon={personalExpiring} />
 			<LinkedInCard {...businessStatus} expiringSoon={businessExpiring} />
+
+			{isMetaPublishingEnabledClient() && <MetaCard {...metaStatus} />}
 
 			<div className="card p-6 bg-primary/5 border-primary/20">
 				<h2 className="font-semibold mb-2">How it works</h2>
