@@ -206,18 +206,32 @@ async function publishJob(
 
 		if (platform === 'facebook') {
 			// Always immediate publish. Cron handles all timing.
-			remotePostId = await publishToFacebookPage(
-				target_id,
-				accessToken,
-				text,
-				imageUrl || undefined,
-				undefined
-			);
+			const result = await publishToFacebookPage(target_id, accessToken, {
+				message: text,
+				imageUrl: imageUrl || undefined,
+				scheduledTime: undefined, // No Facebook scheduled_publish_time; cron does timing
+			});
+
+			if (!result.success) {
+				throw new Error(result.error || 'Facebook publish failed');
+			}
+
+			remotePostId = result.postId || '';
 		} else if (platform === 'instagram') {
 			if (!imageUrl) {
 				throw new Error('Instagram requires an image');
 			}
-			remotePostId = await publishToInstagram(target_id, accessToken, imageUrl, text);
+
+			const result = await publishToInstagram(target_id, accessToken, {
+				imageUrl,
+				caption: text,
+			});
+
+			if (!result.success) {
+				throw new Error(result.error || 'Instagram publish failed');
+			}
+
+			remotePostId = result.mediaId || '';
 		} else {
 			throw new Error(`Unsupported platform: ${platform}`);
 		}
