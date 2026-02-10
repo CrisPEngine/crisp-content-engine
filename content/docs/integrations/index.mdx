@@ -1,0 +1,33 @@
+---
+title: Integrations
+description: How CRISP integrates with Airtable, Make.com, Cloudinary, and platform APIs.
+section: Integrations
+order: 1
+---
+
+CRISP Content Engine integrates with a small number of best-in-class services to keep the product fast, reliable, and secure.
+
+## Who this page is for
+
+- Operators setting up CRISP for a workspace
+- Developers/support debugging data flow across systems
+
+## Integration model (high level)
+
+- **Airtable**: editorial content records
+- **Make.com**: workflow orchestration for generation and callbacks
+- **Cloudinary**: image hosting (and required media URLs for platforms)
+- **Platform APIs**: publishing connections and publishing workers
+
+## Constraints and edge cases
+
+- Secrets (API keys, cron secrets, token encryption keys) must live in environment variables.
+- Webhook payloads must stay stable for Make.com scenarios to remain reliable.
+
+## Related docs
+
+- Airtable: [Airtable integration](/docs/integrations/airtable)
+- Cloudinary: [Cloudinary and images](/docs/integrations/cloudinary)
+- Make.com: [Make.com and webhooks](/docs/integrations/make)
+- Security & privacy: [Security & privacy](/docs/security-and-privacy)
+

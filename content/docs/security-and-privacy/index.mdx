@@ -1,0 +1,65 @@
+---
+title: Security & privacy
+description: How CRISP handles tokens, data boundaries, encryption, retention, and deletion.
+section: Security & Privacy
+order: 1
+---
+
+CRISP Content Engine is designed to be safe-by-default: minimize sensitive data exposure, encrypt tokens, and keep publishing deterministic.
+
+## Who this page is for
+
+- Security-minded customers evaluating CRISP
+- Operators configuring integrations and environment variables
+- Platform reviewers (Meta / LinkedIn) validating data handling patterns
+
+## Data architecture (high level)
+
+CRISP uses multiple systems with clear responsibilities:
+
+- **Airtable**: content records and editorial fields (human-visible)
+- **Supabase (Postgres)**: connections, encrypted tokens, publishing jobs, job state
+- **Make.com**: content generation workflow engine (webhook-driven)
+- **Cloudinary**: image hosting and transformation
+
+## Token storage and encryption
+
+- Platform access tokens are stored server-side.
+- Tokens are **encrypted at rest** when stored (example: Meta uses `META_TOKEN_ENCRYPTION_KEY`).
+- Tokens and platform IDs are **not written to Airtable** (especially Meta).
+
+<Callout type="warning" title="Publishing source of truth">
+When publishing, CRISP uses the stored job payload (e.g. `publish_jobs.payload_json`) rather than re-reading Airtable at publish time.
+</Callout>
+
+## Airtable vs Supabase responsibilities
+
+- Airtable supports the editorial workflow (drafts, approval, metadata).
+- Supabase is the operational system for:
+  - Connection state
+  - Destination selection
+  - Publish job queue + retries + immutable publish payloads
+
+## Data retention and deletion
+
+- Disconnecting a platform removes connection records and invalidates future jobs.
+- Meta requires a dedicated **data deletion callback** endpoint; CRISP implements this as part of the Meta integration.
+
+## Subprocessors and third-party services
+
+Common third parties used by CRISP include:
+
+- Supabase (auth + database)
+- Airtable (content tables)
+- Make.com (automation/workflows)
+- Cloudinary (image hosting)
+- Vercel (hosting)
+- Stripe (billing)
+- Resend (transactional email)
+- Platform APIs (LinkedIn, Meta)
+
+## Related docs
+
+- Integrations: [Integrations](/docs/integrations)
+- Meta publishing: [Meta publishing](/docs/publishing/meta)
+

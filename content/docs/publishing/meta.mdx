@@ -1,0 +1,72 @@
+---
+title: Meta publishing (Facebook + Instagram)
+description: Phase 1 Meta publishing is feature-flag gated and uses encrypted tokens + cron-based workers.
+section: Publishing
+order: 3
+---
+
+Meta publishing (Facebook Pages + Instagram Business accounts) is supported in CRISP Content Engine **behind a feature flag**. It is designed to be review-friendly: clear permissions, encrypted token storage, and explicit data deletion handling.
+
+## Who this page is for
+
+- Operators preparing Meta app setup and App Review
+- Internal testers validating Phase 1 Meta publishing
+- Support/admins troubleshooting Meta publishing jobs
+
+## What’s included in Phase 1
+
+- OAuth connection flow (Facebook user → Pages → Instagram Business discovery)
+- Selection of **one** default Facebook Page and **one** default Instagram account
+- Cron worker publishes due jobs to Facebook/Instagram
+- Data deletion callback endpoint for Meta compliance
+
+<Callout type="warning" title="Feature-flag gated">
+Meta publishing is only available when `META_PUBLISHING_ENABLED=true` (server) and the UI flag is enabled (`NEXT_PUBLIC_META_PUBLISHING_ENABLED=true`).
+</Callout>
+
+## Source of truth and scheduling
+
+- **Publish jobs are immutable** once queued.
+- Publishing uses **`publish_jobs.payload_json`** as the source of truth.
+- The worker is triggered by cron (`/api/publish/meta-due`) and publishes due jobs immediately at execution time.
+
+## Permissions (Meta)
+
+CRISP requests the exact Meta permissions required for Phase 1:
+
+- `pages_show_list`
+- `pages_read_engagement`
+- `pages_manage_posts`
+- `instagram_basic`
+- `instagram_content_publish`
+
+## Instagram requirements (important)
+
+- **Instagram publishing requires an image** in Phase 1 (image + caption only).
+- Reels, Stories, and true “native scheduling” are not included in Phase 1.
+
+## Token storage and encryption
+
+- Meta access tokens are **encrypted at rest** using `META_TOKEN_ENCRYPTION_KEY`.
+- Tokens and Meta IDs are **never written to Airtable**.
+- Publishing uses Supabase tables to store encrypted tokens and destination selections.
+
+## Data deletion callback
+
+CRISP implements a Meta-compliant data deletion endpoint:
+
+- `POST /api/meta/data-deletion`
+- Deletes Meta connection data for the user and returns a `url` + `confirmation_code` as required by Meta.
+
+## Constraints and edge cases
+
+- **Business verification** may be required for production usage and/or App Review approval.
+- Phase 1 supports **one Page + one Instagram account per workspace**.
+- Instagram publishing failures commonly relate to missing media, permissions, or an invalid/expired token.
+
+## Related docs
+
+- Publishing overview: [Publishing overview](/docs/publishing)
+- Security & privacy: [Security & privacy](/docs/security-and-privacy)
+- Integrations: [Integrations](/docs/integrations)
+

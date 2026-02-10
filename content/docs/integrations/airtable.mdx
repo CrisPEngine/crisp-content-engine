@@ -1,0 +1,39 @@
+---
+title: Airtable integration
+description: Airtable powers the editorial content workflow in CRISP Content Engine.
+section: Integrations
+order: 2
+---
+
+Airtable is used as the human-friendly system for content records and editorial fields.
+
+## Who this page is for
+
+- Operators configuring Airtable bases/tables/fields
+- Support and admins troubleshooting missing or malformed queue items
+
+## What Airtable is used for
+
+- Content records (drafts, approval status, copy, scheduling fields)
+- Brand and strategy references
+- Operational visibility for humans
+
+## What Airtable is NOT used for
+
+- **Sensitive tokens** (e.g. Meta access tokens)
+- Publishing source-of-truth payloads at publish time (native jobs publish from stored job payloads)
+
+<Callout type="note">
+This boundary is deliberate: Airtable can change after approval, and publishing must remain deterministic.
+</Callout>
+
+## Constraints and edge cases
+
+- Field name and schema changes can break ingestion unless updated in CRISP.
+- Airtable rate limits apply; CRISP avoids unnecessary reads during publish flows.
+
+## Related docs
+
+- Integrations overview: [Integrations](/docs/integrations)
+- Security & privacy: [Security & privacy](/docs/security-and-privacy)
+

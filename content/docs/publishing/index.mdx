@@ -1,0 +1,42 @@
+---
+title: Publishing overview
+description: How CRISP Content Engine schedules and publishes content — and where each platform currently sits.
+section: Publishing
+order: 1
+---
+
+CRISP’s publishing model is designed for reliability: **humans approve**, and **workers publish**. Where a platform supports it, CRISP uses native APIs; otherwise CRISP provides an export workflow.
+
+## Who this page is for
+
+- Users scheduling content and expecting it to publish reliably
+- Operators configuring cron and troubleshooting publishing failures
+- Reviewers validating how CRISP handles tokens, jobs, and data boundaries
+
+## The publishing model
+
+- **Approval creates a publish job** (for native platforms).
+- **Workers publish due jobs via cron** (no long-running background jobs in Vercel).
+- **Publishing uses the job payload as the source of truth**, not re-reading content stores at publish time.
+
+## Platform support
+
+- **LinkedIn**: native publishing (cron-based)
+- **Meta (Facebook + Instagram)**: native publishing, **feature-flag gated**
+- **X**: export-only (copy/paste)
+- **Blog**: export-only (copy/paste)
+
+## Constraints and edge cases
+
+- **Cron is required** for native publishing.
+- **Retries are expected**: network and platform API failures happen — jobs move through retry and failed states.
+- **Platform limits apply**: daily caps, media requirements, and permission scopes vary by platform.
+
+## Related docs
+
+- LinkedIn publishing: [LinkedIn publishing](/docs/publishing/linkedin)
+- Meta publishing: [Meta publishing](/docs/publishing/meta)
+- X export workflow: [X publishing](/docs/publishing/x)
+- Blog export workflow: [Blog publishing](/docs/publishing/blog)
+- Content system (queue guards, retries): [Content system](/docs/content-system)
+

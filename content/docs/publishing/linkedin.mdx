@@ -1,0 +1,38 @@
+---
+title: LinkedIn publishing
+description: Native LinkedIn publishing is cron-based and runs after human approval.
+section: Publishing
+order: 2
+---
+
+LinkedIn is a native publishing platform in CRISP Content Engine: approved content is queued as a publish job and sent to LinkedIn by a scheduled worker.
+
+## Who this page is for
+
+- Users approving/scheduling LinkedIn posts
+- Operators setting up cron and troubleshooting status drift
+
+## How it works (at a glance)
+
+- Users connect LinkedIn in **Connections**.
+- Approving content creates/updates publish state for LinkedIn.
+- A cron worker runs periodically and publishes due items.
+
+## Constraints and edge cases
+
+- **Cron must run** (Vercel does not run background cron).
+- **Token expiry happens**: re-authentication may be required if publishing fails with auth errors.
+- **Rate limits** and API availability are outside CRISP’s control.
+
+## Troubleshooting checklist
+
+- Confirm cron is calling the LinkedIn due endpoint on schedule.
+- Confirm the LinkedIn connection is still valid for the user/workspace.
+- If items are stuck, check the app’s publishing status UI and retry workflows.
+
+## Related docs
+
+- Publishing overview: [Publishing overview](/docs/publishing)
+- Content system status model: [Content system](/docs/content-system)
+- Integrations overview: [Integrations](/docs/integrations)
+

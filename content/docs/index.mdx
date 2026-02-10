@@ -1,0 +1,38 @@
+---
+title: CRISP Content Engine Docs
+description: The premium, technical documentation hub for CRISP Content Engine — generate, approve, publish, and learn.
+section: Overview
+order: 0
+---
+
+CRISP Content Engine helps founders and small teams ship consistent, high-quality content without turning content ops into a second job.
+
+## Who this is for
+
+- Founders, operators, and small teams who need consistent publishing
+- Admins setting up Airtable, Make.com, publishing connections, and cron
+- Reviewers (e.g. Meta App Review) verifying how publishing + data handling works
+
+## The workflow (high level)
+
+- **Generate**: CRISP sends a structured payload to Make.com to produce multi-channel drafts.
+- **Approve**: A human reviews, edits, schedules, or exports content.
+- **Publish**: Native publishing runs via cron-based workers (where supported).
+- **Learn**: Publishing status and failure states are tracked and surfaced for action.
+
+## Platform support (today)
+
+- **Native publishing**: LinkedIn (stable), Meta (Facebook + Instagram) behind a feature flag.
+- **Export-only**: X and Blog (copy/paste workflow).
+
+<Callout type="note">
+Meta publishing is **feature-flag gated** and should not be enabled in production until the Meta app is approved.
+</Callout>
+
+## Start here
+
+- **Getting started**: [Getting started](/docs/getting-started)
+- **Publishing overview**: [Publishing overview](/docs/publishing)
+- **Security & privacy**: [Security & privacy](/docs/security-and-privacy)
+- **Integrations**: [Integrations](/docs/integrations)
+

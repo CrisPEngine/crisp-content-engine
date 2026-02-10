@@ -1,0 +1,38 @@
+---
+title: Make.com and webhooks
+description: How CRISP uses Make.com for generation workflows, callbacks, and idempotency.
+section: Integrations
+order: 4
+---
+
+CRISP uses Make.com to orchestrate generation workflows. The app triggers Make scenarios via webhooks, and Make calls back into the app when work is complete.
+
+## Who this page is for
+
+- Operators building or updating Make scenarios
+- Developers/support troubleshooting generation and callback issues
+
+## How the flow works
+
+- CRISP triggers generation by sending a payload to Make.
+- Make generates content and writes results to Airtable.
+- Make calls back to CRISP endpoints to confirm completion and update progress.
+
+## Key constraints
+
+- Webhook payloads must remain stable for scenarios to keep working.
+- Callbacks must be idempotent to avoid double-counting usage.
+- Environment variables must be set correctly (webhook URLs, secrets).
+
+## Common failure scenarios
+
+- Wrong webhook URL or missing secret header
+- Airtable schema drift (field/table renamed)
+- Make scenario disabled or failing mid-run
+
+## Related docs
+
+- Getting started: [Getting started](/docs/getting-started)
+- Airtable integration: [Airtable integration](/docs/integrations/airtable)
+- Content system: [Content system](/docs/content-system)
+

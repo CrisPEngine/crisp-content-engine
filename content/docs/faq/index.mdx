@@ -1,0 +1,57 @@
+---
+title: FAQ
+description: Fast answers to common CRISP Content Engine questions and failure scenarios.
+section: FAQ
+order: 1
+---
+
+This page covers the most common questions we see during onboarding and platform setup.
+
+## Who this page is for
+
+- New users learning platform constraints
+- Operators troubleshooting publishing and generation
+- Reviewers validating Meta requirements and Phase 1 constraints
+
+## Meta approval blockers
+
+- Meta publishing is **feature-flag gated** and should stay disabled until your Meta app is approved.
+- Business verification may be required depending on your app and permissions.
+- Your app must provide a compliant data deletion callback endpoint and documentation.
+
+## Instagram publishing requirements
+
+- Phase 1 Instagram publishing is **image + caption**.
+- If there is no image attached, the job cannot publish to Instagram.
+
+## Why X is manual (for now)
+
+- X publishing is currently export-only to keep the product stable while usage grows.
+- CRISP provides copy tools and validation, but does not publish via API yet.
+
+## Common failure scenarios (and what to check)
+
+### “Nothing is publishing”
+
+- Confirm your cron provider is calling the due endpoints on schedule.
+- Confirm the cron secret header matches (`X-Cron-Secret`).
+- Confirm publishing is enabled for that platform (Meta requires feature flag on).
+
+### “Meta connected but posts fail”
+
+- Confirm the selected Page/Instagram account is set.
+- Confirm tokens are valid and permissions were granted.
+- Confirm the post meets platform requirements (Instagram needs an image).
+
+### “Generated content isn’t showing in the queue”
+
+- Confirm the Make scenario ran successfully.
+- Confirm Airtable schema hasn’t changed (field names/tables).
+- Confirm callbacks are reachable from Make (no auth required, correct URL).
+
+## Related docs
+
+- Publishing overview: [Publishing overview](/docs/publishing)
+- Meta publishing: [Meta publishing](/docs/publishing/meta)
+- Integrations: [Integrations](/docs/integrations)
+

@@ -1,0 +1,45 @@
+---
+title: Getting started
+description: Understand the CRISP Content Engine model, core concepts, and the content lifecycle.
+section: Getting Started
+order: 1
+---
+
+This page explains how CRISP Content Engine is structured, what the major concepts mean, and how content moves from generation to publishing.
+
+## Who this page is for
+
+- New customers onboarding to CRISP Content Engine
+- Operators setting up integrations (Airtable, Make.com, publishing connections)
+- Anyone who needs a clear mental model before using the app
+
+## Core concepts
+
+- **Brand profile**: The workspace context for content (voice, audience, goals).
+- **Strategy**: The durable “source” CRISP uses to generate a month of content.
+- **Content queue**: Where drafts arrive for human review and scheduling.
+- **Native publishing**: CRISP publishes to a platform via API, triggered by cron.
+- **Export-only**: CRISP provides content and copy tools; you publish manually.
+
+## Content lifecycle
+
+- **Generate →** drafts are created via Make.com scenarios using your strategy.
+- **Review/Approve →** content is edited, approved, and optionally scheduled.
+- **Publish →** cron workers publish due items for supported platforms.
+- **Observe →** statuses and errors are surfaced so you can remediate quickly.
+
+## Native publishing vs export-only
+
+- **Native publishing** (cron-based): LinkedIn, Meta (feature-flag gated).
+- **Export-only** (copy/paste): X, Blog.
+
+<Callout type="warning" title="Export-only platforms">
+Export-only means CRISP does not publish to the platform API yet. You’ll see copy buttons and clear guidance in the UI.
+</Callout>
+
+## Related docs
+
+- Publishing model: [Publishing overview](/docs/publishing)
+- Content system internals: [Content system](/docs/content-system)
+- Security & privacy: [Security & privacy](/docs/security-and-privacy)
+

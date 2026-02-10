@@ -1,0 +1,53 @@
+---
+title: Content system
+description: The CRISP content system — intent-driven prompting, approval workflow, scheduling guards, retries, and failure states.
+section: Content System
+order: 1
+---
+
+This page explains how CRISP is designed to produce reliable outcomes: clear intent, a human approval gate, and deterministic publishing behavior.
+
+## Who this page is for
+
+- Operators who need to understand “why it works this way”
+- Support/admins troubleshooting edge cases
+- Reviewers validating that publishing is safe and deterministic
+
+## Intent-driven prompting (philosophy)
+
+CRISP content generation is built around **intent** and **constraints**:
+
+- We specify the “why” (goal, audience, offer)
+- We preserve brand voice rules and guardrails
+- We generate channel-specific drafts (LinkedIn vs X vs Meta vs Blog)
+
+## Approval workflow
+
+- Drafts arrive in the approval queue.
+- A human can edit and approve.
+- Approval is the gate that allows a platform publish flow to start (where supported).
+
+## Scheduling logic and queue guards
+
+CRISP uses queue guards to reduce platform risk and user surprise:
+
+- Minimum spacing rules can be enforced per destination (example: Meta Phase 1 uses per-destination spacing when creating jobs).
+- Some platforms are export-only and do not support scheduling yet (X threads, Blog).
+
+## Status model (publish jobs)
+
+Native publishing uses job states that make failures explicit:
+
+- queued → publishing → published
+- queued/retrying → failed (after max attempts)
+
+## Retries and failure states
+
+- Retries use backoff to avoid hammering platform APIs.
+- Permanent failures are surfaced clearly so a human can take action.
+
+## Related docs
+
+- Publishing overview: [Publishing overview](/docs/publishing)
+- Security & privacy: [Security & privacy](/docs/security-and-privacy)
+
