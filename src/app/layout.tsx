@@ -25,7 +25,10 @@ export const metadata: Metadata = {
   title: "CrisP Content Engine",
   description: "Your entire month of content. Generated once. AI-powered content engine with human approval.",
   icons: {
-    icon: "https://res.cloudinary.com/dr75zvtso/image/upload/v1762342722/favicon_crispContentEngine_128x128_m1m2ry.png",
+    icon: [
+      { url: "https://res.cloudinary.com/dr75zvtso/image/upload/v1762342722/favicon_crispContentEngine_128x128_m1m2ry.png", sizes: "128x128", type: "image/png" },
+    ],
+    apple: "https://res.cloudinary.com/dr75zvtso/image/upload/v1762342722/favicon_crispContentEngine_128x128_m1m2ry.png",
   },
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://app.crispdigital.io"),
   openGraph: {
@@ -105,10 +108,13 @@ export default function RootLayout({
                   <Link href="https://www.crispdigital.io/cookies-policy" target="_blank" rel="noopener noreferrer" className="hover:text-text-soft transition">
                     Cookies Policy
                   </Link>
-                  <SignOutLink />
                   <Link href="https://www.crispdigital.io/privacy-policy" target="_blank" rel="noopener noreferrer" className="hover:text-text-soft transition">
                     Privacy Policy
                   </Link>
+                  <Link href="https://www.crispdigital.io/terms-of-service" target="_blank" rel="noopener noreferrer" className="hover:text-text-soft transition">
+                    Terms of Service
+                  </Link>
+                  <SignOutLink />
                 </div>
               </div>
               <div className="text-xs text-text-dim">

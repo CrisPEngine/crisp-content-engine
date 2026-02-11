@@ -69,11 +69,19 @@ export default function HomePage() {
   );
 }
 
+const FAVICON_URL = "https://res.cloudinary.com/dr75zvtso/image/upload/v1762342722/favicon_crispContentEngine_128x128_m1m2ry.png";
+
 function Header() {
   return (
     <header className="flex items-center justify-between">
       <div className="flex items-center gap-3">
-        <div className="h-9 w-9 rounded-lg bg-neutral-900 ring-1 ring-neutral-800" />
+        <img
+          src={FAVICON_URL}
+          alt=""
+          className="h-9 w-9 rounded-lg object-contain ring-1 ring-neutral-800"
+          width={36}
+          height={36}
+        />
         <div className="leading-tight">
           <div className="text-sm font-semibold tracking-tight">CRISP</div>
           <div className="text-xs text-neutral-400">Content Engine</div>
