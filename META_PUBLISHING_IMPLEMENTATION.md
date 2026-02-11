@@ -153,6 +153,7 @@ NEXT_PUBLIC_APP_URL=https://app.crispdigital.io
 4. Configure OAuth redirect URIs:
    - `https://app.crispdigital.io/api/meta/oauth/callback`
 5. Add permissions (for App Review):
+   - `business_management` (forced by Meta's use case - cannot be removed)
    - `pages_show_list`
    - `pages_read_engagement`
    - `pages_manage_posts`
@@ -227,11 +228,14 @@ Authorization: Bearer {CRON_SECRET}
    - Provide business documents
 
 4. **Permission Justification**:
+   - **`business_management`**: "Required by Meta's selected business publishing use case to allow a business to grant our app access to managed assets (Pages and connected Instagram Business accounts) for publishing. We do not access ad accounts or perform Business Manager administration beyond enabling Page and Instagram publishing."
    - **`pages_show_list`**: "List user's Facebook Pages to allow selection of publishing destination"
    - **`pages_read_engagement`**: "Read Page details to confirm publishing permissions"
    - **`pages_manage_posts`**: "Publish scheduled content to user's Facebook Page"
    - **`instagram_basic`**: "Access Instagram Business account information for publishing"
    - **`instagram_content_publish`**: "Publish scheduled content to user's Instagram Business account"
+
+**Note**: `business_management` is forced by Meta when you select "Manage everything on your Page" and "Manage messaging and content on Instagram" use cases. It cannot be removed once those use cases are selected.
 
 5. **Test Users**: Provide test user credentials with connected Facebook Page and Instagram Business account
 

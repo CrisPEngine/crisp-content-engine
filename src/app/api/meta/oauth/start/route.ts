@@ -56,7 +56,9 @@ export async function GET(request: Request) {
 	// Meta OAuth scopes
 	// Pages: list, read engagement, manage posts
 	// Instagram: basic info, content publishing
+	// Business Management: forced by Meta's "Manage everything on your Page" use case
 	const scope = [
+		'business_management',
 		'pages_show_list',
 		'pages_read_engagement',
 		'pages_manage_posts',

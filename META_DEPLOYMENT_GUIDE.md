@@ -205,11 +205,14 @@ Set these for:
 ### App Review Preparation (Don't Submit Yet!)
 
 **Permissions to Request:**
+- `business_management` (forced by Meta's use case - cannot be removed)
 - `pages_show_list`
 - `pages_read_engagement`
 - `pages_manage_posts`
 - `instagram_basic`
 - `instagram_content_publish`
+
+**Note**: `business_management` is forced by Meta when you select "Manage everything on your Page" and "Manage messaging and content on Instagram" use cases. It cannot be removed once those use cases are selected.
 
 **Don't submit for review until:**
 - ✅ Internal testing is complete
