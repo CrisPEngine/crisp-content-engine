@@ -147,7 +147,7 @@ export async function POST(req: Request) {
 		}
 
 		// Filter channels by plan (check includedPlatforms)
-		const planCaps = CAPS[plan];
+		// planCaps already defined above for per-channel limits check
 		const allowedPlatforms = planCaps.includedPlatforms.map((p) => {
 			if (p === 'linkedin') return 'LinkedIn';
 			if (p === 'x') return 'X';
