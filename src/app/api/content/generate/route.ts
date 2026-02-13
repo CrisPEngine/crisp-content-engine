@@ -8,6 +8,7 @@ import { CAPS } from '@/config/pricing';
 import type { MultiChannelMakePayload, BrandVoiceContext, MonthlyBrief, PreviousContentItem, SchedulingContext } from '@/lib/makeMultiChannelPayload';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
+import { resolvePlan, getTrialUsage } from '@/lib/planResolver';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -74,19 +75,117 @@ export async function POST(req: Request) {
 			totalRequested,
 		});
 
-		// Get user's plan and quota
-		const { data: subscription } = await supabase
-			.from('subscriptions')
-			.select('plan')
-			.eq('user_id', user.id)
-			.maybeSingle();
-
-		const plan = (subscription?.plan as 'starter' | 'creator' | 'growth' | 'pro' | 'scale') || 'creator';
+		// Use canonical plan resolver (handles trial provisioning)
+		const resolved = await resolvePlan(user.id);
+		const plan = resolved.plan === 'free' ? 'trial' : resolved.plan; // Treat free as trial for now (legacy compat)
+		
+		// Email verification gate
+		if (!resolved.isEmailVerified) {
+			return NextResponse.json(
+				{
+					error: 'Please verify your email address before generating content. Check your inbox for the verification link.',
+					email_verification_required: true,
+				},
+				{ status: 403 }
+			);
+		}
+		
+		// Trial quota enforcement
+		if (resolved.isTrial && plan === 'trial') {
+			const trialUsage = await getTrialUsage(user.id);
+			
+			if (trialUsage) {
+				// Check if trial credits exhausted for requested channels
+				for (const ch of channels) {
+					const platformKey = ch.platform.toLowerCase();
+					
+					if (platformKey === 'linkedin' && trialUsage.linkedin >= 3) {
+						return NextResponse.json(
+							{
+								error: 'You have used all 3 LinkedIn trial posts. Upgrade to Starter or Creator to continue generating content.',
+								upgrade_required: true,
+								channel: 'LinkedIn',
+								limit: 3,
+								used: trialUsage.linkedin,
+							},
+							{ status: 403 }
+						);
+					}
+					
+					if (platformKey === 'x' && trialUsage.x >= 3) {
+						return NextResponse.json(
+							{
+								error: 'You have used all 3 X trial posts. Upgrade to Starter or Creator to continue generating content.',
+								upgrade_required: true,
+								channel: 'X',
+								limit: 3,
+								used: trialUsage.x,
+							},
+							{ status: 403 }
+						);
+					}
+					
+					// Check if request would exceed remaining trial credits
+					if (platformKey === 'linkedin' && trialUsage.linkedin + ch.count > 3) {
+						return NextResponse.json(
+							{
+								error: `This would exceed your trial limit. You have ${3 - trialUsage.linkedin} LinkedIn posts remaining. Upgrade to continue.`,
+								upgrade_required: true,
+								channel: 'LinkedIn',
+								limit: 3,
+								used: trialUsage.linkedin,
+								remaining: 3 - trialUsage.linkedin,
+								requested: ch.count,
+							},
+							{ status: 403 }
+						);
+					}
+					
+					if (platformKey === 'x' && trialUsage.x + ch.count > 3) {
+						return NextResponse.json(
+							{
+								error: `This would exceed your trial limit. You have ${3 - trialUsage.x} X posts remaining. Upgrade to continue.`,
+								upgrade_required: true,
+								channel: 'X',
+								limit: 3,
+								used: trialUsage.x,
+								remaining: 3 - trialUsage.x,
+								requested: ch.count,
+							},
+							{ status: 403 }
+						);
+					}
+				}
+			}
+		}
+		
+		// Rate limiting (trial users only)
+		if (resolved.isTrial && plan === 'trial') {
+			const admin = getSupabaseService();
+			const sixtySecondsAgo = new Date(Date.now() - 60 * 1000).toISOString();
+			
+			const { data: recentJobs, error: rateLimitError } = await admin
+				.from('generation_jobs')
+				.select('generation_job_id')
+				.eq('user_id', user.id)
+				.gte('created_at', sixtySecondsAgo);
+			
+			if (!rateLimitError && recentJobs && recentJobs.length >= 2) {
+				return NextResponse.json(
+					{
+						error: 'Please wait a moment before generating more content. Rate limit: 2 requests per minute.',
+						rate_limit_exceeded: true,
+					},
+					{ status: 429 }
+				);
+			}
+		}
 
 		// Get entitlements and current usage
 		const entitlements = await getEntitlements(user.id);
 		const postsUsed = await getMonthUsage(user.id);
-		const maxPostsPerMonth = entitlements?.posts_per_month || CAPS[plan].postsPerMonth;
+		const planCaps = CAPS[plan as keyof typeof CAPS] || CAPS.trial;
+		const maxPostsPerMonth = entitlements?.posts_per_month || planCaps.postsPerMonth;
 		const postsRemaining = typeof maxPostsPerMonth === 'number' ? maxPostsPerMonth - postsUsed : 999999;
 
 		// Pre-check quota
@@ -101,8 +200,7 @@ export async function POST(req: Request) {
 			);
 		}
 
-		// Per-channel limits for Starter plan
-		const planCaps = CAPS[plan];
+		// Per-channel limits for Starter/Trial plans
 		if (planCaps.perChannelLimits) {
 			const channelUsage = await getChannelUsage(user.id);
 			

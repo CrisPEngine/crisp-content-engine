@@ -8,6 +8,8 @@ import { ContentGenerationLoading } from '@/components/ContentGenerationLoading'
 import { useUsage } from '@/lib/useUsage';
 import type { PlanId } from '@/config/pricing';
 import { CAPS } from '@/config/pricing';
+import { UpgradeModal } from '@/components/UpgradeModal';
+import { TrialBanner } from '@/components/TrialBanner';
 
 type BrandProfile = {
 	id: string;
@@ -38,6 +40,8 @@ export default function ContentGeneratePage() {
 	const [showLoading, setShowLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [userPlan, setUserPlan] = useState<PlanId | null>(null);
+	const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+	const [upgradeReason, setUpgradeReason] = useState<string>('');
 
 	// Load user plan
 	useEffect(() => {

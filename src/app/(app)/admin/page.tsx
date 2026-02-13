@@ -463,9 +463,9 @@ export default function AdminPage() {
 								onChange={(e) => setCreateUserPlan(e.target.value as PlanId)}
 								className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-2 text-text focus:border-primary/60 focus:outline-none"
 							>
-								{PRICING.order.map((planId) => (
+								{PRICING.order.filter((p) => p !== 'trial').map((planId) => (
 									<option key={planId} value={planId}>
-										{PRICING.monthly[planId].name}
+										{PRICING.monthly[planId as Exclude<PlanId, 'trial'>].name}
 									</option>
 								))}
 							</select>
@@ -771,9 +771,9 @@ export default function AdminPage() {
 													onChange={(e) => setTrialPlan(e.target.value as PlanId)}
 													className="flex-1 rounded-xl2 border border-edge/60 bg-bg/80 px-3 py-2 text-sm text-text focus:border-primary/60 focus:outline-none"
 												>
-													{PRICING.order.map((planId) => (
+													{PRICING.order.filter((p) => p !== 'trial').map((planId) => (
 														<option key={planId} value={planId}>
-															{PRICING.monthly[planId].name}
+															{PRICING.monthly[planId as Exclude<PlanId, 'trial'>].name}
 														</option>
 													))}
 												</select>
@@ -963,9 +963,9 @@ export default function AdminPage() {
 									onChange={(e) => setSelectedPlan(e.target.value as PlanId)}
 									className="rounded-xl2 border border-edge/60 bg-bg/80 px-3 py-2 text-text focus:border-primary/60 focus:outline-none"
 								>
-									{PRICING.order.map((planId) => (
+									{PRICING.order.filter((p) => p !== 'trial').map((planId) => (
 										<option key={planId} value={planId}>
-											{PRICING.monthly[planId].name}
+											{PRICING.monthly[planId as Exclude<PlanId, 'trial'>].name}
 										</option>
 									))}
 								</select>

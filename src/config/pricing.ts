@@ -1,4 +1,4 @@
-export type PlanId = "starter" | "creator" | "growth" | "pro" | "scale";
+export type PlanId = "trial" | "starter" | "creator" | "growth" | "pro" | "scale";
 
 export type PlanCaps = {
 	maxBrands: number;
@@ -17,6 +17,21 @@ export type PlanCaps = {
 };
 
 export const CAPS: Record<PlanId, PlanCaps> = {
+	trial: {
+		maxBrands: 1,
+		maxChannels: 2,
+		postsPerMonth: 6,
+		includedImageGen: true,
+		includedPlatforms: ["linkedin", "x"],
+		autopublishLinkedIn: false,
+		autopublishMeta: false,
+		perChannelLimits: {
+			linkedin: 3,
+			x: 3,
+			blog: 0,
+		},
+		notes: "7-day trial: 3 LinkedIn + 3 X posts (export-only). No autopublish, no blogs.",
+	},
 	starter: {
 		maxBrands: 1,
 		maxChannels: 2,

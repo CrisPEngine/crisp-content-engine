@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { enforceCaps } from '@/lib/enforceCaps';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { resolvePlan, getTrialUsage } from '@/lib/planResolver';
 
 export const runtime = 'nodejs';
 
@@ -24,6 +25,10 @@ async function getUserId(req: Request): Promise<string | null> {
 export async function GET(req: Request) {
 	const userId = await getUserId(req);
 	if (!userId) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+	
+	// Use canonical plan resolver with auto-provisioning
+	const resolved = await resolvePlan(userId);
+	
 	const check = await enforceCaps(userId);
 	
 	// Also get max_brands from entitlements
@@ -38,12 +43,29 @@ export async function GET(req: Request) {
 		console.error('Failed to get max_brands:', error);
 	}
 	
+	// Get trial usage if on trial
+	let trialUsage: { linkedin: number; x: number } | null = null;
+	if (resolved.isTrial) {
+		trialUsage = await getTrialUsage(userId);
+	}
+	
 	return NextResponse.json({
 		...check,
 		caps: {
 			...check.caps,
 			max_brands: maxBrands,
 		},
+		plan: resolved.plan,
+		isTrial: resolved.isTrial,
+		trialDaysRemaining: resolved.trialDaysRemaining,
+		trialEndAt: resolved.trialEndAt,
+		isEmailVerified: resolved.isEmailVerified,
+		trialUsage: trialUsage ? {
+			linkedin: trialUsage.linkedin,
+			x: trialUsage.x,
+			linkedinRemaining: Math.max(0, 3 - trialUsage.linkedin),
+			xRemaining: Math.max(0, 3 - trialUsage.x),
+		} : undefined,
 	});
 }
 

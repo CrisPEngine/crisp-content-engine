@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { z } from 'zod';
+import { resolvePlan, incrementTrialUsage } from '@/lib/planResolver';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -82,6 +83,17 @@ export async function POST(req: Request) {
 
 		// Increment usage (idempotent via usage_incremented flag)
 		if (!job.usage_incremented && totalCreated > 0) {
+			// Map created counts to channel counts for per-channel tracking
+			const channelCounts: Record<string, number> = {};
+			for (const [platform, count] of Object.entries(created)) {
+				const platformLower = platform.toLowerCase();
+				if (platformLower === 'linkedin') channelCounts.linkedin = count;
+				else if (platformLower === 'x') channelCounts.x = count;
+				else if (platformLower === 'blog') channelCounts.blog = count;
+				else if (platformLower === 'instagram') channelCounts.instagram = count;
+				else if (platformLower === 'facebook') channelCounts.facebook = count;
+			}
+			
 			// Call usage increment endpoint (which handles idempotency internally)
 			const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 			const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.crispdigital.io';
@@ -96,6 +108,7 @@ export async function POST(req: Request) {
 					body: JSON.stringify({
 						userId: job.user_id,
 						count: totalCreated,
+						channelCounts, // Pass per-channel counts
 						generation_job_id, // For idempotency
 					}),
 				});
@@ -109,10 +122,32 @@ export async function POST(req: Request) {
 				console.log('[Generation Complete] Usage incremented:', {
 					user_id: job.user_id,
 					count: totalCreated,
+					channelCounts,
 				});
 			} catch (usageError) {
 				console.error('[Generation Complete] Failed to increment usage:', usageError);
 				// Don't fail the whole request if usage increment fails
+			}
+			
+			// Increment trial usage if user is on trial
+			try {
+				const resolved = await resolvePlan(job.user_id);
+				
+				if (resolved.isTrial && resolved.plan === 'trial') {
+					await incrementTrialUsage(job.user_id, {
+						linkedin: channelCounts.linkedin || 0,
+						x: channelCounts.x || 0,
+					});
+					
+					console.log('[Generation Complete] Trial usage incremented:', {
+						user_id: job.user_id,
+						linkedin: channelCounts.linkedin || 0,
+						x: channelCounts.x || 0,
+					});
+				}
+			} catch (trialError) {
+				console.error('[Generation Complete] Failed to increment trial usage:', trialError);
+				// Don't fail the whole request
 			}
 		}
 

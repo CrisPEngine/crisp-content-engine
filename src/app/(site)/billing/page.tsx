@@ -37,13 +37,6 @@ function PlanCard({
 				</div>
 				<p className="text-3xl mt-2">{plan.priceText}</p>
 				<p className="text-text-dim mt-1">{plan.blurb}</p>
-				{/* Show trial messaging for Creator plan */}
-				{tier === 'creator' && (
-					<div className="mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
-						<p className="text-sm font-medium text-emerald-300">Risk Free 14 day free trial</p>
-						<p className="text-xs text-emerald-300/80 mt-1">Cancel anytime</p>
-					</div>
-				)}
 				{/* Show starter note */}
 				{tier === 'starter' && (
 					<div className="mt-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
@@ -172,7 +165,11 @@ export default function BillingPage() {
 	
 	// Get plan details from PRICING config for coming soon plans
 	const getPlanDetails = (planId: PlanId, cycle: "monthly" | "annual") => {
-		const plan = PRICING[cycle][planId];
+		// Trial is not in PRICING (not purchasable), so filter it out
+		if (planId === 'trial') {
+			return { name: 'Trial', description: '', bullets: [], priceText: 'Free' };
+		}
+		const plan = PRICING[cycle][planId as Exclude<PlanId, 'trial'>];
 		return {
 			name: plan.name,
 			description: plan.blurb,

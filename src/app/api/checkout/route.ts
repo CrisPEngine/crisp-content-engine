@@ -40,11 +40,7 @@ export async function POST(req: Request) {
 
         const stripe = getStripe();
         
-        // Check if this is a Creator plan (monthly or annual) to add 14-day trial
-        const creatorMonthlyPriceId = process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_MONTHLY;
-        const creatorAnnualPriceId = process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_ANNUAL;
-        const isCreatorPlan = priceId === creatorMonthlyPriceId || priceId === creatorAnnualPriceId;
-        
+        // No Stripe trials - we now use no-credit-card trial instead
         const sessionConfig: any = {
             mode: 'subscription',
             line_items: [{ price: priceId, quantity: 1 }],
@@ -59,12 +55,6 @@ export async function POST(req: Request) {
             customer_creation: 'always', // Ensure customer is created
             metadata: { user_id: user.id },
         };
-        
-        // Add 14-day trial for Creator plan
-        if (isCreatorPlan) {
-            sessionConfig.subscription_data.trial_period_days = 14;
-            console.log(`[Checkout] Adding 14-day trial for Creator plan (priceId: ${priceId})`);
-        }
         
         const session = await stripe.checkout.sessions.create(sessionConfig);
         return NextResponse.json({ url: session.url });
