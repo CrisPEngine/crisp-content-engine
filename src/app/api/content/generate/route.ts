@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { enforceCaps, getEntitlements, getMonthUsage } from '@/lib/enforceCaps';
+import { enforceCaps, getEntitlements, getMonthUsage, getChannelUsage } from '@/lib/enforceCaps';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { X_ALGO_DIGEST } from '@/lib/channels/x-algo-digest';
 import { CAPS } from '@/config/pricing';
@@ -81,7 +81,7 @@ export async function POST(req: Request) {
 			.eq('user_id', user.id)
 			.maybeSingle();
 
-		const plan = (subscription?.plan as 'creator' | 'growth' | 'pro' | 'scale') || 'creator';
+		const plan = (subscription?.plan as 'starter' | 'creator' | 'growth' | 'pro' | 'scale') || 'creator';
 
 		// Get entitlements and current usage
 		const entitlements = await getEntitlements(user.id);
@@ -99,6 +99,51 @@ export async function POST(req: Request) {
 				},
 				{ status: 403 }
 			);
+		}
+
+		// Per-channel limits for Starter plan
+		const planCaps = CAPS[plan];
+		if (planCaps.perChannelLimits) {
+			const channelUsage = await getChannelUsage(user.id);
+			
+			// Check each requested channel against per-channel limits
+			for (const ch of channels) {
+				const platformKey = ch.platform.toLowerCase();
+				const limit = planCaps.perChannelLimits[platformKey as 'linkedin' | 'x' | 'blog'];
+				
+				if (limit !== undefined) {
+					let currentUsage = 0;
+					if (platformKey === 'linkedin') currentUsage = channelUsage.linkedin;
+					else if (platformKey === 'x') currentUsage = channelUsage.x;
+					else if (platformKey === 'blog') currentUsage = channelUsage.blog;
+					
+					// Block if limit is 0 (not allowed at all)
+					if (limit === 0) {
+						return NextResponse.json(
+							{
+								error: `${ch.platform} posts are not available on your ${plan} plan. Upgrade to Creator or higher to access this channel.`,
+								upgrade_required: true,
+							},
+							{ status: 403 }
+						);
+					}
+					
+					// Check if request would exceed per-channel limit
+					if (currentUsage + ch.count > limit) {
+						return NextResponse.json(
+							{
+								error: `This would exceed your ${ch.platform} limit. You have ${limit - currentUsage} ${ch.platform} posts remaining this month (${currentUsage}/${limit} used).`,
+								channel: ch.platform,
+								limit,
+								used: currentUsage,
+								remaining: limit - currentUsage,
+								requested: ch.count,
+							},
+							{ status: 403 }
+						);
+					}
+				}
+			}
 		}
 
 		// Filter channels by plan (check includedPlatforms)

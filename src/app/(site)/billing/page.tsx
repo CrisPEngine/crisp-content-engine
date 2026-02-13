@@ -44,6 +44,13 @@ function PlanCard({
 						<p className="text-xs text-emerald-300/80 mt-1">Cancel anytime</p>
 					</div>
 				)}
+				{/* Show starter note */}
+				{tier === 'starter' && (
+					<div className="mt-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
+						<p className="text-sm font-medium text-blue-300">Export-only</p>
+						<p className="text-xs text-blue-300/80 mt-1">Perfect for manual publishers</p>
+					</div>
+				)}
 				<ul className="mt-5 space-y-2">
 					{plan.features.map((f: string, i: number) => (
 						<li key={i} className="flex items-start gap-2">
@@ -91,7 +98,8 @@ export default function BillingPage() {
 				if (res.ok) {
 					const data = await res.json();
 					const planName = data.planName?.toLowerCase() || 'free';
-					const planId = planName === 'creator' ? 'creator' : 
+					const planId = planName === 'starter' ? 'starter' :
+					               planName === 'creator' ? 'creator' : 
 					               planName === 'growth' ? 'growth' :
 					               planName === 'pro' ? 'pro' :
 					               planName === 'scale' ? 'scale' : 'free';
@@ -160,7 +168,7 @@ export default function BillingPage() {
 	};
 
 	const ordered = useMemo(() => PRICING.order, []);
-	const activePlanIds = useMemo(() => ordered.filter((id) => id === "creator"), [ordered]);
+	const activePlanIds = useMemo(() => ordered.filter((id) => id === "starter" || id === "creator"), [ordered]);
 	
 	// Get plan details from PRICING config for coming soon plans
 	const getPlanDetails = (planId: PlanId, cycle: "monthly" | "annual") => {
@@ -251,20 +259,20 @@ export default function BillingPage() {
 	};
 
 	// Get upgrade options (plans higher than current)
-	// For now, only Creator is available, so only show it if user is on free plan
+	// Show Starter and Creator as available
 	const getUpgradeOptions = (): PlanId[] => {
 		if (!currentPlan || currentPlan.plan === 'free') {
-			// Only show Creator as available
-			return ['creator'];
+			// Show both Starter and Creator for free users
+			return ['starter', 'creator'];
 		}
-		// If user has a plan, show available upgrades (currently only Creator)
+		// If user has a plan, show available upgrades
 		const currentIndex = PRICING.order.indexOf(currentPlan.plan);
-		const available = PRICING.order.slice(currentIndex + 1).filter(id => id === 'creator') as PlanId[];
+		const available = PRICING.order.slice(currentIndex + 1).filter(id => id === 'starter' || id === 'creator') as PlanId[];
 		return available;
 	};
 
 	const upgradeOptions = getUpgradeOptions();
-	const planNames: Record<string, string> = { creator: 'Creator', growth: 'Growth', pro: 'Pro', scale: 'Scale', free: 'Free' };
+	const planNames: Record<string, string> = { starter: 'Starter', creator: 'Creator', growth: 'Growth', pro: 'Pro', scale: 'Scale', free: 'Free' };
 
 	// Format period end date
 	const formatPeriodEnd = (dateString?: string) => {
@@ -379,7 +387,7 @@ export default function BillingPage() {
 							tier={id}
 							billingCycle={cycle}
 							onCheckout={goCheckout}
-							highlight
+							highlight={id === 'creator'}
 							loading={loading}
 						/>
 					))}

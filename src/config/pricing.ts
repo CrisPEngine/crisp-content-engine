@@ -1,4 +1,4 @@
-export type PlanId = "creator" | "growth" | "pro" | "scale";
+export type PlanId = "starter" | "creator" | "growth" | "pro" | "scale";
 
 export type PlanCaps = {
 	maxBrands: number;
@@ -6,17 +6,45 @@ export type PlanCaps = {
 	postsPerMonth: number | "unlimited";
 	includedImageGen: boolean;
 	includedPlatforms: ("linkedin"|"instagram"|"facebook"|"x"|"blog"|"medium")[];
+	autopublishLinkedIn?: boolean;
+	autopublishMeta?: boolean;
+	perChannelLimits?: {
+		linkedin?: number;
+		x?: number;
+		blog?: number;
+	};
 	notes?: string;
 };
 
 export const CAPS: Record<PlanId, PlanCaps> = {
+	starter: {
+		maxBrands: 1,
+		maxChannels: 2,
+		postsPerMonth: 16,
+		includedImageGen: true,
+		includedPlatforms: ["linkedin", "x"],
+		autopublishLinkedIn: false,
+		autopublishMeta: false,
+		perChannelLimits: {
+			linkedin: 8,
+			x: 8,
+			blog: 0,
+		},
+		notes: "Export-only LinkedIn (8) + X (8). No autopublish, no blogs.",
+	},
 	creator: {
 		maxBrands: 1,
 		maxChannels: 2,
 		postsPerMonth: 10,
 		includedImageGen: false,
 		includedPlatforms: ["linkedin","blog","medium"],
-		notes: "LinkedIn + Blog (Medium cross-post).",
+		autopublishLinkedIn: true,
+		autopublishMeta: false,
+		perChannelLimits: {
+			linkedin: 8,
+			blog: 2,
+		},
+		notes: "LinkedIn autopublish (8) + Blog (2).",
 	},
 	growth: {
 		maxBrands: 1,
@@ -24,6 +52,8 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		postsPerMonth: 150,
 		includedImageGen: true,
 		includedPlatforms: ["linkedin","instagram","facebook","x","blog","medium"],
+		autopublishLinkedIn: true,
+		autopublishMeta: true,
 	},
 	pro: {
 		maxBrands: 5,
@@ -31,6 +61,8 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		postsPerMonth: 500,
 		includedImageGen: true,
 		includedPlatforms: ["linkedin","instagram","facebook","x","blog","medium"],
+		autopublishLinkedIn: true,
+		autopublishMeta: true,
 	},
 	scale: {
 		maxBrands: 20,
@@ -38,13 +70,28 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		postsPerMonth: "unlimited",
 		includedImageGen: true,
 		includedPlatforms: ["linkedin","instagram","facebook","x","blog","medium"],
+		autopublishLinkedIn: true,
+		autopublishMeta: true,
 		notes: "Agency features incl. white-label & API.",
 	},
 };
 
 export const PRICING = {
-	order: ["creator","growth","pro","scale"] as PlanId[],
+	order: ["starter","creator","growth","pro","scale"] as PlanId[],
 	monthly: {
+		starter: {
+			name: "Starter",
+			priceText: "$5/mo",
+			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER_MONTHLY!,
+			blurb: "Export-only LinkedIn and X posts. Perfect for manual publishers.",
+			features: [
+				"8 LinkedIn posts (export-only)",
+				"8 X posts (export-only)",
+				"AI image prompts included",
+				"One-click copy & export",
+				"No autopublish (manual posting)",
+			],
+		},
 		creator: {
 			name: "Creator",
 			priceText: "$19/mo",
@@ -96,6 +143,19 @@ export const PRICING = {
 		},
 	},
 	annual: {
+		starter: {
+			name: "Starter",
+			priceText: "$50/yr",
+			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER_ANNUAL!,
+			blurb: "Save 20% billed yearly.",
+			features: [
+				"8 LinkedIn posts (export-only)",
+				"8 X posts (export-only)",
+				"AI image prompts included",
+				"One-click copy & export",
+				"No autopublish (manual posting)",
+			],
+		},
 		creator: {
 			name: "Creator",
 			priceText: "$190/yr",
@@ -149,6 +209,9 @@ export const PRICING = {
 };
 
 export const PRICE_TO_PLAN: Record<string, { plan: PlanId; cycle: "monthly"|"annual"; }> = {
+	// Starter (to be created in Stripe)
+	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER_MONTHLY ? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER_MONTHLY]: { plan: "starter" as const, cycle: "monthly" as const } } : {}),
+	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER_ANNUAL ? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER_ANNUAL]: { plan: "starter" as const, cycle: "annual" as const } } : {}),
 	// Creator
 	"price_1SPjYEK763RD3TkNNi3ov5Ep": { plan: "creator", cycle: "monthly" },
 	"price_1SPjrTK763RD3TkNS1tQPWdF": { plan: "creator", cycle: "annual" },

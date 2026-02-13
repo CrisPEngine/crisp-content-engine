@@ -20,7 +20,7 @@ export async function upsertUserFromStripe(stripeCustomerId: string | null | und
 	return null;
 }
 
-export function capsFor(plan: 'creator' | 'growth' | 'pro' | 'scale') {
+export function capsFor(plan: 'starter' | 'creator' | 'growth' | 'pro' | 'scale') {
 	const c = CAPS[plan];
 	return {
 		max_brands: c.maxBrands,
@@ -46,7 +46,7 @@ export function resolvePlanFromPriceId(priceId?: string) {
 
 export async function upsertSubscriptionAndEntitlements(params: {
 	userId: string;
-	plan: 'creator' | 'growth' | 'pro' | 'scale';
+	plan: 'starter' | 'creator' | 'growth' | 'pro' | 'scale';
 	cycle: 'monthly' | 'annual';
 	stripeCustomerId?: string;
 	stripeSubscriptionId?: string | null;

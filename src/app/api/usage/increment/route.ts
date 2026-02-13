@@ -6,7 +6,7 @@ export const runtime = 'nodejs';
 
 export async function POST(req: Request) {
 	try {
-		const { userId, count = 1, generation_job_id } = await req.json();
+		const { userId, count = 1, generation_job_id, channelCounts } = await req.json();
 		if (!userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
 		
 		const apiKey = req.headers.get('x-api-key') || req.headers.get('authorization')?.replace('Bearer ', '');
@@ -39,13 +39,36 @@ export async function POST(req: Request) {
 			.eq('year_month', ym)
 			.maybeSingle();
 		
+		// channelCounts format: { LinkedIn: 2, X: 1, Blog: 1, Instagram: 0, Facebook: 0 }
+		const linkedin = channelCounts?.LinkedIn ?? channelCounts?.linkedin ?? 0;
+		const x = channelCounts?.X ?? channelCounts?.x ?? 0;
+		const blog = channelCounts?.Blog ?? channelCounts?.blog ?? 0;
+		const instagram = channelCounts?.Instagram ?? channelCounts?.instagram ?? 0;
+		const facebook = channelCounts?.Facebook ?? channelCounts?.facebook ?? 0;
+		
 		if (existing) {
-			await supabase.from('usage_posts').update({ posts: (existing as any).posts + count }).eq('id', (existing as any).id);
+			await supabase.from('usage_posts').update({ 
+				posts: (existing as any).posts + count,
+				linkedin_posts: ((existing as any).linkedin_posts ?? 0) + linkedin,
+				x_posts: ((existing as any).x_posts ?? 0) + x,
+				blog_posts: ((existing as any).blog_posts ?? 0) + blog,
+				instagram_posts: ((existing as any).instagram_posts ?? 0) + instagram,
+				facebook_posts: ((existing as any).facebook_posts ?? 0) + facebook,
+			}).eq('id', (existing as any).id);
 		} else {
-			await supabase.from('usage_posts').insert({ user_id: userId, year_month: ym, posts: count });
+			await supabase.from('usage_posts').insert({ 
+				user_id: userId, 
+				year_month: ym, 
+				posts: count,
+				linkedin_posts: linkedin,
+				x_posts: x,
+				blog_posts: blog,
+				instagram_posts: instagram,
+				facebook_posts: facebook,
+			});
 		}
 		
-		console.log('[Usage Increment] Incremented:', { userId, count, generation_job_id });
+		console.log('[Usage Increment] Incremented:', { userId, count, generation_job_id, channelCounts });
 		return NextResponse.json({ ok: true });
 	} catch (e: any) {
 		return NextResponse.json({ error: e?.message || 'Failed to increment usage' }, { status: 500 });

@@ -6,6 +6,8 @@ import { useSupabase } from '@/components/SupabaseProvider';
 import { Loader2, Sparkles, ArrowRight, AlertCircle } from 'lucide-react';
 import { ContentGenerationLoading } from '@/components/ContentGenerationLoading';
 import { useUsage } from '@/lib/useUsage';
+import type { PlanId } from '@/config/pricing';
+import { CAPS } from '@/config/pricing';
 
 type BrandProfile = {
 	id: string;
@@ -35,12 +37,32 @@ export default function ContentGeneratePage() {
 	const [submitting, setSubmitting] = useState(false);
 	const [showLoading, setShowLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [userPlan, setUserPlan] = useState<PlanId | null>(null);
+
+	// Load user plan
+	useEffect(() => {
+		if (!supabase) return;
+		loadUserPlan();
+	}, [supabase]);
 
 	// Load brands
 	useEffect(() => {
 		if (!supabase) return;
 		loadBrands();
 	}, [supabase]);
+
+	async function loadUserPlan() {
+		try {
+			const res = await fetch('/api/plan', { cache: 'no-store' });
+			if (res.ok) {
+				const data = await res.json();
+				const planName = data.planName?.toLowerCase() || 'creator';
+				setUserPlan(planName as PlanId);
+			}
+		} catch (err) {
+			console.error('Failed to load user plan:', err);
+		}
+	}
 
 	async function loadBrands() {
 		try {
@@ -75,6 +97,22 @@ export default function ContentGeneratePage() {
 		() => brands.find((b) => b.id === selectedBrand),
 		[brands, selectedBrand]
 	);
+
+	// Filter platforms based on user plan
+	const availablePlatforms = useMemo(() => {
+		if (!userPlan) return PLATFORM_OPTIONS;
+		
+		const planCaps = CAPS[userPlan];
+		const allowedPlatformKeys = planCaps.includedPlatforms;
+		
+		return PLATFORM_OPTIONS.filter((platform) => {
+			const key = platform.value.toLowerCase();
+			return allowedPlatformKeys.includes(key as any);
+		});
+	}, [userPlan]);
+
+	// Check if user is on Starter plan (export-only)
+	const isStarterPlan = userPlan === 'starter';
 
 	// Calculate remaining posts from caps and usage
 	const postsCap = usageData?.caps?.posts_per_month ?? 0;
@@ -191,6 +229,19 @@ export default function ContentGeneratePage() {
 					</p>
 				</div>
 
+				{/* Export-only note for Starter plan */}
+				{isStarterPlan && (
+					<div className="card p-4 bg-blue-500/10 border border-blue-500/30">
+						<div className="flex items-center gap-2 mb-1">
+							<AlertCircle className="w-4 h-4 text-blue-400" />
+							<p className="text-sm font-semibold text-blue-300">Export-only plan</p>
+						</div>
+						<p className="text-sm text-blue-300/80">
+							Your Starter plan includes LinkedIn and X posts for manual export. Content is generated for you to copy and publish yourself. Upgrade to Creator for autopublish and blog articles.
+						</p>
+					</div>
+				)}
+
 				{/* Usage Summary */}
 				{usageData && (
 					<div className="card p-4 bg-primary/5 border border-primary/20">
@@ -255,7 +306,7 @@ export default function ContentGeneratePage() {
 								Select the channels and specify how many posts to create for each.
 							</p>
 							<div className="space-y-3">
-								{PLATFORM_OPTIONS.map((platform) => (
+								{availablePlatforms.map((platform) => (
 									<div
 										key={platform.value}
 										className="flex items-center gap-4 p-3 rounded-xl2 border border-edge/60 bg-surface/30"
@@ -263,6 +314,11 @@ export default function ContentGeneratePage() {
 										<div className="flex items-center gap-3 flex-1">
 											<span className="text-2xl">{platform.icon}</span>
 											<span className="font-medium">{platform.label}</span>
+											{isStarterPlan && (platform.value === 'LinkedIn' || platform.value === 'X') && (
+												<span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300">
+													Export-only
+												</span>
+											)}
 										</div>
 										<input
 											type="number"

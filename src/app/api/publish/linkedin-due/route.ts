@@ -29,6 +29,7 @@ import { OAuthReconnectEmail } from '@/emails/product/OAuthReconnectEmail';
 import { listRecords, batchUpdate, normalizeLookup } from '@/lib/airtable/client';
 import { CONTENTQUEUE_LOOKUP_FIELDS } from '@/lib/airtable/field-mapping';
 import { DateTime } from 'luxon';
+import { CAPS } from '@/config/pricing';
 
 /**
  * ContentQueue Lookup Fields
@@ -446,6 +447,27 @@ async function publishDueContent(): Promise<{
 				});
 				stats.failed++;
 				stats.errors.push(`Record ${record.id}: Could not resolve user_id`);
+				continue;
+			}
+
+			// Check if user's plan allows LinkedIn autopublish
+			const { data: subscription } = await admin
+				.from('subscriptions')
+				.select('plan')
+				.eq('user_id', userId)
+				.maybeSingle();
+			
+			const plan = (subscription?.plan as 'starter' | 'creator' | 'growth' | 'pro' | 'scale') || 'creator';
+			const planCaps = CAPS[plan];
+			
+			// If plan doesn't support LinkedIn autopublish, skip this post
+			if (planCaps.autopublishLinkedIn === false) {
+				console.log(`[Publish Job] Skipping record ${record.id}: User ${userId} on ${plan} plan does not have LinkedIn autopublish enabled (export-only)`);
+				
+				// Don't mark as failed - this is intentional behavior for Starter tier
+				// Keep status as "Ready To Publish" so user can manually export
+				// Optionally, we could add a note field if Airtable has one
+				stats.processed--; // Don't count as processed
 				continue;
 			}
 

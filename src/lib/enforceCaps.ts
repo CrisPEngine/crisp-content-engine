@@ -8,6 +8,15 @@ export type CapsCheck = {
 	caps?: { posts_per_month: number };
 };
 
+export type ChannelUsage = {
+	total: number;
+	linkedin: number;
+	x: number;
+	blog: number;
+	instagram: number;
+	facebook: number;
+};
+
 export async function getMonthUsage(userId: string) {
 	const supabase = getSupabaseService();
 	const ym = dayjs().format('YYYY-MM');
@@ -18,6 +27,26 @@ export async function getMonthUsage(userId: string) {
 		.eq('year_month', ym)
 		.maybeSingle();
 	return data?.posts ?? 0;
+}
+
+export async function getChannelUsage(userId: string): Promise<ChannelUsage> {
+	const supabase = getSupabaseService();
+	const ym = dayjs().format('YYYY-MM');
+	const { data } = await supabase
+		.from('usage_posts')
+		.select('posts, linkedin_posts, x_posts, blog_posts, instagram_posts, facebook_posts')
+		.eq('user_id', userId)
+		.eq('year_month', ym)
+		.maybeSingle();
+	
+	return {
+		total: data?.posts ?? 0,
+		linkedin: data?.linkedin_posts ?? 0,
+		x: data?.x_posts ?? 0,
+		blog: data?.blog_posts ?? 0,
+		instagram: data?.instagram_posts ?? 0,
+		facebook: data?.facebook_posts ?? 0,
+	};
 }
 
 export async function getEntitlements(userId: string) {
