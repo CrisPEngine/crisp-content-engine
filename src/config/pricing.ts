@@ -92,19 +92,19 @@ export const PRICING = {
 				"No autopublish (manual posting)",
 			],
 		},
-		creator: {
-			name: "Creator",
-			priceText: "$19/mo",
-			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_MONTHLY!,
-			blurb: "Automated LinkedIn posting plus ready-to-publish blog articles.",
-			features: [
-				"8 auto-published LinkedIn posts",
-				"2 long-form blog for you to self-publish",
-				"Personal brand onboarding",
-				"Manual blog export (Word/PDF/Markdown)",
-				"LinkedIn connection required",
-			],
-		},
+	creator: {
+		name: "Creator",
+		priceText: "$9/mo",
+		priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_MONTHLY!,
+		blurb: "Automated LinkedIn posting plus ready-to-publish blog articles.",
+		features: [
+			"8 auto-published LinkedIn posts",
+			"2 long-form blog for you to self-publish",
+			"Personal brand onboarding",
+			"Manual blog export (Word/PDF/Markdown)",
+			"LinkedIn connection required",
+		],
+	},
 		growth: {
 			name: "Growth",
 			priceText: "$49/mo",
@@ -156,19 +156,19 @@ export const PRICING = {
 				"No autopublish (manual posting)",
 			],
 		},
-		creator: {
-			name: "Creator",
-			priceText: "$190/yr",
-			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_ANNUAL!,
-			blurb: "Save 20% billed yearly.",
-			features: [
-				"8 auto-published LinkedIn posts",
-				"2 long-form blog for you to self-publish",
-				"Personal brand onboarding",
-				"Manual blog export (Word/PDF/Markdown)",
-				"LinkedIn connection required",
-			],
-		},
+	creator: {
+		name: "Creator",
+		priceText: "$90/yr",
+		priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_ANNUAL!,
+		blurb: "Save 20% billed yearly.",
+		features: [
+			"8 auto-published LinkedIn posts",
+			"2 long-form blog for you to self-publish",
+			"Personal brand onboarding",
+			"Manual blog export (Word/PDF/Markdown)",
+			"LinkedIn connection required",
+		],
+	},
 		growth: {
 			name: "Growth",
 			priceText: "$490/yr",
@@ -209,10 +209,13 @@ export const PRICING = {
 };
 
 export const PRICE_TO_PLAN: Record<string, { plan: PlanId; cycle: "monthly"|"annual"; }> = {
-	// Starter (to be created in Stripe)
+	// Starter
 	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER_MONTHLY ? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER_MONTHLY]: { plan: "starter" as const, cycle: "monthly" as const } } : {}),
 	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER_ANNUAL ? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER_ANNUAL]: { plan: "starter" as const, cycle: "annual" as const } } : {}),
-	// Creator
+	// Creator (new $9/mo pricing)
+	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_MONTHLY ? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_MONTHLY]: { plan: "creator" as const, cycle: "monthly" as const } } : {}),
+	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_ANNUAL ? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_ANNUAL]: { plan: "creator" as const, cycle: "annual" as const } } : {}),
+	// Creator (legacy $19/mo pricing - kept for backward compatibility)
 	"price_1SPjYEK763RD3TkNNi3ov5Ep": { plan: "creator", cycle: "monthly" },
 	"price_1SPjrTK763RD3TkNS1tQPWdF": { plan: "creator", cycle: "annual" },
 	// Growth
