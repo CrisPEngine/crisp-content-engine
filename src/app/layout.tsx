@@ -65,7 +65,7 @@ export default function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} body-grid min-h-screen`}>
         {/* Top bar - only for site pages, app pages use AppHeader */}
         <header className="sticky top-0 z-30 backdrop-blur-xs bg-bg/60 border-b border-edge/60 min-h-[90px] flex items-center">
-          <div className="mx-auto max-w-5xl px-4 sm:px-6 w-full flex items-center">
+          <div className="mx-auto max-w-5xl px-4 sm:px-6 w-full flex items-center justify-between">
             <a href="/" className="flex items-center">
               <img 
                 src="https://res.cloudinary.com/dr75zvtso/image/upload/v1762325831/CrispContentEngineLogo_white_1200x627_ojrxn6.png" 
@@ -77,6 +77,20 @@ export default function RootLayout({
                 height={627}
               />
             </a>
+            <nav className="flex items-center gap-3">
+              <Link
+                href="/sign-in"
+                className="rounded-full px-5 py-2.5 text-sm font-medium text-text-dim hover:text-text transition-colors"
+              >
+                Sign in
+              </Link>
+              <Link
+                href="/sign-in?signup=true"
+                className="inline-flex items-center justify-center rounded-full px-6 py-2.5 text-sm font-semibold bg-primary text-primary-fg hover:opacity-90 transition-opacity"
+              >
+                Start free
+              </Link>
+            </nav>
           </div>
         </header>
         {/* Page */}

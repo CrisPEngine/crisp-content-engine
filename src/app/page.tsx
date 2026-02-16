@@ -9,8 +9,6 @@ import { AnimatedBackground } from "@/components/AnimatedBackground";
 export default function HomePage() {
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-100 overflow-hidden">
-      <Header />
-      
       {/* Hero Section */}
       <section className="relative mt-16 lg:mt-20">
         <AnimatedBackground />
@@ -37,6 +35,13 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Conversion Band */}
+      <section className="mt-32 lg:mt-40">
+        <div className="mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-10 xl:px-12">
+          <ConversionBand />
+        </div>
+      </section>
+
       {/* Free Tier Section */}
       <section className="mt-32 lg:mt-40">
         <div className="mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-10 xl:px-12">
@@ -48,73 +53,6 @@ export default function HomePage() {
         <FooterNote />
       </div>
     </main>
-  );
-}
-
-const FAVICON_URL = "https://res.cloudinary.com/dr75zvtso/image/upload/v1762342722/favicon_crispContentEngine_128x128_m1m2ry.png";
-
-function Header() {
-  const shouldReduceMotion = useReducedMotion();
-
-  return (
-    <motion.header 
-      className="sticky top-0 z-50 bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-900/50"
-      initial={shouldReduceMotion ? {} : { opacity: 0, y: -20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: "easeOut" }}
-    >
-      <div className="mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-10 xl:px-12 2xl:max-w-[1400px]">
-        <div className="flex items-center justify-between py-4">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-3 group">
-            <img
-              src={FAVICON_URL}
-              alt=""
-              className="h-9 w-9 rounded-lg object-contain ring-1 ring-neutral-800 group-hover:ring-neutral-700 transition-all"
-              width={36}
-              height={36}
-            />
-            <div className="leading-tight">
-              <div className="text-sm font-semibold tracking-tight">CRISP</div>
-              <div className="text-xs text-neutral-400">Content Engine</div>
-            </div>
-          </Link>
-
-          {/* Navigation */}
-          <nav className="flex items-center gap-3">
-            <Link
-              href="/sign-in"
-              className="rounded-full px-5 py-2.5 text-sm font-medium text-neutral-300 hover:text-neutral-100 hover:bg-neutral-900/50 transition-all"
-              onClick={() => {
-                if (typeof window !== 'undefined' && window.gtag) {
-                  window.gtag('event', 'homepage_signin_click', {
-                    event_category: 'engagement',
-                    event_label: 'header',
-                  });
-                }
-              }}
-            >
-              Sign in
-            </Link>
-            
-            <Link
-              href="/sign-in?signup=true"
-              className="inline-flex items-center justify-center rounded-full px-6 py-2.5 text-sm font-semibold bg-sky-400 text-neutral-950 hover:bg-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 focus:ring-offset-neutral-950 transition-all shadow-lg shadow-sky-400/25 hover:shadow-xl hover:shadow-sky-400/30"
-              onClick={() => {
-                if (typeof window !== 'undefined' && window.gtag) {
-                  window.gtag('event', 'homepage_cta_start_free_click', {
-                    event_category: 'conversion',
-                    event_label: 'header',
-                  });
-                }
-              }}
-            >
-              Start free
-            </Link>
-          </nav>
-        </div>
-      </div>
-    </motion.header>
   );
 }
 
@@ -133,23 +71,68 @@ function HeroContent() {
       </motion.h1>
 
       <motion.p 
-        className="mt-6 max-w-xl text-pretty text-lg leading-relaxed text-neutral-300 sm:text-xl"
+        className="mt-4 max-w-xl text-pretty text-lg leading-relaxed text-neutral-300 sm:text-xl"
         initial={shouldReduceMotion ? {} : { opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
       >
         CRISP turns your ideas into a structured content system.
         <br />
-        <span className="text-neutral-400">Free to start. No setup friction.</span>
+        <span className="text-neutral-400">Free to start. No credit card required.</span>
       </motion.p>
 
       <motion.div 
-        className="mt-8 inline-flex items-center gap-2 rounded-full bg-neutral-900/40 px-4 py-2 text-sm text-neutral-400 ring-1 ring-neutral-800/50 backdrop-blur-sm"
+        className="mt-6 flex flex-wrap items-center gap-4"
+        initial={shouldReduceMotion ? {} : { opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.25, ease: [0.16, 1, 0.3, 1] }}
+      >
+        <Link
+          href="/sign-in?signup=true"
+          className="inline-flex items-center justify-center rounded-full px-7 py-3.5 text-base font-semibold bg-sky-400 text-neutral-950 hover:bg-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 focus:ring-offset-neutral-950 transition-all shadow-lg shadow-sky-400/25 hover:shadow-xl hover:shadow-sky-400/30"
+          onClick={() => {
+            if (typeof window !== "undefined" && window.gtag) {
+              window.gtag("event", "homepage_cta_start_free_click", {
+                event_category: "conversion",
+                event_label: "hero_primary",
+              });
+            }
+          }}
+        >
+          Start free
+        </Link>
+        <Link
+          href="/sign-in"
+          className="inline-flex items-center justify-center rounded-full px-7 py-3.5 text-base font-semibold text-neutral-100 ring-1 ring-neutral-700 hover:bg-neutral-900 hover:ring-neutral-600 focus:outline-none focus:ring-2 focus:ring-neutral-600 focus:ring-offset-2 focus:ring-offset-neutral-950 transition-all"
+          onClick={() => {
+            if (typeof window !== "undefined" && window.gtag) {
+              window.gtag("event", "homepage_signin_click", {
+                event_category: "engagement",
+                event_label: "hero_secondary",
+              });
+            }
+          }}
+        >
+          Sign in
+        </Link>
+      </motion.div>
+
+      <motion.p 
+        className="mt-3 text-sm text-neutral-400"
+        initial={shouldReduceMotion ? {} : { opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.4, delay: 0.35 }}
+      >
+        Free tier available. No credit card required.
+      </motion.p>
+
+      <motion.div 
+        className="mt-6 inline-flex items-center gap-2 rounded-full bg-neutral-900/40 px-4 py-2 text-sm text-neutral-400 ring-1 ring-neutral-800/50 backdrop-blur-sm"
         initial={shouldReduceMotion ? {} : { opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.4, delay: 0.3 }}
+        transition={{ duration: 0.4, delay: 0.4 }}
       >
-        <svg className="h-4 w-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className="h-4 w-4 shrink-0 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
         Live in under 60 seconds
@@ -245,6 +228,62 @@ function ValueBlocks() {
         </GlassCard>
       ))}
     </div>
+  );
+}
+
+function ConversionBand() {
+  const shouldReduceMotion = useReducedMotion();
+
+  return (
+    <motion.div
+      className="relative overflow-hidden rounded-2xl bg-neutral-900/50 ring-1 ring-neutral-800/50 px-8 py-10 sm:px-10 sm:py-12 lg:px-14 lg:py-14"
+      initial={shouldReduceMotion ? {} : { opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-50px" }}
+      transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+    >
+      <div className="mx-auto max-w-3xl text-center">
+        <h2 className="text-2xl font-semibold tracking-tight text-neutral-100 sm:text-3xl">
+          Start free in minutes.
+        </h2>
+        <p className="mt-3 text-base text-neutral-400 sm:text-lg">
+          Create content now. Upgrade only when you need scheduling and multi-channel publishing.
+        </p>
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+          <Link
+            href="/sign-in?signup=true"
+            className="inline-flex items-center justify-center rounded-full px-7 py-3.5 text-base font-semibold bg-sky-400 text-neutral-950 hover:bg-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 focus:ring-offset-neutral-950 transition-all shadow-lg shadow-sky-400/25 hover:shadow-xl hover:shadow-sky-400/30"
+            onClick={() => {
+              if (typeof window !== "undefined" && window.gtag) {
+                window.gtag("event", "homepage_cta_start_free_click", {
+                  event_category: "conversion",
+                  event_label: "conversion_band",
+                });
+              }
+            }}
+          >
+            Start free
+          </Link>
+          <Link
+            href="/sign-in"
+            className="inline-flex items-center justify-center rounded-full px-7 py-3.5 text-base font-semibold text-neutral-100 ring-1 ring-neutral-700 hover:bg-neutral-900 hover:ring-neutral-600 focus:outline-none focus:ring-2 focus:ring-neutral-600 focus:ring-offset-2 focus:ring-offset-neutral-950 transition-all"
+            onClick={() => {
+              if (typeof window !== "undefined" && window.gtag) {
+                window.gtag("event", "homepage_signin_click", {
+                  event_category: "engagement",
+                  event_label: "conversion_band",
+                });
+              }
+            }}
+          >
+            Sign in
+          </Link>
+        </div>
+        <p className="mt-3 text-sm text-neutral-500">
+          No credit card required.
+        </p>
+      </div>
+    </motion.div>
   );
 }
 
