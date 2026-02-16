@@ -1,7 +1,8 @@
-import Link from "next/link";
-import type { Metadata } from "next";
+"use client";
 
-export const metadata: Metadata = {
+import Link from "next/link";
+
+const metadata = {
   title: "CRISP Content Engine - Build consistent visibility without burning out",
   description: "Create consistent content. Publish when ready. CRISP turns your ideas into a structured content system. Free to start.",
   openGraph: {
@@ -27,6 +28,11 @@ export const metadata: Metadata = {
     images: ["https://res.cloudinary.com/dr75zvtso/image/upload/v1769501243/CCE-opengraph_1200x630_i8eylb.jpg"],
   },
 };
+
+// Set document metadata via useEffect for client component
+if (typeof document !== 'undefined') {
+  document.title = metadata.title;
+}
 
 export default function HomePage() {
   return (
