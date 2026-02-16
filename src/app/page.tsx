@@ -1,42 +1,50 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { motion, useReducedMotion } from "framer-motion";
-import { ProductMockup3D } from "@/components/ProductMockup3D";
 import { GlassCard } from "@/components/GlassCard";
 import { AnimatedBackground } from "@/components/AnimatedBackground";
 
 export default function HomePage() {
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-100 overflow-hidden">
-      <div className="mx-auto w-full max-w-7xl px-6 py-8">
-        <Header />
+      <Header />
+      
+      {/* Hero Section */}
+      <section className="relative mt-16 lg:mt-20">
+        <AnimatedBackground />
         
-        {/* Hero Section */}
-        <section className="relative mt-16 lg:mt-20">
-          <AnimatedBackground />
-          
-          <div className="grid gap-12 lg:grid-cols-2 lg:gap-16 items-center">
+        <div className="mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-10 xl:px-12 2xl:max-w-[1400px]">
+          <div className="grid items-center gap-10 lg:grid-cols-12 lg:gap-12 xl:gap-16">
             {/* Left: Hero content */}
-            <HeroContent />
+            <div className="lg:col-span-7">
+              <HeroContent />
+            </div>
             
-            {/* Right: 3D Product Mockup */}
-            <div className="order-first lg:order-last">
-              <ProductMockup3D />
+            {/* Right: Hero Image */}
+            <div className="lg:col-span-5 lg:justify-self-end">
+              <HeroImage />
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        {/* Value Blocks */}
-        <section className="mt-32 lg:mt-40">
+      {/* Value Blocks */}
+      <section className="mt-32 lg:mt-40">
+        <div className="mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-10 xl:px-12">
           <ValueBlocks />
-        </section>
+        </div>
+      </section>
 
-        {/* Free Tier Section */}
-        <section className="mt-32 lg:mt-40">
+      {/* Free Tier Section */}
+      <section className="mt-32 lg:mt-40">
+        <div className="mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-10 xl:px-12">
           <FreeTierSection />
-        </section>
+        </div>
+      </section>
 
+      <div className="mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-10 xl:px-12">
         <FooterNote />
       </div>
     </main>
@@ -50,57 +58,62 @@ function Header() {
 
   return (
     <motion.header 
-      className="flex items-center justify-between sticky top-0 z-50 bg-neutral-950/80 backdrop-blur-sm py-4 -mx-6 px-6 border-b border-neutral-900/50"
+      className="sticky top-0 z-50 bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-900/50"
       initial={shouldReduceMotion ? {} : { opacity: 0, y: -20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: "easeOut" }}
     >
-      {/* Logo */}
-      <Link href="/" className="flex items-center gap-3 group">
-        <img
-          src={FAVICON_URL}
-          alt=""
-          className="h-9 w-9 rounded-lg object-contain ring-1 ring-neutral-800 group-hover:ring-neutral-700 transition-all"
-          width={36}
-          height={36}
-        />
-        <div className="leading-tight">
-          <div className="text-sm font-semibold tracking-tight">CRISP</div>
-          <div className="text-xs text-neutral-400">Content Engine</div>
-        </div>
-      </Link>
+      <div className="mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-10 xl:px-12 2xl:max-w-[1400px]">
+        <div className="flex items-center justify-between py-4">
+          {/* Logo */}
+          <Link href="/" className="flex items-center gap-3 group">
+            <img
+              src={FAVICON_URL}
+              alt=""
+              className="h-9 w-9 rounded-lg object-contain ring-1 ring-neutral-800 group-hover:ring-neutral-700 transition-all"
+              width={36}
+              height={36}
+            />
+            <div className="leading-tight">
+              <div className="text-sm font-semibold tracking-tight">CRISP</div>
+              <div className="text-xs text-neutral-400">Content Engine</div>
+            </div>
+          </Link>
 
-      {/* Navigation */}
-      <nav className="flex items-center gap-3">
-        <Link
-          href="/sign-in"
-          className="rounded-full px-5 py-2 text-sm font-medium text-neutral-300 hover:text-neutral-100 hover:bg-neutral-900/50 transition-all"
-          onClick={() => {
-            if (typeof window !== 'undefined' && window.gtag) {
-              window.gtag('event', 'homepage_signin_click', {
-                event_category: 'engagement',
-                event_label: 'header',
-              });
-            }
-          }}
-        >
-          Sign in
-        </Link>
-        
-        <AnimatedButton
-          href="/sign-in?signup=true"
-          onClick={() => {
-            if (typeof window !== 'undefined' && window.gtag) {
-              window.gtag('event', 'homepage_cta_start_free_click', {
-                event_category: 'conversion',
-                event_label: 'header',
-              });
-            }
-          }}
-        >
-          Start free
-        </AnimatedButton>
-      </nav>
+          {/* Navigation */}
+          <nav className="flex items-center gap-3">
+            <Link
+              href="/sign-in"
+              className="rounded-full px-5 py-2.5 text-sm font-medium text-neutral-300 hover:text-neutral-100 hover:bg-neutral-900/50 transition-all"
+              onClick={() => {
+                if (typeof window !== 'undefined' && window.gtag) {
+                  window.gtag('event', 'homepage_signin_click', {
+                    event_category: 'engagement',
+                    event_label: 'header',
+                  });
+                }
+              }}
+            >
+              Sign in
+            </Link>
+            
+            <Link
+              href="/sign-in?signup=true"
+              className="inline-flex items-center justify-center rounded-full px-6 py-2.5 text-sm font-semibold bg-sky-400 text-neutral-950 hover:bg-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 focus:ring-offset-neutral-950 transition-all shadow-lg shadow-sky-400/25 hover:shadow-xl hover:shadow-sky-400/30"
+              onClick={() => {
+                if (typeof window !== 'undefined' && window.gtag) {
+                  window.gtag('event', 'homepage_cta_start_free_click', {
+                    event_category: 'conversion',
+                    event_label: 'header',
+                  });
+                }
+              }}
+            >
+              Start free
+            </Link>
+          </nav>
+        </div>
+      </div>
     </motion.header>
   );
 }
@@ -109,7 +122,7 @@ function HeroContent() {
   const shouldReduceMotion = useReducedMotion();
 
   return (
-    <div className="relative z-10">
+    <div className="relative z-10 max-w-2xl">
       <motion.h1 
         className="text-balance text-5xl font-semibold tracking-tight sm:text-6xl lg:text-7xl leading-[1.1]"
         initial={shouldReduceMotion ? {} : { opacity: 0, y: 20 }}
@@ -131,56 +144,10 @@ function HeroContent() {
       </motion.p>
 
       <motion.div 
-        className="mt-10 flex flex-wrap items-center gap-4"
-        initial={shouldReduceMotion ? {} : { opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
-      >
-        <AnimatedButton
-          href="/sign-in?signup=true"
-          primary
-          onClick={() => {
-            if (typeof window !== 'undefined' && window.gtag) {
-              window.gtag('event', 'homepage_cta_start_free_click', {
-                event_category: 'conversion',
-                event_label: 'hero_primary',
-              });
-            }
-          }}
-        >
-          Start free
-        </AnimatedButton>
-
-        <Link
-          href="/sign-in"
-          className="inline-flex items-center justify-center rounded-full px-7 py-3.5 text-base font-semibold text-neutral-100 ring-1 ring-neutral-700 hover:bg-neutral-900 hover:ring-neutral-600 focus:outline-none focus:ring-2 focus:ring-neutral-600 focus:ring-offset-2 focus:ring-offset-neutral-950 transition-all hover:-translate-y-0.5"
-          onClick={() => {
-            if (typeof window !== 'undefined' && window.gtag) {
-              window.gtag('event', 'homepage_signin_click', {
-                event_category: 'engagement',
-                event_label: 'hero_secondary',
-              });
-            }
-          }}
-        >
-          Sign in
-        </Link>
-      </motion.div>
-
-      <motion.p 
-        className="mt-6 text-sm text-neutral-400"
-        initial={shouldReduceMotion ? {} : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.4, delay: 0.4 }}
-      >
-        Free tier available. No credit card required.
-      </motion.p>
-
-      <motion.div 
         className="mt-8 inline-flex items-center gap-2 rounded-full bg-neutral-900/40 px-4 py-2 text-sm text-neutral-400 ring-1 ring-neutral-800/50 backdrop-blur-sm"
         initial={shouldReduceMotion ? {} : { opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.4, delay: 0.5 }}
+        transition={{ duration: 0.4, delay: 0.3 }}
       >
         <svg className="h-4 w-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -191,39 +158,35 @@ function HeroContent() {
   );
 }
 
-function AnimatedButton({ 
-  children, 
-  href, 
-  primary = false,
-  onClick,
-}: { 
-  children: React.ReactNode; 
-  href: string; 
-  primary?: boolean;
-  onClick?: () => void;
-}) {
+function HeroImage() {
   const shouldReduceMotion = useReducedMotion();
 
   return (
     <motion.div
-      whileHover={shouldReduceMotion ? {} : { scale: 1.03 }}
-      whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
+      className="w-full max-w-[560px] sm:max-w-[620px] lg:max-w-[640px] xl:max-w-[720px]"
+      initial={shouldReduceMotion ? {} : { opacity: 0, y: 40 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
     >
-      <Link
-        href={href}
-        onClick={onClick}
-        className={`
-          inline-flex items-center justify-center rounded-full px-7 py-3.5 text-base font-semibold
-          focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-neutral-950 transition-all
-          ${primary 
-            ? 'bg-sky-400 text-neutral-950 hover:bg-sky-300 focus:ring-sky-300 shadow-lg shadow-sky-400/25 hover:shadow-xl hover:shadow-sky-400/30' 
-            : 'bg-neutral-900 text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-800 hover:ring-neutral-700 focus:ring-neutral-700'
-          }
-        `}
-      >
-        {children}
-      </Link>
+      <div className="relative w-full aspect-[16/10]">
+        {/* Subtle glow effect behind the image */}
+        <div className="absolute inset-0 translate-y-4 blur-2xl opacity-30 bg-gradient-to-br from-sky-500/20 via-emerald-500/15 to-transparent rounded-2xl" />
+        
+        {/* Image wrapper with subtle border and shadow */}
+        <div className="relative rounded-2xl overflow-hidden ring-1 ring-neutral-800/50 shadow-2xl shadow-black/40">
+          <Image
+            src="https://res.cloudinary.com/dr75zvtso/image/upload/v1771248057/screenshot-mockup_kgv8ks.png"
+            alt="CRISP Content Engine interface"
+            width={1440}
+            height={900}
+            priority
+            className="w-full h-full object-cover"
+          />
+          
+          {/* Subtle reflection overlay */}
+          <div className="absolute inset-0 bg-gradient-to-b from-white/[0.02] via-transparent to-transparent pointer-events-none" />
+        </div>
+      </div>
     </motion.div>
   );
 }
@@ -260,29 +223,27 @@ function ValueBlocks() {
   ];
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="grid gap-8 md:grid-cols-3">
-        {blocks.map((block, idx) => (
-          <GlassCard key={idx} delay={idx * 0.08}>
-            <div className="p-8">
-              {/* Icon with glow */}
-              <div className="relative inline-flex">
-                <div className="absolute inset-0 bg-gradient-to-br from-sky-500/20 to-emerald-500/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                <div className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-neutral-900 to-neutral-900/50 text-neutral-400 ring-1 ring-neutral-800/50 group-hover:from-neutral-800 group-hover:to-neutral-850 group-hover:text-neutral-300 group-hover:ring-neutral-700/50 transition-all duration-300">
-                  {block.icon}
-                </div>
+    <div className="grid gap-8 md:grid-cols-3">
+      {blocks.map((block, idx) => (
+        <GlassCard key={idx} delay={idx * 0.08}>
+          <div className="p-8">
+            {/* Icon with glow */}
+            <div className="relative inline-flex">
+              <div className="absolute inset-0 bg-gradient-to-br from-sky-500/20 to-emerald-500/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-neutral-900 to-neutral-900/50 text-neutral-400 ring-1 ring-neutral-800/50 group-hover:from-neutral-800 group-hover:to-neutral-850 group-hover:text-neutral-300 group-hover:ring-neutral-700/50 transition-all duration-300">
+                {block.icon}
               </div>
-              
-              <h3 className="mt-6 text-xl font-semibold text-neutral-100 tracking-tight">
-                {block.title}
-              </h3>
-              <p className="mt-3 text-base leading-relaxed text-neutral-400">
-                {block.description}
-              </p>
             </div>
-          </GlassCard>
-        ))}
-      </div>
+            
+            <h3 className="mt-6 text-xl font-semibold text-neutral-100 tracking-tight">
+              {block.title}
+            </h3>
+            <p className="mt-3 text-base leading-relaxed text-neutral-400">
+              {block.description}
+            </p>
+          </div>
+        </GlassCard>
+      ))}
     </div>
   );
 }
@@ -291,14 +252,14 @@ function FreeTierSection() {
   const shouldReduceMotion = useReducedMotion();
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <motion.div
-        initial={shouldReduceMotion ? {} : { opacity: 0, y: 30 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: "-100px" }}
-        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-      >
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-neutral-900/60 via-neutral-900/40 to-neutral-900/20 p-10 ring-1 ring-neutral-800/50 backdrop-blur-xl lg:p-14">
+    <motion.div
+      className="mx-auto max-w-4xl"
+      initial={shouldReduceMotion ? {} : { opacity: 0, y: 30 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-100px" }}
+      transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+    >
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-neutral-900/60 via-neutral-900/40 to-neutral-900/20 p-10 ring-1 ring-neutral-800/50 backdrop-blur-xl lg:p-14">
           {/* Top edge highlight */}
           <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-neutral-700/50 to-transparent" />
           
@@ -376,8 +337,7 @@ function FreeTierSection() {
             </p>
           </motion.div>
         </div>
-      </motion.div>
-    </div>
+    </motion.div>
   );
 }
 
