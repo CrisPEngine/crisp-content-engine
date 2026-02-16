@@ -2,19 +2,19 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "CrisP Content Engine",
-  description: "Your entire month of content. Generated once. AI-powered content engine with human approval.",
+  title: "CRISP Content Engine - Build consistent visibility without burning out",
+  description: "Create consistent content. Publish when ready. CRISP turns your ideas into a structured content system. Free to start.",
   openGraph: {
-    title: "CrisP Content Engine",
-    description: "Your entire month of content. Generated once. AI-powered content engine with human approval.",
+    title: "CRISP Content Engine - Build consistent visibility without burning out",
+    description: "Create consistent content. Publish when ready. CRISP turns your ideas into a structured content system. Free to start.",
     url: process.env.NEXT_PUBLIC_APP_URL || "https://app.crispdigital.io",
-    siteName: "CrisP Content Engine",
+    siteName: "CRISP Content Engine",
     images: [
       {
         url: "https://res.cloudinary.com/dr75zvtso/image/upload/v1769501243/CCE-opengraph_1200x630_i8eylb.jpg",
         width: 1200,
         height: 630,
-        alt: "CrisP Content Engine - Your entire month of content. Generated once.",
+        alt: "CRISP Content Engine - Build consistent visibility without burning out",
       },
     ],
     type: "website",
@@ -22,45 +22,28 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "CrisP Content Engine",
-    description: "Your entire month of content. Generated once. AI-powered content engine with human approval.",
+    title: "CRISP Content Engine - Build consistent visibility without burning out",
+    description: "Create consistent content. Publish when ready. Free to start.",
     images: ["https://res.cloudinary.com/dr75zvtso/image/upload/v1769501243/CCE-opengraph_1200x630_i8eylb.jpg"],
   },
 };
-
-type ExamplePost = {
-  title: string;
-  body: string[];
-};
-
-const examplePosts: ExamplePost[] = [
-  {
-    title: "Why consistency beats creativity for growth",
-    body: [
-      "Most people struggle with content because they treat it like inspiration.",
-      "The real leverage comes from systems that compound over time.",
-      "Here’s what most creators miss…",
-    ],
-  },
-  {
-    title: "The hidden cost of posting “when you feel like it”",
-    body: [
-      "Irregular posting doesn’t just hurt reach.",
-      "It breaks trust with your audience.",
-      "Consistency is a signal, not a tactic.",
-    ],
-  },
-];
 
 export default function HomePage() {
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-100">
       <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:py-16">
         <Header />
-
-        <div className="mt-10 grid gap-10 lg:mt-14 lg:grid-cols-2 lg:items-center">
+        
+        <div className="mt-16 lg:mt-24">
           <Hero />
-          <ExampleOutputCard posts={examplePosts} />
+        </div>
+
+        <div className="mt-20 lg:mt-32">
+          <ValueBlocks />
+        </div>
+
+        <div className="mt-20 lg:mt-32">
+          <FreeTierSection />
         </div>
 
         <FooterNote />
@@ -91,9 +74,17 @@ function Header() {
       <nav className="flex items-center gap-3">
         <Link
           href="/sign-in"
-          className="rounded-full px-4 py-2 text-sm text-neutral-200 ring-1 ring-neutral-800 hover:bg-neutral-900"
+          className="rounded-full px-4 py-2 text-sm text-neutral-200 ring-1 ring-neutral-800 hover:bg-neutral-900 transition-colors"
+          onClick={() => {
+            if (typeof window !== 'undefined' && window.gtag) {
+              window.gtag('event', 'homepage_signin_click', {
+                event_category: 'engagement',
+                event_label: 'header',
+              });
+            }
+          }}
         >
-          Sign in
+          Sign in to continue
         </Link>
       </nav>
     </header>
@@ -101,114 +92,176 @@ function Header() {
 }
 
 function Hero() {
+  const handleStartFreeClick = () => {
+    if (typeof window !== 'undefined' && window.gtag) {
+      window.gtag('event', 'homepage_cta_start_free_click', {
+        event_category: 'conversion',
+        event_label: 'hero_primary',
+      });
+    }
+  };
+
+  const handleSignInClick = () => {
+    if (typeof window !== 'undefined' && window.gtag) {
+      window.gtag('event', 'homepage_signin_click', {
+        event_category: 'engagement',
+        event_label: 'hero_secondary',
+      });
+    }
+  };
+
   return (
-    <section>
-      <h1 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-        Generate your next 9 posts in under 60 seconds
+    <section className="mx-auto max-w-3xl text-center">
+      <h1 className="text-balance text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">
+        Build consistent visibility without burning out.
       </h1>
 
-      <p className="mt-4 max-w-xl text-pretty text-base leading-relaxed text-neutral-300">
-        CRISP turns how you think into a repeatable content system. No setup. No
-        publishing required.
+      <p className="mt-6 mx-auto max-w-2xl text-pretty text-lg leading-relaxed text-neutral-300 sm:text-xl">
+        CRISP turns your ideas into a structured content system.
+        <br />
+        Free to start. No setup friction.
       </p>
 
-      <div className="mt-7 flex flex-wrap items-center gap-3">
+      <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
         <Link
-          href="/preview"
-          className="inline-flex items-center justify-center rounded-full bg-sky-400 px-5 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 focus:ring-offset-neutral-950"
+          href="/sign-in?signup=true"
+          onClick={handleStartFreeClick}
+          className="inline-flex items-center justify-center rounded-full bg-sky-400 px-7 py-3.5 text-base font-semibold text-neutral-950 hover:bg-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 focus:ring-offset-neutral-950 transition-colors shadow-lg shadow-sky-400/20"
         >
-          Try instant preview
+          Start free
         </Link>
 
         <Link
           href="/sign-in"
-          className="inline-flex items-center justify-center rounded-full px-5 py-2.5 text-sm font-semibold text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-700 focus:ring-offset-2 focus:ring-offset-neutral-950"
+          onClick={handleSignInClick}
+          className="inline-flex items-center justify-center rounded-full px-7 py-3.5 text-base font-semibold text-neutral-100 ring-1 ring-neutral-700 hover:bg-neutral-900 hover:ring-neutral-600 focus:outline-none focus:ring-2 focus:ring-neutral-600 focus:ring-offset-2 focus:ring-offset-neutral-950 transition-colors"
         >
           Sign in
         </Link>
       </div>
 
-      <ul className="mt-8 space-y-3 text-sm text-neutral-300">
-        <li className="flex gap-3">
-          <span className="mt-1 inline-block h-2 w-2 rounded-full bg-neutral-600" />
-          Pick your niche, tone and goals
-        </li>
-        <li className="flex gap-3">
-          <span className="mt-1 inline-block h-2 w-2 rounded-full bg-neutral-600" />
-          See a structured content system, not random posts
-        </li>
-        <li className="flex gap-3">
-          <span className="mt-1 inline-block h-2 w-2 rounded-full bg-neutral-600" />
-          Save and publish when you are ready
-        </li>
-      </ul>
+      <p className="mt-6 text-sm text-neutral-400">
+        Free tier available. No credit card required.
+      </p>
+
+      <div className="mt-12 inline-flex items-center gap-2 rounded-full bg-neutral-900/40 px-4 py-2 text-sm text-neutral-400 ring-1 ring-neutral-800">
+        <svg className="h-4 w-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+        Live in under 60 seconds
+      </div>
     </section>
   );
 }
 
-function ExampleOutputCard({ posts }: { posts: ExamplePost[] }) {
+function ValueBlocks() {
+  const blocks = [
+    {
+      title: "Plan with structure",
+      description: "Turn scattered ideas into a repeatable content engine.",
+      icon: (
+        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+        </svg>
+      ),
+    },
+    {
+      title: "Generate with intent",
+      description: "Content aligned to your voice, niche and goals.",
+      icon: (
+        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      ),
+    },
+    {
+      title: "Publish when ready",
+      description: "Approve, schedule and publish across platforms.",
+      icon: (
+        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+      ),
+    },
+  ];
+
   return (
-    <section className="rounded-2xl bg-neutral-950/40 p-5 ring-1 ring-neutral-800 backdrop-blur">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm font-semibold text-neutral-100">
-            Example output
+    <section className="mx-auto max-w-5xl">
+      <div className="grid gap-8 md:grid-cols-3">
+        {blocks.map((block, idx) => (
+          <div key={idx} className="group">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-900 text-neutral-400 ring-1 ring-neutral-800 group-hover:bg-neutral-800 group-hover:text-neutral-300 transition-colors">
+              {block.icon}
+            </div>
+            <h3 className="mt-6 text-lg font-semibold text-neutral-100">
+              {block.title}
+            </h3>
+            <p className="mt-2 text-base leading-relaxed text-neutral-400">
+              {block.description}
+            </p>
           </div>
-          <div className="mt-1 text-xs text-neutral-400">
-            Preview generated by CRISP Content Engine
-          </div>
-        </div>
-
-        <div className="hidden sm:flex items-center gap-2">
-          <span className="rounded-full bg-neutral-900 px-3 py-1 text-xs text-neutral-300 ring-1 ring-neutral-800">
-            LinkedIn
-          </span>
-          <span className="rounded-full bg-neutral-900 px-3 py-1 text-xs text-neutral-500 ring-1 ring-neutral-800">
-            X
-          </span>
-          <span className="rounded-full bg-neutral-900 px-3 py-1 text-xs text-neutral-500 ring-1 ring-neutral-800">
-            Instagram
-          </span>
-        </div>
-      </div>
-
-      <div className="mt-5 space-y-4">
-        {posts.map((p, idx) => (
-          <article
-            key={idx}
-            className="rounded-xl bg-neutral-950 p-4 ring-1 ring-neutral-800"
-          >
-            <div className="text-sm font-semibold text-neutral-100">
-              {p.title}
-            </div>
-
-            <div className="mt-3 space-y-2 text-sm leading-relaxed text-neutral-300">
-              {p.body.map((line, i) => (
-                <p key={i} className="line-clamp-2">
-                  {line}
-                </p>
-              ))}
-            </div>
-
-            <div className="mt-4 flex items-center justify-between">
-              <span className="text-xs text-neutral-500">Truncated preview</span>
-              <Link
-                href="/preview"
-                className="text-xs font-semibold text-sky-300 hover:text-sky-200"
-              >
-                Generate yours
-              </Link>
-            </div>
-          </article>
         ))}
       </div>
+    </section>
+  );
+}
 
-      <div className="mt-5 rounded-xl bg-neutral-900/40 p-4 ring-1 ring-neutral-800">
-        <div className="text-sm font-semibold text-neutral-100">
-          Try the preview free
+function FreeTierSection() {
+  return (
+    <section className="mx-auto max-w-4xl">
+      <div className="rounded-2xl bg-neutral-900/40 p-8 ring-1 ring-neutral-800 backdrop-blur lg:p-12">
+        <h2 className="text-center text-2xl font-semibold tracking-tight text-neutral-100 sm:text-3xl">
+          Start free. Upgrade when ready.
+        </h2>
+        
+        <div className="mt-10 grid gap-8 md:grid-cols-2">
+          <div>
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-neutral-400">
+              Free includes
+            </h3>
+            <ul className="mt-4 space-y-3">
+              {[
+                "Content generation",
+                "Structured system",
+                "Save drafts",
+                "Limited publishing",
+              ].map((item, idx) => (
+                <li key={idx} className="flex items-start gap-3 text-neutral-300">
+                  <svg className="mt-0.5 h-5 w-5 shrink-0 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-neutral-400">
+              Paid unlocks
+            </h3>
+            <ul className="mt-4 space-y-3">
+              {[
+                "Scheduling",
+                "Multi-channel publishing",
+                "Advanced workflows",
+                "Priority processing",
+              ].map((item, idx) => (
+                <li key={idx} className="flex items-start gap-3 text-neutral-300">
+                  <svg className="mt-0.5 h-5 w-5 shrink-0 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
-        <div className="mt-1 text-sm text-neutral-300">
-          Sign up only when you want to save or publish.
+
+        <div className="mt-8 text-center">
+          <p className="text-sm text-neutral-500">
+            Join founders building consistently
+          </p>
         </div>
       </div>
     </section>
@@ -217,11 +270,24 @@ function ExampleOutputCard({ posts }: { posts: ExamplePost[] }) {
 
 function FooterNote() {
   return (
-    <div className="mt-10 border-t border-neutral-900 pt-6 text-xs text-neutral-500">
-      By continuing you agree to the Terms and Privacy.{" "}
-      <a href="/pricing" className="text-neutral-300 hover:text-neutral-200">
-        View plans
-      </a>
+    <div className="mt-16 border-t border-neutral-900 pt-8 text-center">
+      <p className="text-sm text-neutral-500">
+        Already have an account?{" "}
+        <Link 
+          href="/sign-in" 
+          className="font-medium text-neutral-300 hover:text-neutral-100 transition-colors"
+          onClick={() => {
+            if (typeof window !== 'undefined' && window.gtag) {
+              window.gtag('event', 'homepage_signin_click', {
+                event_category: 'engagement',
+                event_label: 'footer',
+              });
+            }
+          }}
+        >
+          Sign in
+        </Link>
+      </p>
     </div>
   );
 }

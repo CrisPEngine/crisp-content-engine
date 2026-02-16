@@ -22,8 +22,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CrisP Content Engine",
-  description: "Your entire month of content. Generated once. AI-powered content engine with human approval.",
+  title: "CRISP Content Engine",
+  description: "Build consistent visibility without burning out. CRISP turns your ideas into a structured content system. Free to start.",
   icons: {
     icon: [
       { url: "https://res.cloudinary.com/dr75zvtso/image/upload/v1762342722/favicon_crispContentEngine_128x128_m1m2ry.png", sizes: "128x128", type: "image/png" },
@@ -32,16 +32,16 @@ export const metadata: Metadata = {
   },
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://app.crispdigital.io"),
   openGraph: {
-    title: "CrisP Content Engine",
-    description: "Your entire month of content. Generated once. AI-powered content engine with human approval.",
+    title: "CRISP Content Engine - Build consistent visibility without burning out",
+    description: "Create consistent content. Publish when ready. CRISP turns your ideas into a structured content system. Free to start.",
     url: process.env.NEXT_PUBLIC_APP_URL || "https://app.crispdigital.io",
-    siteName: "CrisP Content Engine",
+    siteName: "CRISP Content Engine",
     images: [
       {
         url: "https://res.cloudinary.com/dr75zvtso/image/upload/v1769501243/CCE-opengraph_1200x630_i8eylb.jpg",
         width: 1200,
         height: 630,
-        alt: "CrisP Content Engine - Your entire month of content. Generated once.",
+        alt: "CRISP Content Engine - Build consistent visibility without burning out",
       },
     ],
     type: "website",
@@ -49,8 +49,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "CrisP Content Engine",
-    description: "Your entire month of content. Generated once. AI-powered content engine with human approval.",
+    title: "CRISP Content Engine - Build consistent visibility without burning out",
+    description: "Create consistent content. Publish when ready. Free to start.",
     images: ["https://res.cloudinary.com/dr75zvtso/image/upload/v1769501243/CCE-opengraph_1200x630_i8eylb.jpg"],
   },
 };
