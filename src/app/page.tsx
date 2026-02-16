@@ -394,30 +394,3 @@ function FooterNote() {
     </div>
   );
 }
-
-function FooterNote() {
-  return (
-    <div className="mt-20 pt-10 text-center">
-      {/* Soft gradient divider */}
-      <div className="mx-auto mb-10 h-px w-full max-w-lg bg-gradient-to-r from-transparent via-neutral-800/50 to-transparent" />
-      
-      <p className="text-sm text-neutral-500">
-        Already have an account?{" "}
-        <Link 
-          href="/sign-in" 
-          className="font-medium text-neutral-300 hover:text-neutral-100 transition-colors"
-          onClick={() => {
-            if (typeof window !== 'undefined' && window.gtag) {
-              window.gtag('event', 'homepage_signin_click', {
-                event_category: 'engagement',
-                event_label: 'footer',
-              });
-            }
-          }}
-        >
-          Sign in
-        </Link>
-      </p>
-    </div>
-  );
-}
