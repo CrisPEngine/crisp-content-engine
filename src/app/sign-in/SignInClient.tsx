@@ -48,7 +48,6 @@ export default function SignInClient() {
         provider,
         options: {
           redirectTo: authCallbackUrl,
-          ...(provider === 'facebook' && { scopes: 'public_profile' }),
         },
       });
     } catch (err: any) {
