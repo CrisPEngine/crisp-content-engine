@@ -74,9 +74,15 @@ const createMetaPublishJob = async (
 	}
 
 	// Materialize payload (source of truth, never re-read Airtable)
+	const hook = record.fields?.hook || record.fields?.title || record.fields?.post_title || '';
 	const postContent = record.fields?.post_content || '';
 	const hashtags = record.fields?.hashtags || '';
-	const fullText = hashtags ? `${postContent}\n\n${hashtags}` : postContent;
+	// Build full post text: hook (opener) → body → hashtags
+	const bodyParts: string[] = [];
+	if (hook) bodyParts.push(hook);
+	if (postContent) bodyParts.push(postContent);
+	const baseText = bodyParts.join('\n\n');
+	const fullText = hashtags ? `${baseText}\n\n${hashtags}` : baseText;
 	const imageUrl = record.fields?.image_reference_url || null;
 
 	const payload = {
