@@ -21,7 +21,8 @@ Set these in **Vercel → Your Project → Settings → Environment Variables**.
 |----------|--------|------------------|
 | `META_APP_ID` | *(e.g. 123456789)* | Meta for Developers → Your App → Settings → Basic → App ID |
 | `META_APP_SECRET` | *(e.g. abc123...)* | Same → App Secret (Show) |
-| `META_REDIRECT_URI` | `https://app.crispdigital.io/api/meta/oauth/callback` | Must match exactly what you set in Meta app (Section 3) |
+| `META_REDIRECT_URI` | `https://app.crispdigital.io/api/meta/oauth/callback` | CRISP publishing callback only; must be in Meta app Valid OAuth Redirect URIs (Section 3) |
+| `META_LFB_CONFIG_ID` | *(e.g. 1617282746065433)* | Facebook Login for Business configuration ID from Meta app; added to authorize URL so Meta uses supported permissions |
 
 ### 1.3 Meta token encryption
 
@@ -56,6 +57,8 @@ NEXT_PUBLIC_META_PUBLISHING_ENABLED=true
 META_APP_ID=YOUR_APP_ID
 META_APP_SECRET=YOUR_APP_SECRET
 META_REDIRECT_URI=https://app.crispdigital.io/api/meta/oauth/callback
+# --- Facebook Login for Business config ID (from Meta app; use if you see "app needs at least one supported permission") ---
+META_LFB_CONFIG_ID=YOUR_LFB_CONFIG_ID
 
 # --- Generate: openssl rand -base64 32 ---
 META_TOKEN_ENCRYPTION_KEY=YOUR_BASE64_KEY
@@ -103,8 +106,9 @@ In **Meta for Developers → Your App**:
 
 ### 3.1 Facebook Login → Settings
 
-- [ ] **Valid OAuth Redirect URIs** includes exactly:
-  - `https://app.crispdigital.io/api/meta/oauth/callback`
+- [ ] **Valid OAuth Redirect URIs** includes **both** (two separate entries):
+  - **CRISP publishing:** `https://app.crispdigital.io/api/meta/oauth/callback` (Connect Meta flow)
+  - **Supabase auth:** `https://glqippdvtnydugejronn.supabase.co/auth/v1/callback` (Sign in with Facebook)
 - [ ] **Client OAuth Login**: enabled  
 - [ ] **Web OAuth Login**: enabled  
 

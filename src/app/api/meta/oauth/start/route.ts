@@ -33,7 +33,9 @@ export async function GET(request: Request) {
 	}
 
 	const appId = process.env.META_APP_ID;
-	const redirectUri = process.env.META_REDIRECT_URI || 
+	// CRISP publishing callback only (do not use Supabase callback here)
+	const redirectUri =
+		process.env.META_REDIRECT_URI ||
 		`${process.env.NEXT_PUBLIC_SITE_URL || 'https://app.crispdigital.io'}/api/meta/oauth/callback`;
 
 	if (!appId) {
@@ -53,10 +55,10 @@ export async function GET(request: Request) {
 		maxAge: 600, // 10 minutes
 	});
 
-	// Meta OAuth scopes
+	// Meta OAuth scopes (publishing only; no email)
 	// Pages: list, read engagement, manage posts
 	// Instagram: basic info, content publishing
-	// Business Management: forced by Meta's "Manage everything on your Page" use case
+	// Business Management: required for "Manage everything on your Page"
 	const scope = [
 		'business_management',
 		'pages_show_list',
@@ -66,13 +68,19 @@ export async function GET(request: Request) {
 		'instagram_content_publish',
 	].join(',');
 
-	// Build Meta OAuth URL
+	// Build Meta OAuth URL (publishing connect flow)
 	const authorizeUrl = new URL('https://www.facebook.com/v24.0/dialog/oauth');
 	authorizeUrl.searchParams.set('client_id', appId);
 	authorizeUrl.searchParams.set('redirect_uri', redirectUri);
 	authorizeUrl.searchParams.set('state', state);
 	authorizeUrl.searchParams.set('scope', scope);
 	authorizeUrl.searchParams.set('response_type', 'code');
+
+	// Facebook Login for Business: use config_id so Meta uses the app's LFB configuration (supported permissions)
+	const lfbConfigId = process.env.META_LFB_CONFIG_ID;
+	if (lfbConfigId) {
+		authorizeUrl.searchParams.set('config_id', lfbConfigId);
+	}
 
 	return NextResponse.redirect(authorizeUrl);
 }
