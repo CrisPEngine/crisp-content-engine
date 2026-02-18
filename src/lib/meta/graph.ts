@@ -320,11 +320,15 @@ export interface InstagramPublishPayload {
 
 /**
  * Publish to Instagram (two-step: create container + publish)
- * 
+ *
+ * Step 1: POST /{ig_user_id}/media with image_url (must be publicly accessible: no auth, no robots blocking).
+ * Step 2: POST /{ig_user_id}/media_publish with creation_id from step 1.
+ *
  * Instagram does NOT support native scheduling via Graph API.
  * All posts are immediate; scheduling is handled by CRISP queue + cron.
- * 
- * Rate limit: 50 posts per 24 hours per IG account
+ *
+ * Rate limit: 50 posts per 24 hours per IG account.
+ * For video, a different (stricter/slower) video publish flow is required.
  */
 export async function publishToInstagram(
 	igUserId: string,

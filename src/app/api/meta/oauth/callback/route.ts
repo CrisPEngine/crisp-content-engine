@@ -148,9 +148,6 @@ export async function GET(request: Request) {
 			.delete()
 			.eq('user_id', user.id);
 
-		// Track which page IDs have tokens (for auto-selection)
-		const pagesWithTokens: { dbId: string; pageId: string }[] = [];
-
 		for (const page of pages) {
 			const pageData: any = {
 				user_id: user.id,
@@ -163,15 +160,11 @@ export async function GET(request: Request) {
 				pageData.page_access_token_encrypted = encryptMetaToken(page.access_token);
 			}
 
-			const { data: insertedPage } = await admin
+			await admin
 				.from('meta_pages')
 				.insert(pageData)
 				.select('id, page_id')
 				.single();
-
-			if (insertedPage && page.access_token) {
-				pagesWithTokens.push({ dbId: insertedPage.id, pageId: insertedPage.page_id });
-			}
 
 			// Only fetch Instagram if we have a valid page token
 			if (!page.access_token) {
@@ -196,37 +189,10 @@ export async function GET(request: Request) {
 			}
 		}
 
-		// Step 7: Auto-select first page (with token) and first IG
-		// Only select pages that have tokens (required for publishing)
-		if (pagesWithTokens.length > 0) {
-			const firstPage = pagesWithTokens[0];
-
-			await admin
-				.from('meta_pages')
-				.update({ is_selected: true })
-				.eq('id', firstPage.dbId);
-
-			// Select first IG for this page if available
-			const { data: firstIg } = await admin
-				.from('meta_instagram_accounts')
-				.select('id')
-				.eq('user_id', user.id)
-				.eq('connected_page_id', firstPage.pageId)
-				.order('created_at', { ascending: true })
-				.limit(1)
-				.maybeSingle();
-
-			if (firstIg) {
-				await admin
-					.from('meta_instagram_accounts')
-					.update({ is_selected: true })
-					.eq('id', firstIg.id);
-			}
-		}
-
-		// Redirect to connections page with success message
+		// Step 7: Redirect to selection page so user can choose which Page and Instagram to use
+		// (No auto-select; user must select on /connections/meta/select)
 		return NextResponse.redirect(
-			`${redirectBase}/connections?connected=meta`
+			`${redirectBase}/connections/meta/select`
 		);
 	} catch (err: any) {
 		console.error('[Meta OAuth] Callback error:', err);

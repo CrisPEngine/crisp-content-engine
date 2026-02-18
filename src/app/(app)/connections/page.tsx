@@ -199,8 +199,8 @@ function MetaCard({
 						</div>
 					)}
 					<div className="p-3 rounded-xl2 bg-blue-500/10 border border-blue-500/20 text-sm text-text-dim">
-						<strong className="text-text">Phase 1:</strong> CRISP publishes to one Facebook Page and one Instagram account per workspace. 
-						Change your selections by disconnecting and reconnecting.
+						CRISP publishes to one Facebook Page and one Instagram account per workspace.{' '}
+						<a href="/connections/meta/select" className="text-primary hover:underline">Change Page &amp; Instagram</a>
 					</div>
 				</div>
 			) : (
@@ -224,7 +224,7 @@ function MetaCard({
 						href={connectHref}
 						className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm"
 					>
-						Connect Meta Account
+						Connect Instagram/Facebook
 					</a>
 				)}
 			</div>
