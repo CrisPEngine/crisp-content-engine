@@ -405,6 +405,44 @@ export async function publishToInstagram(
 			};
 		}
 
+		// Step 1b: Poll until container status is FINISHED.
+		// Instagram needs a few seconds to process the image before it can be published.
+		// Without this, media_publish returns error 2207027 "media not ready".
+		const MAX_POLLS = 8;
+		const POLL_INTERVAL_MS = 3000; // 3s per poll = up to 24s total
+		let containerReady = false;
+
+		for (let poll = 0; poll < MAX_POLLS; poll++) {
+			await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+
+			const statusRes: Response = await fetch(
+				`${GRAPH_API_BASE}/${containerId}?fields=status_code&access_token=${pageAccessToken}`
+			);
+
+			if (statusRes.ok) {
+				const statusData = await statusRes.json();
+				const statusCode: string = statusData.status_code || '';
+
+				if (statusCode === 'FINISHED') {
+					containerReady = true;
+					break;
+				} else if (statusCode === 'ERROR' || statusCode === 'EXPIRED') {
+					return {
+						success: false,
+						error: `Instagram container ${statusCode.toLowerCase()} — cannot publish. Re-queue the post to try again.`,
+					};
+				}
+				// IN_PROGRESS: continue polling
+			}
+		}
+
+		if (!containerReady) {
+			return {
+				success: false,
+				error: 'Instagram container did not become ready in time (timed out after polling). Will retry.',
+			};
+		}
+
 		// Step 2: Publish the container
 		const publishUrl = `${GRAPH_API_BASE}/${igUserId}/media_publish`;
 		const publishBody = {
