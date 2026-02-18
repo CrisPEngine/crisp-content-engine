@@ -109,9 +109,10 @@ export async function GET(request: Request) {
 		} catch (_) {}
 
 		// Step 4: Get user's Pages (with Page access tokens)
+		// This calls /me/accounts and /me/businesses — the latter satisfies Meta's business_management test requirement.
 		const pages = await getUserPages(accessToken);
 
-		console.log(`[Meta OAuth] Pages found: ${pages.length}`);
+		console.log(`[Meta OAuth] Page discovery complete (includes /me/businesses). Pages found: ${pages.length}`);
 
 		if (pages.length === 0) {
 			const detail = [
