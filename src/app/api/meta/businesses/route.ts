@@ -16,7 +16,9 @@ import { getSupabaseService } from '@/lib/supabaseService';
 import { isMetaPublishingEnabled } from '@/lib/featureFlags';
 import { decryptMetaToken } from '@/lib/meta/graph';
 
-const GRAPH_API_BASE = 'https://graph.facebook.com/v24.0';
+// Use Meta's recommended version for "required API test call" tracking.
+// Meta's Testing UI specifically suggests: v19.0/me/businesses
+const GRAPH_API_BASE = 'https://graph.facebook.com/v19.0';
 
 export const runtime = 'nodejs';
 
@@ -74,5 +76,5 @@ export async function GET() {
 	const data = await res.json();
 	console.log('[Meta /me/businesses] Success — business count:', data?.data?.length ?? 0);
 
-	return NextResponse.json(data);
+	return NextResponse.json({ _meta: { called: 'v19.0/me/businesses' }, ...data });
 }
