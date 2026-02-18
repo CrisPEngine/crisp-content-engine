@@ -114,32 +114,32 @@ export interface FacebookPage {
 
 /**
  * Get Facebook Pages user can manage
- * Returns pages with access tokens and tasks
- * Filter for pages where user can CREATE_CONTENT, MANAGE, or MODERATE
+ * Returns all pages from /me/accounts with pagination support.
+ * Pages returned by /me/accounts already require admin/editor access,
+ * so no further task filtering is needed (task arrays are often empty for full admins).
  */
 export async function getUserPages(userAccessToken: string): Promise<FacebookPage[]> {
-	const url = `${GRAPH_API_BASE}/me/accounts?fields=id,name,access_token,tasks&access_token=${userAccessToken}`;
-	const res = await fetch(url);
+	const allPages: FacebookPage[] = [];
+	let nextUrl: string | null =
+		`${GRAPH_API_BASE}/me/accounts?fields=id,name,access_token,tasks&limit=100&access_token=${userAccessToken}`;
 
-	if (!res.ok) {
-		const errorText = await res.text();
-		throw new Error(`Failed to fetch pages: ${errorText}`);
+	while (nextUrl) {
+		const res = await fetch(nextUrl);
+
+		if (!res.ok) {
+			const errorText = await res.text();
+			throw new Error(`Failed to fetch pages: ${errorText}`);
+		}
+
+		const data = await res.json();
+		const pages: FacebookPage[] = data.data || [];
+		allPages.push(...pages);
+
+		// Follow pagination cursor if present
+		nextUrl = data.paging?.next || null;
 	}
 
-	const data = await res.json();
-	const pages = data.data || [];
-
-	// Filter pages where user can post (has CREATE_CONTENT, MANAGE, or MODERATE task)
-	const publishablePages = pages.filter((page: FacebookPage) => {
-		const tasks = page.tasks || [];
-		return tasks.some((task) => 
-			task === 'CREATE_CONTENT' || 
-			task === 'MANAGE' || 
-			task === 'MODERATE'
-		);
-	});
-
-	return publishablePages;
+	return allPages;
 }
 
 export interface InstagramAccount {
