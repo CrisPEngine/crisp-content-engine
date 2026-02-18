@@ -113,33 +113,67 @@ export interface FacebookPage {
 }
 
 /**
- * Get Facebook Pages user can manage
- * Returns all pages from /me/accounts with pagination support.
- * Pages returned by /me/accounts already require admin/editor access,
- * so no further task filtering is needed (task arrays are often empty for full admins).
+ * Get Facebook Pages user can manage, from two sources:
+ *
+ * 1. /me/accounts — pages where the user has a direct personal role (admin/editor).
+ * 2. /me/businesses — pages owned or managed by any Business Manager account the user
+ *    belongs to. This covers the common case where pages are managed exclusively via
+ *    Business Manager and don't appear in /me/accounts at all.
+ *
+ * Both sources are combined and deduplicated by page ID.
  */
 export async function getUserPages(userAccessToken: string): Promise<FacebookPage[]> {
-	const allPages: FacebookPage[] = [];
+	const pageMap = new Map<string, FacebookPage>();
+
+	// ── Source 1: personal page roles (/me/accounts) ──────────────────────────
 	let nextUrl: string | null =
 		`${GRAPH_API_BASE}/me/accounts?fields=id,name,access_token,tasks&limit=100&access_token=${userAccessToken}`;
 
 	while (nextUrl) {
 		const res: Response = await fetch(nextUrl);
-
 		if (!res.ok) {
 			const errorText = await res.text();
-			throw new Error(`Failed to fetch pages: ${errorText}`);
+			console.warn(`[Meta] /me/accounts failed: ${errorText}`);
+			break;
 		}
-
 		const data = await res.json();
 		const pages: FacebookPage[] = data.data || [];
-		allPages.push(...pages);
-
-		// Follow pagination cursor if present
+		for (const p of pages) {
+			pageMap.set(p.id, p);
+		}
 		nextUrl = data.paging?.next || null;
 	}
 
-	return allPages;
+	// ── Source 2: Business Manager pages (/me/businesses) ─────────────────────
+	// Covers pages managed exclusively through a Business Manager account.
+	try {
+		const bizRes: Response = await fetch(
+			`${GRAPH_API_BASE}/me/businesses?fields=id,name,owned_pages{id,name,access_token},client_pages{id,name,access_token}&limit=100&access_token=${userAccessToken}`
+		);
+
+		if (bizRes.ok) {
+			const bizData = await bizRes.json();
+			const businesses: any[] = bizData.data || [];
+
+			for (const biz of businesses) {
+				const ownedPages: FacebookPage[] = biz.owned_pages?.data || [];
+				const clientPages: FacebookPage[] = biz.client_pages?.data || [];
+
+				for (const page of [...ownedPages, ...clientPages]) {
+					if (!pageMap.has(page.id)) {
+						pageMap.set(page.id, page);
+					}
+				}
+			}
+		} else {
+			const errorText = await bizRes.text();
+			console.warn(`[Meta] /me/businesses failed: ${errorText}`);
+		}
+	} catch (err) {
+		console.warn('[Meta] Business Manager page fetch failed:', err);
+	}
+
+	return Array.from(pageMap.values());
 }
 
 export interface InstagramAccount {
