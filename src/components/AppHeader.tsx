@@ -104,18 +104,18 @@ export function AppHeader() {
 
 	return (
 		<div className="fixed top-0 left-0 right-0 z-50" ref={navRef}>
-			<header className="backdrop-blur-md bg-[#080808]/90 border-b border-white/[0.08] h-14 flex items-center">
-				<div className="mx-auto max-w-7xl px-4 sm:px-6 w-full flex items-center gap-4">
+		<header className="backdrop-blur-md bg-[#080808]/90 border-b border-white/[0.08] h-[140px] flex items-center">
+			<div className="mx-auto max-w-7xl px-4 sm:px-6 w-full flex items-center gap-4">
 
-					{/* Logo */}
-					<Link href="/dashboard" className="flex items-center shrink-0 mr-2">
-						<img
-							src={LOGO_URL}
-							alt="CRISP Content Engine"
-							className="h-8 w-auto"
-							width={1200}
-							height={627}
-						/>
+				{/* Logo */}
+				<Link href="/dashboard" className="flex items-center shrink-0 mr-2">
+					<img
+						src={LOGO_URL}
+						alt="CRISP Content Engine"
+						className="h-20 w-auto"
+						width={1200}
+						height={627}
+					/>
 					</Link>
 
 					{/* Desktop nav */}

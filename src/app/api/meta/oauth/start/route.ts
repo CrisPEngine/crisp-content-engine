@@ -47,10 +47,12 @@ export async function GET(request: Request) {
 	// Generate OAuth state token
 	const state = randomBytes(32).toString('hex');
 
-	// Meta OAuth scopes (publishing only; no email)
+	// Meta OAuth scopes
+	// Business Management: required to list Business Manager pages via /me/businesses
 	// Pages: list, read engagement, manage posts
-	// Instagram: basic info, content publishing
-	// Business Management: required for "Manage everything on your Page"
+	// Instagram: basic info, content publishing, comments, DM management
+	// Note: when config_id is set, Meta uses the LFB config permissions instead of this scope.
+	//       Keep this list in sync with your Facebook Login for Business configuration.
 	const scope = [
 		'business_management',
 		'pages_show_list',
@@ -58,6 +60,9 @@ export async function GET(request: Request) {
 		'pages_manage_posts',
 		'instagram_basic',
 		'instagram_content_publish',
+		'instagram_business_basic',
+		'instagram_manage_comments',
+		'instagram_business_manage_messages',
 	].join(',');
 
 	// Build Meta OAuth URL (publishing connect flow)
