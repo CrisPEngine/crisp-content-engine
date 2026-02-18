@@ -84,8 +84,11 @@ export async function GET(request: Request) {
 		// Step 2: Exchange for long-lived token (60 days)
 		const longLivedResponse = await exchangeForLongLivedToken(shortLivedToken);
 		const accessToken = longLivedResponse.access_token;
-		const expiresIn = longLivedResponse.expires_in;
-		const expiresAt = new Date(Date.now() + expiresIn * 1000);
+		const rawExpiresIn = longLivedResponse.expires_in;
+		const expiresInSeconds = rawExpiresIn && Number.isFinite(Number(rawExpiresIn))
+			? Number(rawExpiresIn)
+			: 60 * 24 * 60 * 60; // default: 60 days in seconds
+		const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
 
 		// Step 3: Get user info
 		const userInfo = await getUserInfo(accessToken);
