@@ -94,12 +94,35 @@ export async function GET(request: Request) {
 		const userInfo = await getUserInfo(accessToken);
 		const facebookUserId = userInfo.id;
 
+		// Step 3b: Log granted permissions to help diagnose token scope issues
+		try {
+			const permRes = await fetch(
+				`https://graph.facebook.com/v24.0/me/permissions?access_token=${accessToken}`
+			);
+			if (permRes.ok) {
+				const permData = await permRes.json();
+				const granted = (permData.data || [])
+					.filter((p: any) => p.status === 'granted')
+					.map((p: any) => p.permission);
+				console.log('[Meta OAuth] Granted permissions:', granted);
+			}
+		} catch (_) {}
+
 		// Step 4: Get user's Pages (with Page access tokens)
 		const pages = await getUserPages(accessToken);
 
+		console.log(`[Meta OAuth] Pages found: ${pages.length}`);
+
 		if (pages.length === 0) {
+			const detail = [
+				'No Facebook Pages found.',
+				'This usually means (a) your Facebook Login for Business configuration is missing the "business_management" permission,',
+				'or (b) you have no Pages with a direct personal admin role.',
+				'Fix: add business_management to your LFB config in the Meta app dashboard, then reconnect.',
+			].join(' ');
+			console.error('[Meta OAuth] No pages found. Check granted permissions above.');
 			return NextResponse.redirect(
-				`${redirectBase}/connections?error=no_pages&details=${encodeURIComponent('No Facebook Pages found. You must have access to at least one Facebook Page to publish.')}`
+				`${redirectBase}/connections?error=no_pages&details=${encodeURIComponent(detail)}`
 			);
 		}
 
