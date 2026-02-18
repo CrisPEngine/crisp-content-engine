@@ -6,7 +6,6 @@
  */
 
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { randomBytes } from 'crypto';
 import { createClient } from '@/lib/supabase/server';
 import { isMetaPublishingEnabled } from '@/lib/featureFlags';
@@ -45,15 +44,8 @@ export async function GET(request: Request) {
 		);
 	}
 
-	// Generate and store OAuth state
+	// Generate OAuth state token
 	const state = randomBytes(32).toString('hex');
-	const cookieStore = await cookies();
-	cookieStore.set('meta_oauth_state', state, {
-		httpOnly: true,
-		secure: true,
-		path: '/',
-		maxAge: 600, // 10 minutes
-	});
 
 	// Meta OAuth scopes (publishing only; no email)
 	// Pages: list, read engagement, manage posts
@@ -82,5 +74,17 @@ export async function GET(request: Request) {
 		authorizeUrl.searchParams.set('config_id', lfbConfigId);
 	}
 
-	return NextResponse.redirect(authorizeUrl);
+	// Set state cookie directly on the redirect response to ensure Set-Cookie header is included.
+	// sameSite: 'lax' is required so the browser sends the cookie back after the cross-site
+	// redirect from facebook.com → app.crispdigital.io/api/meta/oauth/callback.
+	const response = NextResponse.redirect(authorizeUrl);
+	response.cookies.set('meta_oauth_state', state, {
+		httpOnly: true,
+		secure: true,
+		sameSite: 'lax',
+		path: '/',
+		maxAge: 600, // 10 minutes
+	});
+
+	return response;
 }

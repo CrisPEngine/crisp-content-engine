@@ -124,7 +124,7 @@ export async function getUserPages(userAccessToken: string): Promise<FacebookPag
 		`${GRAPH_API_BASE}/me/accounts?fields=id,name,access_token,tasks&limit=100&access_token=${userAccessToken}`;
 
 	while (nextUrl) {
-		const res = await fetch(nextUrl);
+		const res: Response = await fetch(nextUrl);
 
 		if (!res.ok) {
 			const errorText = await res.text();
