@@ -155,9 +155,13 @@ export async function getUserPages(userAccessToken: string): Promise<FacebookPag
 			const bizData = await bizRes.json();
 			const businesses: any[] = bizData.data || [];
 
+			console.log(`[Meta] /me/businesses OK — ${businesses.length} business(es) found`);
+
 			for (const biz of businesses) {
 				const ownedPages: FacebookPage[] = biz.owned_pages?.data || [];
 				const clientPages: FacebookPage[] = biz.client_pages?.data || [];
+
+				console.log(`[Meta] Business "${biz.name}" (${biz.id}): ${ownedPages.length} owned page(s), ${clientPages.length} client page(s)`);
 
 				for (const page of [...ownedPages, ...clientPages]) {
 					if (!pageMap.has(page.id)) {
