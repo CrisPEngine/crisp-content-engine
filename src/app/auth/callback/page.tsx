@@ -138,11 +138,11 @@ function CallbackHandler() {
 	}, [router, searchParams, supabase]);
 
 	return (
-		<div className="flex items-center justify-center min-h-screen bg-bg">
-			<div className="text-center space-y-4">
-				<div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-primary/30 border-t-primary"></div>
-				<div className="text-text-soft text-sm">Completing sign in...</div>
-			</div>
+		<div className="flex flex-col items-center justify-center min-h-screen bg-bg text-center px-6">
+			<div className="inline-block h-10 w-10 animate-spin rounded-full border-4 border-primary/30 border-t-primary" aria-hidden />
+			<h1 className="mt-6 text-lg font-semibold text-text">Completing sign in</h1>
+			<p className="mt-2 text-sm text-text-dim">You’ll be redirected to your dashboard in a moment.</p>
+			<p className="mt-8 text-xs text-text-dim/70">If nothing happens, check your connection and try again.</p>
 		</div>
 	);
 }
@@ -150,11 +150,10 @@ function CallbackHandler() {
 export default function CallbackPage() {
 	return (
 		<Suspense fallback={
-			<div className="flex items-center justify-center min-h-screen bg-bg">
-				<div className="text-center space-y-4">
-					<div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-primary/30 border-t-primary"></div>
-					<div className="text-text-soft text-sm">Loading...</div>
-				</div>
+			<div className="flex flex-col items-center justify-center min-h-screen bg-bg text-center px-6">
+				<div className="inline-block h-10 w-10 animate-spin rounded-full border-4 border-primary/30 border-t-primary" aria-hidden />
+				<h1 className="mt-6 text-lg font-semibold text-text">Loading</h1>
+				<p className="mt-2 text-sm text-text-dim">Preparing your session...</p>
 			</div>
 		}>
 			<CallbackHandler />

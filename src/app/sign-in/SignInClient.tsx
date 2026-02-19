@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
 
-type OAuthProvider = 'google' | 'linkedin_oidc' | 'facebook';
+// Meta (Facebook) auth removed: publishing uses a separate Meta app; avoid mixing auth with app approvals.
+type OAuthProvider = 'google' | 'linkedin_oidc';
 
 export default function SignInClient() {
   const supabase = useSupabase();
@@ -137,14 +138,6 @@ export default function SignInClient() {
                 >
                   Sign up with LinkedIn
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleOAuth('facebook')}
-                  disabled={loading}
-                  className="w-full rounded-full bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-800 disabled:opacity-60"
-                >
-                  Sign up with Meta (Facebook)
-                </button>
               </div>
 
               <div className="my-6 h-px bg-neutral-900" />
@@ -211,14 +204,6 @@ export default function SignInClient() {
                   className="w-full rounded-full bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-800 disabled:opacity-60"
                 >
                   Sign in with LinkedIn
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleOAuth('facebook')}
-                  disabled={loading}
-                  className="w-full rounded-full bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-neutral-100 ring-1 ring-neutral-800 hover:bg-neutral-800 disabled:opacity-60"
-                >
-                  Sign in with Meta (Facebook)
                 </button>
               </div>
 
