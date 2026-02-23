@@ -91,7 +91,25 @@ export async function resolvePlan(userId: string): Promise<ResolvedPlan> {
 		}
 	}
 	
-	// Priority 3: Provision trial only when user has NO subscription row (never set by admin)
+	// Priority 2c: No subscription row but has entitlements (admin-set plan) — do not overwrite with trial
+	if (!subscription && isEmailVerified) {
+		const { data: entitlements } = await admin
+			.from('entitlements')
+			.select('max_brands')
+			.eq('user_id', userId)
+			.maybeSingle();
+		if (entitlements?.max_brands != null) {
+			const mb = entitlements.max_brands;
+			const plan: PlanId = mb >= 20 ? 'scale' : mb >= 5 ? 'pro' : mb >= 2 ? 'growth' : 'starter';
+			return {
+				plan,
+				isEmailVerified,
+				isTrial: false,
+			};
+		}
+	}
+
+	// Priority 3: Provision trial only when user has NO subscription row AND no entitlements (never set by admin)
 	if (isEmailVerified && !subscription) {
 		await provisionTrial(userId);
 		

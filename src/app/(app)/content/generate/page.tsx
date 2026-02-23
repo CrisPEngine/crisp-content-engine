@@ -102,13 +102,11 @@ export default function ContentGeneratePage() {
 		[brands, selectedBrand]
 	);
 
-	// Filter platforms based on user plan
+	// Filter platforms based on user plan (guard: plan may be 'free' or missing from CAPS)
 	const availablePlatforms = useMemo(() => {
 		if (!userPlan) return PLATFORM_OPTIONS;
-		
-		const planCaps = CAPS[userPlan];
+		const planCaps = CAPS[userPlan as PlanId] ?? CAPS.growth;
 		const allowedPlatformKeys = planCaps.includedPlatforms;
-		
 		return PLATFORM_OPTIONS.filter((platform) => {
 			const key = platform.value.toLowerCase();
 			return allowedPlatformKeys.includes(key as any);
