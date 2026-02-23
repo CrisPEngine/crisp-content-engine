@@ -83,6 +83,11 @@ export async function upsertSubscriptionAndEntitlements(params: {
 		if (params.trialEndAt) {
 			subscriptionData.trial_end_at = params.trialEndAt;
 		}
+		// Admin-created trial (no Stripe): set trial dates so plan resolver recognizes it and doesn't overwrite with 7-day
+		if (currentPeriodEndIso && !params.stripeSubscriptionId && !subscriptionData.trial_end_at) {
+			subscriptionData.trial_start_at = params.trialStartAt ?? new Date().toISOString();
+			subscriptionData.trial_end_at = currentPeriodEndIso;
+		}
 		
 		// Note: The following columns don't exist in schema:
 		// - provider (removed)

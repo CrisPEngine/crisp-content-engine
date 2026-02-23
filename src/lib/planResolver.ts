@@ -56,7 +56,7 @@ export async function resolvePlan(userId: string): Promise<ResolvedPlan> {
 		};
 	}
 	
-	// Priority 2: Active no-card trial
+	// Priority 2: Active no-card trial (trial_end_at set, e.g. by admin invite or prior provisioning)
 	if (subscription?.trial_end_at && isEmailVerified) {
 		const now = new Date();
 		const trialEndAt = new Date(subscription.trial_end_at);
@@ -64,7 +64,8 @@ export async function resolvePlan(userId: string): Promise<ResolvedPlan> {
 		if (now < trialEndAt) {
 			const daysRemaining = Math.ceil((trialEndAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 			return {
-				plan: 'trial',
+				plan: (subscription.plan as PlanId) || 'trial',
+				cycle: subscription.cycle as 'monthly' | 'annual' | undefined,
 				isEmailVerified,
 				isTrial: true,
 				trialDaysRemaining: daysRemaining,
@@ -72,9 +73,26 @@ export async function resolvePlan(userId: string): Promise<ResolvedPlan> {
 			};
 		}
 	}
+
+	// Priority 2b: Admin-created trial (current_period_end in future, no Stripe — e.g. Scale 60-day invite)
+	if (subscription?.current_period_end && !subscription?.stripe_subscription_id && isEmailVerified) {
+		const now = new Date();
+		const periodEnd = new Date(subscription.current_period_end);
+		if (now < periodEnd) {
+			const daysRemaining = Math.ceil((periodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+			return {
+				plan: (subscription.plan as PlanId) || 'trial',
+				cycle: subscription.cycle as 'monthly' | 'annual' | undefined,
+				isEmailVerified,
+				isTrial: true,
+				trialDaysRemaining: daysRemaining,
+				trialEndAt: subscription.current_period_end,
+			};
+		}
+	}
 	
-	// Priority 3: Provision trial for verified users who never had one
-	if (isEmailVerified && !subscription?.trial_start_at && !subscription?.stripe_subscription_id) {
+	// Priority 3: Provision trial only when user has NO subscription row (never set by admin)
+	if (isEmailVerified && !subscription) {
 		await provisionTrial(userId);
 		
 		// Re-fetch subscription after provisioning

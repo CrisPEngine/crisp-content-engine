@@ -77,8 +77,11 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 		return status;
 	};
 
+	// Use actual list length so after deleting a brand the user can create a new one
+	const effectiveBrandCount = loading ? currentBrandCount : profiles.length;
+
 	const handleNewBrandClick = (e: React.MouseEvent) => {
-		if (currentBrandCount >= maxBrands) {
+		if (effectiveBrandCount >= maxBrands) {
 			e.preventDefault();
 			setShowBrandLimitModal(true);
 		}
