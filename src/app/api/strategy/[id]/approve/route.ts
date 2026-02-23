@@ -43,12 +43,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 		const admin = getSupabaseService();
 
 		// User plan: Creator tier uses Creator Make scenario (requires LinkedIn); Starter/Growth/Pro/Scale use multichannel (no LinkedIn required to approve)
+		// When no subscription row (e.g. admin-set plan via entitlements only), default to growth so we don't require LinkedIn
 		const { data: subscription } = await supabase
 			.from('subscriptions')
 			.select('plan')
 			.eq('user_id', user.id)
 			.maybeSingle();
-		const plan = (subscription?.plan as 'creator' | 'starter' | 'growth' | 'pro' | 'scale' | 'trial') || 'creator';
+		const plan = (subscription?.plan as 'creator' | 'starter' | 'growth' | 'pro' | 'scale' | 'trial') || 'growth';
 
 		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
 		const BASE_ID = process.env.AIRTABLE_BASE_ID;
