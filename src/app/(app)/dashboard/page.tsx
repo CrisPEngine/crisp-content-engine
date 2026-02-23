@@ -105,11 +105,21 @@ export default async function Dashboard({
 			.eq('user_id', user.id)
 			.maybeSingle();
 
+		// Entitlements: admin-set plan writes here; treat as having a plan so "Select Your Plan" doesn't show
+		const { data: entitlementsRow } = await supabase
+			.from('entitlements')
+			.select('max_brands')
+			.eq('user_id', user.id)
+			.maybeSingle();
+
 		// Always allow access to dashboard - show "Select Your Plan" button if no subscription
-		// Admins can bypass subscription requirement
-		// Also allow access if coming from Stripe success (subscription might not be processed yet)
+		// Admins can bypass; also if admin set plan (entitlements row exists with plan caps), treat as having a plan
 		const fromStripe = (params as any).sub === 'success';
-		const hasSubscription = !!sub || profile?.is_admin || fromStripe;
+		const hasSubscription =
+			!!sub ||
+			(entitlementsRow != null && entitlementsRow.max_brands != null) ||
+			profile?.is_admin ||
+			fromStripe;
 
 		const activeTab: Tab = (params.tab === 'content' ? 'content' : 'overview') as Tab;
 		const subSuccess = (params as any).sub === 'success';
@@ -195,61 +205,39 @@ export default async function Dashboard({
 		console.error('Failed to check brand profiles:', error);
 	}
 	
-		// Determine current step (1-4)
-		// Step 1: Connect LinkedIn (if not connected)
-		// Step 2: Complete questionnaire (if LinkedIn connected but no brand profiles OR has brand profiles but no strategy ready/approved)
-		// Step 3: Approve strategy (if has brand profiles with strategy ready but not approved)
-		// Step 4: Review content (if has approved strategies but has content to review)
+		// Determine current step (1-5). Order: 1 Questionnaire → 2 Approve → 3 Generate content → 4 Connect social → 5 Review/schedule
+		// Step 0 = all done (don't show Get Started box)
 		let currentStep = 1;
 		
 		// Check if any brand has "Strategy Ready" status (means questionnaire is complete, strategy generated)
-		// BUT exclude "Strategy Approved" status - that means it's already approved
 		const hasStrategyReady = brandProfiles.some((p: any) => {
 			const status = (p.status || p.original_status || '').toString();
-			// Don't count "Strategy Approved" as needing approval
-			if (status === 'Strategy Approved') {
-				return false;
-			}
+			if (status === 'Strategy Approved') return false;
 			return status === 'Strategy Ready' || 
 			       status === 'Strategy Ready (Awaiting Approval)' ||
 			       status === 'Strategy Ready For Approval' ||
 			       (status.toLowerCase().includes('strategy ready') && !status.toLowerCase().includes('approved'));
 		});
 		
-		// Prioritize content review over strategy approval if content exists
-		if (isLinkedInConnected && !hasBrandProfiles) {
-			currentStep = 2;
-		} else if (isLinkedInConnected && hasBrandProfiles && hasApprovedStrategies && hasContentToReview) {
-			// If strategy is approved AND content exists, show content review (highest priority)
-			currentStep = 4; // Approved, has content to review
-		} else if (isLinkedInConnected && hasBrandProfiles && !hasStrategyReady && !hasApprovedStrategies) {
-			currentStep = 2; // Still need to complete questionnaire (brand created but no strategy yet)
-		} else if (isLinkedInConnected && hasBrandProfiles && hasStrategyReady && !hasApprovedStrategies) {
-			currentStep = 3; // Strategy ready, needs approval
-		} else if (isLinkedInConnected && hasBrandProfiles && hasApprovedStrategies && !hasContentToReview) {
-			// All steps complete - don't show onboarding
-			currentStep = 0;
+		if (hasContentToReview) {
+			currentStep = 5; // Review, Edit/Approve and Schedule content
+		} else if (hasApprovedStrategies && isLinkedInConnected && !hasContentToReview) {
+			currentStep = 0; // All done
+		} else if (hasApprovedStrategies && !isLinkedInConnected) {
+			currentStep = 4; // Connect social media (steps 1-3 done)
+		} else if (hasApprovedStrategies && !hasContentToReview) {
+			currentStep = 3; // Generate content for brand and channels
+		} else if (hasStrategyReady && !hasApprovedStrategies) {
+			currentStep = 2; // Approve strategy
+		} else {
+			currentStep = 1; // Complete questionnaire
 		}
 		
-		// Get user's plan and brand limit
+		// Get user's plan and brand limit (entitlementsRow already fetched above)
 		let maxBrands = 999; // Default to high number for admins or no subscription
 		let currentBrandCount = brandProfiles.length;
-		try {
-			if (sub) {
-				const { data: entitlements, error: entitlementsError } = await supabase
-					.from('entitlements')
-					.select('max_brands')
-					.eq('user_id', user.id)
-					.maybeSingle();
-				
-				if (entitlementsError) {
-					console.error('Failed to get entitlements:', entitlementsError);
-				} else if (entitlements?.max_brands) {
-					maxBrands = entitlements.max_brands;
-				}
-			}
-		} catch (error) {
-			console.error('Failed to get entitlements:', error);
+		if (entitlementsRow?.max_brands != null) {
+			maxBrands = entitlementsRow.max_brands;
 		}
 
 		// For content tab, we'll fetch on client side since we need auth
@@ -352,26 +340,10 @@ export default async function Dashboard({
 								<div className="w-full card p-3 md:p-4 bg-primary/5 border border-primary/20 flex flex-col">
 									<h3 className="font-semibold mb-3 text-sm md:text-base">Get Started</h3>
 									<div className="space-y-2 flex-1">
-										{/* Step 1: Connect LinkedIn */}
-										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 1 ? 'bg-primary/10 border border-primary/30' : 'opacity-60'}`}>
-											<div className="font-medium">Step 1. Connect your social media account(s)</div>
+										{/* Step 1: Complete questionnaire */}
+										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 1 ? 'bg-primary/10 border border-primary/30' : currentStep < 1 ? 'opacity-40' : 'opacity-60'}`}>
+											<div className="font-medium">Step 1. Complete your brand questionnaire to generate your content strategy</div>
 											{currentStep === 1 && (
-												<a
-													href="/connections"
-													className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
-												>
-													Connect Accounts Now
-												</a>
-											)}
-											{currentStep > 1 && (
-												<span className="text-xs text-accent font-medium">✓ Complete</span>
-											)}
-										</div>
-
-										{/* Step 2: Complete Questionnaire */}
-										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 2 ? 'bg-primary/10 border border-primary/30' : currentStep < 2 ? 'opacity-40' : 'opacity-60'}`}>
-											<div className="font-medium">Step 2. Complete your brand questionnaire to generate your content strategy</div>
-											{currentStep === 2 && (
 												<a
 													href="/onboarding"
 													className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
@@ -379,18 +351,14 @@ export default async function Dashboard({
 													Complete Questionnaire Now
 												</a>
 											)}
-											{currentStep > 2 && (
-												<span className="text-xs text-accent font-medium">✓ Complete</span>
-											)}
-											{currentStep < 2 && (
-												<span className="text-xs text-text-dim">Locked</span>
-											)}
+											{currentStep > 1 && <span className="text-xs text-accent font-medium">✓ Complete</span>}
+											{currentStep < 1 && <span className="text-xs text-text-dim">Locked</span>}
 										</div>
 
-										{/* Step 3: Approve Strategy */}
-										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 3 ? 'bg-primary/10 border border-primary/30' : currentStep < 3 ? 'opacity-40' : 'opacity-60'}`}>
-											<div className="font-medium">Step 3. Approve your bespoke content strategy</div>
-											{currentStep === 3 && brandProfiles.length > 0 && (
+										{/* Step 2: Approve strategy */}
+										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 2 ? 'bg-primary/10 border border-primary/30' : currentStep < 2 ? 'opacity-40' : 'opacity-60'}`}>
+											<div className="font-medium">Step 2. Approve your bespoke content strategy</div>
+											{currentStep === 2 && brandProfiles.length > 0 && (
 												<a
 													href={`/strategy/${brandProfiles[0].id}`}
 													className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
@@ -398,18 +366,44 @@ export default async function Dashboard({
 													Approve Strategy
 												</a>
 											)}
-											{currentStep > 3 && (
-												<span className="text-xs text-accent font-medium">✓ Complete</span>
-											)}
-											{currentStep < 3 && (
-												<span className="text-xs text-text-dim">Locked</span>
-											)}
+											{currentStep > 2 && <span className="text-xs text-accent font-medium">✓ Complete</span>}
+											{currentStep < 2 && <span className="text-xs text-text-dim">Locked</span>}
 										</div>
 
-										{/* Step 4: Review Content */}
+										{/* Step 3: Generate content */}
+										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 3 ? 'bg-primary/10 border border-primary/30' : currentStep < 3 ? 'opacity-40' : 'opacity-60'}`}>
+											<div className="font-medium">Step 3. Generate content for your brand and channels</div>
+											{currentStep === 3 && brandProfiles.length > 0 && (
+												<a
+													href={`/content/generate?brand=${brandProfiles[0].id}`}
+													className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
+												>
+													Generate Content
+												</a>
+											)}
+											{currentStep > 3 && <span className="text-xs text-accent font-medium">✓ Complete</span>}
+											{currentStep < 3 && <span className="text-xs text-text-dim">Locked</span>}
+										</div>
+
+										{/* Step 4: Connect social */}
 										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 4 ? 'bg-primary/10 border border-primary/30' : currentStep < 4 ? 'opacity-40' : 'opacity-60'}`}>
-											<div className="font-medium">Step 4. Human Oversight - Review, Approve/Edit and Auto Schedule your Content</div>
+											<div className="font-medium">Step 4. Connect your social media account(s)</div>
 											{currentStep === 4 && (
+												<a
+													href="/connections"
+													className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
+												>
+													Connect Accounts Now
+												</a>
+											)}
+											{currentStep > 4 && <span className="text-xs text-accent font-medium">✓ Complete</span>}
+											{currentStep < 4 && <span className="text-xs text-text-dim">Locked</span>}
+										</div>
+
+										{/* Step 5: Review/schedule content */}
+										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 5 ? 'bg-primary/10 border border-primary/30' : currentStep < 5 ? 'opacity-40' : 'opacity-60'}`}>
+											<div className="font-medium">Step 5. Human Oversight - Review, Edit/Approve and Schedule your Content</div>
+											{currentStep === 5 && (
 												<a
 													href="/content/approval"
 													className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
@@ -417,12 +411,8 @@ export default async function Dashboard({
 													Review Content
 												</a>
 											)}
-											{currentStep > 4 && (
-												<span className="text-xs text-accent font-medium">✓ Complete</span>
-											)}
-											{currentStep < 4 && (
-												<span className="text-xs text-text-dim">Locked</span>
-											)}
+											{currentStep > 5 && <span className="text-xs text-accent font-medium">✓ Complete</span>}
+											{currentStep < 5 && <span className="text-xs text-text-dim">Locked</span>}
 										</div>
 									</div>
 								</div>
