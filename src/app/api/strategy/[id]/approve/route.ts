@@ -42,91 +42,75 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
 		const admin = getSupabaseService();
 
-		// User plan: Creator tier uses Creator Make scenario; other tiers use multichannel Make scenario
+		// User plan: Creator tier uses Creator Make scenario (requires LinkedIn); Starter/Growth/Pro/Scale use multichannel (no LinkedIn required to approve)
 		const { data: subscription } = await supabase
 			.from('subscriptions')
 			.select('plan')
 			.eq('user_id', user.id)
 			.maybeSingle();
-		const plan = (subscription?.plan as 'creator' | 'growth' | 'pro' | 'scale') || 'creator';
+		const plan = (subscription?.plan as 'creator' | 'starter' | 'growth' | 'pro' | 'scale' | 'trial') || 'creator';
 
-		// Check if LinkedIn is connected (personal or business)
-		const { data: linkedInConnections } = await admin
-			.from('social_connections')
-			.select('person_urn, organization_urn, connection_type, brand_profile_id')
-			.eq('user_id', user.id)
-			.eq('provider', 'linkedin');
-
-		if (!linkedInConnections || linkedInConnections.length === 0) {
-			return NextResponse.json(
-				{ error: 'LinkedIn not connected. Please connect your LinkedIn account first.', requiresConnection: true },
-				{ status: 400 }
-			);
-		}
-
-		// Get the brand profile to determine if we need personal or business connection
 		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
 		const BASE_ID = process.env.AIRTABLE_BASE_ID;
 		const TABLE_ID = process.env.AIRTABLE_BRANDPROFILES_TABLE;
-		
-		let brandType = 'company';
+
+		// Only Creator tier requires LinkedIn for approval (Creator Make scenario needs URNs). Multi-channel plans can approve and create content without connections.
 		let linkedInConnection: any = null;
-		
-		if (AIRTABLE_TOKEN && BASE_ID && TABLE_ID) {
-			try {
-				const brandRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${brandProfileId}`, {
-					method: 'GET',
-					headers: {
-						Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-						'Content-Type': 'application/json',
-					},
-				});
-				
-				if (brandRes.ok) {
-					const brandRecord = await brandRes.json();
-					brandType = brandRecord.fields?.brand_type || 'company';
-					
-					// Find the appropriate LinkedIn connection for this brand
-					// For company brands, prefer business connections; for personal, prefer personal connections
-					if (brandType === 'company') {
-						// Prefer business connection (organization) assigned to this brand, or any business connection
-						linkedInConnection = linkedInConnections.find(
-							(conn: any) => conn.connection_type === 'organization' && 
-								(conn.brand_profile_id === brandProfileId || !conn.brand_profile_id)
-						) || linkedInConnections.find((conn: any) => conn.connection_type === 'organization');
-						
-						// Fallback to any LinkedIn connection if no business connection found
-						if (!linkedInConnection) {
-							linkedInConnection = linkedInConnections[0];
-						}
-					} else {
-						// For personal brands, prefer personal connection assigned to this brand, or any personal connection
-						linkedInConnection = linkedInConnections.find(
-							(conn: any) => conn.connection_type === 'member' && 
-								(conn.brand_profile_id === brandProfileId || !conn.brand_profile_id)
-						) || linkedInConnections.find((conn: any) => conn.connection_type === 'member');
-						
-						// Fallback to any LinkedIn connection if no personal connection found
-						if (!linkedInConnection) {
-							linkedInConnection = linkedInConnections[0];
+		let brandType = 'company';
+		if (plan === 'creator') {
+			const { data: linkedInConnections } = await admin
+				.from('social_connections')
+				.select('person_urn, organization_urn, connection_type, brand_profile_id')
+				.eq('user_id', user.id)
+				.eq('provider', 'linkedin');
+
+			if (!linkedInConnections || linkedInConnections.length === 0) {
+				return NextResponse.json(
+					{ error: 'LinkedIn not connected. Please connect your LinkedIn account first.', requiresConnection: true },
+					{ status: 400 }
+				);
+			}
+
+			if (AIRTABLE_TOKEN && BASE_ID && TABLE_ID) {
+				try {
+					const brandRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${brandProfileId}`, {
+						method: 'GET',
+						headers: {
+							Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+							'Content-Type': 'application/json',
+						},
+					});
+					if (brandRes.ok) {
+						const brandRecord = await brandRes.json();
+						brandType = brandRecord.fields?.brand_type || 'company';
+						if (brandType === 'company') {
+							linkedInConnection = linkedInConnections.find(
+								(conn: any) => conn.connection_type === 'organization' && 
+									(conn.brand_profile_id === brandProfileId || !conn.brand_profile_id)
+							) || linkedInConnections.find((conn: any) => conn.connection_type === 'organization');
+							if (!linkedInConnection) linkedInConnection = linkedInConnections[0];
+						} else {
+							linkedInConnection = linkedInConnections.find(
+								(conn: any) => conn.connection_type === 'member' && 
+									(conn.brand_profile_id === brandProfileId || !conn.brand_profile_id)
+							) || linkedInConnections.find((conn: any) => conn.connection_type === 'member');
+							if (!linkedInConnection) linkedInConnection = linkedInConnections[0];
 						}
 					}
+				} catch (error) {
+					console.warn('Failed to fetch brand profile for connection matching:', error);
+					linkedInConnection = linkedInConnections[0];
 				}
-			} catch (error) {
-				console.warn('Failed to fetch brand profile for connection matching:', error);
-				// Fallback to first available connection
+			} else {
 				linkedInConnection = linkedInConnections[0];
 			}
-		} else {
-			// If we can't fetch brand type, just use the first connection
-			linkedInConnection = linkedInConnections[0];
-		}
 
-		if (!linkedInConnection) {
-			return NextResponse.json(
-				{ error: 'LinkedIn not connected. Please connect your LinkedIn account first.', requiresConnection: true },
-				{ status: 400 }
-			);
+			if (!linkedInConnection) {
+				return NextResponse.json(
+					{ error: 'LinkedIn not connected. Please connect your LinkedIn account first.', requiresConnection: true },
+					{ status: 400 }
+				);
+			}
 		}
 
 		// Update strategy status in Airtable
