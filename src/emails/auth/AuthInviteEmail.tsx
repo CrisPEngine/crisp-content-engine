@@ -48,8 +48,11 @@ export function AuthInviteEmail({ inviteUrl, userEmail, trialDays, plan }: AuthI
 						<Text style={bodyStyle}>
 							Activate your free trial now and put the authorisation you've already completed to work.
 						</Text>
+						<Text style={bodyStyle}>
+							<strong>You don't have a password yet.</strong> When you click the button, you'll be taken to a page where you can set your password. Use this password to sign in in the future.
+						</Text>
 						<div style={buttonContainerStyle}>
-							<EmailButton href={inviteUrl}>Start free trial</EmailButton>
+							<EmailButton href={inviteUrl}>Set password & start free trial</EmailButton>
 						</div>
 						<Text style={mutedStyle}>
 							This invitation link will expire in 24 hours. If you did not expect this invitation, you can safely ignore this email.
@@ -61,8 +64,11 @@ export function AuthInviteEmail({ inviteUrl, userEmail, trialDays, plan }: AuthI
 						<Text style={bodyStyle}>
 							You've been invited to join CRISP Content Engine. Click the button below to accept your invitation and set up your account.
 						</Text>
+						<Text style={bodyStyle}>
+							<strong>You don't have a password yet.</strong> When you click the button, you'll be taken to a page where you can set your password. Use this password to sign in in the future.
+						</Text>
 						<div style={buttonContainerStyle}>
-							<EmailButton href={inviteUrl}>Accept Invite</EmailButton>
+							<EmailButton href={inviteUrl}>Set password & accept invite</EmailButton>
 						</div>
 						<Text style={mutedStyle}>
 							This invitation link will expire in 24 hours. If you did not expect this invitation, you can safely ignore this email.
