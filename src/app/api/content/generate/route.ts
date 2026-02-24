@@ -4,7 +4,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { enforceCaps, getEntitlements, getMonthUsage, getChannelUsage } from '@/lib/enforceCaps';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { X_ALGO_DIGEST } from '@/lib/channels/x-algo-digest';
-import { CAPS } from '@/config/pricing';
+import { CAPS, PER_CHANNEL_REQUEST_CAPS } from '@/config/pricing';
 import type { MultiChannelMakePayload, BrandVoiceContext, MonthlyBrief, PreviousContentItem, SchedulingContext } from '@/lib/makeMultiChannelPayload';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
@@ -65,6 +65,22 @@ export async function POST(req: Request) {
 		}
 
 		const { brandProfileId, channels, strategyId } = parseResult.data;
+
+		// Enforce per-channel request caps (multi-channel flow)
+		for (const ch of channels) {
+			const key = ch.platform.toLowerCase();
+			const cap = PER_CHANNEL_REQUEST_CAPS[key];
+			if (cap != null && ch.count > cap) {
+				return NextResponse.json(
+					{
+						error: `${ch.platform} is limited to ${cap} post${cap !== 1 ? 's' : ''} per request. You requested ${ch.count}.`,
+						channel: ch.platform,
+						maxPerRequest: cap,
+					},
+					{ status: 400 }
+				);
+			}
+		}
 
 		// Calculate total requested count
 		const totalRequested = channels.reduce((sum, ch) => sum + ch.count, 0);

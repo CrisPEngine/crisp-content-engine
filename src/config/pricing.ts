@@ -1,5 +1,14 @@
 export type PlanId = "trial" | "starter" | "creator" | "growth" | "pro" | "scale";
 
+/** Max content pieces per channel in a single multi-channel generation request */
+export const PER_CHANNEL_REQUEST_CAPS: Record<string, number> = {
+	blog: 2,
+	facebook: 3,
+	instagram: 3,
+	linkedin: 3,
+	x: 10,
+};
+
 export type PlanCaps = {
 	maxBrands: number;
 	maxChannels: number;

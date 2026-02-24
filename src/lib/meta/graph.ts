@@ -227,11 +227,58 @@ export interface FacebookPublishPayload {
 	scheduledTime?: Date; // Optional: schedule for future (must be 10 min to 75 days ahead)
 }
 
+/** Meta Graph API error payload (for logging and token/scope detection) */
+export interface MetaGraphErrorDetail {
+	responseStatus: number;
+	graphCode?: number;
+	graphSubcode?: number;
+	graphMessage?: string;
+	/** True if error suggests token expired or permission/scope issue — user should reconnect */
+	tokenOrPermissionHint?: boolean;
+}
+
 export interface PublishResult {
 	success: boolean;
 	postId?: string;
 	publishedUrl?: string;
 	error?: string;
+	/** Set on failure: HTTP status and parsed Graph error for logging/diagnosis */
+	metaError?: MetaGraphErrorDetail;
+}
+
+/**
+ * Parse Meta Graph API error response for logging and token/scope detection.
+ * Codes 190 (access token) and 200 (permissions) suggest user should reconnect.
+ */
+function parseMetaErrorResponse(responseStatus: number, bodyText: string): { metaError: MetaGraphErrorDetail; userMessage: string } {
+	let graphCode: number | undefined;
+	let graphSubcode: number | undefined;
+	let graphMessage: string | undefined;
+	try {
+		const parsed = JSON.parse(bodyText);
+		const err = parsed?.error;
+		if (err) {
+			graphCode = typeof err.code === 'number' ? err.code : undefined;
+			graphSubcode = typeof err.error_subcode === 'number' ? err.error_subcode : undefined;
+			graphMessage = typeof err.message === 'string' ? err.message : undefined;
+		}
+	} catch {
+		// bodyText may not be JSON
+	}
+	const tokenOrPermissionHint = graphCode === 190 || graphCode === 200;
+	const userMessage = tokenOrPermissionHint
+		? ' Token or permissions issue — please reconnect your Meta account in Settings > Connections.'
+		: '';
+	return {
+		metaError: {
+			responseStatus,
+			graphCode,
+			graphSubcode,
+			graphMessage,
+			tokenOrPermissionHint: tokenOrPermissionHint || undefined,
+		},
+		userMessage,
+	};
 }
 
 /**
@@ -283,10 +330,17 @@ export async function publishToFacebookPage(
 
 			if (!photoRes.ok) {
 				const errorText = await photoRes.text();
-				console.error('[Meta Publish] Photo upload failed:', errorText);
+				const { metaError, userMessage } = parseMetaErrorResponse(photoRes.status, errorText);
+				console.error('[Meta Publish] Photo upload failed:', {
+					status: photoRes.status,
+					graphCode: metaError.graphCode,
+					graphSubcode: metaError.graphSubcode,
+					body: errorText,
+				});
 				return {
 					success: false,
-					error: `Failed to upload photo: ${errorText}`,
+					error: `Failed to upload photo: ${metaError.graphMessage || errorText}${userMessage}`,
+					metaError,
 				};
 			}
 
@@ -322,10 +376,17 @@ export async function publishToFacebookPage(
 
 			if (!feedRes.ok) {
 				const errorText = await feedRes.text();
-				console.error('[Meta Publish] Feed post failed:', errorText);
+				const { metaError, userMessage } = parseMetaErrorResponse(feedRes.status, errorText);
+				console.error('[Meta Publish] Feed post failed:', {
+					status: feedRes.status,
+					graphCode: metaError.graphCode,
+					graphSubcode: metaError.graphSubcode,
+					body: errorText,
+				});
 				return {
 					success: false,
-					error: `Failed to create post: ${errorText}`,
+					error: `Failed to create post: ${metaError.graphMessage || errorText}${userMessage}`,
+					metaError,
 				};
 			}
 
@@ -392,10 +453,17 @@ export async function publishToInstagram(
 
 		if (!containerRes.ok) {
 			const errorText = await containerRes.text();
-			console.error('[Meta Publish] Instagram container creation failed:', errorText);
+			const { metaError, userMessage } = parseMetaErrorResponse(containerRes.status, errorText);
+			console.error('[Meta Publish] Instagram container creation failed:', {
+				status: containerRes.status,
+				graphCode: metaError.graphCode,
+				graphSubcode: metaError.graphSubcode,
+				body: errorText,
+			});
 			return {
 				success: false,
-				error: `Failed to create Instagram media container: ${errorText}`,
+				error: `Failed to create Instagram media container: ${metaError.graphMessage || errorText}${userMessage}`,
+				metaError,
 			};
 		}
 
@@ -464,10 +532,17 @@ export async function publishToInstagram(
 
 		if (!publishRes.ok) {
 			const errorText = await publishRes.text();
-			console.error('[Meta Publish] Instagram publish failed:', errorText);
+			const { metaError, userMessage } = parseMetaErrorResponse(publishRes.status, errorText);
+			console.error('[Meta Publish] Instagram publish failed:', {
+				status: publishRes.status,
+				graphCode: metaError.graphCode,
+				graphSubcode: metaError.graphSubcode,
+				body: errorText,
+			});
 			return {
 				success: false,
-				error: `Failed to publish Instagram media: ${errorText}`,
+				error: `Failed to publish Instagram media: ${metaError.graphMessage || errorText}${userMessage}`,
+				metaError,
 			};
 		}
 

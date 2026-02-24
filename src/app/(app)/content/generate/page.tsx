@@ -7,7 +7,7 @@ import { Loader2, Sparkles, ArrowRight, AlertCircle } from 'lucide-react';
 import { ContentGenerationLoading } from '@/components/ContentGenerationLoading';
 import { useUsage } from '@/lib/useUsage';
 import type { PlanId } from '@/config/pricing';
-import { CAPS } from '@/config/pricing';
+import { CAPS, PER_CHANNEL_REQUEST_CAPS } from '@/config/pricing';
 import { UpgradeModal } from '@/components/UpgradeModal';
 import { TrialBanner } from '@/components/TrialBanner';
 
@@ -308,37 +308,41 @@ export default function ContentGeneratePage() {
 								Select the channels and specify how many posts to create for each.
 							</p>
 							<div className="space-y-3">
-								{availablePlatforms.map((platform) => (
-									<div
-										key={platform.value}
-										className="flex items-center gap-4 p-3 rounded-xl2 border border-edge/60 bg-surface/30"
-									>
-										<div className="flex items-center gap-3 flex-1">
-											<span className="text-2xl">{platform.icon}</span>
-											<span className="font-medium">{platform.label}</span>
-											{isStarterPlan && (platform.value === 'LinkedIn' || platform.value === 'X') && (
-												<span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300">
-													Export-only
-												</span>
-											)}
+								{availablePlatforms.map((platform) => {
+									const cap = PER_CHANNEL_REQUEST_CAPS[platform.value.toLowerCase()] ?? 50;
+									return (
+										<div
+											key={platform.value}
+											className="flex items-center gap-4 p-3 rounded-xl2 border border-edge/60 bg-surface/30"
+										>
+											<div className="flex items-center gap-3 flex-1">
+												<span className="text-2xl">{platform.icon}</span>
+												<span className="font-medium">{platform.label}</span>
+												<span className="text-xs text-text-dim">(max {cap} per request)</span>
+												{isStarterPlan && (platform.value === 'LinkedIn' || platform.value === 'X') && (
+													<span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300">
+														Export-only
+													</span>
+												)}
+											</div>
+											<input
+												type="number"
+												min="0"
+												max={cap}
+												value={quantities[platform.value] || 0}
+												onChange={(e) => {
+													const val = parseInt(e.target.value) || 0;
+													setQuantities((prev) => ({
+														...prev,
+														[platform.value]: Math.max(0, Math.min(cap, val)),
+													}));
+												}}
+												className="w-20 px-3 py-2 rounded-lg border border-edge/60 bg-bg/80 text-text text-center focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+												placeholder="0"
+											/>
 										</div>
-										<input
-											type="number"
-											min="0"
-											max="50"
-											value={quantities[platform.value] || 0}
-											onChange={(e) => {
-												const val = parseInt(e.target.value) || 0;
-												setQuantities((prev) => ({
-													...prev,
-													[platform.value]: Math.max(0, Math.min(50, val)),
-												}));
-											}}
-											className="w-20 px-3 py-2 rounded-lg border border-edge/60 bg-bg/80 text-text text-center focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-											placeholder="0"
-										/>
-									</div>
-								))}
+									);
+								})}
 							</div>
 
 							{totalRequested > postsRemaining && (

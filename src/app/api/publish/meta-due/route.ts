@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { isMetaPublishingEnabled } from '@/lib/featureFlags';
-import { publishToFacebookPage, publishToInstagram, decryptMetaToken } from '@/lib/meta/graph';
+import { publishToFacebookPage, publishToInstagram, decryptMetaToken, type MetaGraphErrorDetail } from '@/lib/meta/graph';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -143,13 +143,36 @@ export async function GET(request: Request) {
 /**
  * Publish a single job.
  * Called after optimistic lock has already set status='publishing'.
+ * Returns result with optional metaError for failure logging (response_status, graph_error_code).
  */
 async function publishJob(
 	job: any,
 	admin: any
-): Promise<{ success: boolean; retry: boolean; error?: string }> {
+): Promise<{ success: boolean; retry: boolean; error?: string; metaError?: MetaGraphErrorDetail }> {
 	const MAX_ATTEMPTS = 3;
 	const RETRY_DELAYS = [5 * 60, 15 * 60, 60 * 60]; // 5min, 15min, 1hr
+
+	function buildUpdatePayload(
+		status: string,
+		errorMessage: string,
+		attempts: number,
+		nextAttemptAt?: string | null,
+		metaError?: MetaGraphErrorDetail
+	) {
+		const payload: Record<string, unknown> = {
+			status,
+			error_message: errorMessage,
+			attempts,
+			updated_at: new Date().toISOString(),
+		};
+		if (nextAttemptAt != null) payload.next_attempt_at = nextAttemptAt;
+		if (metaError) {
+			payload.response_status = metaError.responseStatus;
+			const parts = [metaError.graphCode, metaError.graphSubcode].filter((x) => x != null);
+			payload.graph_error_code = parts.length ? parts.join(',') : null;
+		}
+		return payload;
+	}
 
 	try {
 		const { platform, target_id, payload_json, user_id } = job;
@@ -205,17 +228,34 @@ async function publishJob(
 		let remotePostId: string;
 
 		if (platform === 'facebook') {
-			// Always immediate publish. Cron handles all timing.
 			const result = await publishToFacebookPage(target_id, accessToken, {
 				message: text,
 				imageUrl: imageUrl || undefined,
-				scheduledTime: undefined, // No Facebook scheduled_publish_time; cron does timing
+				scheduledTime: undefined,
 			});
 
 			if (!result.success) {
-				throw new Error(result.error || 'Facebook publish failed');
+				const errorMessage = result.error || 'Facebook publish failed';
+				const attempts = (job.attempts || 0) + 1;
+				if (attempts < MAX_ATTEMPTS) {
+					const delaySeconds = RETRY_DELAYS[attempts - 1] || 60 * 60;
+					const nextAttemptAt = new Date(Date.now() + delaySeconds * 1000).toISOString();
+					await admin
+						.from('publish_jobs')
+						.update(buildUpdatePayload('retrying', errorMessage, attempts, nextAttemptAt, result.metaError))
+						.eq('id', job.id);
+					console.log(`[Meta Worker] Job ${job.id} retry ${attempts}/${MAX_ATTEMPTS} at ${nextAttemptAt}`);
+					return { success: false, retry: true, error: errorMessage, metaError: result.metaError };
+				} else {
+					await admin
+						.from('publish_jobs')
+						.update(buildUpdatePayload('failed', errorMessage, attempts, null, result.metaError))
+						.eq('id', job.id);
+					await updateAirtableFailed(job.airtable_record_id, errorMessage);
+					console.log(`[Meta Worker] Job ${job.id} permanently failed after ${attempts} attempts`);
+					return { success: false, retry: false, error: errorMessage, metaError: result.metaError };
+				}
 			}
-
 			remotePostId = result.postId || '';
 		} else if (platform === 'instagram') {
 			if (!imageUrl) {
@@ -228,15 +268,33 @@ async function publishJob(
 			});
 
 			if (!result.success) {
-				throw new Error(result.error || 'Instagram publish failed');
+				const errorMessage = result.error || 'Instagram publish failed';
+				const attempts = (job.attempts || 0) + 1;
+				if (attempts < MAX_ATTEMPTS) {
+					const delaySeconds = RETRY_DELAYS[attempts - 1] || 60 * 60;
+					const nextAttemptAt = new Date(Date.now() + delaySeconds * 1000).toISOString();
+					await admin
+						.from('publish_jobs')
+						.update(buildUpdatePayload('retrying', errorMessage, attempts, nextAttemptAt, result.metaError))
+						.eq('id', job.id);
+					console.log(`[Meta Worker] Job ${job.id} retry ${attempts}/${MAX_ATTEMPTS} at ${nextAttemptAt}`);
+					return { success: false, retry: true, error: errorMessage, metaError: result.metaError };
+				} else {
+					await admin
+						.from('publish_jobs')
+						.update(buildUpdatePayload('failed', errorMessage, attempts, null, result.metaError))
+						.eq('id', job.id);
+					await updateAirtableFailed(job.airtable_record_id, errorMessage);
+					console.log(`[Meta Worker] Job ${job.id} permanently failed after ${attempts} attempts`);
+					return { success: false, retry: false, error: errorMessage, metaError: result.metaError };
+				}
 			}
-
 			remotePostId = result.postId || '';
 		} else {
 			throw new Error(`Unsupported platform: ${platform}`);
 		}
 
-		// Success: update job
+		// Success: update job (no change to success path)
 		await admin
 			.from('publish_jobs')
 			.update({
@@ -247,9 +305,7 @@ async function publishJob(
 			})
 			.eq('id', job.id);
 
-		// Update Airtable with success
 		await updateAirtablePublished(job.airtable_record_id, remotePostId, platform);
-
 		console.log(`[Meta Worker] Job ${job.id} published: ${remotePostId}`);
 		return { success: true, retry: false };
 	} catch (error: any) {
@@ -259,38 +315,20 @@ async function publishJob(
 		const errorMessage = error.message || 'Unknown error';
 
 		if (attempts < MAX_ATTEMPTS) {
-			// Retry with exponential backoff
 			const delaySeconds = RETRY_DELAYS[attempts - 1] || 60 * 60;
 			const nextAttemptAt = new Date(Date.now() + delaySeconds * 1000).toISOString();
-
 			await admin
 				.from('publish_jobs')
-				.update({
-					status: 'retrying',
-					error_message: errorMessage,
-					attempts,
-					next_attempt_at: nextAttemptAt,
-					updated_at: new Date().toISOString(),
-				})
+				.update(buildUpdatePayload('retrying', errorMessage, attempts, nextAttemptAt))
 				.eq('id', job.id);
-
 			console.log(`[Meta Worker] Job ${job.id} retry ${attempts}/${MAX_ATTEMPTS} at ${nextAttemptAt}`);
 			return { success: false, retry: true, error: errorMessage };
 		} else {
-			// Permanent failure
 			await admin
 				.from('publish_jobs')
-				.update({
-					status: 'failed',
-					error_message: errorMessage,
-					attempts,
-					updated_at: new Date().toISOString(),
-				})
+				.update(buildUpdatePayload('failed', errorMessage, attempts, null))
 				.eq('id', job.id);
-
-			// Update Airtable with failure status + error
 			await updateAirtableFailed(job.airtable_record_id, errorMessage);
-
 			console.log(`[Meta Worker] Job ${job.id} permanently failed after ${attempts} attempts`);
 			return { success: false, retry: false, error: errorMessage };
 		}

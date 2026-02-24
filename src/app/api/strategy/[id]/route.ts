@@ -96,20 +96,19 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 		}
 
 		// Ensure strategy_json is always an object, not null
-		// This allows the form editor to work even for accounts without strategy_json populated
-		let strategyJson = record.fields.strategy_json;
-		if (!strategyJson) {
-			// If strategy_json is null/undefined/empty, return empty object
-			// This allows users to build their strategy from scratch
+		// Check both field names — Airtable may store it as strategy_json or strategy_payload
+		const rawStrategyJson = record.fields.strategy_json || record.fields.strategy_payload;
+		let strategyJson: any;
+		if (!rawStrategyJson) {
 			strategyJson = {};
-		} else if (typeof strategyJson === 'string') {
-			// If it's a string, try to parse it
+		} else if (typeof rawStrategyJson === 'string') {
 			try {
-				strategyJson = JSON.parse(strategyJson);
+				strategyJson = JSON.parse(rawStrategyJson);
 			} catch {
-				// If parsing fails, use empty object
 				strategyJson = {};
 			}
+		} else {
+			strategyJson = rawStrategyJson;
 		}
 
 		return NextResponse.json({
