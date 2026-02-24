@@ -1,0 +1,27 @@
+User-agent: *
+Disallow: /api/
+Disallow: /auth/
+Disallow: /oauth/
+Disallow: /callback/
+Disallow: /login
+Disallow: /signup
+Disallow: /onboarding
+Disallow: /billing/
+Disallow: /settings/
+Disallow: /brands/
+Disallow: /content/
+Disallow: /generate/
+Disallow: /admin/
+Disallow: /webhooks/
+Disallow: /_next/
+Disallow: /static/
+Disallow: /*?*
+Disallow: /*&*
+
+Allow: /robots.txt
+Allow: /llms.txt
+Allow: /llms-full.txt
+Allow: /docs/
+Allow: /docs/*
+
+Sitemap: https://app.crispdigital.io/sitemap.xml

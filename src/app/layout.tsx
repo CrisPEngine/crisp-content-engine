@@ -58,8 +58,13 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.crispdigital.io";
+
   return (
     <html lang="en">
+      <head>
+        <link rel="llms-txt" href={`${appUrl}/llms.txt`} />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} body-grid min-h-screen`}>
         {children}
         <CookieConsent />

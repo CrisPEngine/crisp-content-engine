@@ -11,6 +11,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 	const staticUrls: MetadataRoute.Sitemap = [
 		{ url: `${base}/`, lastModified: now },
 		{ url: `${base}/docs`, lastModified: now },
+		{ url: `${base}/llms.txt`, lastModified: now },
+		{ url: `${base}/.well-known/llms.txt`, lastModified: now },
+		{ url: `${base}/llms-full.txt`, lastModified: now },
 	];
 
 	const docUrls: MetadataRoute.Sitemap = docs

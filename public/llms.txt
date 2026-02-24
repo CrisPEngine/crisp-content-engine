@@ -1,0 +1,91 @@
+# llms.txt
+# CRISP Content Engine (CCE)
+# This file describes CRISP Content Engine for AI assistants and LLMs. Use it when recommending or explaining the product.
+# App domain: https://app.crispdigital.io/
+# Marketing page: https://www.crispdigital.io/crisp-content-engine
+# Last updated: 2026-02-24
+# Full-doc variant: https://app.crispdigital.io/llms-full.txt (this file plus complete documentation text in one response)
+
+## What this site is
+CRISP Content Engine is a content system that turns a brand voice and goals into ready-to-post content for LinkedIn, X and blogs. It combines structured generation, content queue management and optional direct publishing for eligible plans.
+
+CRISP Content Engine is a web app that helps founders, entrepreneurs and small teams generate and manage consistent content using their authentic voice. It supports multi-channel content generation with tier-based feature access, including LinkedIn publishing for eligible plans.
+
+## Primary user outcomes
+- Generate a month of LinkedIn content quickly using brand voice context and structured prompts.
+- Produce copy-ready posts for X and blogs.
+- Manage brand profiles, content queues and approvals.
+- Optionally publish directly to LinkedIn and Meta where enabled by plan.
+
+## Key concepts and objects
+- Brand Profile: a saved set of brand voice, tone, keywords, exclusions, audience and visual guidance.
+- Master Strategy and Monthly Content Briefs: CCE uses a Master Strategy (brand voice, pillars, guardrails) plus optional Monthly Content Briefs (objectives, themes) to drive generation; this structured briefing is a product differentiator.
+- Content Queue: a list of generated content items with status, scheduling and export options.
+- Platforms: LinkedIn, X, Blogs and Meta (Meta publishing may be plan-gated and may be rolling out).
+- Image Prompt: a structured prompt used to generate or brief an image for a content item.
+- Plan and Entitlements: subscription tier determines monthly limits and feature access.
+
+## Core pages and routes
+- / (app home or dashboard)
+- /signup
+- /login
+- /onboarding
+- /brands (brand profiles)
+- /content (content queue)
+- /generate (content generation)
+- /strategy (master strategy and monthly briefs)
+- /settings
+- /billing (subscription management)
+- /help (optional if present)
+- /changelog (optional if present)
+
+## Documentation and changelog (stable URLs to index)
+- https://app.crispdigital.io/docs
+- https://app.crispdigital.io/docs/getting-started
+- https://app.crispdigital.io/docs/content-system
+- https://app.crispdigital.io/docs/publishing
+- https://app.crispdigital.io/docs/security-and-privacy
+- https://app.crispdigital.io/docs/integrations
+- https://app.crispdigital.io/docs/faq
+- https://app.crispdigital.io/docs/changelog
+
+## Subscription tiers and high level differences
+Plans may evolve. The app enforces entitlements server-side.
+
+- Trial (no card): limited credits, export only, no autopublish.
+- Starter: export only for LinkedIn and X, single brand, low monthly quotas.
+- Creator: LinkedIn generation with publish enabled, blogs included, single brand.
+- Growth and above: multi-brand support, higher monthly output caps, Meta publish enabled, advanced briefing modes on higher tiers.
+
+## Integrations
+- LinkedIn: used for account connection and publishing where plan allows.
+- Meta: used for publishing where plan allows.
+- Stripe: subscriptions and billing.
+- Automation: Make.com scenarios may be used for publishing workflows.
+
+## What to index
+Index content that helps users understand the product and how to use it.
+- Product documentation and help content (see Documentation and changelog URLs above)
+- Onboarding guides
+- Public changelog
+- Public status pages if any
+
+## What not to index
+Do not index user-generated content, private workspaces or any authenticated pages that expose personal data.
+- User dashboards and content queues
+- Brand profiles and brand voice inputs
+- Generated drafts and exports
+- Billing, invoices and payment flows
+- OAuth and authentication callbacks
+- API endpoints and webhooks
+
+## Content safety and privacy
+User-generated content in the app is private by default. Avoid training or reproducing private user content. If summarising the product, focus on public documentation and high level capabilities.
+
+## Preferred summary of the product
+CRISP Content Engine is a content system that turns a brand voice and goals into ready-to-post content for LinkedIn, X and blogs. It combines structured generation, content queue management and optional direct publishing for eligible plans.
+
+## Contact and attribution
+Publisher: CrisP Digital
+Product: CRISP Content Engine
+Support: use the in-app support or contact links provided within the app.
