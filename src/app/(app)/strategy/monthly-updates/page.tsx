@@ -12,8 +12,9 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { motion } from 'framer-motion';
-import { Check, Edit, AlertCircle, Loader2, Calendar, ArrowLeft, FileText } from 'lucide-react';
+import { Check, Edit, AlertCircle, Loader2, Calendar, ArrowLeft, FileText, ChevronDown, ChevronUp } from 'lucide-react';
 import { Skeleton } from '@/components/skeletons/Skeleton';
+import { MonthlyStrategyDisplay } from '@/components/MonthlyStrategyDisplay';
 
 type StrategyUpdate = {
 	id: string;
@@ -42,6 +43,7 @@ export default function MonthlyStrategyUpdatesPage() {
 	const [editing, setEditing] = useState<string | null>(null);
 	const [editedStrategyJson, setEditedStrategyJson] = useState<string>('');
 	const [error, setError] = useState<string | null>(null);
+	const [expandedPayloads, setExpandedPayloads] = useState<Set<string>>(new Set());
 
 	useEffect(() => {
 		if (!supabase) return;
@@ -121,6 +123,14 @@ export default function MonthlyStrategyUpdatesPage() {
 	function cancelEditing() {
 		setEditing(null);
 		setEditedStrategyJson('');
+	}
+
+	function togglePayload(id: string) {
+		setExpandedPayloads((prev) => {
+			const next = new Set(prev);
+			next.has(id) ? next.delete(id) : next.add(id);
+			return next;
+		});
 	}
 
 	function formatDate(dateString: string) {
@@ -292,55 +302,76 @@ export default function MonthlyStrategyUpdatesPage() {
 								</div>
 							)}
 
-							{/* Update Details */}
-							<div className="space-y-3 pt-4 border-t border-edge/60">
-								{update.objective && (
-									<div>
-										<div className="text-xs text-text-dim mb-1">Objective</div>
-										<div className="text-sm text-text">{update.objective}</div>
-									</div>
-								)}
-								{update.themes_focus && (
-									<div>
-										<div className="text-xs text-text-dim mb-1">Themes & Focus</div>
-										<div className="text-sm text-text">{update.themes_focus}</div>
-									</div>
-								)}
-								{update.content_preferences && (
-									<div>
-										<div className="text-xs text-text-dim mb-1">Content Preferences</div>
-										<div className="text-sm text-text">{update.content_preferences}</div>
-									</div>
-								)}
-								{update.key_dates && (
-									<div>
-										<div className="text-xs text-text-dim mb-1">Key Dates</div>
-										<div className="text-sm text-text">{update.key_dates}</div>
-									</div>
-								)}
-								{update.feedback_notes && (
-									<div>
-										<div className="text-xs text-text-dim mb-1">Feedback Notes</div>
-										<div className="text-sm text-text">{update.feedback_notes}</div>
+						{/* Update Details (brief inputs) */}
+						<div className="space-y-3 pt-4 border-t border-edge/60">
+							{update.objective && (
+								<div>
+									<div className="text-xs text-text-dim mb-1">Objective</div>
+									<div className="text-sm text-text">{update.objective}</div>
+								</div>
+							)}
+							{update.themes_focus && (
+								<div>
+									<div className="text-xs text-text-dim mb-1">Themes & Focus</div>
+									<div className="text-sm text-text">{update.themes_focus}</div>
+								</div>
+							)}
+							{update.content_preferences && (
+								<div>
+									<div className="text-xs text-text-dim mb-1">Content Preferences</div>
+									<div className="text-sm text-text">{update.content_preferences}</div>
+								</div>
+							)}
+							{update.key_dates && (
+								<div>
+									<div className="text-xs text-text-dim mb-1">Key Dates</div>
+									<div className="text-sm text-text">{update.key_dates}</div>
+								</div>
+							)}
+							{update.feedback_notes && (
+								<div>
+									<div className="text-xs text-text-dim mb-1">Feedback Notes</div>
+									<div className="text-sm text-text">{update.feedback_notes}</div>
+								</div>
+							)}
+						</div>
+
+						{/* Generated monthly strategy — toggle */}
+						{update.updated_strategy_json && (
+							<div className="pt-2">
+								<button
+									onClick={() => togglePayload(update.id)}
+									className="flex items-center gap-2 text-sm text-primary hover:text-primary/80 font-medium"
+								>
+									{expandedPayloads.has(update.id) ? (
+										<><ChevronUp className="w-4 h-4" />Hide Generated Strategy</>
+									) : (
+										<><ChevronDown className="w-4 h-4" />View Generated Strategy</>
+									)}
+								</button>
+								{expandedPayloads.has(update.id) && (
+									<div className="mt-4 p-4 rounded-xl2 border border-edge/60 bg-surface/20">
+										<MonthlyStrategyDisplay resultPayload={update.updated_strategy_json} />
 									</div>
 								)}
 							</div>
+						)}
 
-							{/* Strategy JSON Editor (when editing) */}
-							{editing === update.id && (
-								<div className="pt-4 border-t border-edge/60">
-									<div className="text-xs text-text-dim mb-2">Updated Strategy JSON</div>
-									<textarea
-										value={editedStrategyJson}
-										onChange={(e) => setEditedStrategyJson(e.target.value)}
-										rows={15}
-										className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text font-mono text-xs focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-									/>
-									<div className="text-xs text-text-dim mt-2">
-										Edit the strategy JSON if needed before approving.
-									</div>
+						{/* Strategy JSON Editor (when editing) */}
+						{editing === update.id && (
+							<div className="pt-4 border-t border-edge/60">
+								<div className="text-xs text-text-dim mb-2">Updated Strategy JSON</div>
+								<textarea
+									value={editedStrategyJson}
+									onChange={(e) => setEditedStrategyJson(e.target.value)}
+									rows={15}
+									className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text font-mono text-xs focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+								/>
+								<div className="text-xs text-text-dim mt-2">
+									Edit the strategy JSON if needed before approving.
 								</div>
-							)}
+							</div>
+						)}
 						</motion.div>
 					))}
 				</div>

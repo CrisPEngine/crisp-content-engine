@@ -62,6 +62,26 @@ export const CONTENTQUEUE_LOOKUP_FIELDS = {
  * IMPORTANT: Field names in Airtable are case-sensitive and may contain spaces.
  * Use the exact name as shown in Airtable.
  */
+/**
+ * BrandProfiles Core Fields
+ */
+export const BRANDPROFILES_CORE_FIELDS = {
+	strategy_json: {
+		id: 'fldmz7OITQltKrgxQ',
+		name: 'strategy_json',
+	},
+} as const;
+
+/**
+ * StrategyUpdates Core Fields
+ */
+export const STRATEGYUPDATES_CORE_FIELDS = {
+	result_payload: {
+		id: 'flddd613pjtMNXs0h',
+		name: 'result_payload',
+	},
+} as const;
+
 export const BRANDPROFILES_ROLLUP_FIELDS = {
 	needs_approval_count: {
 		id: 'fldoVhwdnORrAzGte',

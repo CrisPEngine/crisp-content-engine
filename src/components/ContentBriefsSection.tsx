@@ -1,16 +1,21 @@
 'use client';
 
 /**
- * Content Briefs Section Component
- * 
- * Displays pending content briefs for approval
- * Shows status and appropriate CTAs based on brief status
+ * ContentBriefsSection
+ *
+ * Displays monthly content briefs (from StrategyUpdates).
+ * When a brief has a completed result_payload (field flddd613pjtMNXs0h),
+ * it renders the strategy content via MonthlyStrategyDisplay.
  */
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
-import { ClipboardList, Check, Loader2, AlertCircle, Calendar, ArrowRight, RotateCw, FileText } from 'lucide-react';
+import { MonthlyStrategyDisplay } from '@/components/MonthlyStrategyDisplay';
+import {
+	ClipboardList, Check, Loader2, AlertCircle, ArrowRight,
+	RotateCw, FileText, ChevronDown, ChevronUp,
+} from 'lucide-react';
 
 type ContentBrief = {
 	id: string;
@@ -26,6 +31,7 @@ type ContentBrief = {
 	sent_to_make_at: string | null;
 	generation_completed_at: string | null;
 	last_error: string | null;
+	result_payload: any;
 	result_payload_display?: string | null;
 };
 
@@ -41,6 +47,7 @@ export function ContentBriefsSection({ brandProfileId }: ContentBriefsSectionPro
 	const [approving, setApproving] = useState<string | null>(null);
 	const [retrying, setRetrying] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [expandedBriefs, setExpandedBriefs] = useState<Set<string>>(new Set());
 
 	useEffect(() => {
 		if (!supabase || !brandProfileId) return;
@@ -55,13 +62,17 @@ export function ContentBriefsSection({ brandProfileId }: ContentBriefsSectionPro
 			const res = await fetch(`/api/content-briefs?brand_profile_id=${brandProfileId}`, {
 				cache: 'no-store',
 			});
-			if (!res.ok) {
-				throw new Error('Failed to load content briefs');
-			}
+			if (!res.ok) throw new Error('Failed to load content briefs');
 			const data = await res.json();
-			setBriefs(data.briefs || []);
+			const fetched: ContentBrief[] = data.briefs || [];
+			setBriefs(fetched);
+
+			// Auto-expand completed briefs
+			const completedIds = new Set(
+				fetched.filter((b) => b.status === 'Generation Completed' && b.result_payload).map((b) => b.id)
+			);
+			setExpandedBriefs(completedIds);
 		} catch (err: any) {
-			console.error('Failed to load content briefs:', err);
 			setError(err.message || 'Failed to load content briefs');
 		} finally {
 			setLoading(false);
@@ -78,16 +89,12 @@ export function ContentBriefsSection({ brandProfileId }: ContentBriefsSectionPro
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
 			});
-
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
 				throw new Error(data?.error || 'Failed to approve brief');
 			}
-
-			// Reload briefs to show updated status
 			await loadBriefs();
 		} catch (err: any) {
-			console.error('Failed to approve brief:', err);
 			setError(err.message || 'Failed to approve brief');
 			setApproving(null);
 		}
@@ -103,19 +110,23 @@ export function ContentBriefsSection({ brandProfileId }: ContentBriefsSectionPro
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
 			});
-
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
 				throw new Error(data?.error || 'Failed to retry brief');
 			}
-
-			// Reload briefs to show updated status
 			await loadBriefs();
 		} catch (err: any) {
-			console.error('Failed to retry brief:', err);
 			setError(err.message || 'Failed to retry brief');
 			setRetrying(null);
 		}
+	}
+
+	function toggleExpand(id: string) {
+		setExpandedBriefs((prev) => {
+			const next = new Set(prev);
+			next.has(id) ? next.delete(id) : next.add(id);
+			return next;
+		});
 	}
 
 	function getStatusColor(status: string) {
@@ -137,29 +148,24 @@ export function ContentBriefsSection({ brandProfileId }: ContentBriefsSectionPro
 	function formatDate(dateString: string | null) {
 		if (!dateString) return null;
 		try {
-			const date = new Date(dateString);
-			return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+			return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 		} catch {
 			return dateString;
 		}
 	}
 
-	const pendingBrief = briefs.find((b) => b.status === 'Pending Approval');
-	const latestBrief = briefs[0]; // Briefs are sorted by submitted_at desc
-
 	if (loading) {
 		return (
-			<div className="card p-6">
-				<div className="flex items-center gap-2 text-text-dim">
-					<Loader2 className="w-4 h-4 animate-spin" />
-					<span className="text-sm">Loading content briefs...</span>
-				</div>
+			<div className="card p-6 flex items-center gap-2 text-text-dim">
+				<Loader2 className="w-4 h-4 animate-spin" />
+				<span className="text-sm">Loading content briefs...</span>
 			</div>
 		);
 	}
 
 	return (
-		<div className="card p-6 space-y-4">
+		<div className="space-y-4">
+			{/* Section header */}
 			<div className="flex items-center justify-between">
 				<div className="flex items-center gap-2">
 					<ClipboardList className="w-5 h-5 text-primary" />
@@ -174,177 +180,145 @@ export function ContentBriefsSection({ brandProfileId }: ContentBriefsSectionPro
 			</div>
 
 			{error && (
-				<div className="p-3 rounded-xl2 border border-danger/40 bg-danger/10 text-sm text-danger">
+				<div className="p-3 rounded-xl2 border border-danger/40 bg-danger/10 flex items-start gap-2 text-sm text-danger">
+					<AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
 					{error}
 				</div>
 			)}
 
 			{briefs.length === 0 ? (
-				<div className="text-center py-8 text-text-dim">
-					<p className="text-sm mb-2">No content briefs yet</p>
+				<div className="card p-8 text-center text-text-dim">
+					<FileText className="w-10 h-10 mx-auto mb-3 opacity-40" />
+					<p className="text-sm mb-1">No content briefs yet</p>
 					<p className="text-xs">Create your first monthly content brief to get started</p>
 				</div>
 			) : (
 				<div className="space-y-4">
-					{/* Show pending brief prominently */}
-					{pendingBrief && (
-						<div className="p-4 rounded-xl2 border-2 border-primary/50 bg-primary/5 space-y-3">
-							<div className="flex items-center justify-between">
-								<div className="flex items-center gap-2">
-									<div className={`w-2 h-2 rounded-full ${getStatusDotColor(pendingBrief.status)}`} />
-									<span className={`text-sm font-medium ${getStatusColor(pendingBrief.status)}`}>
-										Pending Approval
-									</span>
-									{pendingBrief.cycle_label && (
-										<span className="text-xs text-text-dim">· {pendingBrief.cycle_label}</span>
-									)}
-								</div>
-								<div className="flex items-center gap-2">
-									<button
-										onClick={() => router.push(`/content-brief/${pendingBrief.id}`)}
-										className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 flex items-center gap-2 text-sm"
-									>
-										<FileText className="w-4 h-4" />
-										Review & Edit
-									</button>
-									<button
-										onClick={() => approveBrief(pendingBrief.id)}
-										disabled={approving === pendingBrief.id}
-										className="px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm"
-									>
-										{approving === pendingBrief.id ? (
-											<>
-												<Loader2 className="w-4 h-4 animate-spin" />
-												Approving...
-											</>
-										) : (
-											<>
-												<Check className="w-4 h-4" />
-												Approve & Generate
-											</>
-										)}
-									</button>
-								</div>
-							</div>
-							<button
-								onClick={() => router.push(`/content-brief/${pendingBrief.id}`)}
-								className="text-left w-full hover:opacity-80 transition-opacity"
+					{briefs.map((brief, idx) => {
+						const isPending = brief.status === 'Pending Approval';
+						const isCompleted = brief.status === 'Generation Completed';
+						const hasPayload = !!brief.result_payload;
+						const isExpanded = expandedBriefs.has(brief.id);
+						const isFirst = idx === 0;
+
+						return (
+							<div
+								key={brief.id}
+								className={`rounded-xl2 border overflow-hidden ${
+									isPending
+										? 'border-primary/50 bg-primary/5'
+										: isCompleted
+										? 'border-accent/40 bg-accent/5'
+										: 'border-edge/60 bg-surface/20'
+								}`}
 							>
-								{pendingBrief.objective && (
-									<div className="text-sm text-text-soft">
-										<strong>Objective:</strong> {pendingBrief.objective.substring(0, 100)}
-										{pendingBrief.objective.length > 100 && '...'}
-									</div>
-								)}
-								{!pendingBrief.objective && (
-									<div className="text-sm text-text-dim italic">
-										Click to review and edit this brief
-									</div>
-								)}
-							</button>
-						</div>
-					)}
-
-					{/* Show latest brief status if no pending */}
-					{!pendingBrief && latestBrief && (
-						<div className="p-4 rounded-xl2 border border-edge/60 bg-surface/30 space-y-2">
-							<div className="flex items-center justify-between">
-								<div className="flex items-center gap-2">
-									<div className={`w-2 h-2 rounded-full ${getStatusDotColor(latestBrief.status)}`} />
-									<span className={`text-sm font-medium ${getStatusColor(latestBrief.status)}`}>
-										{latestBrief.status}
-									</span>
-									{latestBrief.cycle_label && (
-										<span className="text-xs text-text-dim">· {latestBrief.cycle_label}</span>
-									)}
-								</div>
-							</div>
-							{latestBrief.status === 'Generation Completed' && (
-								<a
-									href={`/content/approval?brand_profile_id=${brandProfileId}${latestBrief.id ? `&content_brief_id=${latestBrief.id}` : ''}`}
-									className="inline-flex items-center gap-2 text-sm text-primary hover:text-primary/80"
-								>
-									Review Content
-									<ArrowRight className="w-4 h-4" />
-								</a>
-							)}
-							{latestBrief.status === 'Sent to Make' && (
-								<div className="flex items-center justify-between">
-									<div className="text-xs text-text-dim">
-										Content generation in progress...
-									</div>
-									<button
-										onClick={() => retryBrief(latestBrief.id)}
-										disabled={retrying === latestBrief.id}
-										className="px-3 py-1.5 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-xs"
-									>
-										{retrying === latestBrief.id ? (
-											<>
-												<Loader2 className="w-3 h-3 animate-spin" />
-												Retrying...
-											</>
-										) : (
-											<>
-												<RotateCw className="w-3 h-3" />
-												Retry
-											</>
-										)}
-									</button>
-								</div>
-							)}
-							{latestBrief.status === 'Failed' && (
-								<div className="space-y-2">
-									{latestBrief.last_error && (
-										<div className="text-xs text-danger">
-											Error: {latestBrief.last_error}
-										</div>
-									)}
-									<button
-										onClick={() => retryBrief(latestBrief.id)}
-										disabled={retrying === latestBrief.id}
-										className="px-3 py-1.5 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-xs"
-									>
-										{retrying === latestBrief.id ? (
-											<>
-												<Loader2 className="w-3 h-3 animate-spin" />
-												Retrying...
-											</>
-										) : (
-											<>
-												<RotateCw className="w-3 h-3" />
-												Retry
-											</>
-										)}
-									</button>
-								</div>
-							)}
-						</div>
-					)}
-
-					{/* Show all briefs list */}
-					{briefs.length > 1 && (
-						<div className="pt-4 border-t border-edge/60">
-							<div className="text-xs text-text-dim mb-2">All Briefs</div>
-							<div className="space-y-2">
-								{briefs.slice(1).map((brief) => (
-									<div
-										key={brief.id}
-										className="flex items-center justify-between p-2 rounded-lg hover:bg-surface/30"
-									>
-										<div className="flex items-center gap-2">
-											<div className={`w-1.5 h-1.5 rounded-full ${getStatusDotColor(brief.status)}`} />
-											<span className="text-xs text-text-soft">
-												{brief.cycle_label || formatDate(brief.submitted_at) || 'Brief'}
+								{/* Brief header row */}
+								<div className="p-4 space-y-3">
+									<div className="flex items-center justify-between gap-3 flex-wrap">
+										<div className="flex items-center gap-2 flex-wrap">
+											<div className={`w-2 h-2 rounded-full flex-shrink-0 ${getStatusDotColor(brief.status)}`} />
+											<span className={`text-sm font-medium ${getStatusColor(brief.status)}`}>
+												{brief.status}
 											</span>
+											{brief.cycle_label && (
+												<span className="text-xs text-text-dim">· {brief.cycle_label}</span>
+											)}
+											{brief.submitted_at && (
+												<span className="text-xs text-text-dim">· {formatDate(brief.submitted_at)}</span>
+											)}
 										</div>
-										<span className={`text-xs ${getStatusColor(brief.status)}`}>
-											{brief.status}
-										</span>
+
+										<div className="flex items-center gap-2 flex-wrap">
+											{isPending && (
+												<>
+													<button
+														onClick={() => router.push(`/content-brief/${brief.id}`)}
+														className="px-3 py-1.5 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 flex items-center gap-1.5 text-xs"
+													>
+														<FileText className="w-3.5 h-3.5" />
+														Review & Edit
+													</button>
+													<button
+														onClick={() => approveBrief(brief.id)}
+														disabled={approving === brief.id}
+														className="px-3 py-1.5 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 disabled:opacity-50 flex items-center gap-1.5 text-xs"
+													>
+														{approving === brief.id ? (
+															<Loader2 className="w-3.5 h-3.5 animate-spin" />
+														) : (
+															<Check className="w-3.5 h-3.5" />
+														)}
+														Approve & Generate
+													</button>
+												</>
+											)}
+
+											{isCompleted && (
+												<a
+													href={`/content/approval?brand_profile_id=${brandProfileId}${brief.id ? `&content_brief_id=${brief.id}` : ''}`}
+													className="px-3 py-1.5 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 flex items-center gap-1.5 text-xs text-accent"
+												>
+													Review Content
+													<ArrowRight className="w-3.5 h-3.5" />
+												</a>
+											)}
+
+											{(brief.status === 'Sent to Make' || brief.status === 'Failed') && (
+												<button
+													onClick={() => retryBrief(brief.id)}
+													disabled={retrying === brief.id}
+													className="px-3 py-1.5 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 disabled:opacity-50 flex items-center gap-1.5 text-xs"
+												>
+													{retrying === brief.id ? (
+														<Loader2 className="w-3.5 h-3.5 animate-spin" />
+													) : (
+														<RotateCw className="w-3.5 h-3.5" />
+													)}
+													{brief.status === 'Sent to Make' ? 'Retry' : 'Retry'}
+												</button>
+											)}
+
+											{/* Expand/collapse toggle when there's a payload */}
+											{hasPayload && (
+												<button
+													onClick={() => toggleExpand(brief.id)}
+													className="px-3 py-1.5 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 flex items-center gap-1.5 text-xs text-text-soft"
+												>
+													{isExpanded ? (
+														<><ChevronUp className="w-3.5 h-3.5" />Hide Strategy</>
+													) : (
+														<><ChevronDown className="w-3.5 h-3.5" />View Strategy</>
+													)}
+												</button>
+											)}
+										</div>
 									</div>
-								))}
+
+									{/* Brief objective / hint */}
+									{brief.objective && !isExpanded && (
+										<p className="text-sm text-text-soft leading-relaxed">
+											{brief.objective.substring(0, 160)}{brief.objective.length > 160 ? '…' : ''}
+										</p>
+									)}
+
+									{brief.status === 'Sent to Make' && (
+										<p className="text-xs text-text-dim">Content generation in progress…</p>
+									)}
+
+									{brief.status === 'Failed' && brief.last_error && (
+										<p className="text-xs text-danger">Error: {brief.last_error}</p>
+									)}
+								</div>
+
+								{/* Expanded monthly strategy display */}
+								{isExpanded && hasPayload && (
+									<div className="border-t border-edge/60 px-4 pb-4">
+										<MonthlyStrategyDisplay resultPayload={brief.result_payload} />
+									</div>
+								)}
 							</div>
-						</div>
-					)}
+						);
+					})}
 				</div>
 			)}
 		</div>
