@@ -64,7 +64,7 @@ function StarterCard() {
 			</div>
 			<a
 				href="/signup"
-				className="mt-6 w-full inline-flex items-center justify-center rounded-xl2 border border-emerald-500/40 bg-emerald-500/10 px-4 py-2.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20 transition"
+				className="mt-6 w-full inline-flex items-center justify-center rounded-xl2 border border-emerald-500/40 bg-emerald-500/10 px-6 py-3 text-base font-medium text-emerald-300 hover:bg-emerald-500/20 transition"
 			>
 				Start free — no card required
 			</a>
@@ -453,7 +453,8 @@ export default function BillingPage() {
 					{isOnPaidPlan ? "Available upgrades" : "Choose your plan"}
 				</h2>
 				{/* Responsive grid: 1 col → 2 col → 3 col → auto-fit for larger screens */}
-				<div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+				{/* Max 3 cards per row at full width; remaining cards wrap below */}
+				<div className="grid gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
 					{!isOnPaidPlan && <StarterCard />}
 					{upgradeOptions.map((id) => (
 						<PlanCard
@@ -471,7 +472,8 @@ export default function BillingPage() {
 		) : (
 			<section>
 				<h2 className="text-lg font-semibold mb-4">All plans</h2>
-				<div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+				{/* Max 3 cards per row at full width; remaining cards wrap below */}
+				<div className="grid gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
 					<StarterCard />
 					{PURCHASABLE_PLANS.map((id) => (
 						<PlanCard
