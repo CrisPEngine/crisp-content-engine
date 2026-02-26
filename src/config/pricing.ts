@@ -11,16 +11,28 @@ export const PER_CHANNEL_REQUEST_CAPS: Record<string, number> = {
 
 export type PlanCaps = {
 	maxBrands: number;
+	maxSeats: number;
 	maxChannels: number;
+	// Global monthly cap (sum of all channels; kept for backward compat with entitlements table)
 	postsPerMonth: number | "unlimited";
 	includedImageGen: boolean;
-	includedPlatforms: ("linkedin"|"instagram"|"facebook"|"x"|"blog"|"medium")[];
-	autopublishLinkedIn?: boolean;
-	autopublishMeta?: boolean;
+	includedPlatforms: ("linkedin" | "instagram" | "facebook" | "x" | "blog" | "medium")[];
+	autopublishLinkedIn: boolean;
+	autopublishMeta: boolean;
+	// Per-channel monthly quotas (authoritative limits)
+	linkedinPostsMonthly: number;
+	xPostsMonthly: number;
+	blogArticlesMonthly: number;
+	blogOutlinesMonthly: number; // Starter only; paid plans use blogArticlesMonthly
+	metaPoolMonthly: number; // Shared across Facebook + Instagram
+	// Which Make scenario to use
+	makeScenario: "starter" | "multi-channel";
+	// Legacy per-channel limits object (used by enforcement helpers)
 	perChannelLimits?: {
 		linkedin?: number;
 		x?: number;
 		blog?: number;
+		meta_pool?: number;
 	};
 	notes?: string;
 };
@@ -28,231 +40,305 @@ export type PlanCaps = {
 export const CAPS: Record<PlanId, PlanCaps> = {
 	trial: {
 		maxBrands: 1,
+		maxSeats: 1,
 		maxChannels: 2,
 		postsPerMonth: 6,
 		includedImageGen: true,
 		includedPlatforms: ["linkedin", "x"],
 		autopublishLinkedIn: false,
 		autopublishMeta: false,
-		perChannelLimits: {
-			linkedin: 3,
-			x: 3,
-			blog: 0,
-		},
-		notes: "7-day trial: 3 LinkedIn + 3 X posts (export-only). No autopublish, no blogs.",
+		linkedinPostsMonthly: 3,
+		xPostsMonthly: 3,
+		blogArticlesMonthly: 0,
+		blogOutlinesMonthly: 0,
+		metaPoolMonthly: 0,
+		makeScenario: "starter",
+		perChannelLimits: { linkedin: 3, x: 3, blog: 0 },
+		notes: "7-day trial: 3 LinkedIn + 3 X posts (export-only).",
 	},
 	starter: {
 		maxBrands: 1,
-		maxChannels: 2,
-		postsPerMonth: 16,
+		maxSeats: 1,
+		maxChannels: 3,
+		postsPerMonth: 9, // 4 LinkedIn + 4 X + 1 blog outline
 		includedImageGen: true,
-		includedPlatforms: ["linkedin", "x"],
+		includedPlatforms: ["linkedin", "x", "blog"],
 		autopublishLinkedIn: false,
 		autopublishMeta: false,
-		perChannelLimits: {
-			linkedin: 8,
-			x: 8,
-			blog: 0,
-		},
-		notes: "Export-only LinkedIn (8) + X (8). No autopublish, no blogs.",
+		linkedinPostsMonthly: 4,
+		xPostsMonthly: 4,
+		blogArticlesMonthly: 0,
+		blogOutlinesMonthly: 1,
+		metaPoolMonthly: 0,
+		makeScenario: "starter",
+		perChannelLimits: { linkedin: 4, x: 4, blog: 1 },
+		notes: "Free Forever. Export-only LinkedIn (4) + X (4) + 1 blog outline. Mini AI via Starter scenario.",
 	},
 	creator: {
 		maxBrands: 1,
-		maxChannels: 2,
-		postsPerMonth: 10,
-		includedImageGen: false,
-		includedPlatforms: ["linkedin","blog","medium"],
+		maxSeats: 1,
+		maxChannels: 3,
+		postsPerMonth: 26, // 12 LinkedIn + 12 X + 2 blog
+		includedImageGen: true,
+		includedPlatforms: ["linkedin", "x", "blog"],
 		autopublishLinkedIn: true,
 		autopublishMeta: false,
-		perChannelLimits: {
-			linkedin: 8,
-			blog: 2,
-		},
-		notes: "LinkedIn autopublish (8) + Blog (2).",
+		linkedinPostsMonthly: 12,
+		xPostsMonthly: 12,
+		blogArticlesMonthly: 2,
+		blogOutlinesMonthly: 0,
+		metaPoolMonthly: 0,
+		makeScenario: "multi-channel",
+		perChannelLimits: { linkedin: 12, x: 12, blog: 2 },
+		notes: "LinkedIn autopublish (12) + X export (12) + Blog export (2).",
 	},
 	growth: {
 		maxBrands: 1,
-		maxChannels: 6,
-		postsPerMonth: 150,
+		maxSeats: 1,
+		maxChannels: 5,
+		postsPerMonth: 84, // 20 LinkedIn + 40 X + 4 blog + 20 meta pool
 		includedImageGen: true,
-		includedPlatforms: ["linkedin","instagram","facebook","x","blog","medium"],
+		includedPlatforms: ["linkedin", "x", "blog", "instagram", "facebook"],
 		autopublishLinkedIn: true,
 		autopublishMeta: true,
+		linkedinPostsMonthly: 20,
+		xPostsMonthly: 40,
+		blogArticlesMonthly: 4,
+		blogOutlinesMonthly: 0,
+		metaPoolMonthly: 20,
+		makeScenario: "multi-channel",
+		perChannelLimits: { linkedin: 20, x: 40, blog: 4, meta_pool: 20 },
+		notes: "1 brand, up to 5 channels. LinkedIn + Meta autopublish.",
 	},
 	pro: {
-		maxBrands: 5,
-		maxChannels: 20,
-		postsPerMonth: 500,
+		maxBrands: 3,
+		maxSeats: 2,
+		maxChannels: 5,
+		postsPerMonth: 312, // 75 LinkedIn + 150 X + 12 blog + 75 meta pool
 		includedImageGen: true,
-		includedPlatforms: ["linkedin","instagram","facebook","x","blog","medium"],
+		includedPlatforms: ["linkedin", "x", "blog", "instagram", "facebook"],
 		autopublishLinkedIn: true,
 		autopublishMeta: true,
+		linkedinPostsMonthly: 75,
+		xPostsMonthly: 150,
+		blogArticlesMonthly: 12,
+		blogOutlinesMonthly: 0,
+		metaPoolMonthly: 75,
+		makeScenario: "multi-channel",
+		perChannelLimits: { linkedin: 75, x: 150, blog: 12, meta_pool: 75 },
+		notes: "3 brands, 2 seats. Multi-brand operators and agencies.",
 	},
 	scale: {
 		maxBrands: 20,
+		maxSeats: 10,
 		maxChannels: 60,
 		postsPerMonth: "unlimited",
 		includedImageGen: true,
-		includedPlatforms: ["linkedin","instagram","facebook","x","blog","medium"],
+		includedPlatforms: ["linkedin", "instagram", "facebook", "x", "blog", "medium"],
 		autopublishLinkedIn: true,
 		autopublishMeta: true,
-		notes: "Agency features incl. white-label & API.",
+		linkedinPostsMonthly: 999999,
+		xPostsMonthly: 999999,
+		blogArticlesMonthly: 999999,
+		blogOutlinesMonthly: 0,
+		metaPoolMonthly: 999999,
+		makeScenario: "multi-channel",
+		notes: "Contact sales. Custom brands, limits and seats.",
 	},
 };
 
 export const PRICING = {
-	order: ["starter","creator","growth","pro","scale"] as PlanId[],
+	order: ["starter", "creator", "growth", "pro", "scale"] as PlanId[],
 	monthly: {
 		starter: {
 			name: "Starter",
-			priceText: "$5/mo",
-			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER_MONTHLY!,
-			blurb: "Export-only LinkedIn and X posts. Perfect for manual publishers.",
+			priceText: "Free",
+			priceId: "", // No Stripe price — free forever
+			blurb: "For founders getting consistent with structure.",
 			features: [
-				"8 LinkedIn posts (export-only)",
-				"8 X posts (export-only)",
+				"4 LinkedIn posts per month (export)",
+				"4 X posts per month (export)",
+				"1 blog outline per month (export)",
 				"AI image prompts included",
-				"One-click copy & export",
-				"No autopublish (manual posting)",
+				"Manual posting",
 			],
+			comingSoon: [] as string[],
+			cta: "Start free",
+			footnote: "Uses efficient generation to keep Free sustainable. No credit card required.",
 		},
-	creator: {
-		name: "Creator",
-		priceText: "$9/mo",
-		priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_MONTHLY!,
-		blurb: "Automated LinkedIn posting plus ready-to-publish blog articles.",
-		features: [
-			"8 auto-published LinkedIn posts",
-			"2 long-form blog for you to self-publish",
-			"Personal brand onboarding",
-			"Manual blog export (Word/PDF/Markdown)",
-			"LinkedIn connection required",
-		],
-	},
+		creator: {
+			name: "Creator",
+			priceText: "$9/mo",
+			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_MONTHLY!,
+			blurb: "For solo operators who want LinkedIn on autopilot.",
+			features: [
+				"12 LinkedIn posts per month (auto-publish)",
+				"12 X posts per month (export)",
+				"2 blog articles per month (export)",
+				"Brand onboarding",
+				"AI image prompts included",
+			],
+			comingSoon: ["Single idea briefing", "Comment engine"] as string[],
+			cta: "Upgrade to Creator",
+		},
 		growth: {
 			name: "Growth",
 			priceText: "$49/mo",
 			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_GROWTH_MONTHLY!,
-			blurb: "Multi-channel with LinkedIn + Meta autopublish. Ship consistently.",
+			blurb: "For serious visibility across every core channel.",
 			features: [
-				"2 brand workspaces",
-				"Any 3 channels/brand (LinkedIn, Facebook, Instagram, X, Blog, Medium)",
-				"LinkedIn + Facebook + Instagram autopublish",
-				"150 posts/month",
-				"Image generation included",
+				"20 LinkedIn posts per month (auto-publish)",
+				"40 X posts per month (export)",
+				"4 blog articles per month (export)",
+				"20 Meta posts per month (shared Facebook + Instagram, auto-publish)",
+				"One brand, up to 5 channels",
 			],
+			comingSoon: ["Single idea briefing", "Comment engine", "Analytics layer"] as string[],
+			cta: "Upgrade to Growth",
 		},
 		pro: {
 			name: "Pro",
 			priceText: "$149/mo",
 			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO_MONTHLY!,
-			blurb: "For teams running multi-brand, multi-channel.",
+			blurb: "For multi-brand operators and agencies running volume.",
 			features: [
-				"5 brand workspaces",
-				"Up to 20 channels total",
-				"500 posts/month",
-				"Image generation included",
+				"75 LinkedIn posts per month (auto-publish)",
+				"150 X posts per month (export)",
+				"12 blog articles per month (export)",
+				"75 Meta posts per month (shared Facebook + Instagram, auto-publish)",
+				"Up to 3 brands",
+				"2 seats included",
 			],
+			comingSoon: ["Presence score and reporting"] as string[],
+			cta: "Upgrade to Pro",
 		},
 		scale: {
 			name: "Scale",
-			priceText: "$399/mo",
+			priceText: "Custom",
 			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_SCALE_MONTHLY!,
-			blurb: "Agencies managing many brands and channels.",
+			blurb: "For teams and agencies that need custom limits and support.",
 			features: [
-				"20 brand workspaces",
-				"Up to 60 channels total",
-				"Unlimited posts/month",
-				"White-label & API access",
+				"Custom brands, limits and seats",
+				"Onboarding and priority support",
 			],
+			comingSoon: [] as string[],
+			cta: "Email enquiries@crispdigital.io",
 		},
 	},
 	annual: {
 		starter: {
 			name: "Starter",
-			priceText: "$50/yr",
-			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER_ANNUAL!,
-			blurb: "Save 20% billed yearly.",
+			priceText: "Free",
+			priceId: "",
+			blurb: "For founders getting consistent with structure.",
 			features: [
-				"8 LinkedIn posts (export-only)",
-				"8 X posts (export-only)",
+				"4 LinkedIn posts per month (export)",
+				"4 X posts per month (export)",
+				"1 blog outline per month (export)",
 				"AI image prompts included",
-				"One-click copy & export",
-				"No autopublish (manual posting)",
+				"Manual posting",
 			],
+			comingSoon: [] as string[],
+			cta: "Start free",
+			footnote: "Uses efficient generation to keep Free sustainable. No credit card required.",
 		},
-	creator: {
-		name: "Creator",
-		priceText: "$90/yr",
-		priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_ANNUAL!,
-		blurb: "Save 20% billed yearly.",
-		features: [
-			"8 auto-published LinkedIn posts",
-			"2 long-form blog for you to self-publish",
-			"Personal brand onboarding",
-			"Manual blog export (Word/PDF/Markdown)",
-			"LinkedIn connection required",
-		],
-	},
+		creator: {
+			name: "Creator",
+			priceText: "$90/yr",
+			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_ANNUAL!,
+			blurb: "Save ~17% billed yearly. LinkedIn on autopilot.",
+			features: [
+				"12 LinkedIn posts per month (auto-publish)",
+				"12 X posts per month (export)",
+				"2 blog articles per month (export)",
+				"Brand onboarding",
+				"AI image prompts included",
+			],
+			comingSoon: ["Single idea briefing", "Comment engine"] as string[],
+			cta: "Upgrade to Creator",
+		},
 		growth: {
 			name: "Growth",
 			priceText: "$490/yr",
 			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_GROWTH_ANNUAL!,
-			blurb: "Save 20% billed yearly.",
+			blurb: "Save ~17% billed yearly. Serious visibility across every core channel.",
 			features: [
-				"2 brand workspaces",
-				"Any 3 channels/brand (LinkedIn, Facebook, Instagram, X, Blog, Medium)",
-				"LinkedIn + Facebook + Instagram autopublish",
-				"150 posts/month",
-				"Image generation included",
+				"20 LinkedIn posts per month (auto-publish)",
+				"40 X posts per month (export)",
+				"4 blog articles per month (export)",
+				"20 Meta posts per month (shared Facebook + Instagram, auto-publish)",
+				"One brand, up to 5 channels",
 			],
+			comingSoon: ["Single idea briefing", "Comment engine", "Analytics layer"] as string[],
+			cta: "Upgrade to Growth",
 		},
 		pro: {
 			name: "Pro",
 			priceText: "$1,490/yr",
 			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO_ANNUAL!,
-			blurb: "Save 20% billed yearly.",
+			blurb: "Save ~17% billed yearly. Multi-brand operators and agencies.",
 			features: [
-				"5 brand workspaces",
-				"Up to 20 channels total",
-				"500 posts/month",
-				"Image generation included",
+				"75 LinkedIn posts per month (auto-publish)",
+				"150 X posts per month (export)",
+				"12 blog articles per month (export)",
+				"75 Meta posts per month (shared Facebook + Instagram, auto-publish)",
+				"Up to 3 brands",
+				"2 seats included",
 			],
+			comingSoon: ["Presence score and reporting"] as string[],
+			cta: "Upgrade to Pro",
 		},
 		scale: {
 			name: "Scale",
-			priceText: "$3,990/yr",
+			priceText: "Custom",
 			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_SCALE_ANNUAL!,
-			blurb: "Save 20% billed yearly.",
+			blurb: "For teams and agencies that need custom limits and support.",
 			features: [
-				"20 brand workspaces",
-				"Up to 60 channels total",
-				"Unlimited posts/month",
-				"White-label & API access",
+				"Custom brands, limits and seats",
+				"Onboarding and priority support",
 			],
+			comingSoon: [] as string[],
+			cta: "Email enquiries@crispdigital.io",
 		},
 	},
 };
 
-export const PRICE_TO_PLAN: Record<string, { plan: PlanId; cycle: "monthly"|"annual"; }> = {
-	// Starter
-	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER_MONTHLY ? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER_MONTHLY]: { plan: "starter" as const, cycle: "monthly" as const } } : {}),
-	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER_ANNUAL ? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER_ANNUAL]: { plan: "starter" as const, cycle: "annual" as const } } : {}),
-	// Creator (new $9/mo pricing)
-	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_MONTHLY ? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_MONTHLY]: { plan: "creator" as const, cycle: "monthly" as const } } : {}),
-	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_ANNUAL ? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_ANNUAL]: { plan: "creator" as const, cycle: "annual" as const } } : {}),
-	// Creator (legacy $19/mo pricing - kept for backward compatibility)
+export const PRICE_TO_PLAN: Record<string, { plan: PlanId; cycle: "monthly" | "annual" }> = {
+	// Creator
+	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_MONTHLY
+		? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_MONTHLY]: { plan: "creator" as const, cycle: "monthly" as const } }
+		: {}),
+	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_ANNUAL
+		? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_ANNUAL]: { plan: "creator" as const, cycle: "annual" as const } }
+		: {}),
+	// Creator legacy price IDs (kept for backward compat with existing subscribers)
 	"price_1SPjYEK763RD3TkNNi3ov5Ep": { plan: "creator", cycle: "monthly" },
 	"price_1SPjrTK763RD3TkNS1tQPWdF": { plan: "creator", cycle: "annual" },
 	// Growth
 	"price_1SPjdxK763RD3TkNdDIE1ZlQ": { plan: "growth", cycle: "monthly" },
 	"price_1SPjw4K763RD3TkN0Mq1mLKv": { plan: "growth", cycle: "annual" },
+	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_GROWTH_MONTHLY
+		? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_GROWTH_MONTHLY]: { plan: "growth" as const, cycle: "monthly" as const } }
+		: {}),
+	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_GROWTH_ANNUAL
+		? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_GROWTH_ANNUAL]: { plan: "growth" as const, cycle: "annual" as const } }
+		: {}),
 	// Pro
 	"price_1SPjidK763RD3TkNaIU3wgYn": { plan: "pro", cycle: "monthly" },
 	"price_1SPk2WK763RD3TkND7iPZifZ": { plan: "pro", cycle: "annual" },
+	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO_MONTHLY
+		? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO_MONTHLY]: { plan: "pro" as const, cycle: "monthly" as const } }
+		: {}),
+	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO_ANNUAL
+		? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO_ANNUAL]: { plan: "pro" as const, cycle: "annual" as const } }
+		: {}),
 	// Scale
 	"price_1SPjlgK763RD3TkNPo6Z1kJp": { plan: "scale", cycle: "monthly" },
 	"price_1SPk5SK763RD3TkNVXNPFHk6": { plan: "scale", cycle: "annual" },
+	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_SCALE_MONTHLY
+		? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_SCALE_MONTHLY]: { plan: "scale" as const, cycle: "monthly" as const } }
+		: {}),
+	...(process.env.NEXT_PUBLIC_STRIPE_PRICE_SCALE_ANNUAL
+		? { [process.env.NEXT_PUBLIC_STRIPE_PRICE_SCALE_ANNUAL]: { plan: "scale" as const, cycle: "annual" as const } }
+		: {}),
 };
-
-

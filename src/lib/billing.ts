@@ -24,9 +24,14 @@ export function capsFor(plan: 'trial' | 'starter' | 'creator' | 'growth' | 'pro'
 	const c = CAPS[plan];
 	return {
 		max_brands: c.maxBrands,
+		max_seats: c.maxSeats,
 		max_channels: c.maxChannels,
 		posts_per_month: c.postsPerMonth === 'unlimited' ? 999999 : c.postsPerMonth,
 		image_gen: c.includedImageGen,
+		linkedin_monthly: c.linkedinPostsMonthly,
+		x_monthly: c.xPostsMonthly,
+		blog_monthly: c.blogArticlesMonthly || c.blogOutlinesMonthly,
+		meta_pool_monthly: c.metaPoolMonthly,
 	};
 }
 

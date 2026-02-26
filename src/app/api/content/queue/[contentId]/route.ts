@@ -3,6 +3,9 @@ import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { isMetaPublishingEnabled } from '@/lib/featureFlags';
+import { resolvePlan } from '@/lib/planResolver';
+import { getChannelUsage, incrementChannelUsage } from '@/lib/enforceCaps';
+import { CAPS } from '@/config/pricing';
 
 export const runtime = 'nodejs';
 
@@ -493,6 +496,67 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 				} catch (webhookError) {
 					// Log but don't fail the request if webhook fails
 					console.error('Make content regeneration webhook error:', webhookError);
+				}
+			}
+		}
+
+		// ============================================
+		// Approval-time quota enforcement for LinkedIn and Meta
+		// LinkedIn autopublish (Creator/Growth/Pro) and Meta (Growth/Pro) are counted here,
+		// not at generation time, to avoid charging for drafts that never publish.
+		// ============================================
+		if (action === 'approve') {
+			const platform = record.fields?.platform || '';
+			const isLinkedIn = platform === 'LinkedIn';
+			const isMeta = platform === 'Facebook' || platform === 'Instagram';
+
+			if (isLinkedIn || isMeta) {
+				try {
+					const resolved = await resolvePlan(user.id);
+					const resolvedPlan = resolved.plan === 'free' ? 'trial' : resolved.plan;
+					const planCaps = CAPS[resolvedPlan as keyof typeof CAPS] || CAPS.trial;
+
+					// LinkedIn counted at approval only for paid autopublish plans (Creator+)
+					// Starter uses export — LinkedIn was already counted at generation
+					if (isLinkedIn && planCaps.autopublishLinkedIn) {
+						const usage = await getChannelUsage(user.id);
+						const limit = planCaps.linkedinPostsMonthly;
+						if (usage.linkedin >= limit) {
+							return NextResponse.json(
+								{
+									error: `LinkedIn limit reached (${usage.linkedin}/${limit} used this month). Upgrade your plan to approve more posts.`,
+									channel: 'LinkedIn',
+									limit,
+									used: usage.linkedin,
+									upgrade_required: true,
+								},
+								{ status: 403 }
+							);
+						}
+						await incrementChannelUsage(user.id, 'linkedin', 1);
+					}
+
+					// Meta counted at approval only for Growth/Pro (autopublishMeta)
+					if (isMeta && planCaps.autopublishMeta) {
+						const usage = await getChannelUsage(user.id);
+						const limit = planCaps.metaPoolMonthly;
+						if (usage.meta_pool >= limit) {
+							return NextResponse.json(
+								{
+									error: `Meta pool limit reached (${usage.meta_pool}/${limit} used this month). Upgrade your plan to approve more Meta posts.`,
+									channel: platform,
+									limit,
+									used: usage.meta_pool,
+									upgrade_required: true,
+								},
+								{ status: 403 }
+							);
+						}
+						await incrementChannelUsage(user.id, 'meta_pool', 1);
+					}
+				} catch (quotaErr) {
+					// Log but don't block if quota check fails — prevents outage from blocking approvals
+					console.error('[Approval Quota] Failed to enforce quota at approval time:', quotaErr);
 				}
 			}
 		}

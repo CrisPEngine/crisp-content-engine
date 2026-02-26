@@ -8,6 +8,7 @@ export type MultiChannelMakePayload = {
 	generation_job_id: string;
 	request_id: string;
 	user_id: string;
+	plan?: string; // user's plan — used by /api/usage/increment to apply correct decrement timing
 	brand_profile_id: string;
 
 	// B. Channel request list

@@ -204,59 +204,94 @@ export async function POST(req: Request) {
 		const maxPostsPerMonth = entitlements?.posts_per_month || planCaps.postsPerMonth;
 		const postsRemaining = typeof maxPostsPerMonth === 'number' ? maxPostsPerMonth - postsUsed : 999999;
 
-		// Pre-check quota
-		if (totalRequested > postsRemaining) {
-			return NextResponse.json(
-				{
-					error: `This would exceed your monthly limit. You have ${postsRemaining} posts remaining, but requested ${totalRequested}.`,
-					posts_remaining: postsRemaining,
-					posts_requested: totalRequested,
-				},
-				{ status: 403 }
-			);
-		}
-
-		// Per-channel limits for Starter/Trial plans
-		if (planCaps.perChannelLimits) {
+		// Per-channel limit enforcement for ALL plans
+		// Uses authoritative per-channel caps from CAPS config
+		{
 			const channelUsage = await getChannelUsage(user.id);
-			
-			// Check each requested channel against per-channel limits
+			const limits = planCaps.perChannelLimits || {};
+
 			for (const ch of channels) {
 				const platformKey = ch.platform.toLowerCase();
-				const limit = planCaps.perChannelLimits[platformKey as 'linkedin' | 'x' | 'blog'];
-				
-				if (limit !== undefined) {
-					let currentUsage = 0;
-					if (platformKey === 'linkedin') currentUsage = channelUsage.linkedin;
-					else if (platformKey === 'x') currentUsage = channelUsage.x;
-					else if (platformKey === 'blog') currentUsage = channelUsage.blog;
-					
-					// Block if limit is 0 (not allowed at all)
-					if (limit === 0) {
-						return NextResponse.json(
-							{
-								error: `${ch.platform} posts are not available on your ${plan} plan. Upgrade to Creator or higher to access this channel.`,
-								upgrade_required: true,
-							},
-							{ status: 403 }
-						);
+
+				// Resolve limit and current usage for this channel
+				let limit: number | undefined;
+				let currentUsage = 0;
+
+				if (platformKey === 'linkedin') {
+					limit = limits.linkedin ?? planCaps.linkedinPostsMonthly;
+					// LinkedIn (paid autopublish): tracked at approval; use approved counter
+					// LinkedIn (Starter export): tracked at generation
+					currentUsage = channelUsage.linkedin;
+				} else if (platformKey === 'x') {
+					limit = limits.x ?? planCaps.xPostsMonthly;
+					currentUsage = channelUsage.x;
+				} else if (platformKey === 'blog') {
+					// For Starter: blog outlines; for paid: blog articles
+					if (plan === 'starter') {
+						limit = planCaps.blogOutlinesMonthly;
+						currentUsage = channelUsage.blog_outlines;
+					} else {
+						limit = limits.blog ?? planCaps.blogArticlesMonthly;
+						currentUsage = channelUsage.blog;
 					}
-					
-					// Check if request would exceed per-channel limit
-					if (currentUsage + ch.count > limit) {
-						return NextResponse.json(
-							{
-								error: `This would exceed your ${ch.platform} limit. You have ${limit - currentUsage} ${ch.platform} posts remaining this month (${currentUsage}/${limit} used).`,
-								channel: ch.platform,
-								limit,
-								used: currentUsage,
-								remaining: limit - currentUsage,
-								requested: ch.count,
-							},
-							{ status: 403 }
-						);
-					}
+				} else if (platformKey === 'instagram' || platformKey === 'facebook') {
+					// Meta pool: shared across FB+IG, tracked at approval
+					limit = limits.meta_pool ?? planCaps.metaPoolMonthly;
+					currentUsage = channelUsage.meta_pool;
 				}
+
+				if (limit === undefined) continue;
+
+				// Block if limit is 0 (channel not enabled on this plan)
+				if (limit === 0) {
+					return NextResponse.json(
+						{
+							error: `${ch.platform} is not available on your ${plan} plan. Upgrade to access this channel.`,
+							upgrade_required: true,
+							channel: ch.platform,
+						},
+						{ status: 403 }
+					);
+				}
+
+				// Pre-check: would this request exceed the remaining quota?
+				// For LinkedIn/Meta (approval-gated on paid plans), currentUsage reflects approved items.
+				// We still enforce here to prevent generating far beyond what can be approved.
+				if (currentUsage + ch.count > limit) {
+					const remaining = Math.max(0, limit - currentUsage);
+					return NextResponse.json(
+						{
+							error: remaining === 0
+								? `You have reached your ${ch.platform} limit for this month (${currentUsage}/${limit} used).`
+								: `This would exceed your ${ch.platform} limit. You have ${remaining} remaining this month (${currentUsage}/${limit} used).`,
+							channel: ch.platform,
+							limit,
+							used: currentUsage,
+							remaining,
+							requested: ch.count,
+							upgrade_required: true,
+						},
+						{ status: 403 }
+					);
+				}
+			}
+
+			// Global post-count pre-check (backward compat for entitlements table)
+			const xCount = channels.filter(c => c.platform === 'X').reduce((s, c) => s + c.count, 0);
+			const blogCount = channels.filter(c => c.platform === 'Blog').reduce((s, c) => s + c.count, 0);
+			const generationTimeTotal = xCount + blogCount; // only X+Blog count now for paid; all for Starter
+			const isStarterOrTrial = plan === 'starter' || plan === 'trial';
+			const linkedinCount = channels.filter(c => c.platform === 'LinkedIn').reduce((s, c) => s + c.count, 0);
+			const countedNow = isStarterOrTrial ? generationTimeTotal + linkedinCount : generationTimeTotal;
+			if (countedNow > postsRemaining && postsRemaining < 999999) {
+				return NextResponse.json(
+					{
+						error: `This would exceed your monthly post limit. You have ${postsRemaining} posts remaining.`,
+						posts_remaining: postsRemaining,
+						posts_requested: countedNow,
+					},
+					{ status: 403 }
+				);
 			}
 		}
 
@@ -387,12 +422,17 @@ export async function POST(req: Request) {
 			};
 		});
 
-		// Multi-channel flow uses dedicated webhook (Creator flow unchanged)
-		const webhookUrl = process.env.MAKE_MULTI_CHANNEL_CONTENT_GENERATION_WEBHOOK_URL;
+		// Route to the correct Make webhook based on plan:
+		//   Starter / Trial → MAKE_WEBHOOK_STARTER (mini AI, outlines for Blog)
+		//   Creator / Growth / Pro / Scale → MAKE_MULTI_CHANNEL_CONTENT_GENERATION_WEBHOOK_URL
+		const isStarterPlan = plan === 'starter' || plan === 'trial';
+		const webhookUrl = isStarterPlan
+			? (process.env.MAKE_WEBHOOK_STARTER || process.env.MAKE_MULTI_CHANNEL_CONTENT_GENERATION_WEBHOOK_URL)
+			: process.env.MAKE_MULTI_CHANNEL_CONTENT_GENERATION_WEBHOOK_URL;
 
 		if (!webhookUrl) {
 			return NextResponse.json(
-				{ error: 'Multi-channel content generation webhook not configured (MAKE_MULTI_CHANNEL_CONTENT_GENERATION_WEBHOOK_URL)' },
+				{ error: 'Content generation webhook not configured. Contact support.' },
 				{ status: 500 }
 			);
 		}
@@ -600,6 +640,7 @@ export async function POST(req: Request) {
 			generation_job_id,
 			request_id,
 			user_id: user.id,
+			plan, // Passed so /api/usage/increment can apply correct decrement timing
 			brand_profile_id: brandProfileId,
 			channels: channelsWithKeys,
 			brand_voice_context: brandVoiceContext,
