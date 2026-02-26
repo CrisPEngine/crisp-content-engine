@@ -18,15 +18,14 @@ add constraint if not exists usage_meta_pool_used_positive check (meta_pool_used
 add constraint if not exists usage_blog_outlines_used_positive check (blog_outlines_used >= 0);
 
 -- ============================================
--- 2. Backfill meta_pool_used from existing instagram + facebook posts
+-- 2. No backfill for meta_pool_used
 -- ============================================
-
--- For any existing rows with instagram or facebook usage, set meta_pool_used = instagram_posts + facebook_posts
--- These were tracked at generation time in the old system; this backfill makes them consistent
-update public.usage_posts
-set meta_pool_used = coalesce(instagram_posts, 0) + coalesce(facebook_posts, 0)
-where meta_pool_used = 0
-  and (coalesce(instagram_posts, 0) + coalesce(facebook_posts, 0)) > 0;
+-- meta_pool_used starts at 0 for all existing rows.
+-- The old instagram_posts / facebook_posts columns tracked generation-time counts
+-- (not approval-time publish jobs), and may include drafts that were never approved.
+-- Backfilling them into meta_pool_used would incorrectly inflate the quota counter
+-- and could block Growth/Pro users from approving posts in the current month.
+-- Starting clean from the migration date is the safe default.
 
 -- ============================================
 -- 3. Create index for efficient channel quota lookups
@@ -36,18 +35,14 @@ create index if not exists idx_usage_posts_meta_pool
 on public.usage_posts(user_id, year_month, meta_pool_used);
 
 -- ============================================
--- 4. Add seats column to entitlements (for Pro multi-seat)
+-- 4. Add seats column to entitlements (informational only, not enforced yet)
 -- ============================================
+-- Seat enforcement requires workspace/invite infrastructure which is not yet built.
+-- The column is added for future use but no enforcement code reads it today.
+-- Pro shows "Additional seat included (coming soon)" in the UI.
 
 alter table public.entitlements
 add column if not exists max_seats int not null default 1;
-
--- Set Pro users to 2 seats based on their posts_per_month value
--- Pro has postsPerMonth = 312; Growth has 84; Creator has 26; Starter has 9
--- We use max_brands as the discriminator (Pro = 3+ brands, Growth = 1)
-update public.entitlements
-set max_seats = 2
-where max_brands >= 3;
 
 -- ============================================
 -- 5. Add per-channel monthly limit columns to entitlements

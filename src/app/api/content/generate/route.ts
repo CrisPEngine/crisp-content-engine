@@ -5,6 +5,7 @@ import { enforceCaps, getEntitlements, getMonthUsage, getChannelUsage } from '@/
 import { getSupabaseService } from '@/lib/supabaseService';
 import { X_ALGO_DIGEST } from '@/lib/channels/x-algo-digest';
 import { CAPS, PER_CHANNEL_REQUEST_CAPS } from '@/config/pricing';
+import { isMetaPublishingEnabled } from '@/lib/featureFlags';
 import type { MultiChannelMakePayload, BrandVoiceContext, MonthlyBrief, PreviousContentItem, SchedulingContext } from '@/lib/makeMultiChannelPayload';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
@@ -305,6 +306,23 @@ export async function POST(req: Request) {
 			if (p === 'blog') return 'Blog';
 			return p;
 		});
+
+		// Gate Meta generation by feature flag.
+		// Meta has no export-only mode — content generated here goes directly to the autopublish queue.
+		// If the Meta feature flag is off, block Meta generation regardless of plan.
+		// This prevents users from generating Meta content they cannot publish.
+		const metaEnabled = isMetaPublishingEnabled();
+		for (const ch of channels) {
+			if ((ch.platform === 'Facebook' || ch.platform === 'Instagram') && !metaEnabled) {
+				return NextResponse.json(
+					{
+						error: 'Meta (Facebook/Instagram) publishing is not currently available. Please check back soon.',
+						channel: ch.platform,
+					},
+					{ status: 403 }
+				);
+			}
+		}
 
 		const filteredChannels = channels.filter((ch) => allowedPlatforms.includes(ch.platform));
 

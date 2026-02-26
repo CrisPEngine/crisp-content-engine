@@ -207,7 +207,16 @@ interface ContentRecord {
  */
 
 /**
- * Increment usage count for user
+ * Increment usage count for user after a successful LinkedIn publish.
+ *
+ * LinkedIn autopublish quota is consumed at APPROVAL time (in PATCH /api/content/queue/[contentId]),
+ * NOT here. This function is intentionally a no-op for paid autopublish plans.
+ * Calling it with no channelCounts causes /api/usage/increment to skip LinkedIn for paid plans,
+ * so there is no double-decrement risk.
+ *
+ * It is kept here for legacy compatibility and to record a general "publish event" (posts counter)
+ * if the increment endpoint's logic changes. It passes no channelCounts so the paid-plan guard
+ * in /api/usage/increment prevents any LinkedIn counter increment.
  */
 async function incrementUsage(userId: string): Promise<void> {
 	try {
@@ -218,11 +227,12 @@ async function incrementUsage(userId: string): Promise<void> {
 				'Content-Type': 'application/json',
 				...(apiKey && { 'x-api-key': apiKey }),
 			},
-			body: JSON.stringify({ userId, count: 1 }),
+			// No channelCounts: the increment endpoint will not re-count LinkedIn for paid plans.
+			// LinkedIn quota is already decremented at approval time.
+			body: JSON.stringify({ userId, count: 0 }),
 		});
 	} catch (error) {
 		console.error('Failed to increment usage:', error);
-		// Don't fail the publish if usage increment fails
 	}
 }
 

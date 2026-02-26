@@ -129,9 +129,11 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		notes: "3 brands, 2 seats. Multi-brand operators and agencies.",
 	},
 	scale: {
-		maxBrands: 20,
-		maxSeats: 10,
-		maxChannels: 60,
+		// Custom plan: all limits are negotiated, use high sentinels so no code path hard-blocks.
+		// Do NOT enforce these numbers in UI — display "Custom" everywhere for Scale.
+		maxBrands: 999,
+		maxSeats: 999,
+		maxChannels: 999,
 		postsPerMonth: "unlimited",
 		includedImageGen: true,
 		includedPlatforms: ["linkedin", "instagram", "facebook", "x", "blog", "medium"],
@@ -143,7 +145,7 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		blogOutlinesMonthly: 0,
 		metaPoolMonthly: 999999,
 		makeScenario: "multi-channel",
-		notes: "Contact sales. Custom brands, limits and seats.",
+		notes: "Contact sales. All limits are custom and agreed per contract.",
 	},
 };
 
@@ -168,7 +170,7 @@ export const PRICING = {
 		},
 		creator: {
 			name: "Creator",
-			priceText: "$9/mo",
+			priceText: "$15/mo",
 			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_MONTHLY!,
 			blurb: "For solo operators who want LinkedIn on autopilot.",
 			features: [
@@ -183,7 +185,7 @@ export const PRICING = {
 		},
 		growth: {
 			name: "Growth",
-			priceText: "$49/mo",
+			priceText: "$29/mo",
 			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_GROWTH_MONTHLY!,
 			blurb: "For serious visibility across every core channel.",
 			features: [
@@ -198,7 +200,7 @@ export const PRICING = {
 		},
 		pro: {
 			name: "Pro",
-			priceText: "$149/mo",
+			priceText: "$49/mo",
 			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO_MONTHLY!,
 			blurb: "For multi-brand operators and agencies running volume.",
 			features: [
@@ -207,14 +209,14 @@ export const PRICING = {
 				"12 blog articles per month (export)",
 				"75 Meta posts per month (shared Facebook + Instagram, auto-publish)",
 				"Up to 3 brands",
-				"2 seats included",
+				"Additional seat included (coming soon)",
 			],
 			comingSoon: ["Presence score and reporting"] as string[],
 			cta: "Upgrade to Pro",
 		},
 		scale: {
 			name: "Scale",
-			priceText: "Custom",
+			priceText: "From $99/mo",
 			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_SCALE_MONTHLY!,
 			blurb: "For teams and agencies that need custom limits and support.",
 			features: [
@@ -244,9 +246,9 @@ export const PRICING = {
 		},
 		creator: {
 			name: "Creator",
-			priceText: "$90/yr",
+			priceText: "$144/yr",
 			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_CREATOR_ANNUAL!,
-			blurb: "Save ~17% billed yearly. LinkedIn on autopilot.",
+			blurb: "Save 20% billed yearly. LinkedIn on autopilot.",
 			features: [
 				"12 LinkedIn posts per month (auto-publish)",
 				"12 X posts per month (export)",
@@ -259,9 +261,9 @@ export const PRICING = {
 		},
 		growth: {
 			name: "Growth",
-			priceText: "$490/yr",
+			priceText: "$279/yr",
 			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_GROWTH_ANNUAL!,
-			blurb: "Save ~17% billed yearly. Serious visibility across every core channel.",
+			blurb: "Save 20% billed yearly. Serious visibility across every core channel.",
 			features: [
 				"20 LinkedIn posts per month (auto-publish)",
 				"40 X posts per month (export)",
@@ -274,23 +276,23 @@ export const PRICING = {
 		},
 		pro: {
 			name: "Pro",
-			priceText: "$1,490/yr",
+			priceText: "$470/yr",
 			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO_ANNUAL!,
-			blurb: "Save ~17% billed yearly. Multi-brand operators and agencies.",
+			blurb: "Save 20% billed yearly. Multi-brand operators and agencies.",
 			features: [
 				"75 LinkedIn posts per month (auto-publish)",
 				"150 X posts per month (export)",
 				"12 blog articles per month (export)",
 				"75 Meta posts per month (shared Facebook + Instagram, auto-publish)",
 				"Up to 3 brands",
-				"2 seats included",
+				"Additional seat included (coming soon)",
 			],
 			comingSoon: ["Presence score and reporting"] as string[],
 			cta: "Upgrade to Pro",
 		},
 		scale: {
 			name: "Scale",
-			priceText: "Custom",
+			priceText: "From $99/mo",
 			priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_SCALE_ANNUAL!,
 			blurb: "For teams and agencies that need custom limits and support.",
 			features: [

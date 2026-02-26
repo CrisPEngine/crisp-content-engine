@@ -446,83 +446,57 @@ export default function BillingPage() {
 				</div>
 			</section>
 
-			{/* Plan cards */}
-			{upgradeOptions.length > 0 ? (
-				<section>
-					<h2 className="text-lg font-semibold mb-4">
-						{isOnPaidPlan ? "Available Upgrades" : "Choose your plan"}
-					</h2>
-					<div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-						{!isOnPaidPlan && <StarterCard />}
-						{upgradeOptions.map((id) => (
-							<PlanCard
-								key={id}
-								tier={id}
-								billingCycle={cycle}
-								onCheckout={goCheckout}
-								highlight={id === "growth"}
-								loading={loading}
-							/>
-						))}
-						{!isOnPaidPlan && <ScaleCard />}
-					</div>
-				</section>
-			) : (
-				<section>
-					<h2 className="text-lg font-semibold mb-4">All plans</h2>
-					<div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-						<StarterCard />
-						{PURCHASABLE_PLANS.map((id) => (
-							<PlanCard
-								key={id}
-								tier={id}
-								billingCycle={cycle}
-								onCheckout={goCheckout}
-								highlight={id === "growth"}
-								loading={loading}
-							/>
-						))}
-						<ScaleCard />
-					</div>
-				</section>
-			)}
-
-			{/* FAQ */}
-			<section className="mt-12">
-				<h2 className="text-lg font-semibold mb-4">Frequently asked questions</h2>
-				<div className="rounded-xl2 border border-edge/60 bg-surface/20 divide-y divide-edge/40 px-5">
-					{FAQ_ITEMS.map((item) => (
-						<FAQItem key={item.q} q={item.q} a={item.a} />
+		{/* Plan cards — 5 cards total: Starter | Creator | Growth | Pro | Scale */}
+		{upgradeOptions.length > 0 ? (
+			<section>
+				<h2 className="text-lg font-semibold mb-4">
+					{isOnPaidPlan ? "Available upgrades" : "Choose your plan"}
+				</h2>
+				{/* Responsive grid: 1 col → 2 col → 3 col → auto-fit for larger screens */}
+				<div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+					{!isOnPaidPlan && <StarterCard />}
+					{upgradeOptions.map((id) => (
+						<PlanCard
+							key={id}
+							tier={id}
+							billingCycle={cycle}
+							onCheckout={goCheckout}
+							highlight={id === "growth"}
+							loading={loading}
+						/>
 					))}
+					{!isOnPaidPlan && <ScaleCard />}
 				</div>
 			</section>
+		) : (
+			<section>
+				<h2 className="text-lg font-semibold mb-4">All plans</h2>
+				<div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+					<StarterCard />
+					{PURCHASABLE_PLANS.map((id) => (
+						<PlanCard
+							key={id}
+							tier={id}
+							billingCycle={cycle}
+							onCheckout={goCheckout}
+							highlight={id === "growth"}
+							loading={loading}
+						/>
+					))}
+					<ScaleCard />
+				</div>
+			</section>
+		)}
 
-			{/* Stripe notes for paid plans */}
-			{isOnPaidPlan && (
-				<section className="mt-8">
-					<h2 className="text-sm font-semibold text-text-soft uppercase tracking-widest mb-3">
-						Other plans
-					</h2>
-					<div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-						<StarterCard />
-						{PURCHASABLE_PLANS.filter((id) => {
-							const order: PlanId[] = ["creator", "growth", "pro"];
-							const currentIdx = order.indexOf(currentPlan!.plan as PlanId);
-							return order.indexOf(id) > currentIdx;
-						}).map((id) => (
-							<PlanCard
-								key={id}
-								tier={id}
-								billingCycle={cycle}
-								onCheckout={goCheckout}
-								highlight={id === "growth"}
-								loading={loading}
-							/>
-						))}
-						<ScaleCard />
-					</div>
-				</section>
-			)}
+		{/* FAQ */}
+		<section className="mt-12">
+			<h2 className="text-lg font-semibold mb-4">Frequently asked questions</h2>
+			<div className="rounded-xl2 border border-edge/60 bg-surface/20 divide-y divide-edge/40 px-5">
+				{FAQ_ITEMS.map((item) => (
+					<FAQItem key={item.q} q={item.q} a={item.a} />
+				))}
+			</div>
+		</section>
 
 			{/* Footnotes */}
 			<div className="text-xs text-text-dim mt-8 space-y-2">

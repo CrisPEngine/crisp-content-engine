@@ -213,9 +213,49 @@ describe('PRICING copy', () => {
 		expect(PRICING.monthly.scale.cta).toContain('enquiries@crispdigital.io');
 	});
 
+	it('Scale shows from price, not a fixed number', () => {
+		expect(PRICING.monthly.scale.priceText).toContain('$99');
+	});
+
 	it('Growth and Pro have comingSoon items', () => {
 		expect((PRICING.monthly.growth as any).comingSoon.length).toBeGreaterThan(0);
 		expect((PRICING.monthly.pro as any).comingSoon.length).toBeGreaterThan(0);
+	});
+
+	it('Pro has correct monthly price', () => {
+		expect(PRICING.monthly.pro.priceText).toBe('$49/mo');
+	});
+
+	it('Growth has correct monthly price', () => {
+		expect(PRICING.monthly.growth.priceText).toBe('$29/mo');
+	});
+
+	it('Creator has correct monthly price', () => {
+		expect(PRICING.monthly.creator.priceText).toBe('$15/mo');
+	});
+
+	it('Pro annual is 20% saving on monthly', () => {
+		// $49/mo * 12 = $588, 20% off = $470.40 ≈ $470
+		expect(PRICING.annual.pro.priceText).toBe('$470/yr');
+	});
+
+	it('Pro seats feature is marked as coming soon', () => {
+		const proFeatures = PRICING.monthly.pro.features;
+		const seatFeature = proFeatures.find((f) => f.toLowerCase().includes('seat'));
+		expect(seatFeature).toBeDefined();
+		expect(seatFeature).toContain('coming soon');
+	});
+});
+
+describe('Scale plan sentinels', () => {
+	it('Scale uses high sentinel values (999) not arbitrary hard limits', () => {
+		expect(CAPS.scale.maxBrands).toBe(999);
+		expect(CAPS.scale.maxSeats).toBe(999);
+	});
+
+	it('Scale quotas are effectively unlimited', () => {
+		expect(CAPS.scale.linkedinPostsMonthly).toBeGreaterThan(9000);
+		expect(CAPS.scale.metaPoolMonthly).toBeGreaterThan(9000);
 	});
 });
 
