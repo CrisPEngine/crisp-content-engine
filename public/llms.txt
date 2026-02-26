@@ -21,7 +21,7 @@ CRISP Content Engine is a web app that helps founders, entrepreneurs and small t
 - Brand Profile: a saved set of brand voice, tone, keywords, exclusions, audience and visual guidance.
 - Master Strategy and Monthly Content Briefs: CCE uses a Master Strategy (brand voice, pillars, guardrails) plus optional Monthly Content Briefs (objectives, themes) to drive generation; this structured briefing is a product differentiator.
 - Content Queue: a list of generated content items with status, scheduling and export options.
-- Platforms: LinkedIn, X, Blogs and Meta (Meta publishing may be plan-gated and may be rolling out).
+- Platforms: LinkedIn, X, Blogs and Meta (Meta publishing is live on Growth tier and above).
 - Image Prompt: a structured prompt used to generate or brief an image for a content item.
 - Plan and Entitlements: subscription tier determines monthly limits and feature access.
 

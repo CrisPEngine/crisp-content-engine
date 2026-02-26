@@ -161,7 +161,7 @@ export default function BillingPage() {
 	};
 
 	const ordered = useMemo(() => PRICING.order, []);
-	const activePlanIds = useMemo(() => ordered.filter((id) => id === "starter" || id === "creator"), [ordered]);
+	const activePlanIds = useMemo(() => ordered.filter((id) => id === "starter" || id === "creator" || id === "growth"), [ordered]);
 	
 	// Get plan details from PRICING config for coming soon plans
 	const getPlanDetails = (planId: PlanId, cycle: "monthly" | "annual") => {
@@ -179,7 +179,6 @@ export default function BillingPage() {
 	};
 	
 	const comingSoonPlans = [
-		getPlanDetails("growth", cycle),
 		getPlanDetails("pro", cycle),
 		getPlanDetails("scale", cycle),
 	];
@@ -256,15 +255,13 @@ export default function BillingPage() {
 	};
 
 	// Get upgrade options (plans higher than current)
-	// Show Starter and Creator as available
+	// Show Starter, Creator, and Growth as available
 	const getUpgradeOptions = (): PlanId[] => {
 		if (!currentPlan || currentPlan.plan === 'free') {
-			// Show both Starter and Creator for free users
-			return ['starter', 'creator'];
+			return ['starter', 'creator', 'growth'];
 		}
-		// If user has a plan, show available upgrades
 		const currentIndex = PRICING.order.indexOf(currentPlan.plan);
-		const available = PRICING.order.slice(currentIndex + 1).filter(id => id === 'starter' || id === 'creator') as PlanId[];
+		const available = PRICING.order.slice(currentIndex + 1).filter(id => id === 'starter' || id === 'creator' || id === 'growth') as PlanId[];
 		return available;
 	};
 
