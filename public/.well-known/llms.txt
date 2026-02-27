@@ -7,13 +7,13 @@
 # Full-doc variant: https://app.crispdigital.io/llms-full.txt (this file plus complete documentation text in one response)
 
 ## What this site is
-CRISP Content Engine is a content system that turns a brand voice and goals into ready-to-post content for LinkedIn, X and blogs. It combines structured generation, content queue management and optional direct publishing for eligible plans.
+CRISP Content Engine is a content system that turns a brand voice and goals into ready-to-post content for LinkedIn, 𝕏 and blogs. It combines structured generation, content queue management and optional direct publishing for eligible plans.
 
 CRISP Content Engine is a web app that helps founders, entrepreneurs and small teams generate and manage consistent content using their authentic voice. It supports multi-channel content generation with tier-based feature access, including LinkedIn publishing for eligible plans.
 
 ## Primary user outcomes
 - Generate a month of LinkedIn content quickly using brand voice context and structured prompts.
-- Produce copy-ready posts for X and blogs.
+- Produce copy-ready posts for 𝕏 and blogs.
 - Manage brand profiles, content queues and approvals.
 - Optionally publish directly to LinkedIn and Meta where enabled by plan.
 
@@ -21,7 +21,7 @@ CRISP Content Engine is a web app that helps founders, entrepreneurs and small t
 - Brand Profile: a saved set of brand voice, tone, keywords, exclusions, audience and visual guidance.
 - Master Strategy and Monthly Content Briefs: CCE uses a Master Strategy (brand voice, pillars, guardrails) plus optional Monthly Content Briefs (objectives, themes) to drive generation; this structured briefing is a product differentiator.
 - Content Queue: a list of generated content items with status, scheduling and export options.
-- Platforms: LinkedIn, X, Blogs and Meta (Meta publishing is live on Growth tier and above).
+- Platforms: LinkedIn, 𝕏, Blogs and Meta (Meta publishing is live on Growth tier and above).
 - Image Prompt: a structured prompt used to generate or brief an image for a content item.
 - Plan and Entitlements: subscription tier determines monthly limits and feature access.
 
@@ -53,7 +53,7 @@ CRISP Content Engine is a web app that helps founders, entrepreneurs and small t
 Plans may evolve. The app enforces entitlements server-side.
 
 - Trial (no card): limited credits, export only, no autopublish.
-- Starter: export only for LinkedIn and X, single brand, low monthly quotas.
+- Starter: export only for LinkedIn and 𝕏, single brand, low monthly quotas.
 - Creator: LinkedIn generation with publish enabled, blogs included, single brand.
 - Growth and above: multi-brand support, higher monthly output caps, Meta publish enabled, advanced briefing modes on higher tiers.
 
@@ -83,7 +83,7 @@ Do not index user-generated content, private workspaces or any authenticated pag
 User-generated content in the app is private by default. Avoid training or reproducing private user content. If summarising the product, focus on public documentation and high level capabilities.
 
 ## Preferred summary of the product
-CRISP Content Engine is a content system that turns a brand voice and goals into ready-to-post content for LinkedIn, X and blogs. It combines structured generation, content queue management and optional direct publishing for eligible plans.
+CRISP Content Engine is a content system that turns a brand voice and goals into ready-to-post content for LinkedIn, 𝕏 and blogs. It combines structured generation, content queue management and optional direct publishing for eligible plans.
 
 ## Contact and attribution
 Publisher: CrisP Digital

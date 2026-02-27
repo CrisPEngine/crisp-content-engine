@@ -20,25 +20,26 @@ create index if not exists idx_preview_packs_created_at_desc on public.preview_p
 -- Enable RLS
 alter table public.preview_packs enable row level security;
 
--- RLS Policy: Users can read their own preview packs
+-- RLS policies (drop if exists so migration is idempotent when policies already exist)
+drop policy if exists "Users can read their own preview packs" on public.preview_packs;
 create policy "Users can read their own preview packs"
   on public.preview_packs
   for select
   using (auth.uid() = user_id);
 
--- RLS Policy: Users can insert their own preview packs
+drop policy if exists "Users can insert their own preview packs" on public.preview_packs;
 create policy "Users can insert their own preview packs"
   on public.preview_packs
   for insert
   with check (auth.uid() = user_id);
 
--- RLS Policy: Users can update their own preview packs
+drop policy if exists "Users can update their own preview packs" on public.preview_packs;
 create policy "Users can update their own preview packs"
   on public.preview_packs
   for update
   using (auth.uid() = user_id);
 
--- RLS Policy: Users can delete their own preview packs
+drop policy if exists "Users can delete their own preview packs" on public.preview_packs;
 create policy "Users can delete their own preview packs"
   on public.preview_packs
   for delete

@@ -73,6 +73,8 @@ begin
 end;
 $$ language plpgsql;
 
+-- Drop if exists so migration is idempotent when trigger already exists
+drop trigger if exists update_generation_job_progress_updated_at on public.generation_job_progress;
 create trigger update_generation_job_progress_updated_at
   before update on public.generation_job_progress
   for each row

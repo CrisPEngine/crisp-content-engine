@@ -54,13 +54,13 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		metaPoolMonthly: 0,
 		makeScenario: "starter",
 		perChannelLimits: { linkedin: 3, x: 3, blog: 0 },
-		notes: "7-day trial: 3 LinkedIn + 3 X posts (export-only).",
+		notes: "7-day trial: 3 LinkedIn + 3 𝕏 posts (export-only).",
 	},
 	starter: {
 		maxBrands: 1,
 		maxSeats: 1,
 		maxChannels: 3,
-		postsPerMonth: 9, // 4 LinkedIn + 4 X + 1 blog outline
+		postsPerMonth: 9, // 4 LinkedIn + 4 𝕏 + 1 blog outline
 		includedImageGen: true,
 		includedPlatforms: ["linkedin", "x", "blog"],
 		autopublishLinkedIn: false,
@@ -72,13 +72,13 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		metaPoolMonthly: 0,
 		makeScenario: "starter",
 		perChannelLimits: { linkedin: 4, x: 4, blog: 1 },
-		notes: "Free Forever. Export-only LinkedIn (4) + X (4) + 1 blog outline. Mini AI via Starter scenario.",
+		notes: "Free Forever. Export-only LinkedIn (4) + 𝕏 (4) + 1 blog outline. Mini AI via Starter scenario.",
 	},
 	creator: {
 		maxBrands: 1,
 		maxSeats: 1,
 		maxChannels: 3,
-		postsPerMonth: 26, // 12 LinkedIn + 12 X + 2 blog
+		postsPerMonth: 26, // 12 LinkedIn + 12 𝕏 + 2 blog
 		includedImageGen: true,
 		includedPlatforms: ["linkedin", "x", "blog"],
 		autopublishLinkedIn: true,
@@ -90,13 +90,13 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		metaPoolMonthly: 0,
 		makeScenario: "multi-channel",
 		perChannelLimits: { linkedin: 12, x: 12, blog: 2 },
-		notes: "LinkedIn autopublish (12) + X export (12) + Blog export (2).",
+		notes: "LinkedIn autopublish (12) + 𝕏 export (12) + Blog export (2).",
 	},
 	growth: {
 		maxBrands: 1,
 		maxSeats: 1,
 		maxChannels: 5,
-		postsPerMonth: 84, // 20 LinkedIn + 40 X + 4 blog + 20 meta pool
+		postsPerMonth: 84, // 20 LinkedIn + 40 𝕏 + 4 blog + 20 meta pool
 		includedImageGen: true,
 		includedPlatforms: ["linkedin", "x", "blog", "instagram", "facebook"],
 		autopublishLinkedIn: true,
@@ -114,7 +114,7 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		maxBrands: 3,
 		maxSeats: 2,
 		maxChannels: 5,
-		postsPerMonth: 312, // 75 LinkedIn + 150 X + 12 blog + 75 meta pool
+		postsPerMonth: 312, // 75 LinkedIn + 150 𝕏 + 12 blog + 75 meta pool
 		includedImageGen: true,
 		includedPlatforms: ["linkedin", "x", "blog", "instagram", "facebook"],
 		autopublishLinkedIn: true,
@@ -159,7 +159,7 @@ export const PRICING = {
 			blurb: "For founders getting consistent with structure.",
 			features: [
 				"4 LinkedIn posts per month (export)",
-				"4 X posts per month (export)",
+				"4 𝕏 posts per month (export)",
 				"1 blog outline per month (export)",
 				"AI image prompts included",
 				"Manual posting",
@@ -175,7 +175,7 @@ export const PRICING = {
 			blurb: "For solo operators who want LinkedIn on autopilot.",
 			features: [
 				"12 LinkedIn posts per month (auto-publish)",
-				"12 X posts per month (export)",
+				"12 𝕏 posts per month (export)",
 				"2 blog articles per month (export)",
 				"Brand onboarding",
 				"AI image prompts included",
@@ -190,7 +190,7 @@ export const PRICING = {
 			blurb: "For serious visibility across every core channel.",
 			features: [
 				"20 LinkedIn posts per month (auto-publish)",
-				"40 X posts per month (export)",
+				"40 𝕏 posts per month (export)",
 				"4 blog articles per month (export)",
 				"20 Meta posts per month (shared Facebook + Instagram, auto-publish)",
 				"One brand, up to 5 channels",
@@ -205,7 +205,7 @@ export const PRICING = {
 			blurb: "For multi-brand operators and agencies running volume.",
 			features: [
 				"75 LinkedIn posts per month (auto-publish)",
-				"150 X posts per month (export)",
+				"150 𝕏 posts per month (export)",
 				"12 blog articles per month (export)",
 				"75 Meta posts per month (shared Facebook + Instagram, auto-publish)",
 				"Up to 3 brands",
@@ -235,7 +235,7 @@ export const PRICING = {
 			blurb: "For founders getting consistent with structure.",
 			features: [
 				"4 LinkedIn posts per month (export)",
-				"4 X posts per month (export)",
+				"4 𝕏 posts per month (export)",
 				"1 blog outline per month (export)",
 				"AI image prompts included",
 				"Manual posting",
@@ -251,7 +251,7 @@ export const PRICING = {
 			blurb: "Save 20% billed yearly. LinkedIn on autopilot.",
 			features: [
 				"12 LinkedIn posts per month (auto-publish)",
-				"12 X posts per month (export)",
+				"12 𝕏 posts per month (export)",
 				"2 blog articles per month (export)",
 				"Brand onboarding",
 				"AI image prompts included",
@@ -266,7 +266,7 @@ export const PRICING = {
 			blurb: "Save 20% billed yearly. Serious visibility across every core channel.",
 			features: [
 				"20 LinkedIn posts per month (auto-publish)",
-				"40 X posts per month (export)",
+				"40 𝕏 posts per month (export)",
 				"4 blog articles per month (export)",
 				"20 Meta posts per month (shared Facebook + Instagram, auto-publish)",
 				"One brand, up to 5 channels",
@@ -281,7 +281,7 @@ export const PRICING = {
 			blurb: "Save 20% billed yearly. Multi-brand operators and agencies.",
 			features: [
 				"75 LinkedIn posts per month (auto-publish)",
-				"150 X posts per month (export)",
+				"150 𝕏 posts per month (export)",
 				"12 blog articles per month (export)",
 				"75 Meta posts per month (shared Facebook + Instagram, auto-publish)",
 				"Up to 3 brands",

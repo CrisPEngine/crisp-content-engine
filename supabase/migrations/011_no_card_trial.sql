@@ -34,15 +34,17 @@ create table if not exists public.trial_usage (
   updated_at timestamptz not null default now()
 );
 
--- Add check constraints to ensure non-negative values
-alter table public.trial_usage
-add constraint trial_usage_linkedin_positive check (linkedin_generated >= 0),
-add constraint trial_usage_x_positive check (x_generated >= 0);
+-- Add check constraints (drop if exists so migration is idempotent)
+alter table public.trial_usage drop constraint if exists trial_usage_linkedin_positive;
+alter table public.trial_usage add constraint trial_usage_linkedin_positive check (linkedin_generated >= 0);
+alter table public.trial_usage drop constraint if exists trial_usage_x_positive;
+alter table public.trial_usage add constraint trial_usage_x_positive check (x_generated >= 0);
 
 -- Enable RLS
 alter table public.trial_usage enable row level security;
 
--- RLS policies: users can view their own trial usage
+-- RLS policies: users can view their own trial usage (drop if exists for idempotency)
+drop policy if exists "Users can view their own trial usage" on public.trial_usage;
 create policy "Users can view their own trial usage"
 on public.trial_usage
 for select

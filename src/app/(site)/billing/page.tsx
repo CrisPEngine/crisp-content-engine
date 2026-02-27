@@ -187,15 +187,15 @@ const FAQ_ITEMS = [
 	},
 	{
 		q: "What counts as a \"post\"?",
-		a: "A generated content item for that channel. For LinkedIn and Meta, quota is consumed when you approve to publish. For X and Blog, quota is consumed when content is generated.",
+		a: "A generated content item for that channel. For LinkedIn and Meta, quota is consumed when you approve to publish. For 𝕏 and Blog, quota is consumed when content is generated.",
 	},
 	{
 		q: "Does Meta mean Facebook and Instagram?",
 		a: "Yes. Growth and Pro include a shared Meta pool you can use across Facebook and Instagram in any combination.",
 	},
 	{
-		q: "Can I publish to X?",
-		a: "Export is supported on all plans. Auto-publish to X is not yet enabled.",
+		q: "Can I publish to 𝕏?",
+		a: "Export is supported on all plans. Auto-publish to 𝕏 is not yet enabled.",
 	},
 	{
 		q: "Do unused posts roll over?",
@@ -420,7 +420,7 @@ export default function BillingPage() {
 			<section className="mb-8 rounded-xl2 border border-edge/60 p-6 bg-gradient-to-br from-surface/70 to-surface/30">
 				<h1 className="text-2xl font-semibold">Visibility without compromise. Consistency by design.</h1>
 				<p className="text-text-dim mt-2">
-					Build and publish content across LinkedIn, X, Blog and Meta. Start free. No credit card required.
+					Build and publish content across LinkedIn, 𝕏, Blog and Meta. Start free. No credit card required.
 				</p>
 
 				{/* Billing cycle toggle */}
@@ -441,7 +441,7 @@ export default function BillingPage() {
 							cycle === "annual" ? "bg-primary/15 border border-primary/30" : "text-text-soft",
 						].join(" ")}
 					>
-						Annual <span className="ml-1 opacity-70">– Save ~17%</span>
+						Annual <span className="ml-1 opacity-70">– Save 20%</span>
 					</button>
 				</div>
 			</section>

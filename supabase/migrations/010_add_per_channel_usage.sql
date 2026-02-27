@@ -10,13 +10,17 @@ add column if not exists blog_posts int default 0,
 add column if not exists instagram_posts int default 0,
 add column if not exists facebook_posts int default 0;
 
--- Add check constraints
-alter table public.usage_posts
-add constraint usage_linkedin_posts_positive check (linkedin_posts >= 0),
-add constraint usage_x_posts_positive check (x_posts >= 0),
-add constraint usage_blog_posts_positive check (blog_posts >= 0),
-add constraint usage_instagram_posts_positive check (instagram_posts >= 0),
-add constraint usage_facebook_posts_positive check (facebook_posts >= 0);
+-- Add check constraints (drop if exists so migration is idempotent)
+alter table public.usage_posts drop constraint if exists usage_linkedin_posts_positive;
+alter table public.usage_posts add constraint usage_linkedin_posts_positive check (linkedin_posts >= 0);
+alter table public.usage_posts drop constraint if exists usage_x_posts_positive;
+alter table public.usage_posts add constraint usage_x_posts_positive check (x_posts >= 0);
+alter table public.usage_posts drop constraint if exists usage_blog_posts_positive;
+alter table public.usage_posts add constraint usage_blog_posts_positive check (blog_posts >= 0);
+alter table public.usage_posts drop constraint if exists usage_instagram_posts_positive;
+alter table public.usage_posts add constraint usage_instagram_posts_positive check (instagram_posts >= 0);
+alter table public.usage_posts drop constraint if exists usage_facebook_posts_positive;
+alter table public.usage_posts add constraint usage_facebook_posts_positive check (facebook_posts >= 0);
 
 -- Create index for efficient per-channel lookups
 create index if not exists idx_usage_posts_channels

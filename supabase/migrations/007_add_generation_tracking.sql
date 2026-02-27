@@ -22,7 +22,8 @@ create index if not exists idx_generation_jobs_brand on public.generation_jobs(b
 -- Enable RLS
 alter table public.generation_jobs enable row level security;
 
--- Users can view their own generation jobs
+-- Users can view their own generation jobs (drop if exists for idempotency)
+drop policy if exists "Users can view their own generation jobs" on public.generation_jobs;
 create policy "Users can view their own generation jobs"
   on public.generation_jobs
   for select

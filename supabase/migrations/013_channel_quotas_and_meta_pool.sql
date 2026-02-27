@@ -12,10 +12,11 @@ alter table public.usage_posts
 add column if not exists meta_pool_used int not null default 0,
 add column if not exists blog_outlines_used int not null default 0;
 
--- Check constraints to ensure non-negative values
-alter table public.usage_posts
-add constraint if not exists usage_meta_pool_used_positive check (meta_pool_used >= 0),
-add constraint if not exists usage_blog_outlines_used_positive check (blog_outlines_used >= 0);
+-- Check constraints (drop if exists so migration is idempotent; PG has no "add constraint if not exists")
+alter table public.usage_posts drop constraint if exists usage_meta_pool_used_positive;
+alter table public.usage_posts add constraint usage_meta_pool_used_positive check (meta_pool_used >= 0);
+alter table public.usage_posts drop constraint if exists usage_blog_outlines_used_positive;
+alter table public.usage_posts add constraint usage_blog_outlines_used_positive check (blog_outlines_used >= 0);
 
 -- ============================================
 -- 2. No backfill for meta_pool_used
