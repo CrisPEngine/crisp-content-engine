@@ -238,8 +238,11 @@ export default function ContentGeneratePage() {
 							<AlertCircle className="w-4 h-4 text-blue-400" />
 							<p className="text-sm font-semibold text-blue-300">Export-only plan</p>
 						</div>
-						<p className="text-sm text-blue-300/80">
-							Your Starter plan includes LinkedIn and X posts for manual export. Content is generated for you to copy and publish yourself. Upgrade to Creator for autopublish and blog articles.
+						<p className="text-sm text-blue-300/80 mb-2">
+							Your Starter plan includes LinkedIn and 𝕏 posts for manual export. Content is generated for you to copy and publish yourself. You can request your full monthly allowance in one go (4 LinkedIn, 4 𝕏, 1 blog outline). Upgrade to Creator for autopublish and blog articles.
+						</p>
+						<p className="text-xs text-blue-300/70">
+							The numbers you enter are sent to the generator. If you receive a different number of posts, the scenario may be batching; you can request again or adjust counts.
 						</p>
 					</div>
 				)}
@@ -304,9 +307,25 @@ export default function ContentGeneratePage() {
 							<label className="block text-sm font-semibold mb-3">
 								How many posts per channel? *
 							</label>
-							<p className="text-sm text-text-dim mb-4">
+							<p className="text-sm text-text-dim mb-2">
 								Select the channels and specify how many posts to create for each.
 							</p>
+							{isStarterPlan && (
+								<button
+									type="button"
+									onClick={() => {
+										const planCaps = CAPS.starter;
+										setQuantities({
+											LinkedIn: Math.min(planCaps.linkedinPostsMonthly, PER_CHANNEL_REQUEST_CAPS.linkedin ?? 50),
+											X: Math.min(planCaps.xPostsMonthly, PER_CHANNEL_REQUEST_CAPS.x ?? 50),
+											Blog: Math.min(planCaps.blogOutlinesMonthly || planCaps.blogArticlesMonthly || 0, PER_CHANNEL_REQUEST_CAPS.blog ?? 50),
+										});
+									}}
+									className="text-sm text-primary hover:underline mb-3 inline-block"
+								>
+									Use full allowance (4 LinkedIn, 4 𝕏, 1 blog)
+								</button>
+							)}
 							<div className="space-y-3">
 								{availablePlatforms.map((platform) => {
 									const cap = PER_CHANNEL_REQUEST_CAPS[platform.value.toLowerCase()] ?? 50;

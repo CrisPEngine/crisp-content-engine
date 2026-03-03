@@ -337,7 +337,7 @@ export default function ContentApprovalPage() {
 		}
 	}
 
-	/** Full text to copy for X (post + hashtags) or Blog (title + content) */
+	/** Full text to copy: X (post + hashtags), Blog (title + content), LinkedIn (hook + post) */
 	function getCopyableContent(item: ContentItem): string {
 		if (item.platform === 'X') {
 			const post = item.content || '';
@@ -348,6 +348,11 @@ export default function ContentApprovalPage() {
 			const title = item.title || '';
 			const body = item.content || '';
 			return title ? `${title}\n\n${body}` : body;
+		}
+		if (item.platform === 'LinkedIn') {
+			const hook = item.title || '';
+			const body = item.content || '';
+			return hook ? `${hook}\n\n${body}` : body;
 		}
 		return item.content || '';
 	}
@@ -794,10 +799,15 @@ export default function ContentApprovalPage() {
 				</div>
 			</div>
 
-			{/* Export-only notice when viewing X or Blog */}
+			{/* Export-only notice when viewing LinkedIn (Starter), X or Blog */}
+			{selectedTab === 'LinkedIn' && contentItems.some((i) => i.status === 'Needs Copy') && (
+				<div className="mb-4 px-4 py-3 rounded-xl2 bg-warning/10 border border-warning/30 text-warning text-sm">
+					LinkedIn posts on Starter are export-only. Use the copy button to copy the hook and post, then paste into LinkedIn to publish.
+				</div>
+			)}
 			{selectedTab === 'X' && (
 				<div className="mb-4 px-4 py-3 rounded-xl2 bg-warning/10 border border-warning/30 text-warning text-sm">
-					X posts are currently export-only. Copy and publish these to your account manually.
+					𝕏 posts are currently export-only. Copy and publish these to your account manually.
 				</div>
 			)}
 			{selectedTab === 'Blog' && (
@@ -953,7 +963,12 @@ export default function ContentApprovalPage() {
 											</span>
 										</div>
 
-										{/* Export-only warning for X threads and Blog */}
+										{/* Export-only / copy-paste notice for LinkedIn (Starter), X, Blog */}
+										{(item.platform === 'LinkedIn' && item.status === 'Needs Copy') && (
+											<div className="px-3 py-2 rounded-lg bg-warning/10 border border-warning/30 text-warning text-xs">
+												📋 Copy and paste to publish: use the copy button below to copy the hook and post to LinkedIn.
+											</div>
+										)}
 										{((item.platform === 'X' && item.post_type === 'thread') || item.platform === 'Blog') && (
 											<div className="px-3 py-2 rounded-lg bg-warning/10 border border-warning/30 text-warning text-xs">
 												{item.platform === 'X' && item.post_type === 'thread' 
@@ -1049,8 +1064,8 @@ export default function ContentApprovalPage() {
 											<div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-bg to-transparent pointer-events-none" />
 										</div>
 
-										{/* Copy post/article (X and Blog export-only) */}
-										{(item.platform === 'X' || item.platform === 'Blog') && (
+										{/* One-click copy: LinkedIn (export-only / Needs Copy), X, Blog */}
+										{((item.platform === 'LinkedIn' && item.status === 'Needs Copy') || item.platform === 'X' || item.platform === 'Blog') && (
 											<div className="flex items-center gap-2 mt-2">
 												<button
 													type="button"
@@ -1059,14 +1074,14 @@ export default function ContentApprovalPage() {
 														copyContentToClipboard(item.id, getCopyableContent(item));
 													}}
 													className="inline-flex items-center gap-1.5 rounded-md border border-edge/60 bg-surface/30 px-2 py-1.5 text-xs font-medium text-text-soft hover:bg-surface/50"
-													aria-label={item.platform === 'X' ? 'Copy post' : 'Copy article'}
+													aria-label={item.platform === 'LinkedIn' ? 'Copy post (hook + content)' : item.platform === 'X' ? 'Copy post' : 'Copy article'}
 												>
 													{copyContentSuccess[item.id] ? (
 														<Check className="w-3 h-3 text-accent" />
 													) : (
 														<Copy className="w-3 h-3" />
 													)}
-													{item.platform === 'X' ? 'Copy post' : 'Copy article'}
+													{item.platform === 'LinkedIn' ? 'Copy post' : item.platform === 'X' ? 'Copy post' : 'Copy article'}
 												</button>
 												{copyContentSuccess[item.id] && (
 													<span className="text-xs text-accent">Copied</span>
