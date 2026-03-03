@@ -16,6 +16,12 @@ const LanguageRegionEnum = z.enum(['US English', 'UK English', 'AU English']);
 const PreferredImageSourceEnum = z.enum(['AI Generated', 'Stock', 'Brand']);
 const BrandTypeEnum = z.enum(['company', 'personal']);
 
+/** When user answers "Yes" to avoiding negative/controversial/sarcastic tones, send this list to the AI (Make webhook). */
+const AVOID_NEGATIVE_TONES_LIST = [
+	'Negative', 'Cynical', 'Critical', 'Confrontational', 'Judgmental', 'Sarcastic',
+	'Too personal', 'Too emotional', 'Too corporate', 'Too verbose', 'rants',
+];
+
 const schema = z
 	.object({
 		brand_type: BrandTypeEnum,
@@ -85,6 +91,8 @@ const schema = z
 			},
 			z.array(z.string()).default([])
 		),
+		/** If true (Yes), we pass AVOID_NEGATIVE_TONES_LIST to the AI; if false (No), we pass []. */
+		avoid_negative_tones: z.boolean().default(true),
 		personal_risk_tolerance: z.preprocess(
 			(val) => {
 				// Convert empty string, null, or undefined to undefined
@@ -145,14 +153,7 @@ const schema = z
 				});
 			}
 
-			// Validate tone avoid (must select at least 1)
-			if (!data.personal_tone_avoid || (data.personal_tone_avoid as string[]).length === 0) {
-				ctx.addIssue({ 
-					path: ['personal_tone_avoid'], 
-					code: z.ZodIssueCode.custom, 
-					message: 'Please select at least 1 tone to avoid' 
-				});
-			}
+			// avoid_negative_tones is a required Yes/No; no separate validation needed (boolean has default)
 
 			// Validate risk tolerance
 			if (!data.personal_risk_tolerance) {
@@ -217,16 +218,15 @@ const personalFields = [
 	'personal_expertise',
 	'personal_goals',
 	'personal_voice_traits',
-	'personal_tone_avoid',
+	'avoid_negative_tones',
 	'personal_risk_tolerance',
 	'personal_content_style',
 	'personal_exclude_keywords',
 	'personal_story',
-	'personal_assets_urls',
 ] as const;
 
 const baseStepFields = {
-	companyBasics: ['brand_type', 'client_name', 'website', 'timezone', 'approval_contact_email', 'language_region', 'preferred_image_source'] as const,
+	companyBasics: ['brand_type', 'client_name', 'website', 'timezone', 'approval_contact_email', 'language_region'] as const,
 	personalBasics: [
 		'brand_type',
 		'personal_full_name',
@@ -238,15 +238,13 @@ const baseStepFields = {
 		'personal_expertise',
 		'personal_goals',
 		'personal_voice_traits',
-		'personal_tone_avoid',
+		'avoid_negative_tones',
 		'personal_risk_tolerance',
 		'personal_content_style',
 		'personal_exclude_keywords',
 		'personal_story',
-		'personal_assets_urls',
 		'timezone',
 		'language_region',
-		'preferred_image_source',
 		'platforms_requested',
 		'brand_assets_urls',
 	] as const,
@@ -303,6 +301,7 @@ export default function OnboardingPage() {
 			personal_goals: '',
 			personal_voice_traits: [],
 			personal_tone_avoid: [],
+			avoid_negative_tones: true,
 			personal_risk_tolerance: undefined,
 			personal_content_style: [],
 			personal_exclude_keywords: '',
@@ -365,10 +364,6 @@ export default function OnboardingPage() {
 
 	const handleFileUpload = (urls: string[]) => {
 		setValue('brand_assets_urls', urls, { shouldDirty: true });
-	};
-
-	const handlePersonalFileUpload = (urls: string[]) => {
-		setValue('personal_assets_urls', urls, { shouldDirty: true });
 	};
 
 	const onSubmit = async (data: FormData) => {
@@ -440,10 +435,11 @@ export default function OnboardingPage() {
 				platforms_requested: ensureArray(normalisedData.platforms_requested),
 			};
 			
-			// Only include personal fields if it's a personal brand
+			// Only include personal fields if it's a personal brand. Derive personal_tone_avoid from Yes/No.
 			const payloadData = isPersonal
 				? {
 						...basePayload,
+						personal_tone_avoid: normalisedData.avoid_negative_tones ? AVOID_NEGATIVE_TONES_LIST : [],
 						personal_assets_urls: ensureArray(normalisedData.personal_assets_urls),
 					}
 				: {
@@ -812,37 +808,30 @@ export default function OnboardingPage() {
 											</div>
 
 											<div>
-												<label className="block text-sm font-semibold mb-2">What tone should we absolutely avoid? * (Select all that apply)</label>
-												<div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-													{['Negative', 'Critical', 'Confrontational', 'Cynical', 'Judgmental', 'Sarcastic', 'Too personal', 'Too emotional', 'Too corporate', 'Too verbose', 'rants'].map((tone) => {
-														const currentAvoid = (watch('personal_tone_avoid') as string[]) || [];
-														const isSelected = currentAvoid.includes(tone);
-														return (
-															<label
-																key={tone}
-																className={`
-																	flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-sm
-																	${isSelected ? 'bg-danger/15 border-danger/50 text-danger' : 'bg-surface/70 border-edge/60 hover:bg-surface/80 hover:border-edge/80'}
-																`}
-															>
-																<input
-																	type="checkbox"
-																	checked={isSelected}
-																	onChange={() => {
-																		const current = currentAvoid;
-																		const next = isSelected ? current.filter((t) => t !== tone) : [...current, tone];
-																		setValue('personal_tone_avoid', next, { shouldDirty: true });
-																	}}
-																	className="sr-only"
-																/>
-																<span>{tone}</span>
-															</label>
-														);
-													})}
+												<label className="block text-sm font-semibold mb-2">Should we avoid negative, controversial or sarcastic tones? *</label>
+												<div className="flex gap-4">
+													<label className="flex items-center gap-2 cursor-pointer">
+														<input
+															type="radio"
+															value="yes"
+															checked={watch('avoid_negative_tones') === true}
+															onChange={() => setValue('avoid_negative_tones', true, { shouldDirty: true })}
+															className="rounded-full border-edge text-primary focus:ring-primary/30"
+														/>
+														<span className="text-sm">Yes</span>
+													</label>
+													<label className="flex items-center gap-2 cursor-pointer">
+														<input
+															type="radio"
+															value="no"
+															checked={watch('avoid_negative_tones') === false}
+															onChange={() => setValue('avoid_negative_tones', false, { shouldDirty: true })}
+															className="rounded-full border-edge text-primary focus:ring-primary/30"
+														/>
+														<span className="text-sm">No</span>
+													</label>
 												</div>
-												{errors.personal_tone_avoid && (
-													<p className="mt-1 text-sm text-danger">{errors.personal_tone_avoid.message}</p>
-												)}
+												<p className="mt-1 text-xs text-text-dim">If Yes, we instruct the AI to avoid negative, cynical, critical, confrontational, judgmental, sarcastic, too personal, too emotional, too corporate, too verbose tones and rants.</p>
 											</div>
 
 											<div>
@@ -922,42 +911,21 @@ export default function OnboardingPage() {
 												)}
 											</div>
 
-											{/* Assets */}
-											<div>
-												<label className="block text-sm font-semibold mb-2">Upload a profile photo, your CV or other assets (optional)</label>
-												<FileUpload onUpload={handlePersonalFileUpload} />
-												<p className="mt-2 text-xs text-text-dim">We'll reference these in social content where appropriate.</p>
-											</div>
-
 											{/* Settings */}
-											<div className="grid gap-4 md:grid-cols-2">
-												<div>
-													<label className="block text-sm font-semibold mb-2">Timezone *</label>
-													<select
-														{...register('timezone')}
-														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-													>
-														<option value="">Select timezone...</option>
-														{TIMEZONES.map((tz) => (
-															<option key={tz} value={tz}>
-																{tz}
-															</option>
-														))}
-													</select>
-													{errors.timezone && <p className="mt-1 text-sm text-danger">{errors.timezone.message}</p>}
-												</div>
-
-												<div>
-													<label className="block text-sm font-medium mb-2">Preferred Image Source *</label>
-													<select
-														{...register('preferred_image_source')}
-														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-													>
-														<option value="AI Generated">AI Generated</option>
-														<option value="Stock">Stock</option>
-														<option value="Brand">Brand</option>
-													</select>
-												</div>
+											<div>
+												<label className="block text-sm font-semibold mb-2">Timezone *</label>
+												<select
+													{...register('timezone')}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+												>
+													<option value="">Select timezone...</option>
+													{TIMEZONES.map((tz) => (
+														<option key={tz} value={tz}>
+															{tz}
+														</option>
+													))}
+												</select>
+												{errors.timezone && <p className="mt-1 text-sm text-danger">{errors.timezone.message}</p>}
 											</div>
 
 											<div>
@@ -1043,32 +1011,18 @@ export default function OnboardingPage() {
 												{errors.timezone && <p className="mt-1 text-sm text-danger">{errors.timezone.message}</p>}
 											</div>
 
-											<div className="grid gap-4 md:grid-cols-2">
-												<div>
-													<label className="block text-sm font-medium mb-2">
-														Approval Contact Email {isPersonal ? '(optional)' : '*'}
-													</label>
-													<input
-														{...register('approval_contact_email')}
-														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-														placeholder="approver@example.com"
-													/>
-													{errors.approval_contact_email && (
-														<p className="mt-1 text-sm text-danger">{errors.approval_contact_email.message}</p>
-													)}
-												</div>
-
-												<div>
-													<label className="block text-sm font-medium mb-2">Preferred Image Source *</label>
-													<select
-														{...register('preferred_image_source')}
-														className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-													>
-														<option value="AI Generated">AI Generated</option>
-														<option value="Stock">Stock</option>
-														<option value="Brand">Brand</option>
-													</select>
-												</div>
+											<div>
+												<label className="block text-sm font-medium mb-2">
+													Approval Contact Email {isPersonal ? '(optional)' : '*'}
+												</label>
+												<input
+													{...register('approval_contact_email')}
+													className="w-full rounded-xl2 border border-edge/60 bg-bg/80 px-4 py-3 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+													placeholder="approver@example.com"
+												/>
+												{errors.approval_contact_email && (
+													<p className="mt-1 text-sm text-danger">{errors.approval_contact_email.message}</p>
+												)}
 											</div>
 										</div>
 									)}

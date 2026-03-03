@@ -149,14 +149,7 @@ const schema = z
 				});
 			}
 
-			// Validate tone avoid (must select at least 1)
-			if (!data.personal_tone_avoid || (data.personal_tone_avoid as string[]).length === 0) {
-				ctx.addIssue({
-					path: ['personal_tone_avoid'],
-					code: z.ZodIssueCode.custom,
-					message: 'Please select at least 1 tone to avoid',
-				});
-			}
+			// personal_tone_avoid is derived client-side from avoid_negative_tones (Yes = full list, No = []); no min length required
 
 			// Validate risk tolerance
 			if (!data.personal_risk_tolerance) {
