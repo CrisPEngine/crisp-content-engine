@@ -227,14 +227,9 @@ export async function POST(req: Request) {
 					limit = limits.x ?? planCaps.xPostsMonthly;
 					currentUsage = channelUsage.x;
 				} else if (platformKey === 'blog') {
-					// For Starter: blog outlines; for paid: blog articles
-					if (plan === 'starter') {
-						limit = planCaps.blogOutlinesMonthly;
-						currentUsage = channelUsage.blog_outlines;
-					} else {
-						limit = limits.blog ?? planCaps.blogArticlesMonthly;
-						currentUsage = channelUsage.blog;
-					}
+					// Starter and paid plans: blog articles (export-only)
+					limit = limits.blog ?? planCaps.blogArticlesMonthly;
+					currentUsage = channelUsage.blog;
 				} else if (platformKey === 'instagram' || platformKey === 'facebook') {
 					// Meta pool: shared across FB+IG, tracked at approval
 					limit = limits.meta_pool ?? planCaps.metaPoolMonthly;

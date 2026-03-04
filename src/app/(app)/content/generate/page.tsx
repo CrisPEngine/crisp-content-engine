@@ -116,14 +116,27 @@ export default function ContentGeneratePage() {
 	// Check if user is on Starter plan (export-only)
 	const isStarterPlan = userPlan === 'starter';
 
-	// Calculate remaining posts from caps and usage
+	// Calculate remaining posts from caps and usage (global posts cap)
 	const postsCap = usageData?.caps?.posts_per_month ?? 0;
 	const postsUsed = usageData?.usage?.posts ?? 0;
 	const isUnlimited = !postsCap || postsCap === 999999 || postsCap >= 999999;
 	const postsRemaining = isUnlimited ? 999999 : Math.max(0, postsCap - postsUsed);
 	
-	const totalRequested = Object.values(quantities).reduce((sum, qty) => sum + qty, 0);
-	const canSubmit = selectedBrand && totalRequested > 0 && (isUnlimited || totalRequested <= postsRemaining);
+	// Starter generates the full monthly pack in one click
+	const starterTotal =
+		CAPS.starter.linkedinPostsMonthly +
+		CAPS.starter.xPostsMonthly +
+		(CAPS.starter.blogArticlesMonthly || CAPS.starter.blogOutlinesMonthly || 0);
+
+	const totalRequested = isStarterPlan
+		? starterTotal
+		: Object.values(quantities).reduce((sum, qty) => sum + qty, 0);
+
+	const canSubmit =
+		!!selectedBrand &&
+		(isStarterPlan
+			? (isUnlimited || totalRequested <= postsRemaining)
+			: totalRequested > 0 && (isUnlimited || totalRequested <= postsRemaining));
 
 	async function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
@@ -133,9 +146,19 @@ export default function ContentGeneratePage() {
 		setError(null);
 
 		try {
-			const channels = Object.entries(quantities)
-				.filter(([, qty]) => qty > 0)
-				.map(([platform, count]) => ({ platform, count }));
+			let channels: { platform: string; count: number }[];
+			if (isStarterPlan) {
+				const caps = CAPS.starter;
+				channels = [
+					{ platform: 'LinkedIn', count: caps.linkedinPostsMonthly },
+					{ platform: 'X', count: caps.xPostsMonthly },
+					{ platform: 'Blog', count: caps.blogArticlesMonthly || caps.blogOutlinesMonthly || 0 },
+				].filter((c) => c.count > 0);
+			} else {
+				channels = Object.entries(quantities)
+					.filter(([, qty]) => qty > 0)
+					.map(([platform, count]) => ({ platform, count }));
+			}
 
 			const res = await fetch('/api/content/generate', {
 				method: 'POST',
@@ -236,13 +259,13 @@ export default function ContentGeneratePage() {
 					<div className="card p-4 bg-blue-500/10 border border-blue-500/30">
 						<div className="flex items-center gap-2 mb-1">
 							<AlertCircle className="w-4 h-4 text-blue-400" />
-							<p className="text-sm font-semibold text-blue-300">Export-only plan</p>
+							<p className="text-sm font-semibold text-blue-300">Starter content pack</p>
 						</div>
 						<p className="text-sm text-blue-300/80 mb-2">
-							Your Starter plan includes LinkedIn and 𝕏 posts for manual export. Content is generated for you to copy and publish yourself. You can request your full monthly allowance in one go (4 LinkedIn, 4 𝕏, 1 blog outline). Upgrade to Creator for autopublish and blog articles.
+							Your Starter plan includes LinkedIn, 𝕏 and Blog for manual export. When you generate content, we automatically create up to 4 LinkedIn posts, 4 𝕏 posts and 1 blog article from your strategy.
 						</p>
 						<p className="text-xs text-blue-300/70">
-							The numbers you enter are sent to the generator. If you receive a different number of posts, the scenario may be batching; you can request again or adjust counts.
+							Keep this tab open while your content is being created. Closing the browser or tab during generation can cause errors or incomplete results.
 						</p>
 					</div>
 				)}
@@ -304,71 +327,74 @@ export default function ContentGeneratePage() {
 					{/* Channel Quantities */}
 					{selectedBrand && selectedBrandData && (
 						<div>
-							<label className="block text-sm font-semibold mb-3">
-								How many posts per channel? *
-							</label>
-							<p className="text-sm text-text-dim mb-2">
-								Select the channels and specify how many posts to create for each.
-							</p>
-							{isStarterPlan && (
-								<button
-									type="button"
-									onClick={() => {
-										const planCaps = CAPS.starter;
-										setQuantities({
-											LinkedIn: Math.min(planCaps.linkedinPostsMonthly, PER_CHANNEL_REQUEST_CAPS.linkedin ?? 50),
-											X: Math.min(planCaps.xPostsMonthly, PER_CHANNEL_REQUEST_CAPS.x ?? 50),
-											Blog: Math.min(planCaps.blogOutlinesMonthly || planCaps.blogArticlesMonthly || 0, PER_CHANNEL_REQUEST_CAPS.blog ?? 50),
-										});
-									}}
-									className="text-sm text-primary hover:underline mb-3 inline-block"
-								>
-									Use full allowance (4 LinkedIn, 4 𝕏, 1 blog)
-								</button>
-							)}
-							<div className="space-y-3">
-								{availablePlatforms.map((platform) => {
-									const cap = PER_CHANNEL_REQUEST_CAPS[platform.value.toLowerCase()] ?? 50;
-									return (
-										<div
-											key={platform.value}
-											className="flex items-center gap-4 p-3 rounded-xl2 border border-edge/60 bg-surface/30"
-										>
-											<div className="flex items-center gap-3 flex-1">
-												<span className="text-2xl">{platform.icon}</span>
-												<span className="font-medium">{platform.label}</span>
-												<span className="text-xs text-text-dim">(max {cap} per request)</span>
-												{isStarterPlan && (platform.value === 'LinkedIn' || platform.value === 'X') && (
-													<span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300">
-														Export-only
-													</span>
-												)}
-											</div>
-											<input
-												type="number"
-												min="0"
-												max={cap}
-												value={quantities[platform.value] || 0}
-												onChange={(e) => {
-													const val = parseInt(e.target.value) || 0;
-													setQuantities((prev) => ({
-														...prev,
-														[platform.value]: Math.max(0, Math.min(cap, val)),
-													}));
-												}}
-												className="w-20 px-3 py-2 rounded-lg border border-edge/60 bg-bg/80 text-text text-center focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-												placeholder="0"
-											/>
-										</div>
-									);
-								})}
-							</div>
+							{isStarterPlan ? (
+								<>
+									<label className="block text-sm font-semibold mb-3">
+										Your Starter content pack
+									</label>
+									<p className="text-sm text-text-dim mb-2">
+										When you click Generate, we create up to:
+									</p>
+									<ul className="list-disc pl-5 text-sm text-text-dim">
+										<li>4 LinkedIn posts (export-only)</li>
+										<li>4 𝕏 posts (export-only)</li>
+										<li>1 blog article (export-only)</li>
+									</ul>
+									{totalRequested > postsRemaining && (
+										<p className="mt-3 text-sm text-danger flex items-center gap-2">
+											<AlertCircle className="w-4 h-4" />
+											Exceeds monthly limit by {totalRequested - postsRemaining} posts
+										</p>
+									)}
+								</>
+							) : (
+								<>
+									<label className="block text-sm font-semibold mb-3">
+										How many posts per channel? *
+									</label>
+									<p className="text-sm text-text-dim mb-2">
+										Select the channels and specify how many posts to create for each.
+									</p>
+									<div className="space-y-3">
+										{availablePlatforms.map((platform) => {
+											const cap = PER_CHANNEL_REQUEST_CAPS[platform.value.toLowerCase()] ?? 50;
+											return (
+												<div
+													key={platform.value}
+													className="flex items-center gap-4 p-3 rounded-xl2 border border-edge/60 bg-surface/30"
+												>
+													<div className="flex items-center gap-3 flex-1">
+														<span className="text-2xl">{platform.icon}</span>
+														<span className="font-medium">{platform.label}</span>
+														<span className="text-xs text-text-dim">(max {cap} per request)</span>
+													</div>
+													<input
+														type="number"
+														min="0"
+														max={cap}
+														value={quantities[platform.value] || 0}
+														onChange={(e) => {
+															const val = parseInt(e.target.value) || 0;
+															setQuantities((prev) => ({
+																...prev,
+																[platform.value]: Math.max(0, Math.min(cap, val)),
+															}));
+														}}
+														className="w-20 px-3 py-2 rounded-lg border border-edge/60 bg-bg/80 text-text text-center focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+														placeholder="0"
+													/>
+												</div>
+											);
+										})}
+									</div>
 
-							{totalRequested > postsRemaining && (
-								<p className="mt-3 text-sm text-danger flex items-center gap-2">
-									<AlertCircle className="w-4 h-4" />
-									Exceeds monthly limit by {totalRequested - postsRemaining} posts
-								</p>
+									{totalRequested > postsRemaining && (
+										<p className="mt-3 text-sm text-danger flex items-center gap-2">
+											<AlertCircle className="w-4 h-4" />
+											Exceeds monthly limit by {totalRequested - postsRemaining} posts
+										</p>
+									)}
+								</>
 							)}
 						</div>
 					)}

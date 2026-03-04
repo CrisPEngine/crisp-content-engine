@@ -173,7 +173,8 @@ export function ContentGenerationLoading({
 						<Sparkles className="w-12 h-12 text-primary" />
 					</motion.div>
 					<h2 className="text-2xl font-semibold mb-2">Creating Your Content</h2>
-					<p className="text-text-dim text-sm">This usually takes 20–60 seconds. We’ll take you to the content when it’s ready.</p>
+					<p className="text-text-dim text-sm mb-1">This usually takes 20–60 seconds. We’ll take you to the content when it’s ready.</p>
+					<p className="text-text-dim text-xs">Please keep this tab open while we generate your posts. Closing the browser or tab can interrupt content creation.</p>
 				</div>
 
 				{showEscapeHatch && !isComplete && (

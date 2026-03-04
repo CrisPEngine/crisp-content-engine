@@ -38,7 +38,15 @@ function ComingSoonBadge({ item }: { item: string }) {
 	);
 }
 
-function StarterCard() {
+function StarterCard({
+	isLoggedIn,
+	onSelectStarter,
+	selecting,
+}: {
+	isLoggedIn: boolean;
+	onSelectStarter: () => Promise<void>;
+	selecting: boolean;
+}) {
 	return (
 		<div className="card p-6 flex flex-col justify-between border border-edge/60">
 			<div>
@@ -62,12 +70,23 @@ function StarterCard() {
 					<p className="mt-4 text-xs text-text-dim italic">{PRICING.monthly.starter.footnote}</p>
 				)}
 			</div>
-			<a
-				href="/signup"
-				className="mt-6 w-full inline-flex items-center justify-center rounded-xl2 border border-emerald-500/40 bg-emerald-500/10 px-6 py-3 text-base font-medium text-emerald-300 hover:bg-emerald-500/20 transition"
-			>
-				Start free — no card required
-			</a>
+			{isLoggedIn ? (
+				<button
+					type="button"
+					disabled={selecting}
+					onClick={onSelectStarter}
+					className="mt-6 w-full inline-flex items-center justify-center rounded-xl2 border border-emerald-500/40 bg-emerald-500/10 px-6 py-3 text-base font-medium text-emerald-300 hover:bg-emerald-500/20 transition disabled:opacity-60 disabled:cursor-not-allowed"
+				>
+					{selecting ? "Selecting..." : "Choose Starter"}
+				</button>
+			) : (
+				<a
+					href="/signup"
+					className="mt-6 w-full inline-flex items-center justify-center rounded-xl2 border border-emerald-500/40 bg-emerald-500/10 px-6 py-3 text-base font-medium text-emerald-300 hover:bg-emerald-500/20 transition"
+				>
+					Start free — no card required
+				</a>
+			)}
 		</div>
 	);
 }
@@ -230,6 +249,8 @@ export default function BillingPage() {
 	} | null>(null);
 	const [loadingPlan, setLoadingPlan] = useState(true);
 	const [cancelling, setCancelling] = useState(false);
+	const [selectingStarter, setSelectingStarter] = useState(false);
+	const [isLoggedIn, setIsLoggedIn] = useState(false);
 
 	useEffect(() => {
 		if (!supabase) return;
@@ -252,10 +273,9 @@ export default function BillingPage() {
 							? "scale"
 							: "free";
 
-					const {
-						data: { user },
-					} = await supabase.auth.getUser();
+					const { data: { user } } = await supabase.auth.getUser();
 					if (user) {
+						setIsLoggedIn(true);
 						const { data: sub } = await supabase
 							.from("subscriptions")
 							.select("plan, cycle, current_period_end")
@@ -272,6 +292,8 @@ export default function BillingPage() {
 						} else {
 							setCurrentPlan({ plan: planId, cycle: data.cycle || "monthly" });
 						}
+					} else {
+						setIsLoggedIn(false);
 					}
 				}
 			} catch (error) {
@@ -282,6 +304,22 @@ export default function BillingPage() {
 		}
 		loadCurrentPlan();
 	}, [supabase]);
+
+	const selectStarter = async () => {
+		setSelectingStarter(true);
+		try {
+			const res = await fetch('/api/plan/select-starter', { method: 'POST' });
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				throw new Error(data?.error || 'Failed to select Starter');
+			}
+			// Send user straight into onboarding (or back to dashboard if already done)
+			window.location.href = '/onboarding';
+		} catch (e: any) {
+			alert(e?.message || 'Failed to select Starter');
+			setSelectingStarter(false);
+		}
+	};
 
 	const goCheckout = async (priceId: string) => {
 		if (!priceId) return;
@@ -455,7 +493,13 @@ export default function BillingPage() {
 				{/* Responsive grid: 1 col → 2 col → 3 col → auto-fit for larger screens */}
 				{/* Max 3 cards per row at full width; remaining cards wrap below */}
 				<div className="grid gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-					{!isOnPaidPlan && <StarterCard />}
+					{!isOnPaidPlan && (
+						<StarterCard
+							isLoggedIn={isLoggedIn}
+							onSelectStarter={selectStarter}
+							selecting={selectingStarter}
+						/>
+					)}
 					{upgradeOptions.map((id) => (
 						<PlanCard
 							key={id}
@@ -474,7 +518,11 @@ export default function BillingPage() {
 				<h2 className="text-lg font-semibold mb-4">All plans</h2>
 				{/* Max 3 cards per row at full width; remaining cards wrap below */}
 				<div className="grid gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-					<StarterCard />
+					<StarterCard
+						isLoggedIn={isLoggedIn}
+						onSelectStarter={selectStarter}
+						selecting={selectingStarter}
+					/>
 					{PURCHASABLE_PLANS.map((id) => (
 						<PlanCard
 							key={id}

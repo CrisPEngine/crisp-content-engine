@@ -5,7 +5,8 @@ export const PER_CHANNEL_REQUEST_CAPS: Record<string, number> = {
 	blog: 2,
 	facebook: 3,
 	instagram: 3,
-	linkedin: 3,
+	// Starter needs to generate 4 LinkedIn posts in one go
+	linkedin: 4,
 	x: 10,
 };
 
@@ -60,19 +61,19 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		maxBrands: 1,
 		maxSeats: 1,
 		maxChannels: 3,
-		postsPerMonth: 9, // 4 LinkedIn + 4 𝕏 + 1 blog outline
+		postsPerMonth: 9, // 4 LinkedIn + 4 𝕏 + 1 blog article
 		includedImageGen: true,
 		includedPlatforms: ["linkedin", "x", "blog"],
 		autopublishLinkedIn: false,
 		autopublishMeta: false,
 		linkedinPostsMonthly: 4,
 		xPostsMonthly: 4,
-		blogArticlesMonthly: 0,
-		blogOutlinesMonthly: 1,
+		blogArticlesMonthly: 1,
+		blogOutlinesMonthly: 0,
 		metaPoolMonthly: 0,
 		makeScenario: "starter",
 		perChannelLimits: { linkedin: 4, x: 4, blog: 1 },
-		notes: "Free Forever. Export-only LinkedIn (4) + 𝕏 (4) + 1 blog outline. Mini AI via Starter scenario.",
+		notes: "Free Forever. Export-only LinkedIn (4) + 𝕏 (4) + 1 blog article. Mini AI via Starter scenario.",
 	},
 	creator: {
 		maxBrands: 1,

@@ -36,10 +36,11 @@ describe('CAPS config', () => {
 	});
 
 	it('Starter: free tier with correct quotas', () => {
-		const { linkedinPostsMonthly, xPostsMonthly, blogOutlinesMonthly, metaPoolMonthly, makeScenario, autopublishLinkedIn, autopublishMeta } = CAPS.starter;
+		const { linkedinPostsMonthly, xPostsMonthly, blogArticlesMonthly, blogOutlinesMonthly, metaPoolMonthly, makeScenario, autopublishLinkedIn, autopublishMeta } = CAPS.starter;
 		expect(linkedinPostsMonthly).toBe(4);
 		expect(xPostsMonthly).toBe(4);
-		expect(blogOutlinesMonthly).toBe(1);
+		expect(blogArticlesMonthly).toBe(1);
+		expect(blogOutlinesMonthly).toBe(0);
 		expect(metaPoolMonthly).toBe(0);
 		expect(makeScenario).toBe('starter');
 		expect(autopublishLinkedIn).toBe(false);
@@ -132,7 +133,7 @@ describe('perChannelLimits consistency', () => {
 		const caps = CAPS.starter;
 		expect(caps.perChannelLimits?.linkedin).toBe(caps.linkedinPostsMonthly);
 		expect(caps.perChannelLimits?.x).toBe(caps.xPostsMonthly);
-		expect(caps.perChannelLimits?.blog).toBe(caps.blogOutlinesMonthly);
+		expect(caps.perChannelLimits?.blog).toBe(caps.blogArticlesMonthly);
 	});
 
 	it('Creator perChannelLimits match monthly quota fields', () => {
