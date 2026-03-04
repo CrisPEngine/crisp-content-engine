@@ -198,11 +198,12 @@ export async function POST(req: Request) {
 			}
 		}
 
-		// Get entitlements and current usage
+		// Get entitlements and current usage. Use plan's canonical cap so Starter gets 9, not stale trial (6).
 		const entitlements = await getEntitlements(user.id);
 		const postsUsed = await getMonthUsage(user.id);
 		const planCaps = CAPS[plan as keyof typeof CAPS] || CAPS.trial;
-		const maxPostsPerMonth = entitlements?.posts_per_month || planCaps.postsPerMonth;
+		const planCap = planCaps.postsPerMonth === 'unlimited' ? 999999 : (typeof planCaps.postsPerMonth === 'number' ? planCaps.postsPerMonth : 0);
+		const maxPostsPerMonth = planCap || entitlements?.posts_per_month || 0;
 		const postsRemaining = typeof maxPostsPerMonth === 'number' ? maxPostsPerMonth - postsUsed : 999999;
 
 		// Per-channel limit enforcement for ALL plans

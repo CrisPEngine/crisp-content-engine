@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { enforceCaps } from '@/lib/enforceCaps';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { resolvePlan, getTrialUsage } from '@/lib/planResolver';
+import { capsFor } from '@/lib/billing';
+import type { PlanId } from '@/config/pricing';
 
 export const runtime = 'nodejs';
 
@@ -30,29 +32,45 @@ export async function GET(req: Request) {
 	const resolved = await resolvePlan(userId);
 	
 	const check = await enforceCaps(userId);
-	
-	// Also get max_brands from entitlements
-	let maxBrands = 999;
-	try {
-		const { getEntitlements } = await import('@/lib/enforceCaps');
-		const entitlements = await getEntitlements(userId);
-		if (entitlements?.max_brands) {
-			maxBrands = entitlements.max_brands;
+
+	// Use canonical plan caps so Starter always shows 9 posts, not stale trial (6) from entitlements
+	const planId = resolved.plan === 'free' ? null : (resolved.plan as PlanId);
+	const planCaps = planId ? capsFor(planId) : null;
+	const caps = {
+		...check.caps,
+		...(planCaps && {
+			posts_per_month: planCaps.posts_per_month,
+			linkedin_monthly: planCaps.linkedin_monthly,
+			x_monthly: planCaps.x_monthly,
+			blog_monthly: planCaps.blog_monthly,
+			meta_pool_monthly: planCaps.meta_pool_monthly,
+		}),
+	};
+
+	// Also get max_brands from entitlements (or plan caps)
+	let maxBrands = planCaps?.max_brands ?? 999;
+	if (maxBrands === 999) {
+		try {
+			const { getEntitlements } = await import('@/lib/enforceCaps');
+			const entitlements = await getEntitlements(userId);
+			if (entitlements?.max_brands != null) {
+				maxBrands = entitlements.max_brands;
+			}
+		} catch (error) {
+			console.error('Failed to get max_brands:', error);
 		}
-	} catch (error) {
-		console.error('Failed to get max_brands:', error);
 	}
-	
+
 	// Get trial usage if on trial
 	let trialUsage: { linkedin: number; x: number } | null = null;
 	if (resolved.isTrial) {
 		trialUsage = await getTrialUsage(userId);
 	}
-	
+
 	return NextResponse.json({
 		...check,
 		caps: {
-			...check.caps,
+			...caps,
 			max_brands: maxBrands,
 		},
 		plan: resolved.plan,
