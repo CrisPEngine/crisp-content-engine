@@ -800,9 +800,9 @@ export default function ContentApprovalPage() {
 			</div>
 
 			{/* Export-only notice when viewing LinkedIn (Starter), X or Blog */}
-			{selectedTab === 'LinkedIn' && contentItems.some((i) => i.status === 'Needs Copy') && (
+			{selectedTab === 'LinkedIn' && contentItems.some((i) => i.platform === 'LinkedIn') && (
 				<div className="mb-4 px-4 py-3 rounded-xl2 bg-warning/10 border border-warning/30 text-warning text-sm">
-					LinkedIn posts on Starter are export-only. Use the copy button to copy the hook and post, then paste into LinkedIn to publish.
+					LinkedIn posts on Starter are export-only. Use the copy button under each post to copy the hook and post in one click, then paste into LinkedIn to publish.
 				</div>
 			)}
 			{selectedTab === 'X' && (
@@ -963,10 +963,10 @@ export default function ContentApprovalPage() {
 											</span>
 										</div>
 
-										{/* Export-only / copy-paste notice for LinkedIn (Starter), X, Blog */}
-										{(item.platform === 'LinkedIn' && item.status === 'Needs Copy') && (
+										{/* Export-only / copy-paste notice for LinkedIn (Starter) */}
+										{item.platform === 'LinkedIn' && (
 											<div className="px-3 py-2 rounded-lg bg-warning/10 border border-warning/30 text-warning text-xs">
-												📋 Copy and paste to publish: use the copy button below to copy the hook and post to LinkedIn.
+												📋 One-click copy: use the button below to copy the hook and post, then paste into LinkedIn to publish.
 											</div>
 										)}
 										{((item.platform === 'X' && item.post_type === 'thread') || item.platform === 'Blog') && (
@@ -1064,8 +1064,8 @@ export default function ContentApprovalPage() {
 											<div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-bg to-transparent pointer-events-none" />
 										</div>
 
-										{/* One-click copy: LinkedIn (export-only / Needs Copy), X, Blog */}
-										{((item.platform === 'LinkedIn' && item.status === 'Needs Copy') || item.platform === 'X' || item.platform === 'Blog') && (
+										{/* One-click copy: LinkedIn (Starter export-only), X, Blog */}
+										{(item.platform === 'LinkedIn' || item.platform === 'X' || item.platform === 'Blog') && (
 											<div className="flex items-center gap-2 mt-2">
 												<button
 													type="button"
