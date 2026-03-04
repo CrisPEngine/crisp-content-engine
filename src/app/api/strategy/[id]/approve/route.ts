@@ -49,7 +49,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 			.select('plan')
 			.eq('user_id', user.id)
 			.maybeSingle();
-		const plan = (subscription?.plan as 'creator' | 'starter' | 'growth' | 'pro' | 'scale' | 'trial') || 'growth';
+		const plan = (subscription?.plan as 'creator' | 'starter' | 'growth' | 'pro' | 'scale') || 'growth';
 
 		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
 		const BASE_ID = process.env.AIRTABLE_BASE_ID;

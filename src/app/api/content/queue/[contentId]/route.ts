@@ -513,8 +513,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 			if (isLinkedIn || isMeta) {
 				try {
 					const resolved = await resolvePlan(user.id);
-					const resolvedPlan = resolved.plan === 'free' ? 'trial' : resolved.plan;
-					const planCaps = CAPS[resolvedPlan as keyof typeof CAPS] || CAPS.trial;
+					const resolvedPlan = resolved.plan === 'free' ? 'starter' : resolved.plan;
+					const planCaps = CAPS[resolvedPlan as keyof typeof CAPS] || CAPS.starter;
 
 					// LinkedIn counted at approval only for paid autopublish plans (Creator+)
 					// Starter uses export — LinkedIn was already counted at generation

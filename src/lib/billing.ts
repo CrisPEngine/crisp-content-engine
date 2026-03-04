@@ -20,7 +20,7 @@ export async function upsertUserFromStripe(stripeCustomerId: string | null | und
 	return null;
 }
 
-export function capsFor(plan: 'trial' | 'starter' | 'creator' | 'growth' | 'pro' | 'scale') {
+export function capsFor(plan: 'starter' | 'creator' | 'growth' | 'pro' | 'scale') {
 	const c = CAPS[plan];
 	return {
 		max_brands: c.maxBrands,
@@ -51,14 +51,14 @@ export function resolvePlanFromPriceId(priceId?: string) {
 
 export async function upsertSubscriptionAndEntitlements(params: {
 	userId: string;
-	plan: 'trial' | 'starter' | 'creator' | 'growth' | 'pro' | 'scale';
+	plan: 'starter' | 'creator' | 'growth' | 'pro' | 'scale';
 	cycle: 'monthly' | 'annual';
 	stripeCustomerId?: string;
 	stripeSubscriptionId?: string | null;
 	priceId?: string;
 	currentPeriodEnd?: number | null | undefined; // seconds since epoch
-	trialStartAt?: string | null; // ISO timestamp for trial start
-	trialEndAt?: string | null; // ISO timestamp for trial end
+	trialStartAt?: string | null; // legacy column, set null for new plans
+	trialEndAt?: string | null; // legacy column, set null for new plans
 }) {
 	const admin = supabaseAdmin();
 	const caps = capsFor(params.plan);
@@ -88,12 +88,7 @@ export async function upsertSubscriptionAndEntitlements(params: {
 		if (params.trialEndAt) {
 			subscriptionData.trial_end_at = params.trialEndAt;
 		}
-		// Admin-created trial (no Stripe): set trial dates so plan resolver recognizes it and doesn't overwrite with 7-day
-		if (currentPeriodEndIso && !params.stripeSubscriptionId && !subscriptionData.trial_end_at) {
-			subscriptionData.trial_start_at = params.trialStartAt ?? new Date().toISOString();
-			subscriptionData.trial_end_at = currentPeriodEndIso;
-		}
-		
+
 		// Note: The following columns don't exist in schema:
 		// - provider (removed)
 		// - metadata (removed)

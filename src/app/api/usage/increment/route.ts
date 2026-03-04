@@ -6,7 +6,7 @@
  *   - X export / Blog export / Blog outlines: decremented HERE (value delivered at generation)
  *   - LinkedIn autopublish (Creator+): decremented at APPROVAL time (not here)
  *   - Meta autopublish (Growth+): decremented at APPROVAL time (not here)
- *   - LinkedIn export (Starter/Trial): decremented HERE (export, value at generation)
+ *   - LinkedIn export (Starter/Free): decremented HERE (export, value at generation)
  *
  * The `plan` parameter (passed by Make) determines which channels count now vs at approval.
  * If plan is omitted, it is resolved from the database.
@@ -67,8 +67,8 @@ export async function POST(req: Request) {
 		// Determine which channels to count at generation time
 		// LinkedIn autopublish (Creator/Growth/Pro): counted at APPROVAL time — skip here
 		// Meta (Growth/Pro): counted at APPROVAL time — skip here
-		// Starter/Trial: LinkedIn is export-only, count at generation
-		const isStarterOrTrial = plan === 'starter' || plan === 'trial' || plan === 'free';
+		// Starter/Free: LinkedIn is export-only, count at generation
+		const isStarterOrFree = plan === 'starter' || plan === 'free';
 
 		const linkedin = channelCounts?.LinkedIn ?? channelCounts?.linkedin ?? 0;
 		const x = channelCounts?.X ?? channelCounts?.x ?? 0;
@@ -78,8 +78,8 @@ export async function POST(req: Request) {
 		const blogOutlines = channelCounts?.BlogOutlines ?? channelCounts?.blog_outlines ?? 0;
 
 		// For paid plans (Creator+): LinkedIn is counted at approval, not here
-		// For Starter/Trial: LinkedIn is export-only, count it here
-		const linkedinToCount = isStarterOrTrial ? linkedin : 0;
+		// For Starter/Free: LinkedIn is export-only, count it here
+		const linkedinToCount = isStarterOrFree ? linkedin : 0;
 
 		// Meta is NEVER counted here regardless of plan (always at approval)
 		const instagramToCount = 0;

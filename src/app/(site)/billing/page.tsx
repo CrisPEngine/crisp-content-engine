@@ -392,12 +392,11 @@ export default function BillingPage() {
 		pro: "Pro",
 		scale: "Scale",
 		free: "Free",
-		trial: "Trial",
 	};
 
 	// Determine which purchasable plans to show as upgrade options
 	const upgradeOptions = useMemo((): PlanId[] => {
-		if (!currentPlan || currentPlan.plan === "free" || currentPlan.plan === "trial") {
+		if (!currentPlan || currentPlan.plan === "free") {
 			return PURCHASABLE_PLANS;
 		}
 		const order: PlanId[] = ["starter", "creator", "growth", "pro", "scale"];
@@ -408,7 +407,6 @@ export default function BillingPage() {
 	const isOnPaidPlan =
 		currentPlan &&
 		currentPlan.plan !== "free" &&
-		currentPlan.plan !== "trial" &&
 		currentPlan.plan !== "starter";
 
 	return (

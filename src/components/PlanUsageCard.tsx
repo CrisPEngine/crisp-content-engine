@@ -4,6 +4,24 @@ import { useUsage } from '@/lib/useUsage';
 import { useEffect, useState } from 'react';
 import { UsageCardSkeleton } from '@/components/skeletons/Skeleton';
 
+function planIncludesCopy(plan: string | undefined): string {
+	switch (plan) {
+		case 'starter':
+		case 'free':
+			return '4 LinkedIn, 4 𝕏 and 1 blog (export).';
+		case 'creator':
+			return '12 LinkedIn (auto-publish), 12 𝕏 and 2 blogs (export).';
+		case 'growth':
+			return '20 LinkedIn + 20 Meta (auto-publish), 40 𝕏 and 4 blogs (export).';
+		case 'pro':
+			return '75 LinkedIn + 75 Meta (auto-publish), 150 𝕏 and 12 blogs (export).';
+		case 'scale':
+			return 'Custom limits.';
+		default:
+			return 'See billing for your allowance.';
+	}
+}
+
 export function PlanUsageCard() {
 	const { data, loading } = useUsage();
 	const [planInfo, setPlanInfo] = useState<{ planName: string; cycle: 'monthly' | 'annual' } | null>(null);
@@ -21,6 +39,7 @@ export function PlanUsageCard() {
 	const used = data?.usage?.posts ?? 0;
 	const cap = data?.caps?.posts_per_month ?? 999999;
 	const pct = Math.min(100, Math.round((used / (cap || 1)) * 100));
+	const includesCopy = planIncludesCopy(data?.plan);
 	return (
 		<div className="card p-4 md:p-6 space-y-4 flex flex-col w-full h-full">
 			<div className="flex items-center justify-between">
@@ -36,7 +55,7 @@ export function PlanUsageCard() {
 			</div>
 			<div className="text-text-dim text-sm">{used} / {cap === 999999 ? '∞' : cap}</div>
 			<div className="text-xs text-text-dim flex-1">
-				Includes 8 auto-published LinkedIn posts and 2 long-form blogs.
+				Includes {includesCopy}
 			</div>
 			{!data?.ok && (
 				<div className="text-danger text-sm">{data?.reason ?? 'Limit reached.'}</div>

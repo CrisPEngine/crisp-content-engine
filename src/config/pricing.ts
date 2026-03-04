@@ -1,4 +1,4 @@
-export type PlanId = "trial" | "starter" | "creator" | "growth" | "pro" | "scale";
+export type PlanId = "starter" | "creator" | "growth" | "pro" | "scale";
 
 /** Max content pieces per channel in a single multi-channel generation request */
 export const PER_CHANNEL_REQUEST_CAPS: Record<string, number> = {
@@ -39,24 +39,6 @@ export type PlanCaps = {
 };
 
 export const CAPS: Record<PlanId, PlanCaps> = {
-	trial: {
-		maxBrands: 1,
-		maxSeats: 1,
-		maxChannels: 2,
-		postsPerMonth: 6,
-		includedImageGen: true,
-		includedPlatforms: ["linkedin", "x"],
-		autopublishLinkedIn: false,
-		autopublishMeta: false,
-		linkedinPostsMonthly: 3,
-		xPostsMonthly: 3,
-		blogArticlesMonthly: 0,
-		blogOutlinesMonthly: 0,
-		metaPoolMonthly: 0,
-		makeScenario: "starter",
-		perChannelLimits: { linkedin: 3, x: 3, blog: 0 },
-		notes: "7-day trial: 3 LinkedIn + 3 𝕏 posts (export-only).",
-	},
 	starter: {
 		maxBrands: 1,
 		maxSeats: 1,

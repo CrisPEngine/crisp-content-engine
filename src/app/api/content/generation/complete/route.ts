@@ -10,7 +10,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { z } from 'zod';
-import { resolvePlan, incrementTrialUsage } from '@/lib/planResolver';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -127,27 +126,6 @@ export async function POST(req: Request) {
 			} catch (usageError) {
 				console.error('[Generation Complete] Failed to increment usage:', usageError);
 				// Don't fail the whole request if usage increment fails
-			}
-			
-			// Increment trial usage if user is on trial
-			try {
-				const resolved = await resolvePlan(job.user_id);
-				
-				if (resolved.isTrial && resolved.plan === 'trial') {
-					await incrementTrialUsage(job.user_id, {
-						linkedin: channelCounts.linkedin || 0,
-						x: channelCounts.x || 0,
-					});
-					
-					console.log('[Generation Complete] Trial usage incremented:', {
-						user_id: job.user_id,
-						linkedin: channelCounts.linkedin || 0,
-						x: channelCounts.x || 0,
-					});
-				}
-			} catch (trialError) {
-				console.error('[Generation Complete] Failed to increment trial usage:', trialError);
-				// Don't fail the whole request
 			}
 		}
 

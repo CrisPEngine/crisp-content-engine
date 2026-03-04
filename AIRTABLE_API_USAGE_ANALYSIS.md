@@ -78,11 +78,6 @@ This document analyzes how many and how often we make API calls to Airtable, hel
   - 1 call per user: Fetch brand profiles
 - **Daily calls**: 1 execution × 10 users = **10 calls/day**
 
-#### Trial Reminders (`/api/cron/trial-reminders`)
-- **Frequency**: Daily
-- **Calls**: Minimal (queries Supabase, not Airtable)
-- **Daily calls**: ~0-5 calls/day
-
 ### 3. Webhook Callbacks
 
 #### Content Generation Webhook (`/api/content/webhook`)

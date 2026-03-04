@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { enforceCaps } from '@/lib/enforceCaps';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { resolvePlan, getTrialUsage } from '@/lib/planResolver';
+import { resolvePlan } from '@/lib/planResolver';
 import { capsFor } from '@/lib/billing';
 import type { PlanId } from '@/config/pricing';
 
@@ -33,7 +33,7 @@ export async function GET(req: Request) {
 	
 	const check = await enforceCaps(userId);
 
-	// Use canonical plan caps so Starter always shows 9 posts, not stale trial (6) from entitlements
+	// Use canonical plan caps (Starter = 9 posts, etc.)
 	const planId = resolved.plan === 'free' ? null : (resolved.plan as PlanId);
 	const planCaps = planId ? capsFor(planId) : null;
 	const caps = {
@@ -47,7 +47,6 @@ export async function GET(req: Request) {
 		}),
 	};
 
-	// Also get max_brands from entitlements (or plan caps)
 	let maxBrands = planCaps?.max_brands ?? 999;
 	if (maxBrands === 999) {
 		try {
@@ -61,12 +60,6 @@ export async function GET(req: Request) {
 		}
 	}
 
-	// Get trial usage if on trial
-	let trialUsage: { linkedin: number; x: number } | null = null;
-	if (resolved.isTrial) {
-		trialUsage = await getTrialUsage(userId);
-	}
-
 	return NextResponse.json({
 		...check,
 		caps: {
@@ -74,16 +67,7 @@ export async function GET(req: Request) {
 			max_brands: maxBrands,
 		},
 		plan: resolved.plan,
-		isTrial: resolved.isTrial,
-		trialDaysRemaining: resolved.trialDaysRemaining,
-		trialEndAt: resolved.trialEndAt,
 		isEmailVerified: resolved.isEmailVerified,
-		trialUsage: trialUsage ? {
-			linkedin: trialUsage.linkedin,
-			x: trialUsage.x,
-			linkedinRemaining: Math.max(0, 3 - trialUsage.linkedin),
-			xRemaining: Math.max(0, 3 - trialUsage.x),
-		} : undefined,
 	});
 }
 

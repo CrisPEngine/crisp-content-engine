@@ -183,13 +183,14 @@ export async function GET(request: Request) {
 		filters.push(`FIND("${escapedUserId}", ARRAYJOIN({${LOOKUP_FIELD_NAMES.user_id_lookup}}, ",")) > 0`);
 		
 		// Add platform filter (for channel tabs)
+		// Use OR(exact, FIND(...)) so multi-value platform fields (e.g. "LinkedIn, X, Blog") still match
 		if (platformFilter) {
 			// Support "Meta" as shorthand for Instagram+Facebook
 			if (platformFilter === 'Meta') {
-				filters.push(`OR({platform}="Instagram",{platform}="Facebook")`);
+				filters.push(`OR({platform}="Instagram",{platform}="Facebook", FIND("Instagram", {platform})>0, FIND("Facebook", {platform})>0)`);
 			} else {
 				const escapedPlatform = platformFilter.replace(/"/g, '""');
-				filters.push(`{platform}="${escapedPlatform}"`);
+				filters.push(`OR({platform}="${escapedPlatform}", FIND("${escapedPlatform}", {platform})>0)`);
 			}
 		}
 		
@@ -327,7 +328,12 @@ export async function GET(request: Request) {
 				const content = getField('post_content', CONTENTQUEUE_FIELD_IDS.post_content) || getField('post_body') || '';
 
 				// Default platform to 'Blog' if empty (for Creator tier content where Make might not set it)
-				const platform = getField('platform', CONTENTQUEUE_FIELD_IDS.platform) || 'Blog';
+				// Normalize multi-value platform (e.g. "LinkedIn, X, Blog" from Airtable) to first channel for filtering/display
+				const rawPlatform = getField('platform', CONTENTQUEUE_FIELD_IDS.platform) || 'Blog';
+				const platform =
+					typeof rawPlatform === 'string' && rawPlatform.includes(',')
+						? rawPlatform.split(',')[0].trim() || 'Blog'
+						: (rawPlatform || 'Blog');
 				
 				return {
 					id: record.id,

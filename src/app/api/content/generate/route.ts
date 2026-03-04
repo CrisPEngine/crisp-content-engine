@@ -9,7 +9,7 @@ import { isMetaPublishingEnabled } from '@/lib/featureFlags';
 import type { MultiChannelMakePayload, BrandVoiceContext, MonthlyBrief, PreviousContentItem, SchedulingContext } from '@/lib/makeMultiChannelPayload';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
-import { resolvePlan, getTrialUsage } from '@/lib/planResolver';
+import { resolvePlan } from '@/lib/planResolver';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -92,10 +92,10 @@ export async function POST(req: Request) {
 			totalRequested,
 		});
 
-		// Use canonical plan resolver (handles trial provisioning)
+		// Use canonical plan resolver (provisions Starter for verified users with no subscription)
 		const resolved = await resolvePlan(user.id);
-		const plan = resolved.plan === 'free' ? 'trial' : resolved.plan; // Treat free as trial for now (legacy compat)
-		
+		const plan = resolved.plan === 'free' ? 'starter' : resolved.plan;
+
 		// Email verification gate
 		if (!resolved.isEmailVerified) {
 			return NextResponse.json(
@@ -106,102 +106,11 @@ export async function POST(req: Request) {
 				{ status: 403 }
 			);
 		}
-		
-		// Trial quota enforcement
-		if (resolved.isTrial && plan === 'trial') {
-			const trialUsage = await getTrialUsage(user.id);
-			
-			if (trialUsage) {
-				// Check if trial credits exhausted for requested channels
-				for (const ch of channels) {
-					const platformKey = ch.platform.toLowerCase();
-					
-					if (platformKey === 'linkedin' && trialUsage.linkedin >= 3) {
-						return NextResponse.json(
-							{
-								error: 'You have used all 3 LinkedIn trial posts. Upgrade to Starter or Creator to continue generating content.',
-								upgrade_required: true,
-								channel: 'LinkedIn',
-								limit: 3,
-								used: trialUsage.linkedin,
-							},
-							{ status: 403 }
-						);
-					}
-					
-					if (platformKey === 'x' && trialUsage.x >= 3) {
-						return NextResponse.json(
-							{
-								error: 'You have used all 3 X trial posts. Upgrade to Starter or Creator to continue generating content.',
-								upgrade_required: true,
-								channel: 'X',
-								limit: 3,
-								used: trialUsage.x,
-							},
-							{ status: 403 }
-						);
-					}
-					
-					// Check if request would exceed remaining trial credits
-					if (platformKey === 'linkedin' && trialUsage.linkedin + ch.count > 3) {
-						return NextResponse.json(
-							{
-								error: `This would exceed your trial limit. You have ${3 - trialUsage.linkedin} LinkedIn posts remaining. Upgrade to continue.`,
-								upgrade_required: true,
-								channel: 'LinkedIn',
-								limit: 3,
-								used: trialUsage.linkedin,
-								remaining: 3 - trialUsage.linkedin,
-								requested: ch.count,
-							},
-							{ status: 403 }
-						);
-					}
-					
-					if (platformKey === 'x' && trialUsage.x + ch.count > 3) {
-						return NextResponse.json(
-							{
-								error: `This would exceed your trial limit. You have ${3 - trialUsage.x} X posts remaining. Upgrade to continue.`,
-								upgrade_required: true,
-								channel: 'X',
-								limit: 3,
-								used: trialUsage.x,
-								remaining: 3 - trialUsage.x,
-								requested: ch.count,
-							},
-							{ status: 403 }
-						);
-					}
-				}
-			}
-		}
-		
-		// Rate limiting (trial users only)
-		if (resolved.isTrial && plan === 'trial') {
-			const admin = getSupabaseService();
-			const sixtySecondsAgo = new Date(Date.now() - 60 * 1000).toISOString();
-			
-			const { data: recentJobs, error: rateLimitError } = await admin
-				.from('generation_jobs')
-				.select('generation_job_id')
-				.eq('user_id', user.id)
-				.gte('created_at', sixtySecondsAgo);
-			
-			if (!rateLimitError && recentJobs && recentJobs.length >= 2) {
-				return NextResponse.json(
-					{
-						error: 'Please wait a moment before generating more content. Rate limit: 2 requests per minute.',
-						rate_limit_exceeded: true,
-					},
-					{ status: 429 }
-				);
-			}
-		}
 
-		// Get entitlements and current usage. Use plan's canonical cap so Starter gets 9, not stale trial (6).
+		// Get entitlements and current usage (Starter = 9 posts)
 		const entitlements = await getEntitlements(user.id);
 		const postsUsed = await getMonthUsage(user.id);
-		const planCaps = CAPS[plan as keyof typeof CAPS] || CAPS.trial;
+		const planCaps = CAPS[plan as keyof typeof CAPS] || CAPS.starter;
 		const planCap = planCaps.postsPerMonth === 'unlimited' ? 999999 : (typeof planCaps.postsPerMonth === 'number' ? planCaps.postsPerMonth : 0);
 		const maxPostsPerMonth = planCap || entitlements?.posts_per_month || 0;
 		const postsRemaining = typeof maxPostsPerMonth === 'number' ? maxPostsPerMonth - postsUsed : 999999;
@@ -277,9 +186,9 @@ export async function POST(req: Request) {
 			const xCount = channels.filter(c => c.platform === 'X').reduce((s, c) => s + c.count, 0);
 			const blogCount = channels.filter(c => c.platform === 'Blog').reduce((s, c) => s + c.count, 0);
 			const generationTimeTotal = xCount + blogCount; // only X+Blog count now for paid; all for Starter
-			const isStarterOrTrial = plan === 'starter' || plan === 'trial';
+			const isStarterPlan = plan === 'starter';
 			const linkedinCount = channels.filter(c => c.platform === 'LinkedIn').reduce((s, c) => s + c.count, 0);
-			const countedNow = isStarterOrTrial ? generationTimeTotal + linkedinCount : generationTimeTotal;
+			const countedNow = isStarterPlan ? generationTimeTotal + linkedinCount : generationTimeTotal;
 			if (countedNow > postsRemaining && postsRemaining < 999999) {
 				return NextResponse.json(
 					{
@@ -437,9 +346,9 @@ export async function POST(req: Request) {
 		});
 
 		// Route to the correct Make webhook based on plan:
-		//   Starter / Trial → MAKE_WEBHOOK_STARTER (mini AI, outlines for Blog)
+		//   Starter (Free Forever) → MAKE_WEBHOOK_STARTER (mini AI, outlines for Blog)
 		//   Creator / Growth / Pro / Scale → MAKE_MULTI_CHANNEL_CONTENT_GENERATION_WEBHOOK_URL
-		const isStarterPlan = plan === 'starter' || plan === 'trial';
+		const isStarterPlan = plan === 'starter';
 		const webhookUrl = isStarterPlan
 			? (process.env.MAKE_WEBHOOK_STARTER || process.env.MAKE_MULTI_CHANNEL_CONTENT_GENERATION_WEBHOOK_URL)
 			: process.env.MAKE_MULTI_CHANNEL_CONTENT_GENERATION_WEBHOOK_URL;

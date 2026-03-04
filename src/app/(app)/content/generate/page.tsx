@@ -9,7 +9,6 @@ import { useUsage } from '@/lib/useUsage';
 import type { PlanId } from '@/config/pricing';
 import { CAPS, PER_CHANNEL_REQUEST_CAPS } from '@/config/pricing';
 import { UpgradeModal } from '@/components/UpgradeModal';
-import { TrialBanner } from '@/components/TrialBanner';
 
 type BrandProfile = {
 	id: string;

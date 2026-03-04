@@ -28,22 +28,18 @@ export async function GET(req: Request) {
 	// Use canonical plan resolver with auto-provisioning
 	const resolved = await resolvePlan(userId);
 	
-	const planNames: Record<string, string> = { 
-		trial: 'Trial',
+	const planNames: Record<string, string> = {
 		starter: 'Starter',
-		creator: 'Creator', 
-		growth: 'Growth', 
-		pro: 'Pro', 
-		scale: 'Scale', 
+		creator: 'Creator',
+		growth: 'Growth',
+		pro: 'Pro',
+		scale: 'Scale',
 		free: 'Free',
 	};
-	
-	return NextResponse.json({ 
+
+	return NextResponse.json({
 		planName: planNames[resolved.plan] || resolved.plan,
 		cycle: resolved.cycle || 'monthly',
-		isTrial: resolved.isTrial,
-		trialDaysRemaining: resolved.trialDaysRemaining,
-		trialEndAt: resolved.trialEndAt,
 		isEmailVerified: resolved.isEmailVerified,
 	});
 }

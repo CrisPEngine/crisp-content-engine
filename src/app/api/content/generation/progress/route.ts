@@ -82,7 +82,7 @@ export async function POST(req: Request) {
 		// 3. Fetch the generation job to get expected_platforms
 		const { data: job, error: jobFetchError } = await admin
 			.from('generation_jobs')
-			.select('id, generation_job_id, user_id, expected_platforms, completed_platforms, status, created_counts, record_ids')
+			.select('id, generation_job_id, user_id, expected_platforms, completed_platforms, status, created_counts, record_ids, usage_incremented')
 			.eq('generation_job_id', generation_job_id)
 			.maybeSingle();
 
@@ -201,6 +201,44 @@ export async function POST(req: Request) {
 		if (jobUpdateError) {
 			console.error('[Generation Progress] Failed to update job:', jobUpdateError);
 			// Don't fail the request; progress was recorded
+		}
+
+		// When all platforms have reported and job is completed, trigger usage increment if Make did not call /complete
+		const totalCreated = Object.values(createdCounts).reduce((sum, n) => sum + n, 0);
+		if (
+			allExpectedReported &&
+			(jobStatus === 'completed' || jobStatus === 'partial') &&
+			totalCreated > 0 &&
+			!job.usage_incremented
+		) {
+			// createdCounts already has keys LinkedIn, X, Blog (from platform enum)
+			const channelCounts = { ...createdCounts };
+			const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.MAKE_API_KEY;
+			const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://app.crispdigital.io';
+			try {
+				const incRes = await fetch(`${appUrl}/api/usage/increment`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						...(apiKey && { 'x-api-key': apiKey }),
+					},
+					body: JSON.stringify({
+						userId: job.user_id,
+						count: totalCreated,
+						channelCounts,
+						generation_job_id,
+					}),
+				});
+				if (incRes.ok) {
+					await admin
+						.from('generation_jobs')
+						.update({ usage_incremented: true })
+						.eq('generation_job_id', generation_job_id);
+					console.log('[Generation Progress] Usage incremented (fallback):', { generation_job_id, totalCreated, channelCounts });
+				}
+			} catch (usageErr) {
+				console.error('[Generation Progress] Usage increment fallback failed:', usageErr);
+			}
 		}
 
 		console.log('[Generation Progress] Updated:', {

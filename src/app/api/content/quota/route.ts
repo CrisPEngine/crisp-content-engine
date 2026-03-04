@@ -40,8 +40,8 @@ export async function GET(request: Request) {
 		}
 
 		const resolved = await resolvePlan(user.id);
-		const plan = resolved.plan === 'free' ? 'trial' : resolved.plan;
-		const planCaps = CAPS[plan as keyof typeof CAPS] || CAPS.trial;
+		const plan = resolved.plan === 'free' ? 'starter' : resolved.plan;
+		const planCaps = CAPS[plan as keyof typeof CAPS] || CAPS.starter;
 		const usage = await getChannelUsage(user.id);
 
 		const isStarter = plan === 'starter';

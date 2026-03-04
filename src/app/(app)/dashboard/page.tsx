@@ -17,13 +17,11 @@ export const runtime = 'nodejs';
 
 type Tab = 'overview' | 'content';
 
-async function getContentItems(userId: string) {
+async function getContentItems(userId: string, cookieHeader?: string) {
 	try {
 		const res = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/content/queue?stage=all`, {
 			cache: 'no-store',
-			headers: {
-				// We need to pass auth somehow - for now, this will be handled client-side
-			},
+			headers: cookieHeader ? { Cookie: cookieHeader } : {},
 		});
 		if (res.ok) {
 			const data = await res.json();
@@ -192,6 +190,7 @@ export default async function Dashboard({
 			try {
 				const contentRes = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/content/queue?stage=approval`, {
 					cache: 'no-store',
+					headers: cookieHeader.length > 0 ? { Cookie: cookieHeader.join('; ') } : {},
 				});
 				if (contentRes.ok) {
 					const contentData = await contentRes.json();

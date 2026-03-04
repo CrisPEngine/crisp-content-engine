@@ -1,12 +1,11 @@
 /**
- * Plan Resolution and Trial Provisioning
- * 
- * Canonical plan resolver that determines user's current plan based on priority:
- * 1. Stripe subscription (if active)
- * 2. No-card trial (if verified and within trial window)
- * 3. Free (no entitlements)
- * 
- * Also handles lazy provisioning of trial for verified users.
+ * Plan Resolution and Starter (Free Forever) Provisioning
+ *
+ * Canonical plan resolver:
+ * 1. Stripe subscription (if active) → paid plan
+ * 2. Subscription row with plan=starter (no Stripe) → Starter (Free Forever)
+ * 3. Entitlements set by admin → plan from entitlements
+ * 4. No subscription → provision Starter for verified users, else free
  */
 
 import { getSupabaseService } from './supabaseService';
@@ -17,81 +16,58 @@ export type ResolvedPlan = {
 	plan: PlanId | 'free';
 	cycle?: 'monthly' | 'annual';
 	isEmailVerified: boolean;
-	isTrial: boolean;
-	trialDaysRemaining?: number;
-	trialEndAt?: string;
 };
 
 /**
  * Resolve user's current plan with auto-provisioning
- * 
+ *
  * Priority:
  * 1. Stripe subscription (paid plan)
- * 2. Active no-card trial (if verified and within 7 days)
- * 3. Free (no entitlements)
- * 
- * Also provisions trial for newly verified users.
+ * 2. Subscription with plan=starter (Free Forever, no Stripe)
+ * 3. Entitlements only (admin-set plan)
+ * 4. No subscription → provision Starter for verified users, else free
  */
 export async function resolvePlan(userId: string): Promise<ResolvedPlan> {
 	const admin = getSupabaseService();
-	
-	// Get auth user to check email verification
+
 	const { data: authUser } = await admin.auth.admin.getUserById(userId);
 	const isEmailVerified = !!authUser?.user?.email_confirmed_at;
-	
-	// Get subscription record
+
 	const { data: subscription } = await admin
 		.from('subscriptions')
-		.select('plan, cycle, stripe_subscription_id, trial_start_at, trial_end_at, current_period_end')
+		.select('plan, cycle, stripe_subscription_id, current_period_end, trial_start_at, trial_end_at')
 		.eq('user_id', userId)
 		.maybeSingle();
-	
+
 	// Priority 1: Stripe subscription (paid plan)
 	if (subscription?.stripe_subscription_id) {
 		return {
 			plan: subscription.plan as PlanId,
 			cycle: subscription.cycle as 'monthly' | 'annual',
 			isEmailVerified,
-			isTrial: false,
 		};
 	}
-	
-	// Priority 2: Active no-card trial (trial_end_at set, e.g. by admin invite or prior provisioning)
-	if (subscription?.trial_end_at && isEmailVerified) {
-		const now = new Date();
-		const trialEndAt = new Date(subscription.trial_end_at);
-		
-		if (now < trialEndAt) {
-			const daysRemaining = Math.ceil((trialEndAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-			return {
-				plan: (subscription.plan as PlanId) || 'trial',
-				cycle: subscription.cycle as 'monthly' | 'annual' | undefined,
-				isEmailVerified,
-				isTrial: true,
-				trialDaysRemaining: daysRemaining,
-				trialEndAt: subscription.trial_end_at,
-			};
-		}
+
+	// Priority 2: Subscription row with plan=starter (Free Forever)
+	if (subscription?.plan === 'starter') {
+		return {
+			plan: 'starter',
+			cycle: (subscription.cycle as 'monthly' | 'annual') || 'monthly',
+			isEmailVerified,
+		};
 	}
 
-	// Priority 2b: Admin-created trial (current_period_end in future, no Stripe — e.g. Scale 60-day invite)
-	if (subscription?.current_period_end && !subscription?.stripe_subscription_id && isEmailVerified) {
-		const now = new Date();
-		const periodEnd = new Date(subscription.current_period_end);
-		if (now < periodEnd) {
-			const daysRemaining = Math.ceil((periodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-			return {
-				plan: (subscription.plan as PlanId) || 'trial',
-				cycle: subscription.cycle as 'monthly' | 'annual' | undefined,
-				isEmailVerified,
-				isTrial: true,
-				trialDaysRemaining: daysRemaining,
-				trialEndAt: subscription.current_period_end,
-			};
-		}
+	// Legacy: subscription with plan=trial or trial_end_at in future — treat as starter
+	const trialEndAt = subscription && 'trial_end_at' in subscription ? (subscription as { trial_end_at?: string }).trial_end_at : null;
+	if ((subscription?.plan === 'trial' || trialEndAt) && trialEndAt && new Date(trialEndAt) > new Date()) {
+		return {
+			plan: 'starter',
+			cycle: 'monthly',
+			isEmailVerified,
+		};
 	}
-	
-	// Priority 2c: No subscription row but has entitlements (admin-set plan) — do not overwrite with trial
+
+	// Priority 3: No subscription but has entitlements (admin-set plan)
 	if (!subscription && isEmailVerified) {
 		const { data: entitlements } = await admin
 			.from('entitlements')
@@ -104,74 +80,51 @@ export async function resolvePlan(userId: string): Promise<ResolvedPlan> {
 			return {
 				plan,
 				isEmailVerified,
-				isTrial: false,
 			};
 		}
 	}
 
-	// Priority 3: Provision trial only when user has NO subscription row AND no entitlements (never set by admin)
+	// Priority 4: No subscription → provision Starter for verified users
 	if (isEmailVerified && !subscription) {
-		await provisionTrial(userId);
-		
-		// Re-fetch subscription after provisioning
-		const { data: newSubscription } = await admin
+		await provisionStarter(userId);
+		const { data: newSub } = await admin
 			.from('subscriptions')
-			.select('plan, trial_start_at, trial_end_at')
+			.select('plan, cycle')
 			.eq('user_id', userId)
 			.maybeSingle();
-		
-		if (newSubscription?.trial_end_at) {
-			const now = new Date();
-			const trialEndAt = new Date(newSubscription.trial_end_at);
-			const daysRemaining = Math.ceil((trialEndAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-			
+		if (newSub?.plan === 'starter') {
 			return {
-				plan: 'trial',
+				plan: 'starter',
+				cycle: (newSub.cycle as 'monthly' | 'annual') || 'monthly',
 				isEmailVerified,
-				isTrial: true,
-				trialDaysRemaining: daysRemaining,
-				trialEndAt: newSubscription.trial_end_at,
 			};
 		}
 	}
-	
-	// Default: Free plan (no entitlements)
+
 	return {
 		plan: 'free',
 		isEmailVerified,
-		isTrial: false,
 	};
 }
 
 /**
- * Provision trial for a newly verified user
- * 
- * Creates:
- * - profiles row (if missing)
- * - trial subscription row with trial_start_at/trial_end_at
- * - trial_usage row (0 credits used)
- * - entitlements row with trial caps
+ * Provision Free Forever Starter for a user with no subscription
  */
-async function provisionTrial(userId: string): Promise<void> {
+async function provisionStarter(userId: string): Promise<void> {
 	const admin = getSupabaseService();
-	
 	try {
-		// Get auth user email
 		const { data: authUser } = await admin.auth.admin.getUserById(userId);
 		const email = authUser?.user?.email;
-		
 		if (!email) {
-			console.warn(`[Trial Provision] Cannot provision trial for user ${userId}: no email found`);
+			console.warn(`[Starter Provision] No email for user ${userId}`);
 			return;
 		}
-		
-		// Ensure profile exists
+
 		const { data: existingProfile } = await admin
 			.from('profiles')
 			.select('id')
 			.eq('id', userId)
 			.maybeSingle();
-		
 		if (!existingProfile) {
 			await admin.from('profiles').insert({
 				id: userId,
@@ -179,110 +132,23 @@ async function provisionTrial(userId: string): Promise<void> {
 				full_name: authUser?.user?.user_metadata?.full_name || null,
 				is_admin: false,
 			});
-			console.log(`[Trial Provision] Created profile for user ${userId}`);
 		}
-		
-		// Create trial subscription
-		const now = new Date();
-		const trialStartAt = now.toISOString();
-		const trialEndAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
-		
+
+		const starterCaps = capsFor('starter');
 		await admin.from('subscriptions').upsert({
 			user_id: userId,
-			plan: 'trial',
-			cycle: 'monthly', // Default, not really used for trial
-			trial_start_at: trialStartAt,
-			trial_end_at: trialEndAt,
-			// No stripe_subscription_id (distinguishes trial from paid)
-			// No current_period_end (not needed for trial)
+			plan: 'starter',
+			cycle: 'monthly',
+			trial_start_at: null,
+			trial_end_at: null,
 		});
-		
-		// Create trial_usage row
-		await admin.from('trial_usage').upsert({
-			user_id: userId,
-			linkedin_generated: 0,
-			x_generated: 0,
-		});
-		
-		// Create entitlements with trial caps
-		const trialCaps = capsFor('trial');
 		await admin.from('entitlements').upsert({
 			user_id: userId,
-			...trialCaps,
+			...starterCaps,
 			updated_at: new Date().toISOString(),
 		});
-		
-		console.log(`[Trial Provision] Successfully provisioned 7-day trial for user ${userId}`, {
-			trialStartAt,
-			trialEndAt,
-			caps: trialCaps,
-		});
+		console.log(`[Starter Provision] Provisioned Free Forever Starter for user ${userId}`);
 	} catch (error) {
-		console.error(`[Trial Provision] Failed to provision trial for user ${userId}:`, error);
-		// Don't throw - let the user fall back to free plan
-	}
-}
-
-/**
- * Get trial usage for a user
- */
-export async function getTrialUsage(userId: string): Promise<{ linkedin: number; x: number } | null> {
-	const admin = getSupabaseService();
-	
-	const { data } = await admin
-		.from('trial_usage')
-		.select('linkedin_generated, x_generated')
-		.eq('user_id', userId)
-		.maybeSingle();
-	
-	if (!data) return null;
-	
-	return {
-		linkedin: data.linkedin_generated ?? 0,
-		x: data.x_generated ?? 0,
-	};
-}
-
-/**
- * Increment trial usage (called after generation completes)
- */
-export async function incrementTrialUsage(
-	userId: string,
-	channels: { linkedin?: number; x?: number }
-): Promise<void> {
-	const admin = getSupabaseService();
-	
-	try {
-		// Get current usage
-		const { data: currentUsage } = await admin
-			.from('trial_usage')
-			.select('linkedin_generated, x_generated')
-			.eq('user_id', userId)
-			.maybeSingle();
-		
-		if (!currentUsage) {
-			console.warn(`[Trial Usage] No trial_usage row found for user ${userId}, skipping increment`);
-			return;
-		}
-		
-		// Increment
-		const newLinkedIn = (currentUsage.linkedin_generated ?? 0) + (channels.linkedin ?? 0);
-		const newX = (currentUsage.x_generated ?? 0) + (channels.x ?? 0);
-		
-		await admin
-			.from('trial_usage')
-			.update({
-				linkedin_generated: newLinkedIn,
-				x_generated: newX,
-			})
-			.eq('user_id', userId);
-		
-		console.log(`[Trial Usage] Incremented for user ${userId}:`, {
-			linkedin: `${currentUsage.linkedin_generated} → ${newLinkedIn}`,
-			x: `${currentUsage.x_generated} → ${newX}`,
-		});
-	} catch (error) {
-		console.error(`[Trial Usage] Failed to increment for user ${userId}:`, error);
-		// Don't throw - non-critical
+		console.error(`[Starter Provision] Failed for user ${userId}:`, error);
 	}
 }

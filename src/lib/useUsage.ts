@@ -7,6 +7,7 @@ type Summary = {
 	reason?: string;
 	usage?: { posts: number };
 	caps?: { posts_per_month: number };
+	plan?: string;
 };
 
 export function useUsage() {

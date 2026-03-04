@@ -73,7 +73,7 @@ export function UpgradeModal({ isOpen, onClose, reason, channel }: UpgradeModalP
 				)}
 				{!reason && (
 					<p className="text-text-soft mb-6">
-						You've reached your trial limit. Choose a plan to keep generating content.
+						You've reached your monthly limit. Choose a plan to keep generating content.
 					</p>
 				)}
 

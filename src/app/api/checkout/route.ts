@@ -40,7 +40,7 @@ export async function POST(req: Request) {
 
         const stripe = getStripe();
         
-        // No Stripe trials - we now use no-credit-card trial instead
+        // No Stripe trials; free users use Starter (Free Forever)
         const sessionConfig: any = {
             mode: 'subscription',
             line_items: [{ price: priceId, quantity: 1 }],

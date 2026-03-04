@@ -14,7 +14,7 @@ import { capsFor } from '../lib/billing';
 // ============================================================
 
 describe('CAPS config', () => {
-	const plans: PlanId[] = ['trial', 'starter', 'creator', 'growth', 'pro', 'scale'];
+	const plans: PlanId[] = ['starter', 'creator', 'growth', 'pro', 'scale'];
 
 	it('has an entry for every plan', () => {
 		for (const plan of plans) {
@@ -94,9 +94,8 @@ describe('CAPS config', () => {
 		expect(proP).toEqual(growthP);
 	});
 
-	it('Starter and Trial: makeScenario is starter', () => {
+	it('Starter: makeScenario is starter', () => {
 		expect(CAPS.starter.makeScenario).toBe('starter');
-		expect(CAPS.trial.makeScenario).toBe('starter');
 	});
 
 	it('Creator/Growth/Pro/Scale: makeScenario is multi-channel', () => {
@@ -185,7 +184,7 @@ describe('capsFor', () => {
 	});
 
 	it('posts_per_month is a positive number for all plans', () => {
-		const plans: PlanId[] = ['trial', 'starter', 'creator', 'growth', 'pro'];
+		const plans: PlanId[] = ['starter', 'creator', 'growth', 'pro'];
 		for (const plan of plans) {
 			expect(capsFor(plan).posts_per_month).toBeGreaterThan(0);
 		}
