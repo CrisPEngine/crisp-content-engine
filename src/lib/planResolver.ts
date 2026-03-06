@@ -12,6 +12,45 @@ import { getSupabaseService } from './supabaseService';
 import { capsFor } from './billing';
 import type { PlanId } from '@/config/pricing';
 
+type EntitlementsRow = {
+	max_brands: number | null;
+	max_seats?: number | null;
+	max_channels?: number | null;
+	posts_per_month?: number | null;
+	linkedin_monthly?: number | null;
+	x_monthly?: number | null;
+	blog_monthly?: number | null;
+	meta_pool_monthly?: number | null;
+} | null;
+
+function inferPlanFromEntitlements(e: EntitlementsRow): PlanId | null {
+	if (!e) return null;
+
+	// Prefer the most distinctive signals (posts + meta pool), then fall back.
+	const posts = typeof e.posts_per_month === 'number' ? e.posts_per_month : null;
+	const metaPool = typeof e.meta_pool_monthly === 'number' ? e.meta_pool_monthly : null;
+	const linkedin = typeof e.linkedin_monthly === 'number' ? e.linkedin_monthly : null;
+
+	// Scale: unlimited sentinels
+	if (posts != null && posts >= 999999) return 'scale';
+	if (typeof e.max_brands === 'number' && e.max_brands >= 20) return 'scale';
+
+	// Pro: 75 meta pool / 312 posts
+	if (metaPool != null && metaPool >= 75) return 'pro';
+	if (posts != null && posts >= 312) return 'pro';
+
+	// Growth: 20 meta pool / 84 posts
+	if (metaPool != null && metaPool >= 20) return 'growth';
+	if (posts != null && posts >= 84) return 'growth';
+
+	// Creator: 26 posts / 12 LinkedIn
+	if (posts != null && posts >= 26) return 'creator';
+	if (linkedin != null && linkedin >= 12) return 'creator';
+
+	// Starter: everything else (incl. nulls when partially provisioned)
+	return 'starter';
+}
+
 export type ResolvedPlan = {
 	plan: PlanId | 'free';
 	cycle?: 'monthly' | 'annual';
@@ -45,27 +84,28 @@ export async function resolvePlan(userId: string): Promise<ResolvedPlan> {
 		const isKnownPlan = (p: unknown): p is PlanId =>
 			p === 'starter' || p === 'creator' || p === 'growth' || p === 'pro' || p === 'scale';
 
-		// If DB plan is wrong/stale, fall back to entitlements (common symptom: Scale users showing Starter UI)
-		if (!isKnownPlan(planFromSubscription) || planFromSubscription === 'starter') {
-			const { data: entitlements } = await admin
-				.from('entitlements')
-				.select('max_brands')
-				.eq('user_id', userId)
-				.maybeSingle();
+		const { data: entitlements } = await admin
+			.from('entitlements')
+			.select('max_brands, posts_per_month, linkedin_monthly, x_monthly, blog_monthly, meta_pool_monthly, max_channels')
+			.eq('user_id', userId)
+			.maybeSingle();
 
-			if (entitlements?.max_brands != null) {
-				const mb = entitlements.max_brands;
-				const planFromEntitlements: PlanId =
-					mb >= 20 ? 'scale' : mb >= 5 ? 'pro' : mb >= 2 ? 'growth' : 'starter';
+		const planFromEntitlements = inferPlanFromEntitlements((entitlements as any) || null);
+		const rank: Record<PlanId, number> = {
+			starter: 0,
+			creator: 1,
+			growth: 2,
+			pro: 3,
+			scale: 4,
+		};
 
-				if (planFromEntitlements !== 'starter') {
-					return {
-						plan: planFromEntitlements,
-						cycle: subscription.cycle as 'monthly' | 'annual',
-						isEmailVerified,
-					};
-				}
-			}
+		const subPlan: PlanId | null = isKnownPlan(planFromSubscription) ? planFromSubscription : null;
+		if (planFromEntitlements && (!subPlan || rank[planFromEntitlements] > rank[subPlan])) {
+			return {
+				plan: planFromEntitlements,
+				cycle: subscription.cycle as 'monthly' | 'annual',
+				isEmailVerified,
+			};
 		}
 
 		return {
@@ -98,12 +138,11 @@ export async function resolvePlan(userId: string): Promise<ResolvedPlan> {
 	if (!subscription && isEmailVerified) {
 		const { data: entitlements } = await admin
 			.from('entitlements')
-			.select('max_brands')
+			.select('max_brands, posts_per_month, linkedin_monthly, x_monthly, blog_monthly, meta_pool_monthly, max_channels')
 			.eq('user_id', userId)
 			.maybeSingle();
-		if (entitlements?.max_brands != null) {
-			const mb = entitlements.max_brands;
-			const plan: PlanId = mb >= 20 ? 'scale' : mb >= 5 ? 'pro' : mb >= 2 ? 'growth' : 'starter';
+		const plan = inferPlanFromEntitlements((entitlements as any) || null);
+		if (plan) {
 			return {
 				plan,
 				isEmailVerified,
