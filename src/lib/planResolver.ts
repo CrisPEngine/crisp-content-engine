@@ -41,8 +41,35 @@ export async function resolvePlan(userId: string): Promise<ResolvedPlan> {
 
 	// Priority 1: Stripe subscription (paid plan)
 	if (subscription?.stripe_subscription_id) {
+		const planFromSubscription = subscription.plan as string | null | undefined;
+		const isKnownPlan = (p: unknown): p is PlanId =>
+			p === 'starter' || p === 'creator' || p === 'growth' || p === 'pro' || p === 'scale';
+
+		// If DB plan is wrong/stale, fall back to entitlements (common symptom: Scale users showing Starter UI)
+		if (!isKnownPlan(planFromSubscription) || planFromSubscription === 'starter') {
+			const { data: entitlements } = await admin
+				.from('entitlements')
+				.select('max_brands')
+				.eq('user_id', userId)
+				.maybeSingle();
+
+			if (entitlements?.max_brands != null) {
+				const mb = entitlements.max_brands;
+				const planFromEntitlements: PlanId =
+					mb >= 20 ? 'scale' : mb >= 5 ? 'pro' : mb >= 2 ? 'growth' : 'starter';
+
+				if (planFromEntitlements !== 'starter') {
+					return {
+						plan: planFromEntitlements,
+						cycle: subscription.cycle as 'monthly' | 'annual',
+						isEmailVerified,
+					};
+				}
+			}
+		}
+
 		return {
-			plan: subscription.plan as PlanId,
+			plan: (planFromSubscription as PlanId) || 'creator',
 			cycle: subscription.cycle as 'monthly' | 'annual',
 			isEmailVerified,
 		};
