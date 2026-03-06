@@ -57,6 +57,7 @@ export default function ContentApprovalPage() {
 	const [brands, setBrands] = useState<BrandOption[]>([]);
 	const [selectedBrandId, setSelectedBrandId] = useState<string>('all');
 	const [selectedTab, setSelectedTab] = useState<ChannelTab>('LinkedIn');
+	const [userPlan, setUserPlan] = useState<string | null>(null);
 	const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 	const [editingItem, setEditingItem] = useState<string | null>(null);
 	const [editingTitle, setEditingTitle] = useState<string>('');
@@ -92,6 +93,21 @@ export default function ContentApprovalPage() {
 		if (!supabase) return;
 		loadBrands();
 	}, [supabase]);
+
+	// Load plan (used for Starter-only export messaging)
+	useEffect(() => {
+		(async () => {
+			try {
+				const res = await fetch('/api/plan', { cache: 'no-store' });
+				if (!res.ok) return;
+				const data = await res.json();
+				const planName = (data?.planName || '').toString().toLowerCase();
+				setUserPlan(planName || null);
+			} catch (err) {
+				console.error('Failed to load plan:', err);
+			}
+		})();
+	}, []);
 
 	// Load Meta connection status on mount (if feature flag enabled)
 	useEffect(() => {
@@ -709,6 +725,8 @@ export default function ContentApprovalPage() {
 		return item.status !== 'Published';
 	}
 
+	const isStarterUser = userPlan === 'starter' || userPlan === 'free';
+
 	if (loading) {
 		return (
 			<div className="mx-auto max-w-7xl space-y-4">
@@ -800,7 +818,7 @@ export default function ContentApprovalPage() {
 			</div>
 
 			{/* Export-only notice when viewing LinkedIn (Starter), X or Blog */}
-			{selectedTab === 'LinkedIn' && contentItems.some((i) => i.platform === 'LinkedIn') && (
+			{isStarterUser && selectedTab === 'LinkedIn' && contentItems.some((i) => i.platform === 'LinkedIn') && (
 				<div className="mb-4 px-4 py-3 rounded-xl2 bg-warning/10 border border-warning/30 text-warning text-sm">
 					LinkedIn posts on Starter are export-only. Use the copy button under each post to copy the hook and post in one click, then paste into LinkedIn to publish.
 				</div>
@@ -964,7 +982,7 @@ export default function ContentApprovalPage() {
 										</div>
 
 										{/* Export-only / copy-paste notice for LinkedIn (Starter) */}
-										{item.platform === 'LinkedIn' && (
+										{isStarterUser && item.platform === 'LinkedIn' && (
 											<div className="px-3 py-2 rounded-lg bg-warning/10 border border-warning/30 text-warning text-xs">
 												📋 One-click copy: use the button below to copy the hook and post, then paste into LinkedIn to publish.
 											</div>
