@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Calendar, Clock, CheckCircle, XCircle, Plus } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, XCircle, Plus, List, Grid3X3 } from 'lucide-react';
 import { Skeleton, ContentItemSkeleton } from '@/components/skeletons/Skeleton';
+
+const ScheduleCalendarView = lazy(() => import('@/components/ScheduleCalendarView'));
 
 type ScheduledContent = {
 	id: string;
@@ -25,6 +27,7 @@ export default function SchedulingDashboard() {
 	const [filter, setFilter] = useState<'all' | 'scheduled' | 'published' | 'failed'>('all');
 	const [selectedDate, setSelectedDate] = useState<string>('');
 	const [error, setError] = useState<string | null>(null);
+	const [viewMode, setViewMode] = useState<'list' | 'calendar'>('calendar');
 
 	function formatScheduledDateTime(dateString: string | null | undefined): string {
 		if (!dateString) return 'Not scheduled';
@@ -135,6 +138,30 @@ export default function SchedulingDashboard() {
 		});
 	}, [scheduledContent, filter, selectedDate]);
 
+	const handleReschedule = useCallback(async (contentId: string, newDate: string): Promise<boolean> => {
+		try {
+			const res = await fetch(`/api/content/queue/${contentId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ scheduled_time: newDate }),
+			});
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				setError(data?.error || 'Failed to reschedule');
+				return false;
+			}
+			setScheduledContent((prev) =>
+				prev.map((item) =>
+					item.id === contentId ? { ...item, scheduled_date: newDate } : item
+				)
+			);
+			return true;
+		} catch {
+			setError('Failed to reschedule');
+			return false;
+		}
+	}, []);
+
 	const getStatusIcon = (status: string) => {
 		switch (status) {
 			case 'Scheduled':
@@ -197,71 +224,105 @@ export default function SchedulingDashboard() {
 							View and manage your scheduled content
 						</p>
 					</div>
-					<button
-						onClick={() => router.push('/content/create')}
-						className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 flex items-center gap-2"
-					>
-						<Plus className="w-4 h-4" />
-						Create Content
-					</button>
+					<div className="flex items-center gap-3">
+						<div className="flex rounded-xl2 border border-edge/60 overflow-hidden">
+							<button
+								onClick={() => setViewMode('list')}
+								className={`px-3 py-2 flex items-center gap-1.5 text-sm transition ${
+									viewMode === 'list'
+										? 'bg-primary/15 text-primary'
+										: 'bg-surface/30 text-text-dim hover:text-text'
+								}`}
+							>
+								<List className="w-4 h-4" />
+								List
+							</button>
+							<button
+								onClick={() => setViewMode('calendar')}
+								className={`px-3 py-2 flex items-center gap-1.5 text-sm transition ${
+									viewMode === 'calendar'
+										? 'bg-primary/15 text-primary'
+										: 'bg-surface/30 text-text-dim hover:text-text'
+								}`}
+							>
+								<Grid3X3 className="w-4 h-4" />
+								Calendar
+							</button>
+						</div>
+						<button
+							onClick={() => router.push('/content/create')}
+							className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 flex items-center gap-2"
+						>
+							<Plus className="w-4 h-4" />
+							Create Content
+						</button>
+					</div>
 				</div>
 
 				{error && (
-					<div className="border border-danger/30 bg-danger/10 text-danger text-sm rounded-xl2 p-3">
-						{error}
+					<div className="border border-danger/30 bg-danger/10 text-danger text-sm rounded-xl2 p-3 flex items-center justify-between">
+						<span>{error}</span>
+						<button onClick={() => setError(null)} className="text-danger/60 hover:text-danger ml-2">✕</button>
 					</div>
 				)}
-				<div className="flex gap-3 flex-wrap">
-					<button
-						onClick={() => setFilter('all')}
-						className={`px-4 py-2 rounded-xl2 border text-sm transition ${
-							filter === 'all'
-								? 'border-primary/40 bg-primary/10 text-primary'
-								: 'border-edge/60 bg-surface/30 text-text hover:bg-surface/50'
-						}`}
-					>
-						All
-					</button>
-					<button
-						onClick={() => setFilter('scheduled')}
-						className={`px-4 py-2 rounded-xl2 border text-sm transition ${
-							filter === 'scheduled'
-								? 'border-primary/40 bg-primary/10 text-primary'
-								: 'border-edge/60 bg-surface/30 text-text hover:bg-surface/50'
-						}`}
-					>
-						Scheduled
-					</button>
-					<button
-						onClick={() => setFilter('published')}
-						className={`px-4 py-2 rounded-xl2 border text-sm transition ${
-							filter === 'published'
-								? 'border-primary/40 bg-primary/10 text-primary'
-								: 'border-edge/60 bg-surface/30 text-text hover:bg-surface/50'
-						}`}
-					>
-						Published
-					</button>
-					<button
-						onClick={() => setFilter('failed')}
-						className={`px-4 py-2 rounded-xl2 border text-sm transition ${
-							filter === 'failed'
-								? 'border-primary/40 bg-primary/10 text-primary'
-								: 'border-edge/60 bg-surface/30 text-text hover:bg-surface/50'
-						}`}
-					>
-						Failed
-					</button>
-					<input
-						type="date"
-						value={selectedDate}
-						onChange={(e) => setSelectedDate(e.target.value)}
-						className="px-4 py-2 rounded-xl2 border border-edge/60 bg-bg/80 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-					/>
-				</div>
+
+				{viewMode === 'list' && (
+					<div className="flex gap-3 flex-wrap">
+						<button
+							onClick={() => setFilter('all')}
+							className={`px-4 py-2 rounded-xl2 border text-sm transition ${
+								filter === 'all'
+									? 'border-primary/40 bg-primary/10 text-primary'
+									: 'border-edge/60 bg-surface/30 text-text hover:bg-surface/50'
+							}`}
+						>
+							All
+						</button>
+						<button
+							onClick={() => setFilter('scheduled')}
+							className={`px-4 py-2 rounded-xl2 border text-sm transition ${
+								filter === 'scheduled'
+									? 'border-primary/40 bg-primary/10 text-primary'
+									: 'border-edge/60 bg-surface/30 text-text hover:bg-surface/50'
+							}`}
+						>
+							Scheduled
+						</button>
+						<button
+							onClick={() => setFilter('published')}
+							className={`px-4 py-2 rounded-xl2 border text-sm transition ${
+								filter === 'published'
+									? 'border-primary/40 bg-primary/10 text-primary'
+									: 'border-edge/60 bg-surface/30 text-text hover:bg-surface/50'
+							}`}
+						>
+							Published
+						</button>
+						<button
+							onClick={() => setFilter('failed')}
+							className={`px-4 py-2 rounded-xl2 border text-sm transition ${
+								filter === 'failed'
+									? 'border-primary/40 bg-primary/10 text-primary'
+									: 'border-edge/60 bg-surface/30 text-text hover:bg-surface/50'
+							}`}
+						>
+							Failed
+						</button>
+						<input
+							type="date"
+							value={selectedDate}
+							onChange={(e) => setSelectedDate(e.target.value)}
+							className="px-4 py-2 rounded-xl2 border border-edge/60 bg-bg/80 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+						/>
+					</div>
+				)}
 			</div>
 
-			{filteredContent.length === 0 ? (
+			{viewMode === 'calendar' ? (
+				<Suspense fallback={<div className="card p-8 text-center text-text-dim">Loading calendar...</div>}>
+					<ScheduleCalendarView items={scheduledContent} onReschedule={handleReschedule} />
+				</Suspense>
+			) : filteredContent.length === 0 ? (
 				<div className="card p-8 text-center">
 					<Calendar className="w-12 h-12 text-text-dim mx-auto mb-4" />
 					<p className="text-text-soft">No content scheduled for this period</p>

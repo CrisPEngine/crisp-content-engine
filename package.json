@@ -10,6 +10,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fullcalendar/core": "^6.1.20",
+    "@fullcalendar/daygrid": "^6.1.20",
+    "@fullcalendar/interaction": "^6.1.20",
+    "@fullcalendar/react": "^6.1.20",
     "@hookform/resolvers": "^5.2.2",
     "@react-email/components": "^1.0.1",
     "@react-email/render": "^2.0.0",

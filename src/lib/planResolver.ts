@@ -100,16 +100,21 @@ export async function resolvePlan(userId: string): Promise<ResolvedPlan> {
 		};
 
 		const subPlan: PlanId | null = isKnownPlan(planFromSubscription) ? planFromSubscription : null;
+		let resolved: PlanId = (planFromSubscription as PlanId) || 'creator';
+
 		if (planFromEntitlements && (!subPlan || rank[planFromEntitlements] > rank[subPlan])) {
-			return {
-				plan: planFromEntitlements,
-				cycle: subscription.cycle as 'monthly' | 'annual',
-				isEmailVerified,
-			};
+			resolved = planFromEntitlements;
+		} else if (subPlan) {
+			resolved = subPlan;
+		}
+
+		// Paying Stripe customers must never be shown as Starter (avoids stale DB / entitlements)
+		if (resolved === 'starter') {
+			resolved = 'creator';
 		}
 
 		return {
-			plan: (planFromSubscription as PlanId) || 'creator',
+			plan: resolved,
 			cycle: subscription.cycle as 'monthly' | 'annual',
 			isEmailVerified,
 		};
