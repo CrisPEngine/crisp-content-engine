@@ -504,55 +504,79 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 		// Approval-time quota enforcement for LinkedIn and Meta
 		// LinkedIn autopublish (Creator/Growth/Pro) and Meta (Growth/Pro) are counted here,
 		// not at generation time, to avoid charging for drafts that never publish.
+		// Exception: Idea Engine items were already counted at generation (webhook/callback),
+		// so we must NOT increment again here to avoid double counting.
 		// ============================================
 		if (action === 'approve') {
 			const platform = record.fields?.platform || '';
 			const isLinkedIn = platform === 'LinkedIn';
 			const isMeta = platform === 'Facebook' || platform === 'Instagram';
+			const isIdeaEngine = record.fields?.generated_from === 'idea_engine' || record.fields?.series_type === 'idea_engine';
 
 			if (isLinkedIn || isMeta) {
 				try {
-					const resolved = await resolvePlan(user.id);
-					const resolvedPlan = resolved.plan === 'free' ? 'starter' : resolved.plan;
-					const planCaps = CAPS[resolvedPlan as keyof typeof CAPS] || CAPS.starter;
-
-					// LinkedIn counted at approval only for paid autopublish plans (Creator+)
-					// Starter uses export — LinkedIn was already counted at generation
-					if (isLinkedIn && planCaps.autopublishLinkedIn) {
+					// Idea Engine: quota was consumed at generation; skip approval-time increment
+					if (isIdeaEngine) {
+						// Still enforce limit check (usage already includes these items)
+						const resolved = await resolvePlan(user.id);
+						const resolvedPlan = resolved.plan === 'free' ? 'starter' : resolved.plan;
+						const planCaps = CAPS[resolvedPlan as keyof typeof CAPS] || CAPS.starter;
 						const usage = await getChannelUsage(user.id);
-						const limit = planCaps.linkedinPostsMonthly;
-						if (usage.linkedin >= limit) {
+						if (isLinkedIn && planCaps.autopublishLinkedIn && usage.linkedin >= planCaps.linkedinPostsMonthly) {
 							return NextResponse.json(
-								{
-									error: `LinkedIn limit reached (${usage.linkedin}/${limit} used this month). Upgrade your plan to approve more posts.`,
-									channel: 'LinkedIn',
-									limit,
-									used: usage.linkedin,
-									upgrade_required: true,
-								},
+								{ error: `LinkedIn limit reached (${usage.linkedin}/${planCaps.linkedinPostsMonthly} used this month).`, channel: 'LinkedIn', limit: planCaps.linkedinPostsMonthly, used: usage.linkedin, upgrade_required: true },
 								{ status: 403 }
 							);
 						}
-						await incrementChannelUsage(user.id, 'linkedin', 1);
-					}
-
-					// Meta counted at approval only for Growth/Pro (autopublishMeta)
-					if (isMeta && planCaps.autopublishMeta) {
-						const usage = await getChannelUsage(user.id);
-						const limit = planCaps.metaPoolMonthly;
-						if (usage.meta_pool >= limit) {
+						if (isMeta && planCaps.autopublishMeta && usage.meta_pool >= planCaps.metaPoolMonthly) {
 							return NextResponse.json(
-								{
-									error: `Meta pool limit reached (${usage.meta_pool}/${limit} used this month). Upgrade your plan to approve more Meta posts.`,
-									channel: platform,
-									limit,
-									used: usage.meta_pool,
-									upgrade_required: true,
-								},
+								{ error: `Meta pool limit reached (${usage.meta_pool}/${planCaps.metaPoolMonthly} used this month).`, channel: platform, limit: planCaps.metaPoolMonthly, used: usage.meta_pool, upgrade_required: true },
 								{ status: 403 }
 							);
 						}
-						await incrementChannelUsage(user.id, 'meta_pool', 1);
+						// Do not increment — already counted at Idea Engine generation
+					} else {
+						const resolved = await resolvePlan(user.id);
+						const resolvedPlan = resolved.plan === 'free' ? 'starter' : resolved.plan;
+						const planCaps = CAPS[resolvedPlan as keyof typeof CAPS] || CAPS.starter;
+
+						// LinkedIn counted at approval only for paid autopublish plans (Creator+)
+						if (isLinkedIn && planCaps.autopublishLinkedIn) {
+							const usage = await getChannelUsage(user.id);
+							const limit = planCaps.linkedinPostsMonthly;
+							if (usage.linkedin >= limit) {
+								return NextResponse.json(
+									{
+										error: `LinkedIn limit reached (${usage.linkedin}/${limit} used this month). Upgrade your plan to approve more posts.`,
+										channel: 'LinkedIn',
+										limit,
+										used: usage.linkedin,
+										upgrade_required: true,
+									},
+									{ status: 403 }
+								);
+							}
+							await incrementChannelUsage(user.id, 'linkedin', 1);
+						}
+
+						// Meta counted at approval only for Growth/Pro (autopublishMeta)
+						if (isMeta && planCaps.autopublishMeta) {
+							const usage = await getChannelUsage(user.id);
+							const limit = planCaps.metaPoolMonthly;
+							if (usage.meta_pool >= limit) {
+								return NextResponse.json(
+									{
+										error: `Meta pool limit reached (${usage.meta_pool}/${limit} used this month). Upgrade your plan to approve more Meta posts.`,
+										channel: platform,
+										limit,
+										used: usage.meta_pool,
+										upgrade_required: true,
+									},
+									{ status: 403 }
+								);
+							}
+							await incrementChannelUsage(user.id, 'meta_pool', 1);
+						}
 					}
 				} catch (quotaErr) {
 					// Log but don't block if quota check fails — prevents outage from blocking approvals

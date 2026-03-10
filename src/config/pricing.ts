@@ -28,6 +28,10 @@ export type PlanCaps = {
 	metaPoolMonthly: number; // Shared across Facebook + Instagram
 	// Which Make scenario to use
 	makeScenario: "starter" | "multi-channel";
+	// Idea Engine entitlements
+	ideaEngineEnabled: boolean;
+	// Monthly series run limit; 0 = unlimited
+	ideaEngineRunsMonthly: number;
 	// Legacy per-channel limits object (used by enforcement helpers)
 	perChannelLimits?: {
 		linkedin?: number;
@@ -54,6 +58,8 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		blogOutlinesMonthly: 0,
 		metaPoolMonthly: 0,
 		makeScenario: "starter",
+		ideaEngineEnabled: false,
+		ideaEngineRunsMonthly: 0,
 		perChannelLimits: { linkedin: 4, x: 4, blog: 1 },
 		notes: "Free Forever. Export-only LinkedIn (4) + 𝕏 (4) + 1 blog article. Mini AI via Starter scenario.",
 	},
@@ -72,6 +78,8 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		blogOutlinesMonthly: 0,
 		metaPoolMonthly: 0,
 		makeScenario: "multi-channel",
+		ideaEngineEnabled: true,
+		ideaEngineRunsMonthly: 3,
 		perChannelLimits: { linkedin: 12, x: 12, blog: 2 },
 		notes: "LinkedIn autopublish (12) + 𝕏 export (12) + Blog export (2).",
 	},
@@ -90,6 +98,8 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		blogOutlinesMonthly: 0,
 		metaPoolMonthly: 20,
 		makeScenario: "multi-channel",
+		ideaEngineEnabled: true,
+		ideaEngineRunsMonthly: 0, // unlimited
 		perChannelLimits: { linkedin: 20, x: 40, blog: 4, meta_pool: 20 },
 		notes: "1 brand, up to 5 channels. LinkedIn + Meta autopublish.",
 	},
@@ -108,6 +118,8 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		blogOutlinesMonthly: 0,
 		metaPoolMonthly: 75,
 		makeScenario: "multi-channel",
+		ideaEngineEnabled: true,
+		ideaEngineRunsMonthly: 0, // unlimited
 		perChannelLimits: { linkedin: 75, x: 150, blog: 12, meta_pool: 75 },
 		notes: "3 brands, 2 seats. Multi-brand operators and agencies.",
 	},
@@ -128,8 +140,22 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 		blogOutlinesMonthly: 0,
 		metaPoolMonthly: 999999,
 		makeScenario: "multi-channel",
+		ideaEngineEnabled: true,
+		ideaEngineRunsMonthly: 0, // unlimited
 		notes: "Contact sales. All limits are custom and agreed per contract.",
 	},
+};
+
+/**
+ * Default number of posts Idea Engine generates per channel.
+ * Make returns the actual counts; these are used for UI preview only.
+ */
+export const IDEA_ENGINE_DEFAULTS: Record<string, number> = {
+	linkedin: 3,
+	x: 4,
+	blog: 1,
+	instagram: 2,
+	facebook: 2,
 };
 
 export const PRICING = {

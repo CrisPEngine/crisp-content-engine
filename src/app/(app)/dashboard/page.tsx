@@ -436,36 +436,46 @@ export default async function Dashboard({
 						<StrategyCard brandProfileId={brandProfiles[0].id} />
 					)}
 
-					{/* Quick Actions */}
-					<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-						<a
-							href="/onboarding"
-							className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border-2 border-dashed border-edge/60"
-						>
-							<h3 className="font-semibold mb-2 text-sm md:text-base">Create New Brand</h3>
-							<p className="text-xs md:text-sm text-text-dim">
-								Add a new brand profile to start generating content
-							</p>
-						</a>
-						<a
-							href="/connections"
-							className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border-2 border-dashed border-edge/60"
-						>
-							<h3 className="font-semibold mb-2 text-sm md:text-base">Connect Accounts</h3>
-							<p className="text-xs md:text-sm text-text-dim">
-								Connect your social media accounts for publishing
-							</p>
-						</a>
-						<a
-							href="/content-brief"
-							className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border-2 border-dashed border-edge/60"
-						>
-							<h3 className="font-semibold mb-2 text-sm md:text-base">Monthly Content Brief</h3>
-							<p className="text-xs md:text-sm text-text-dim">
-								Submit a brief to guide next month's content generation
-							</p>
-						</a>
-					</div>
+				{/* Quick Actions */}
+				<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+					<a
+						href="/content/idea-engine"
+						className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border-2 border-dashed border-accent/30 bg-accent/5"
+					>
+						<div className="text-accent text-lg mb-2">💡</div>
+						<h3 className="font-semibold mb-1 text-sm md:text-base text-accent">Idea Engine</h3>
+						<p className="text-xs md:text-sm text-text-dim">
+							Turn one idea into a week of content
+						</p>
+					</a>
+					<a
+						href="/onboarding"
+						className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border-2 border-dashed border-edge/60"
+					>
+						<h3 className="font-semibold mb-2 text-sm md:text-base">Create New Brand</h3>
+						<p className="text-xs md:text-sm text-text-dim">
+							Add a new brand profile to start generating content
+						</p>
+					</a>
+					<a
+						href="/connections"
+						className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border-2 border-dashed border-edge/60"
+					>
+						<h3 className="font-semibold mb-2 text-sm md:text-base">Connect Accounts</h3>
+						<p className="text-xs md:text-sm text-text-dim">
+							Connect your social media accounts for publishing
+						</p>
+					</a>
+					<a
+						href="/content-brief"
+						className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border-2 border-dashed border-edge/60"
+					>
+						<h3 className="font-semibold mb-2 text-sm md:text-base">Monthly Content Brief</h3>
+						<p className="text-xs md:text-sm text-text-dim">
+							Submit a brief to guide next month's content generation
+						</p>
+					</a>
+				</div>
 				</>
 			)}
 			</main>

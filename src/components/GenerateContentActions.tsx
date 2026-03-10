@@ -1,7 +1,9 @@
 'use client';
 
-import { Sparkles, Calendar } from 'lucide-react';
+import { Sparkles, Calendar, Lightbulb, Lock } from 'lucide-react';
 import { useUsage } from '@/lib/useUsage';
+import { CAPS } from '@/config/pricing';
+import type { PlanId } from '@/config/pricing';
 import Link from 'next/link';
 
 type BrandProfile = {
@@ -39,6 +41,9 @@ export function GenerateContentActions({ brandProfiles }: GenerateContentActions
 		);
 	}
 
+	const plan = (usageData?.plan || 'starter') as PlanId;
+	const ideaEngineEnabled = CAPS[plan]?.ideaEngineEnabled ?? false;
+
 	// Only show if user has remaining posts
 	if (!hasRemainingPosts) {
 		return null;
@@ -69,11 +74,47 @@ export function GenerateContentActions({ brandProfiles }: GenerateContentActions
 						</Link>
 					</div>
 
+					{/* Idea Engine */}
+					{ideaEngineEnabled ? (
+						<div className="flex flex-col gap-2 p-2 rounded-lg text-xs bg-accent/5 border border-accent/20">
+							<div className="font-medium flex items-center gap-1">
+								<Lightbulb className="w-3 h-3 text-accent" />
+								Idea Engine
+							</div>
+							<p className="text-[11px] text-text-dim mb-2">
+								Turn one idea into a full content series across channels.
+							</p>
+							<Link
+								href="/content/idea-engine"
+								className="px-3 py-1.5 rounded-lg bg-accent/10 hover:bg-accent/20 border border-accent/30 text-accent font-medium text-center text-xs flex items-center justify-center gap-1.5"
+							>
+								<Lightbulb className="w-3 h-3" />
+								Launch Idea Engine
+							</Link>
+						</div>
+					) : (
+						<div className="flex flex-col gap-2 p-2 rounded-lg text-xs opacity-50 border border-edge/40 bg-surface/20">
+							<div className="font-medium flex items-center gap-1">
+								<Lock className="w-3 h-3" />
+								Idea Engine
+							</div>
+							<p className="text-[11px] text-text-dim">
+								Upgrade to Creator to turn one idea into a full content series.
+							</p>
+							<Link
+								href="/billing"
+								className="px-3 py-1.5 rounded-lg bg-surface/30 hover:bg-surface/50 border border-edge/60 text-text-dim font-medium text-center text-xs flex items-center justify-center gap-1.5"
+							>
+								Upgrade to unlock
+							</Link>
+						</div>
+					)}
+
 					{/* Monthly Strategy Update */}
 					<div className="flex flex-col gap-2 p-2 rounded-lg text-xs opacity-60">
 						<div className="font-medium">Monthly Strategy Update</div>
 						<p className="text-[11px] text-text-dim mb-2">
-							Share fresh objectives & themes to evolve next month's content plan.
+							Share fresh objectives &amp; themes to evolve next month's content plan.
 						</p>
 						<Link
 							href="/strategy/monthly-update"
