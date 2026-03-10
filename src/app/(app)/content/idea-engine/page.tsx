@@ -58,6 +58,15 @@ const PLATFORM_COLORS: Record<string, string> = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+const KNOWN_PLANS: PlanId[] = ['starter', 'creator', 'growth', 'pro', 'scale'];
+
+/** Plan effective for UI: unknown or "free" (e.g. super admin) → scale so they see full channel list. */
+function effectivePlanForChannels(plan: string | null): PlanId {
+	if (!plan) return 'scale';
+	const p = plan.toLowerCase();
+	return (KNOWN_PLANS.includes(p as PlanId) ? p : 'scale') as PlanId;
+}
+
 function platformChannels(plan: PlanId): ChannelKey[] {
 	const platforms = CAPS[plan]?.includedPlatforms || [];
 	const map: Record<string, ChannelKey> = {
@@ -130,11 +139,12 @@ export default function IdeaEnginePage() {
 			const res = await fetch('/api/plan', { cache: 'no-store' });
 			if (res.ok) {
 				const data = await res.json();
-				const p = (data.planName || 'starter').toLowerCase() as PlanId;
-				setUserPlan(p);
-				// Default to allowed channels for their plan (exclude Blog so they opt in)
-				if (p !== 'starter') {
-					const chs = platformChannels(p).filter(ch => ch !== 'Blog');
+				const raw = (data.planName || 'starter').toLowerCase();
+				setUserPlan(raw as PlanId);
+				// Use effective plan so "free" / unknown (e.g. super admin) get scale channels
+				const effective = effectivePlanForChannels(raw);
+				if (effective !== 'starter') {
+					const chs = platformChannels(effective).filter(ch => ch !== 'Blog');
 					if (chs.length > 0) setSelectedChannels(chs);
 				}
 			}
@@ -478,8 +488,8 @@ export default function IdeaEnginePage() {
 		);
 	}
 
-	// Use creator channels as fallback so channel list is never empty (e.g. while plan loads)
-	const allowedChannels = platformChannels(userPlan || 'creator');
+	// Use effective plan so channel list is never empty: "free"/unknown → scale (full experience)
+	const allowedChannels = platformChannels(effectivePlanForChannels(userPlan || ''));
 	const activeItems = items.filter(it => !it._deleted);
 
 	return (

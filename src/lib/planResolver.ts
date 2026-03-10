@@ -139,6 +139,16 @@ export async function resolvePlan(userId: string): Promise<ResolvedPlan> {
 		};
 	}
 
+	// Subscription row has a paid plan but no Stripe ID (e.g. admin-assigned scale) — honour it
+	const knownPaid = ['creator', 'growth', 'pro', 'scale'] as const;
+	if (subscription?.plan && knownPaid.includes(subscription.plan as any)) {
+		return {
+			plan: subscription.plan as PlanId,
+			cycle: (subscription.cycle as 'monthly' | 'annual') || 'monthly',
+			isEmailVerified,
+		};
+	}
+
 	// Priority 3: No subscription but has entitlements (admin-set plan)
 	if (!subscription && isEmailVerified) {
 		const { data: entitlements } = await admin
