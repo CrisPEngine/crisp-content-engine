@@ -43,11 +43,6 @@ type Quota = Record<string, QuotaChannel>;
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const GOAL_OPTIONS = ['Awareness', 'Engagement', 'Traffic', 'Conversion'] as const;
-const PUBLISH_MODE_OPTIONS = [
-	{ value: 'queue_only', label: 'Queue only', description: 'Items enter your draft queue for review. Nothing is published automatically.' },
-	{ value: 'approve_and_schedule', label: 'Approve & schedule', description: 'Autopublish items are scheduled automatically with 2-day staggering. X and Blog go to draft.' },
-	{ value: 'approve_first_immediately', label: 'Publish first now', description: 'First LinkedIn item publishes in the next cron window. Everything else goes to your queue.' },
-] as const;
 
 const CHANNEL_ICONS: Record<string, string> = {
 	LinkedIn: '💼', X: '𝕏', Blog: '📝', Instagram: '📷', Facebook: '👥',
@@ -99,7 +94,6 @@ export default function IdeaEnginePage() {
 	const [goal, setGoal] = useState<string>('');
 	const [notes, setNotes] = useState('');
 	const [selectedChannels, setSelectedChannels] = useState<ChannelKey[]>([]);
-	const [publishMode, setPublishMode] = useState<string>('queue_only');
 
 	// ── Quota ────────────────────────────────────────────────────
 	const [quota, setQuota] = useState<Quota>({});
@@ -138,9 +132,10 @@ export default function IdeaEnginePage() {
 				const data = await res.json();
 				const p = (data.planName || 'starter').toLowerCase() as PlanId;
 				setUserPlan(p);
-				// Default to allowed channels for their plan
+				// Default to allowed channels for their plan (exclude Blog so they opt in)
 				if (p !== 'starter') {
-					setSelectedChannels(platformChannels(p).filter(ch => ch !== 'Blog'));
+					const chs = platformChannels(p).filter(ch => ch !== 'Blog');
+					if (chs.length > 0) setSelectedChannels(chs);
 				}
 			}
 		} catch {
@@ -277,7 +272,7 @@ export default function IdeaEnginePage() {
 					goal: goal || undefined,
 					notes: notes.trim() || undefined,
 					selected_channels: selectedChannels,
-					publish_mode: publishMode,
+					publish_mode: 'queue_only',
 					force_duplicate: forceDuplicate,
 				}),
 			});
@@ -483,7 +478,8 @@ export default function IdeaEnginePage() {
 		);
 	}
 
-	const allowedChannels = userPlan ? platformChannels(userPlan) : [];
+	// Use creator channels as fallback so channel list is never empty (e.g. while plan loads)
+	const allowedChannels = platformChannels(userPlan || 'creator');
 	const activeItems = items.filter(it => !it._deleted);
 
 	return (
@@ -605,62 +601,42 @@ export default function IdeaEnginePage() {
 						{/* Channel selection */}
 						<div className="card p-5">
 							<label className="block text-sm font-medium mb-3">Channels</label>
-							<div className="flex flex-wrap gap-2">
-								{allowedChannels.map(ch => {
-									const selected = selectedChannels.includes(ch);
-									return (
-										<button
-											key={ch}
-											onClick={() => handleChannelToggle(ch)}
-											className={`px-4 py-2 rounded-xl2 border text-sm font-medium transition flex items-center gap-2 ${
-												selected
-													? 'bg-primary/15 border-primary/40 text-primary'
-													: 'bg-surface/30 border-edge/60 text-text-dim hover:text-text hover:bg-surface/50'
-											}`}
-										>
-											<span>{CHANNEL_ICONS[ch]}</span>
-											{ch}
-											{selected && <Check className="w-3.5 h-3.5" />}
-										</button>
-									);
-								})}
-							</div>
-							{userPlan === 'creator' && (
-								<p className="text-xs text-text-dim mt-3 flex items-center gap-1">
-									<Lock className="w-3 h-3" />
-									Instagram &amp; Facebook require Growth or higher.
-								</p>
+							{planLoading ? (
+								<div className="flex flex-wrap gap-2 text-text-dim text-sm">
+									<Loader2 className="w-4 h-4 animate-spin" />
+									<span>Loading channels…</span>
+								</div>
+							) : (
+								<>
+									<div className="flex flex-wrap gap-2">
+										{allowedChannels.map(ch => {
+											const selected = selectedChannels.includes(ch);
+											return (
+												<button
+													key={ch}
+													type="button"
+													onClick={() => handleChannelToggle(ch)}
+													className={`px-4 py-2 rounded-xl2 border text-sm font-medium transition flex items-center gap-2 ${
+														selected
+															? 'bg-primary/15 border-primary/40 text-primary'
+															: 'bg-surface/30 border-edge/60 text-text-dim hover:text-text hover:bg-surface/50'
+													}`}
+												>
+													<span>{CHANNEL_ICONS[ch]}</span>
+													{ch}
+													{selected && <Check className="w-3.5 h-3.5" />}
+												</button>
+											);
+										})}
+									</div>
+									{userPlan === 'creator' && (
+										<p className="text-xs text-text-dim mt-3 flex items-center gap-1">
+											<Lock className="w-3 h-3" />
+											Instagram &amp; Facebook require Growth or higher.
+										</p>
+									)}
+								</>
 							)}
-						</div>
-
-						{/* Publish mode */}
-						<div className="card p-5">
-							<label className="block text-sm font-medium mb-3">Publish mode</label>
-							<div className="space-y-2">
-								{PUBLISH_MODE_OPTIONS.map(opt => (
-									<label
-										key={opt.value}
-										className={`flex items-start gap-3 p-3 rounded-xl2 border cursor-pointer transition ${
-											publishMode === opt.value
-												? 'bg-primary/10 border-primary/30'
-												: 'bg-surface/30 border-edge/60 hover:bg-surface/50'
-										}`}
-									>
-										<input
-											type="radio"
-											name="publish_mode"
-											value={opt.value}
-											checked={publishMode === opt.value}
-											onChange={() => setPublishMode(opt.value)}
-											className="mt-0.5 accent-primary"
-										/>
-										<div>
-											<p className="text-sm font-medium">{opt.label}</p>
-											<p className="text-xs text-text-dim">{opt.description}</p>
-										</div>
-									</label>
-								))}
-							</div>
 						</div>
 
 						{/* CTA */}
