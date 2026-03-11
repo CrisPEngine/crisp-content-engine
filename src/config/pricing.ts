@@ -148,31 +148,40 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 
 /**
  * Per-plan Idea Engine series defaults.
+ *
  * These are the maximum items requested per channel before quota capping.
- * Creator does not include Meta (facebook/instagram = 0 means unsupported).
- * Scale matches Pro — a custom model can override later.
- * "free" mirrors scale so super admin / edge cases get the full experience.
+ * Counts are intentionally conservative to keep OpenAI token usage and
+ * Make scenario reliability high across all paid tiers.
+ *
+ * Creator: no Meta (facebook/instagram = 0 means unsupported on that plan).
+ * Scale matches Pro — can be customised per-brand later.
+ * 'free' is intentionally omitted; unknown plans fall through to 'starter' (all zeros).
+ *
+ * Maximum total items per plan (before quota shrinking):
+ *   Creator : 2 + 3 + 1          = 6
+ *   Growth  : 2 + 4 + 1 + 1 + 1  = 9
+ *   Pro     : 3 + 5 + 1 + 1 + 1  = 11
+ *   Scale   : 3 + 5 + 1 + 1 + 1  = 11
  */
 export const IDEA_ENGINE_PLAN_DEFAULTS: Record<string, Record<string, number>> = {
 	starter:  { linkedin: 0, x: 0, blog: 0, instagram: 0, facebook: 0 },
-	creator:  { linkedin: 3, x: 4, blog: 1, instagram: 0, facebook: 0 },
-	growth:   { linkedin: 3, x: 4, blog: 1, instagram: 2, facebook: 2 },
-	pro:      { linkedin: 5, x: 8, blog: 2, instagram: 3, facebook: 3 },
-	scale:    { linkedin: 5, x: 8, blog: 2, instagram: 3, facebook: 3 },
-	// 'free' is intentionally omitted. Free/unknown plans fall through to 'starter'
-	// (all zeros) via the fallback in computeIdeaEngineRequestedCounts.
+	creator:  { linkedin: 2, x: 3, blog: 1, instagram: 0, facebook: 0 },
+	growth:   { linkedin: 2, x: 4, blog: 1, instagram: 1, facebook: 1 },
+	pro:      { linkedin: 3, x: 5, blog: 1, instagram: 1, facebook: 1 },
+	scale:    { linkedin: 3, x: 5, blog: 1, instagram: 1, facebook: 1 },
 };
 
 /**
  * Legacy flat defaults — kept so existing external imports don't break.
  * New code should use IDEA_ENGINE_PLAN_DEFAULTS.
+ * Values reflect the creator-tier baseline (the lowest paid tier).
  */
 export const IDEA_ENGINE_DEFAULTS: Record<string, number> = {
-	linkedin: 3,
-	x: 4,
+	linkedin: 2,
+	x: 3,
 	blog: 1,
-	instagram: 2,
-	facebook: 2,
+	instagram: 1,
+	facebook: 1,
 };
 
 export const PRICING = {
