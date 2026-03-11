@@ -219,6 +219,34 @@ export async function POST(request: Request) {
 			console.warn('[IdeaEngine/Run] Could not fetch brand context:', err);
 		}
 
+		// ── Fetch recent content for deduplication context ────────
+		// Passed to Make as previous_content_json so OpenAI can avoid repeating
+		// angles, hooks and structures already in the content queue.
+		// Currently returns the 30 most recent queue items for this brand.
+		// Empty array is safe — Make/OpenAI will simply skip deduplication.
+		let previousContentJson: Record<string, any>[] = [];
+		try {
+			const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
+			const BASE_ID = process.env.AIRTABLE_BASE_ID;
+			const CONTENT_TABLE = process.env.AIRTABLE_TABLE_NAME;
+			if (AIRTABLE_TOKEN && BASE_ID && CONTENT_TABLE) {
+				const filterFormula = encodeURIComponent(
+					`AND({Brand Profile} = "${brand_profile_id}", OR({Status} = "Published", {Status} = "Approved", {Status} = "Scheduled"))`
+				);
+				const contentRes = await fetch(
+					`https://api.airtable.com/v0/${BASE_ID}/${CONTENT_TABLE}?filterByFormula=${filterFormula}&fields[]=Post Title&fields[]=Post Content&fields[]=Platform&fields[]=Status&sort[0][field]=Created Time&sort[0][direction]=desc&maxRecords=30`,
+					{ headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } }
+				);
+				if (contentRes.ok) {
+					const contentData = await contentRes.json();
+					previousContentJson = (contentData.records || []).map((r: any) => r.fields || {});
+				}
+			}
+		} catch (err) {
+			console.warn('[IdeaEngine/Run] Could not fetch previous content:', err);
+			// Non-fatal: generation proceeds without deduplication context
+		}
+
 		// ── Build autopublish capability map ─────────────────────
 		const autopublishCapabilities: Record<string, boolean> = {
 			linkedin: planCaps.autopublishLinkedIn,
@@ -247,27 +275,58 @@ export async function POST(request: Request) {
 		const timezone = (brandContext?.timezone && String(brandContext.timezone).trim()) ? String(brandContext.timezone) : 'UTC';
 		const posting_windows = brandContext?.posting_windows ?? null;
 
+		// ── Build the clean Idea Engine Make payload ─────────────
+		// This is the authoritative contract. Do NOT add legacy content-generation
+		// fields (monthly_brief, channels[], generation_job_id, scheduling_context).
+		// Those belong to the standard generation flow, not Idea Engine.
+		// Fields that appear inside brand_context (e.g. strategy_json) are only
+		// accessible there; they are not promoted to top-level.
 		const makePayload = {
+			// ── Run identity ──────────────────────────────────────
 			series_run_id: run.series_run_id,
 			run_id: run.id,
 			user_id: user.id,
 			plan,
+
+			// ── Brand ─────────────────────────────────────────────
 			brand_profile_id,
+
+			// ── User inputs (verbatim from Idea Engine UI) ────────
 			idea,
 			goal: goal || null,
 			notes: notes || null,
-			// Only send active (non-zero) channels to Make
+
+			// ── Generation instructions ───────────────────────────
+			// selected_channels: only channels with count > 0 (quota-resolved)
 			selected_channels: activeChannels,
 			publish_mode,
-			// Exact per-channel counts. Make MUST return exactly these items.
-			// These are already capped by plan defaults and remaining quota.
+			// Make MUST generate exactly these counts per channel.
+			// Values are min(plan_default, quota_remaining); channels at 0 are excluded.
 			requested_counts: requestedCounts,
+
+			// ── Quota context (informational, not instructions) ───
 			quota_remaining_by_channel: quotaRemaining,
-			dropped_channels: droppedChannels,
+
+			// ── Capabilities ─────────────────────────────────────
 			autopublish_capabilities: autopublishCapabilities,
+
+			// ── Scheduling context ────────────────────────────────
 			timezone,
 			posting_windows,
+
+			// ── Brand context (Airtable BrandProfiles fields) ─────
+			// Contains: client_name, voice_rules, audience, value_props, offers,
+			// brand_palette, strategy_json, brand_goals, content_rules, etc.
+			// strategy_json is nested here — it is NOT a top-level field.
 			brand_context: brandContext,
+
+			// ── Deduplication context ─────────────────────────────
+			// Recent published/approved/scheduled content for this brand.
+			// OpenAI should avoid repeating hooks, angles and structures found here.
+			// Empty array if unavailable — generation proceeds safely without it.
+			previous_content_json: previousContentJson,
+
+			// ── Callback ─────────────────────────────────────────
 			callback_url: `${appUrl}/api/idea-engine/webhook/callback`,
 		};
 

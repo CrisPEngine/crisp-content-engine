@@ -28,30 +28,34 @@ These are the default counts the app sends in `requested_counts`. Quota shrinkin
 
 ## 1. Payload sent by the app → Make (POST to `MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL`)
 
-The app sends a single JSON body. All fields are present every time unless noted.
+This is the **dedicated Idea Engine contract**. It does not reuse or extend the standard content-generation payload. Fields like `monthly_brief`, `channels[]`, `generation_job_id`, `strategy_json` (top-level), `brand_voice_context` and `scheduling_context` are **not sent** — they belong to the legacy generation flow.
+
+Note: `strategy_json` is accessible inside `brand_context` as a nested key (it is part of the Airtable BrandProfiles record), but it is not promoted to the top level.
+
+All fields below are present in every Idea Engine webhook call.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `series_run_id` | string (UUID) | Unique run id; use this when calling the callback. |
+| `series_run_id` | string (UUID) | Unique run id. Use this when calling back. |
 | `run_id` | string (UUID) | Internal DB run id. |
 | `user_id` | string (UUID) | Supabase auth user id. |
 | `plan` | string | `"creator"` \| `"growth"` \| `"pro"` \| `"scale"`. |
 | `brand_profile_id` | string | Airtable BrandProfiles record id. |
-| `idea` | string | User's idea (10–2000 chars). |
+| `idea` | string | The user's raw idea text (10–2000 chars). Verbatim from the UI. |
 | `goal` | string \| null | `"Awareness"` \| `"Engagement"` \| `"Traffic"` \| `"Conversion"` or null. |
-| `notes` | string \| null | Optional notes. |
-| `selected_channels` | string[] | Only channels with count > 0, e.g. `["LinkedIn", "X", "Blog"]`. |
-| `publish_mode` | string | Always `"queue_only"` (publish mode simplified). |
-| `requested_counts` | Record<string, number> | **Exact per-channel counts Make must generate.** Keys match `selected_channels`. No zeros included. |
-| `quota_remaining_by_channel` | Record<string, number> | Remaining quota per pool (`linkedin`, `x`, `blog`, `meta_pool`) for context. |
-| `dropped_channels` | string[] | Channels that resolved to 0 (unsupported by plan or quota exhausted). Informational only. |
-| `autopublish_capabilities` | Record<string, boolean> | Per-channel autopublish flags. |
-| `timezone` | string | Brand profile timezone (e.g. `"Europe/London"`) or `"UTC"` if missing. |
+| `notes` | string \| null | Optional user notes on the idea. Verbatim from the UI. |
+| `selected_channels` | string[] | **Only channels with count > 0** after quota resolution. No zero-count channels included. |
+| `publish_mode` | string | Always `"queue_only"`. Items go to queue as drafts. |
+| `requested_counts` | Record<string, number> | **Exact per-channel counts Make must generate.** Keys match `selected_channels`. Computed as `min(plan_default, quota_remaining)`. |
+| `quota_remaining_by_channel` | Record<string, number> | Remaining quota per pool (`linkedin`, `x`, `blog`, `meta_pool`). Informational. |
+| `autopublish_capabilities` | Record<string, boolean> | Per-channel autopublish flags (`linkedin`, `instagram`, `facebook`, `x`, `blog`). |
+| `timezone` | string | Brand profile timezone (e.g. `"Asia/Dubai"`) or `"UTC"` if missing. |
 | `posting_windows` | unknown \| null | Brand profile posting windows or null. |
-| `brand_context` | object | Full Airtable BrandProfiles fields (voice, audience, strategy, etc.). |
-| `callback_url` | string | URL to POST results to: `{APP_URL}/api/idea-engine/webhook/callback`. |
+| `brand_context` | object | Full Airtable BrandProfiles fields. Includes `client_name`, `voice_rules`, `audience`, `value_props`, `offers`, `brand_palette`, `strategy_json`, `brand_goals`, `content_rules`, `language_region`, etc. |
+| `previous_content_json` | array | Up to 30 recent published/approved/scheduled content items for this brand. Use for deduplication. Empty array if unavailable — generation is safe without it. |
+| `callback_url` | string | URL to POST results to. Always `{APP_URL}/api/idea-engine/webhook/callback`. |
 
-**Example (Growth plan, full channels):**
+**Complete example (Growth plan):**
 
 ```json
 {
@@ -62,16 +66,31 @@ The app sends a single JSON body. All fields are present every time unless noted
   "brand_profile_id": "recXXXXXXXXXXXXXX",
   "idea": "Why founders struggle with content consistency and how systems solve it.",
   "goal": "Engagement",
-  "notes": null,
+  "notes": "Include angles: batching, systems, automation.",
   "selected_channels": ["LinkedIn", "X", "Blog", "Facebook", "Instagram"],
   "publish_mode": "queue_only",
   "requested_counts": { "LinkedIn": 2, "X": 4, "Blog": 1, "Facebook": 1, "Instagram": 1 },
   "quota_remaining_by_channel": { "linkedin": 10, "x": 8, "blog": 2, "meta_pool": 5 },
-  "dropped_channels": [],
   "autopublish_capabilities": { "linkedin": true, "instagram": true, "facebook": true, "x": false, "blog": false },
-  "timezone": "Europe/London",
+  "timezone": "Asia/Dubai",
   "posting_windows": null,
-  "brand_context": { "client_name": "Acme", "timezone": "Europe/London" },
+  "brand_context": {
+    "client_name": "CrisP Digital",
+    "timezone": "Asia/Dubai",
+    "voice_rules": "...",
+    "audience": "...",
+    "value_props": "...",
+    "offers": "...",
+    "brand_palette": "...",
+    "strategy_json": "{ ... }",
+    "brand_goals": "...",
+    "content_rules": "No em dash, no oxford comma",
+    "language_region": "AU English",
+    "brand_type": "company"
+  },
+  "previous_content_json": [
+    { "Post Title": "Why consistency beats creativity", "Post Content": "...", "Platform": "LinkedIn", "Status": "Published" }
+  ],
   "callback_url": "https://app.crispdigital.io/api/idea-engine/webhook/callback"
 }
 ```
@@ -232,9 +251,11 @@ The app accepts either schema in the `image_prompt` field. The review UI and que
 actual = min(plan_default, quota_remaining)
 ```
 
-Channels with `actual = 0` are dropped before Make is called. The run only fails if **all** selected channels resolve to zero. Make will never receive a channel with count 0.
+Channels with `actual = 0` are dropped before Make is called — they will not appear in `selected_channels` or `requested_counts`. The run only fails if **all** selected channels resolve to zero. Make will never receive a channel with a zero count.
 
-This means `requested_counts` may be **smaller** than the plan default table above when a user is near their monthly limit. Make should generate exactly what `requested_counts` specifies.
+`requested_counts` may therefore be **smaller** than the plan default table above when a user is near their monthly limit. Make should generate **exactly** what `requested_counts` specifies — no more, no fewer.
+
+`requested_counts` and the UI preview are computed from the same function (`computeIdeaEngineRequestedCounts`), so what the preview shows is exactly what Make receives.
 
 ---
 
