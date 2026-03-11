@@ -147,8 +147,25 @@ export const CAPS: Record<PlanId, PlanCaps> = {
 };
 
 /**
- * Default number of posts Idea Engine generates per channel.
- * Make returns the actual counts; these are used for UI preview only.
+ * Per-plan Idea Engine series defaults.
+ * These are the maximum items requested per channel before quota capping.
+ * Creator does not include Meta (facebook/instagram = 0 means unsupported).
+ * Scale matches Pro — a custom model can override later.
+ * "free" mirrors scale so super admin / edge cases get the full experience.
+ */
+export const IDEA_ENGINE_PLAN_DEFAULTS: Record<string, Record<string, number>> = {
+	starter:  { linkedin: 0, x: 0, blog: 0, instagram: 0, facebook: 0 },
+	creator:  { linkedin: 3, x: 4, blog: 1, instagram: 0, facebook: 0 },
+	growth:   { linkedin: 3, x: 4, blog: 1, instagram: 2, facebook: 2 },
+	pro:      { linkedin: 5, x: 8, blog: 2, instagram: 3, facebook: 3 },
+	scale:    { linkedin: 5, x: 8, blog: 2, instagram: 3, facebook: 3 },
+	// 'free' is intentionally omitted. Free/unknown plans fall through to 'starter'
+	// (all zeros) via the fallback in computeIdeaEngineRequestedCounts.
+};
+
+/**
+ * Legacy flat defaults — kept so existing external imports don't break.
+ * New code should use IDEA_ENGINE_PLAN_DEFAULTS.
  */
 export const IDEA_ENGINE_DEFAULTS: Record<string, number> = {
 	linkedin: 3,

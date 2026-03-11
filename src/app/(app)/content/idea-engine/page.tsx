@@ -9,7 +9,9 @@ import {
 	ChevronLeft, Loader2, Lock, AlertCircle, CheckCircle2, Zap,
 } from 'lucide-react';
 import type { PlanId } from '@/config/pricing';
-import { CAPS, IDEA_ENGINE_DEFAULTS } from '@/config/pricing';
+import { CAPS } from '@/config/pricing';
+import { computeIdeaEngineRequestedCounts } from '@/lib/ideaEngineQuota';
+import type { IdeaEngineQuotaRemaining } from '@/lib/ideaEngineQuota';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -60,11 +62,15 @@ const PLATFORM_COLORS: Record<string, string> = {
 
 const KNOWN_PLANS: PlanId[] = ['starter', 'creator', 'growth', 'pro', 'scale'];
 
-/** Plan effective for UI: unknown or "free" (e.g. super admin) → scale so they see full channel list. */
-function effectivePlanForChannels(plan: string | null): PlanId {
-	if (!plan) return 'scale';
-	const p = plan.toLowerCase();
-	return (KNOWN_PLANS.includes(p as PlanId) ? p : 'scale') as PlanId;
+/**
+ * Normalise a raw plan string to a known PlanId.
+ * 'free', null, or any unrecognised value → 'starter' (Idea Engine locked).
+ * This is the canonical rule; no plan maps to a higher tier than it resolves to.
+ */
+function normalisePlan(raw: string | null): PlanId {
+	if (!raw) return 'starter';
+	const p = raw.toLowerCase();
+	return (KNOWN_PLANS.includes(p as PlanId) ? p : 'starter') as PlanId;
 }
 
 function platformChannels(plan: PlanId): ChannelKey[] {
@@ -75,13 +81,7 @@ function platformChannels(plan: PlanId): ChannelKey[] {
 	return (platforms.map(p => map[p]).filter(Boolean) as ChannelKey[]);
 }
 
-function expectedCounts(channels: ChannelKey[]): Record<string, number> {
-	const out: Record<string, number> = {};
-	for (const ch of channels) {
-		out[ch] = IDEA_ENGINE_DEFAULTS[ch.toLowerCase()] ?? 1;
-	}
-	return out;
-}
+// Removed: expectedCounts() — preview now uses computedCounts from quota-aware computation.
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -107,6 +107,11 @@ export default function IdeaEnginePage() {
 	// ── Quota ────────────────────────────────────────────────────
 	const [quota, setQuota] = useState<Quota>({});
 	const [quotaLoading, setQuotaLoading] = useState(false);
+
+	// ── Computed series counts (quota-aware, plan-aware) ─────────
+	// Derived from quota + plan after loadQuota(). Preview is built from these.
+	const [computedCounts, setComputedCounts] = useState<Record<string, number>>({});
+	const [droppedChannels, setDroppedChannels] = useState<string[]>([]);
 
 	// ── Generation ───────────────────────────────────────────────
 	const [runId, setRunId] = useState<string>('');
@@ -139,12 +144,11 @@ export default function IdeaEnginePage() {
 			const res = await fetch('/api/plan', { cache: 'no-store' });
 			if (res.ok) {
 				const data = await res.json();
-				const raw = (data.planName || 'starter').toLowerCase();
-				setUserPlan(raw as PlanId);
-				// Use effective plan so "free" / unknown (e.g. super admin) get scale channels
-				const effective = effectivePlanForChannels(raw);
-				if (effective !== 'starter') {
-					const chs = platformChannels(effective).filter(ch => ch !== 'Blog');
+				// Normalise at the point of setting: 'free' and unknown → 'starter' (locked)
+				const plan = normalisePlan(data.planName || null);
+				setUserPlan(plan);
+				if (plan !== 'starter') {
+					const chs = platformChannels(plan).filter(ch => ch !== 'Blog');
 					if (chs.length > 0) setSelectedChannels(chs);
 				}
 			}
@@ -178,7 +182,20 @@ export default function IdeaEnginePage() {
 			const res = await fetch('/api/content/quota', { cache: 'no-store' });
 			if (res.ok) {
 				const data = await res.json();
-				setQuota(data.channels || {});
+				const channels = data.channels || {};
+				setQuota(channels);
+
+				// Compute plan-aware, quota-aware counts immediately
+				const qr: IdeaEngineQuotaRemaining = {
+					linkedin:  channels.linkedin?.remaining  ?? 0,
+					x:         channels.x?.remaining         ?? 0,
+					blog:      channels.blog?.remaining       ?? 0,
+					meta_pool: channels.meta_pool?.remaining  ?? 0,
+				};
+				const { requestedCounts, droppedChannels: dropped } =
+					computeIdeaEngineRequestedCounts(selectedChannels, userPlan ?? 'starter', qr);
+				setComputedCounts(requestedCounts);
+				setDroppedChannels(dropped);
 			}
 		} catch {
 			/* non-fatal */
@@ -252,19 +269,15 @@ export default function IdeaEnginePage() {
 
 	// ─── Step: Preview ────────────────────────────────────────────
 
-	function getQuotaForChannel(ch: ChannelKey): number {
+	function getQuotaRemainingForChannel(ch: ChannelKey): number {
 		const key = ch.toLowerCase();
 		if (key === 'instagram' || key === 'facebook') return quota.meta_pool?.remaining ?? 0;
 		return quota[key]?.remaining ?? 0;
 	}
 
-	function hasQuotaIssue(): boolean {
-		if (!userPlan) return false;
-		for (const ch of selectedChannels) {
-			const needed = IDEA_ENGINE_DEFAULTS[ch.toLowerCase()] ?? 1;
-			if (getQuotaForChannel(ch) < needed) return true;
-		}
-		return false;
+	// No hard quota block — series shrinks gracefully. Only block if all channels zero.
+	function allChannelsZero(): boolean {
+		return !quotaLoading && Object.keys(computedCounts).length === 0;
 	}
 
 	async function handleGenerate(forceDuplicate = false) {
@@ -303,11 +316,8 @@ export default function IdeaEnginePage() {
 
 			setRunId(data.run_id);
 			setRunStatus('generating');
-			const expectedTotal = selectedChannels.reduce(
-				(sum, ch) => sum + (IDEA_ENGINE_DEFAULTS[ch.toLowerCase()] ?? 1),
-				0
-			);
-			setTotalExpected(expectedTotal);
+			const expectedTotal = Object.values(computedCounts).reduce((a, b) => a + b, 0);
+			setTotalExpected(expectedTotal > 0 ? expectedTotal : selectedChannels.length);
 			setTotalGenerated(0);
 			setStep('generating');
 			startPolling(data.run_id);
@@ -489,7 +499,7 @@ export default function IdeaEnginePage() {
 	}
 
 	// Use effective plan so channel list is never empty: "free"/unknown → scale (full experience)
-	const allowedChannels = platformChannels(effectivePlanForChannels(userPlan || ''));
+	const allowedChannels = platformChannels(userPlan ?? 'starter');
 	const activeItems = items.filter(it => !it._deleted);
 
 	return (
@@ -667,40 +677,67 @@ export default function IdeaEnginePage() {
 				{step === 'preview' && (
 					<motion.div key="preview" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} className="space-y-5">
 						<div className="card p-6">
-							<h2 className="text-lg font-semibold mb-4">Your series will generate</h2>
-							<div className="space-y-3">
-								{selectedChannels.map(ch => {
-									const count = IDEA_ENGINE_DEFAULTS[ch.toLowerCase()] ?? 1;
-									const remaining = quotaLoading ? null : getQuotaForChannel(ch);
-									const insufficient = remaining !== null && remaining < count;
-									return (
-										<div key={ch} className="flex items-center justify-between text-sm">
+							<h2 className="text-lg font-semibold mb-1">Your series will generate</h2>
+							<p className="text-text-dim text-xs mb-4">
+								Counts are based on your plan and remaining quota.
+							</p>
+							{quotaLoading ? (
+								<div className="flex items-center gap-2 text-text-dim text-sm py-2">
+									<Loader2 className="w-4 h-4 animate-spin" />
+									<span>Checking quota…</span>
+								</div>
+							) : (
+								<div className="space-y-3">
+									{/* Active channels — channels with count > 0 */}
+									{Object.entries(computedCounts).map(([ch, count]) => {
+										const remaining = getQuotaRemainingForChannel(ch as ChannelKey);
+										return (
+											<div key={ch} className="flex items-center justify-between text-sm">
+												<div className="flex items-center gap-2">
+													<span>{CHANNEL_ICONS[ch]}</span>
+													<span className="font-medium">{ch}</span>
+													<span className="text-text-dim">× {count}</span>
+													{remaining > 0 && remaining < 5 && (
+														<span className="text-warning/80 text-xs">(quota low)</span>
+													)}
+												</div>
+												<span className="text-text-dim text-xs">{remaining} remaining</span>
+											</div>
+										);
+									})}
+
+									{/* Dropped channels — zero quota or unsupported */}
+									{droppedChannels.map(ch => (
+										<div key={ch} className="flex items-center justify-between text-sm opacity-40">
 											<div className="flex items-center gap-2">
 												<span>{CHANNEL_ICONS[ch]}</span>
-												<span className="font-medium">{ch}</span>
-												<span className="text-text-dim">× {count}</span>
+												<span className="line-through">{ch}</span>
+												<span className="text-text-dim text-xs">× 0</span>
 											</div>
-											<div className="flex items-center gap-2">
-												{quotaLoading ? (
-													<Loader2 className="w-3 h-3 animate-spin text-text-dim" />
-												) : (
-													<span className={insufficient ? 'text-danger text-xs' : 'text-text-dim text-xs'}>
-														{remaining === null ? '' : insufficient ? `⚠ Only ${remaining} remaining` : `${remaining} remaining`}
-													</span>
-												)}
-											</div>
+											<span className="text-text-dim text-xs">quota used</span>
 										</div>
-									);
-								})}
-							</div>
+									))}
+								</div>
+							)}
 						</div>
 
-						{hasQuotaIssue() && (
+						{/* Info: channels dropped due to quota */}
+						{!quotaLoading && droppedChannels.length > 0 && !allChannelsZero() && (
+							<div className="flex items-start gap-2 p-3 rounded-xl2 border border-warning/30 bg-warning/10 text-warning text-sm">
+								<AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+								<p>
+									{droppedChannels.join(', ')} {droppedChannels.length === 1 ? 'was' : 'were'} omitted — monthly quota already used. The rest of your series will still be generated.
+								</p>
+							</div>
+						)}
+
+						{/* Hard block: all channels zero */}
+						{!quotaLoading && allChannelsZero() && (
 							<div className="flex items-start gap-2 p-4 rounded-xl2 border border-danger/30 bg-danger/10 text-danger text-sm">
 								<AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
 								<div>
-									<p className="font-medium">Insufficient quota for one or more channels</p>
-									<p className="text-danger/80 text-xs mt-1">Deselect channels or wait until next month.</p>
+									<p className="font-medium">You've used your available quota for the selected channels this month.</p>
+									<p className="text-danger/80 text-xs mt-1">Quota resets at the start of next month.</p>
 								</div>
 							</div>
 						)}
@@ -711,7 +748,7 @@ export default function IdeaEnginePage() {
 							</button>
 							<button
 								onClick={() => handleGenerate(false)}
-								disabled={submitting || hasQuotaIssue() || quotaLoading}
+								disabled={submitting || allChannelsZero() || quotaLoading}
 								className="px-6 py-3 rounded-xl2 bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary font-semibold disabled:opacity-40 flex items-center gap-2"
 							>
 								{submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}

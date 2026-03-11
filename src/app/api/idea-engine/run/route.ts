@@ -14,7 +14,8 @@ import { z } from 'zod';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { resolvePlan } from '@/lib/planResolver';
 import { getChannelUsage, getIdeaEngineRunsUsed, incrementIdeaEngineRunsUsed } from '@/lib/enforceCaps';
-import { CAPS, IDEA_ENGINE_DEFAULTS } from '@/config/pricing';
+import { CAPS } from '@/config/pricing';
+import { computeIdeaEngineRequestedCounts } from '@/lib/ideaEngineQuota';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -139,41 +140,34 @@ export async function POST(request: Request) {
 			}, { status: 409 });
 		}
 
-		// ── Quota preflight ───────────────────────────────────────
+		// ── Quota-aware requested counts ─────────────────────────
+		// Compute remaining quota per channel, then derive actual requested counts.
+		// Channels are dropped gracefully if their quota is 0 or plan default is 0.
+		// Only fail if ALL selected channels resolve to zero.
 		const usage = await getChannelUsage(user.id);
-		const quotaErrors: string[] = [];
-		const quotaRemaining: Record<string, number> = {};
 
-		for (const ch of selected_channels) {
-			const channel = ch.toLowerCase();
-			if (channel === 'linkedin') {
-				const remaining = Math.max(0, planCaps.linkedinPostsMonthly - usage.linkedin);
-				quotaRemaining.linkedin = remaining;
-				// Need at least 1 remaining for LinkedIn
-				if (remaining <= 0) quotaErrors.push(`LinkedIn quota exhausted (${usage.linkedin}/${planCaps.linkedinPostsMonthly})`);
-			} else if (channel === 'x') {
-				const remaining = Math.max(0, planCaps.xPostsMonthly - usage.x);
-				quotaRemaining.x = remaining;
-				if (remaining <= 0) quotaErrors.push(`X quota exhausted (${usage.x}/${planCaps.xPostsMonthly})`);
-			} else if (channel === 'blog') {
-				const limit = planCaps.blogArticlesMonthly;
-				const remaining = Math.max(0, limit - usage.blog);
-				quotaRemaining.blog = remaining;
-				if (remaining <= 0) quotaErrors.push(`Blog quota exhausted (${usage.blog}/${limit})`);
-			} else if (channel === 'instagram' || channel === 'facebook') {
-				const remaining = Math.max(0, planCaps.metaPoolMonthly - usage.meta_pool);
-				quotaRemaining.meta_pool = remaining;
-				if (remaining <= 0 && !quotaErrors.some(e => e.includes('Meta'))) {
-					quotaErrors.push(`Meta pool quota exhausted (${usage.meta_pool}/${planCaps.metaPoolMonthly})`);
-				}
-			}
-		}
+		const quotaRemaining = {
+			linkedin:   Math.max(0, planCaps.linkedinPostsMonthly - usage.linkedin),
+			x:          Math.max(0, planCaps.xPostsMonthly - usage.x),
+			blog:       Math.max(0, planCaps.blogArticlesMonthly - usage.blog),
+			meta_pool:  Math.max(0, planCaps.metaPoolMonthly - usage.meta_pool),
+		};
 
-		if (quotaErrors.length > 0) {
+		const { requestedCounts, droppedChannels, activeChannels } = computeIdeaEngineRequestedCounts(
+			selected_channels,
+			plan,
+			quotaRemaining
+		);
+
+		if (activeChannels.length === 0) {
+			const hasMetaOnly = selected_channels.every(c => c === 'Instagram' || c === 'Facebook');
+			const error = hasMetaOnly
+				? 'Facebook and Instagram Idea Engine outputs are available on Growth and above.'
+				: "You've used your available quota for the selected channels this month.";
 			return NextResponse.json({
-				error: `Insufficient quota: ${quotaErrors.join('; ')}`,
-				quota_errors: quotaErrors,
+				error,
 				quota_remaining: quotaRemaining,
+				dropped_channels: droppedChannels,
 			}, { status: 403 });
 		}
 
@@ -234,15 +228,9 @@ export async function POST(request: Request) {
 			blog: false,
 		};
 
-		// ── Requested output counts per channel ───────────────────
-		// This is the shared source of truth passed to Make so that the
-		// preview screen counts and the actual generated counts are in sync.
-		// Make must return exactly these counts unless it signals a controlled
-		// variation (e.g. a channel isn't applicable for the given idea).
-		const requestedCounts: Record<string, number> = {};
-		for (const ch of selected_channels) {
-			requestedCounts[ch] = IDEA_ENGINE_DEFAULTS[ch.toLowerCase()] ?? 1;
-		}
+		// requestedCounts already computed above via computeIdeaEngineRequestedCounts.
+		// activeChannels = channels with count > 0 (dropped channels are excluded).
+		// Make only receives channels the app has approved — no zero-count channels.
 
 		// ── Fire Make webhook ─────────────────────────────────────
 		const MAKE_URL = process.env.MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL;
@@ -268,12 +256,14 @@ export async function POST(request: Request) {
 			idea,
 			goal: goal || null,
 			notes: notes || null,
-			selected_channels,
+			// Only send active (non-zero) channels to Make
+			selected_channels: activeChannels,
 			publish_mode,
-			// Make MUST return exactly these counts per channel. The preview screen
-			// is built from the same IDEA_ENGINE_DEFAULTS, so counts are consistent.
+			// Exact per-channel counts. Make MUST return exactly these items.
+			// These are already capped by plan defaults and remaining quota.
 			requested_counts: requestedCounts,
 			quota_remaining_by_channel: quotaRemaining,
+			dropped_channels: droppedChannels,
 			autopublish_capabilities: autopublishCapabilities,
 			timezone,
 			posting_windows,
