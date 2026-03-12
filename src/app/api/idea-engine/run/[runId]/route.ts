@@ -54,16 +54,35 @@ export async function GET(
 			return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 		}
 
-		// Only return items when they're available for review
-		let items: any[] = [];
-		if (run.status === 'review' || run.status === 'completed') {
-			const { data: itemRows } = await admin
-				.from('idea_engine_items')
-				.select('id, channel, post_title, body_draft, image_prompt, hashtags, series_position, series_total, status')
-				.eq('run_id', runId)
-				.order('series_position', { ascending: true });
-			items = itemRows || [];
+		// ── Return items (placeholders + filled) for all states ───
+		// During 'generating': show placeholder skeletons with any filled items
+		// During 'review' / 'completed': show all filled items
+		// This enables progressive reveal without waiting for completion.
+		const { data: itemRows } = await admin
+			.from('idea_engine_items')
+			.select('id, channel, post_title, body_draft, image_prompt, hashtags, series_position, series_total, status')
+			.eq('run_id', runId)
+			.order('channel', { ascending: true })
+			.order('series_position', { ascending: true });
+
+		const items = itemRows || [];
+
+		// ── Compute progress fields ───────────────────────────────
+		// expected_counts_by_channel: how many we expect per channel
+		// generated_counts_by_channel: how many are filled (ready) per channel
+		const expectedCountsByChannel: Record<string, number> = {};
+		const generatedCountsByChannel: Record<string, number> = {};
+
+		for (const item of items) {
+			const ch = item.channel;
+			expectedCountsByChannel[ch] = (expectedCountsByChannel[ch] || 0) + 1;
+			// Consider an item "generated" if it has body_draft or status is 'ready'
+			if (item.body_draft || item.status === 'ready') {
+				generatedCountsByChannel[ch] = (generatedCountsByChannel[ch] || 0) + 1;
+			}
 		}
+
+		const generatedItemsCount = Object.values(generatedCountsByChannel).reduce((sum, c) => sum + c, 0);
 
 		return NextResponse.json({
 			run: {
@@ -80,6 +99,10 @@ export async function GET(
 				created_at: run.created_at,
 			},
 			items,
+			expected_total_items: run.total_expected || 0,
+			generated_items_count: generatedItemsCount,
+			expected_counts_by_channel: expectedCountsByChannel,
+			generated_counts_by_channel: generatedCountsByChannel,
 		});
 
 	} catch (error: any) {

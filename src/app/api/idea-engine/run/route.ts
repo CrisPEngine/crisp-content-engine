@@ -172,6 +172,9 @@ export async function POST(request: Request) {
 		}
 
 		// ── Create the run record ─────────────────────────────────
+		// Calculate total expected items upfront for progress tracking
+		const totalExpected = Object.values(requestedCounts).reduce((sum, count) => sum + count, 0);
+
 		const { data: run, error: insertError } = await admin
 			.from('idea_engine_runs')
 			.insert({
@@ -183,6 +186,8 @@ export async function POST(request: Request) {
 				selected_channels,
 				publish_mode,
 				status: 'generating',
+				total_expected: totalExpected,
+				total_generated: 0,
 			})
 			.select('id, series_run_id')
 			.single();
@@ -190,6 +195,40 @@ export async function POST(request: Request) {
 		if (insertError || !run) {
 			console.error('[IdeaEngine/Run] Failed to create run:', insertError);
 			return NextResponse.json({ error: 'Failed to create series run' }, { status: 500 });
+		}
+
+		// ── Create placeholder items for live progress ────────────
+		// These placeholders enable the UI to show skeleton cards immediately
+		// and replace them as Make fills in content. Make callback will update
+		// these rows instead of inserting new ones.
+		const placeholders: any[] = [];
+		for (const channel of activeChannels) {
+			const count = requestedCounts[channel];
+			for (let position = 1; position <= count; position++) {
+				placeholders.push({
+					run_id: run.id,
+					user_id: user.id,
+					channel,
+					series_position: position,
+					series_total: count,
+					status: 'generating',
+					post_title: null,
+					body_draft: null,
+					image_prompt: null,
+					hashtags: null,
+				});
+			}
+		}
+
+		if (placeholders.length > 0) {
+			const { error: placeholderError } = await admin
+				.from('idea_engine_items')
+				.insert(placeholders);
+
+			if (placeholderError) {
+				console.error('[IdeaEngine/Run] Failed to create placeholders:', placeholderError);
+				// Non-fatal: generation can proceed; UI just won't show progressive reveal
+			}
 		}
 
 		// ── Increment Creator series run counter ──────────────────

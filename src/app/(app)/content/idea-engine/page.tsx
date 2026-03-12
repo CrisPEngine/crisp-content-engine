@@ -73,6 +73,28 @@ function normalisePlan(raw: string | null): PlanId {
 	return (KNOWN_PLANS.includes(p as PlanId) ? p : 'starter') as PlanId;
 }
 
+/**
+ * Compute stage messaging based on progress percentage and channels.
+ * Returns a deterministic, professional message that feels intentional.
+ */
+function getStageMessage(progressPercent: number, channels: string[]): string {
+	if (progressPercent < 15) return 'Understanding your idea';
+	if (progressPercent < 40) return 'Expanding strategic angles';
+	
+	// Channel-specific messages when filling
+	if (progressPercent < 85) {
+		// Rotate through selected channels in order
+		if (channels.includes('LinkedIn')) return 'Writing LinkedIn drafts';
+		if (channels.includes('X')) return 'Drafting X posts';
+		if (channels.includes('Blog')) return 'Building blog content';
+		if (channels.includes('Instagram')) return 'Crafting Instagram captions';
+		if (channels.includes('Facebook')) return 'Creating Facebook posts';
+		return 'Generating content';
+	}
+	
+	return 'Preparing your review screen';
+}
+
 function platformChannels(plan: PlanId): ChannelKey[] {
 	const platforms = CAPS[plan]?.includedPlatforms || [];
 	const map: Record<string, ChannelKey> = {
@@ -212,15 +234,15 @@ export default function IdeaEnginePage() {
 				const res = await fetch(`/api/idea-engine/run/${id}`, { cache: 'no-store' });
 				if (!res.ok) return;
 				const data = await res.json();
-				const { run, items: runItems } = data;
+				const { run, items: runItems, generated_items_count } = data;
 
 				setRunStatus(run.status);
 				setTotalExpected(run.total_expected || 0);
-				setTotalGenerated(run.total_generated || 0);
+				setTotalGenerated(generated_items_count || run.total_generated || 0);
 
-				if (run.status === 'review' || run.status === 'completed') {
-					clearInterval(pollRef.current!);
-					const mappedItems: SeriesItem[] = (runItems || []).map((item: any) => ({
+				// Always update items (placeholders + filled) during generation
+				if (runItems && runItems.length > 0) {
+					const mappedItems: SeriesItem[] = runItems.map((item: any) => ({
 						...item,
 						_editing: false,
 						_editDraft: {
@@ -234,6 +256,10 @@ export default function IdeaEnginePage() {
 						_deleted: false,
 					}));
 					setItems(mappedItems);
+				}
+
+				if (run.status === 'review' || run.status === 'completed') {
+					clearInterval(pollRef.current!);
 					setStep('review');
 				} else if (run.status === 'failed') {
 					clearInterval(pollRef.current!);
@@ -758,40 +784,108 @@ export default function IdeaEnginePage() {
 					</motion.div>
 				)}
 
-				{/* ── Step: Generating ──────────────────────────────────── */}
+				{/* ── Step: Generating (Live Generation Workspace) ────────── */}
 				{step === 'generating' && (
-					<motion.div key="generating" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}>
-						<div className="card p-10 text-center flex flex-col items-center gap-5">
-							<div className="relative w-16 h-16">
-								<div className="w-16 h-16 rounded-full border-2 border-primary/20 animate-pulse absolute inset-0" />
-								<div className="w-16 h-16 rounded-full border-t-2 border-primary animate-spin absolute inset-0" />
-								<Sparkles className="w-7 h-7 text-primary absolute inset-0 m-auto" />
-							</div>
-							<div>
-								<h2 className="text-lg font-semibold mb-1">Generating your series</h2>
-								<p className="text-text-dim text-sm">
-									This may take a minute. Don't close this window.
-								</p>
-							</div>
-							{totalExpected > 0 && (
-								<div className="w-full max-w-xs">
-									<div className="flex justify-between text-xs text-text-dim mb-1">
-										<span>{totalGenerated} of {totalExpected} items</span>
-										<span>{Math.round((totalGenerated / totalExpected) * 100)}%</span>
+					<motion.div key="generating" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} className="space-y-5">
+						{/* Header with progress */}
+						<div className="card p-6">
+							<div className="flex items-start justify-between mb-4">
+								<div>
+									<h2 className="text-lg font-semibold mb-1">Creating your content series</h2>
+									<p className="text-text-dim text-sm">Turning your idea into channel-ready content.</p>
+								</div>
+								{totalExpected > 0 && (
+									<div className="text-right">
+										<div className="text-sm font-semibold text-text">{totalGenerated} of {totalExpected} ready</div>
+										<div className="text-xs text-text-dim">{Math.round((totalGenerated / totalExpected) * 100)}% complete</div>
 									</div>
-									<div className="w-full h-1.5 bg-edge/60 rounded-full overflow-hidden">
+								)}
+							</div>
+
+							{totalExpected > 0 && (
+								<div className="space-y-2">
+									<div className="w-full h-2 bg-edge/60 rounded-full overflow-hidden">
 										<motion.div
 											className="h-full bg-primary rounded-full"
-											animate={{ width: `${Math.max(5, (totalGenerated / totalExpected) * 100)}%` }}
+											animate={{ width: `${Math.max(2, (totalGenerated / totalExpected) * 100)}%` }}
 											transition={{ type: 'spring', stiffness: 50 }}
 										/>
 									</div>
+									<p className="text-xs text-text-dim">
+										{getStageMessage((totalGenerated / totalExpected) * 100, selectedChannels)}
+									</p>
 								</div>
 							)}
-							<p className="text-xs text-text-dim">
-								Channels: {selectedChannels.join(', ')}
-							</p>
 						</div>
+
+						{/* Items grouped by channel (placeholders + ready) */}
+						{Object.entries(
+							items.reduce((acc, item) => {
+								if (!acc[item.channel]) acc[item.channel] = [];
+								acc[item.channel].push(item);
+								return acc;
+							}, {} as Record<string, SeriesItem[]>)
+						).map(([channel, chItems]) => (
+							<div key={channel}>
+								<div className="flex items-center gap-2 mb-3">
+									<span>{CHANNEL_ICONS[channel]}</span>
+									<span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${PLATFORM_COLORS[channel] || 'text-text-dim border-edge/60 bg-surface/30'}`}>
+										{channel}
+									</span>
+									<span className="text-xs text-text-dim">
+										{chItems.filter(it => it.body_draft || it.status === 'ready').length} of {chItems.length}
+									</span>
+								</div>
+								<div className="space-y-3">
+									{chItems.map(item => {
+										const isReady = item.body_draft || item.status === 'ready';
+										
+										if (!isReady) {
+											// Skeleton placeholder
+											return (
+												<div key={item.id} className="card p-4 animate-pulse">
+													<div className="h-4 bg-edge/40 rounded w-3/4 mb-3"></div>
+													<div className="space-y-2">
+														<div className="h-3 bg-edge/30 rounded w-full"></div>
+														<div className="h-3 bg-edge/30 rounded w-5/6"></div>
+														<div className="h-3 bg-edge/30 rounded w-4/6"></div>
+													</div>
+												</div>
+											);
+										}
+
+										// Ready item - show actual content
+										return (
+											<div key={item.id} className="card p-4 border border-accent/20 bg-accent/5">
+												<div className="flex items-start justify-between mb-2">
+													<h3 className="font-medium text-text flex-1">{item.post_title || 'Untitled'}</h3>
+													<span className="text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent border border-accent/30 shrink-0">
+														Ready
+													</span>
+												</div>
+												<p className="text-sm text-text-dim whitespace-pre-wrap line-clamp-3">
+													{item.body_draft}
+												</p>
+												{item.hashtags && (
+													<p className="text-xs text-primary/70 mt-2">{item.hashtags}</p>
+												)}
+											</div>
+										);
+									})}
+								</div>
+							</div>
+						))}
+
+						{items.length === 0 && (
+							<div className="card p-10 text-center">
+								<div className="relative w-16 h-16 mx-auto mb-4">
+									<div className="w-16 h-16 rounded-full border-2 border-primary/20 animate-pulse absolute inset-0" />
+									<div className="w-16 h-16 rounded-full border-t-2 border-primary animate-spin absolute inset-0" />
+									<Sparkles className="w-7 h-7 text-primary absolute inset-0 m-auto" />
+								</div>
+								<p className="text-text-dim text-sm">Loading your series...</p>
+							</div>
+						)}
 					</motion.div>
 				)}
 

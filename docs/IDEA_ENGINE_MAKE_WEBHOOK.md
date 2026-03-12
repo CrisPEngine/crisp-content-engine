@@ -9,6 +9,20 @@ Set in your environment (e.g. Vercel / `.env.local`) to your Make webhook URL, f
 
 ---
 
+## How progressive generation works
+
+The app creates **placeholder rows** in `idea_engine_items` immediately when a run starts. Each placeholder represents one expected content item (channel + position).
+
+The run polling endpoint `GET /api/idea-engine/run/:id` returns:
+- All placeholders (status `generating`) and any filled items (status `ready`)
+- Progress fields: `expected_total_items`, `generated_items_count`, `expected_counts_by_channel`, `generated_counts_by_channel`
+
+This enables the UI to show skeleton cards immediately and progressively replace them as Make fills content.
+
+When Make calls back with generated items, the callback **updates** existing placeholders (not inserts new rows), matching by `run_id` + `channel` + `series_position`.
+
+---
+
 ## Plan output sizes (maximum, before quota shrinking)
 
 These are the default counts the app sends in `requested_counts`. Quota shrinking may reduce them further (see section 5).
@@ -101,6 +115,14 @@ All fields below are present in every Idea Engine webhook call.
 
 Make must POST JSON to the `callback_url` with either a list of items or an error.
 
+**How callback updates work:**
+
+The callback **updates existing placeholder rows**, not inserts. Matching strategy:
+1. If `series_position` is provided: match by `run_id` + `channel` + `series_position`.
+2. Otherwise: fill the next available `generating` placeholder for that channel in order.
+
+This means Make can send `series_position` explicitly (recommended) or omit it and let the app fill placeholders sequentially.
+
 **Success:**
 
 | Field | Type | Required | Description |
@@ -118,7 +140,7 @@ Make must POST JSON to the `callback_url` with either a list of items or an erro
 | `body_draft` | string | No | Full post body. |
 | `image_prompt` | object | No | See image prompt schema below (rich or simple depending on channel). |
 | `hashtags` | string | No | Hashtags string. |
-| `series_position` | number (int) | No | 1-based index in the series. |
+| `series_position` | number (int) | **Recommended** | 1-based index. If omitted, app fills placeholders in order. |
 | `series_total` | number (int) | No | Total items in the series. |
 
 **Failure (Make reports error):**
@@ -131,7 +153,32 @@ Make must POST JSON to the `callback_url` with either a list of items or an erro
 
 ---
 
-## 3. Image prompt schemas by channel
+## 3. Run polling response (enhanced for live generation)
+
+`GET /api/idea-engine/run/:id` returns placeholders + filled items immediately, enabling progressive reveal in the UI.
+
+**Response fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `run` | object | Run metadata: id, status, total_expected, total_generated, error, etc. |
+| `items` | array | All placeholder + filled items, sorted by channel then series_position. |
+| `expected_total_items` | number | Total items expected (from run.total_expected). |
+| `generated_items_count` | number | Count of items with body_draft or status='ready'. |
+| `expected_counts_by_channel` | object | Channel → expected count map (derived from placeholder rows). |
+| `generated_counts_by_channel` | object | Channel → ready count map (derived from filled rows). |
+
+**Item status field:**
+- `generating`: Placeholder waiting to be filled.
+- `ready`: Content has been filled by Make callback.
+
+The UI polls this endpoint and renders:
+- Skeleton cards for `generating` items.
+- Actual content cards for `ready` items.
+
+---
+
+## 4. Image prompt schemas by channel
 
 To reduce token cost and generation complexity, two image prompt schemas are used depending on channel.
 
@@ -235,7 +282,7 @@ The app accepts either schema in the `image_prompt` field. The review UI and que
 
 ---
 
-## 4. Timezone and posting windows
+## 5. Timezone and posting windows
 
 - The app sends top-level `timezone` (Brand Profile timezone or `"UTC"`) and `posting_windows` (from Brand Profile or `null`).
 - Both are also inside `brand_context`.
@@ -243,7 +290,7 @@ The app accepts either schema in the `image_prompt` field. The review UI and que
 
 ---
 
-## 5. Quota-aware counts
+## 6. Quota-aware counts
 
 `requested_counts` is pre-calculated by the app using:
 
@@ -259,6 +306,6 @@ Channels with `actual = 0` are dropped before Make is called — they will not a
 
 ---
 
-## 6. Regenerate single item (optional)
+## 7. Regenerate single item (optional)
 
 For "regenerate one item" the app calls the **same** `MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL` with an extra `action: "regenerate_single"` and item/run context. Make then updates that item and calls the item-update webhook. See the regenerate route and `webhook/item-update` for the exact shape when implementing this.
