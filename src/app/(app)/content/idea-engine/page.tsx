@@ -263,8 +263,10 @@ export default function IdeaEnginePage() {
 					setStep('review');
 				} else if (run.status === 'failed') {
 					clearInterval(pollRef.current!);
+					// Keep the user in the generation workspace so they can see partial results
+					// (ready items) and clearly understand what failed.
 					setError(run.error || 'Generation failed. Please try again.');
-					setStep('input');
+					setStep('generating');
 				}
 			} catch {
 				/* keep polling */
@@ -839,8 +841,26 @@ export default function IdeaEnginePage() {
 								<div className="space-y-3">
 									{chItems.map(item => {
 										const isReady = item.body_draft || item.status === 'ready';
+										const isFailedPlaceholder = item.status === 'failed' && !isReady;
 										
 										if (!isReady) {
+											if (isFailedPlaceholder) {
+												return (
+													<div key={item.id} className="card p-4 border border-danger/30 bg-danger/10">
+														<div className="flex items-center justify-between">
+															<div className="h-4 bg-danger/20 rounded w-2/3"></div>
+															<span className="text-xs px-2 py-0.5 rounded-full bg-danger/20 text-danger border border-danger/30">
+																Failed
+															</span>
+														</div>
+														<div className="mt-3 space-y-2">
+															<div className="h-3 bg-danger/10 rounded w-full"></div>
+															<div className="h-3 bg-danger/10 rounded w-5/6"></div>
+														</div>
+													</div>
+												);
+											}
+
 											// Skeleton placeholder
 											return (
 												<div key={item.id} className="card p-4 animate-pulse">

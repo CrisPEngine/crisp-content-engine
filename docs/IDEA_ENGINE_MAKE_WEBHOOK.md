@@ -149,7 +149,17 @@ This means Make can send `series_position` explicitly (recommended) or omit it a
 |-------|------|-------------|
 | `series_run_id` | string (UUID) | Must match the run. |
 | `error` | string | Error message; run is marked failed. |
-| `items` | array | Must still be present (even as `[]`). |
+| `items` | array | Must be present and may be empty (`[]`). |
+
+**Failure example:**
+
+```json
+{
+  "series_run_id": "550e8400-e29b-41d4-a716-446655440000",
+  "items": [],
+  "error": "OpenAI module failed"
+}
+```
 
 ---
 

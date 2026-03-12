@@ -22,18 +22,33 @@ const ItemSchema = z.object({
 	channel: z.string(),
 	post_title: z.string().optional(),
 	body_draft: z.string().optional(),
-	image_prompt: z.string().optional(),
+	// image_prompt can be a string, a rich object, or a simple object depending on channel
+	image_prompt: z.any().optional(),
 	hashtags: z.string().optional(),
 	series_position: z.number().int().optional(),
 	series_total: z.number().int().optional(),
-});
+}).passthrough();
 
-const CallbackSchema = z.object({
+// Idea Engine callback supports two shapes:
+// Success: { series_run_id, items: [..] }
+// Failure: { series_run_id, items: [], error: "..." }
+//
+// NOTE: In production we also accept run_id as a fallback lookup key if Make
+// fails to propagate series_run_id (defensive, prevents stuck runs).
+const SuccessCallbackSchema = z.object({
 	series_run_id: z.string().uuid(),
+	run_id: z.string().uuid().optional(),
 	items: z.array(ItemSchema).min(1),
-	// Make may also send error state
-	error: z.string().optional(),
-});
+}).passthrough();
+
+const FailureCallbackSchema = z.object({
+	series_run_id: z.string().uuid(),
+	run_id: z.string().uuid().optional(),
+	items: z.array(ItemSchema).default([]),
+	error: z.string().min(1),
+}).passthrough();
+
+const CallbackSchema = z.union([SuccessCallbackSchema, FailureCallbackSchema]);
 
 export async function POST(request: Request) {
 	try {
@@ -62,15 +77,23 @@ export async function POST(request: Request) {
 			return NextResponse.json({ error: 'Invalid payload', details: parsed.error.issues }, { status: 400 });
 		}
 
-		const { series_run_id, items, error: makeError } = parsed.data;
+		const { series_run_id, run_id, items } = parsed.data as any;
+		const makeError: string | undefined = (parsed.data as any).error;
 		const admin = getSupabaseService();
 
 		// ── Look up the run ───────────────────────────────────────
-		const { data: run, error: runLookupError } = await admin
-			.from('idea_engine_runs')
-			.select('id, user_id, status, selected_channels')
-			.eq('series_run_id', series_run_id)
-			.single();
+		const runLookup = series_run_id
+			? admin.from('idea_engine_runs').select('id, user_id, status, selected_channels').eq('series_run_id', series_run_id).single()
+			: (run_id
+				? admin.from('idea_engine_runs').select('id, user_id, status, selected_channels').eq('id', run_id).single()
+				: null);
+
+		if (!runLookup) {
+			console.error('[IdeaEngine/Callback] Invalid callback: missing series_run_id and run_id');
+			return NextResponse.json({ error: 'Invalid payload: missing series_run_id' }, { status: 400 });
+		}
+
+		const { data: run, error: runLookupError } = await runLookup;
 
 		if (runLookupError || !run) {
 			console.error('[IdeaEngine/Callback] Run not found for series_run_id:', series_run_id);
@@ -83,10 +106,18 @@ export async function POST(request: Request) {
 
 		// ── Handle Make error ─────────────────────────────────────
 		if (makeError) {
+			// Mark run failed and flip any remaining placeholders to failed
 			await admin
 				.from('idea_engine_runs')
 				.update({ status: 'failed', error: makeError })
 				.eq('id', run.id);
+
+			await admin
+				.from('idea_engine_items')
+				.update({ status: 'failed' })
+				.eq('run_id', run.id)
+				.eq('status', 'generating');
+
 			return NextResponse.json({ ok: true });
 		}
 
@@ -106,7 +137,7 @@ export async function POST(request: Request) {
 		if (!placeholders || placeholders.length === 0) {
 			// Fallback: if no placeholders exist (shouldn't happen), insert items as before
 			console.warn('[IdeaEngine/Callback] No placeholders found for run; inserting items directly');
-			const itemInserts = items.map((item, idx) => ({
+			const itemInserts = items.map((item: any, idx: number) => ({
 				run_id: run.id,
 				user_id: run.user_id,
 				channel: item.channel,
