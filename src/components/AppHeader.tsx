@@ -104,18 +104,18 @@ export function AppHeader() {
 
 	return (
 		<div className="fixed top-0 left-0 right-0 z-50" ref={navRef}>
-		<header className="backdrop-blur-md bg-[#080808]/90 border-b border-white/[0.08] h-[140px] flex items-center">
+		<header className="backdrop-blur-md bg-[#080808]/90 border-b border-white/[0.08] h-[96px] flex items-center">
 			<div className="mx-auto max-w-7xl px-4 sm:px-6 w-full flex items-center gap-4">
 
 				{/* Logo */}
 				<Link href="/dashboard" className="flex items-center shrink-0 mr-2">
-					<img
-						src={LOGO_URL}
-						alt="CRISP Content Engine"
-						className="h-20 w-auto"
-						width={1200}
-						height={627}
-					/>
+				<img
+					src={LOGO_URL}
+					alt="CRISP Content Engine"
+					className="h-14 w-auto"
+					width={1200}
+					height={627}
+				/>
 					</Link>
 
 					{/* Desktop nav */}
@@ -200,6 +200,13 @@ export function AppHeader() {
 										className="flex items-center px-3.5 py-2 text-sm text-white/60 hover:text-white hover:bg-white/[0.07] rounded-lg mx-1 transition-colors"
 									>
 										Connections
+									</Link>
+									<Link
+										href="/billing"
+										onClick={() => setOpenDropdown(null)}
+										className="flex items-center px-3.5 py-2 text-sm text-white/60 hover:text-white hover:bg-white/[0.07] rounded-lg mx-1 transition-colors"
+									>
+										Billing
 									</Link>
 									<div className="my-1 border-t border-white/[0.08]" />
 									<button
@@ -288,18 +295,24 @@ export function AppHeader() {
 					{/* Mobile user section */}
 					<div className="px-4 mt-3 pt-3 border-t border-white/[0.08] space-y-0.5">
 						<p className="px-3 pb-1 text-xs text-white/30 truncate">{user?.email}</p>
-						<Link
-							href="/connections"
-							className="flex items-center px-3 py-2.5 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/[0.06] transition-colors"
-						>
-							Connections
-						</Link>
-						<button
-							onClick={handleSignOut}
-							className="w-full flex items-center px-3 py-2.5 rounded-lg text-sm text-red-400 hover:text-red-300 hover:bg-white/[0.06] transition-colors"
-						>
-							Sign out
-						</button>
+					<Link
+						href="/connections"
+						className="flex items-center px-3 py-2.5 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/[0.06] transition-colors"
+					>
+						Connections
+					</Link>
+					<Link
+						href="/billing"
+						className="flex items-center px-3 py-2.5 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/[0.06] transition-colors"
+					>
+						Billing
+					</Link>
+					<button
+						onClick={handleSignOut}
+						className="w-full flex items-center px-3 py-2.5 rounded-lg text-sm text-red-400 hover:text-red-300 hover:bg-white/[0.06] transition-colors"
+					>
+						Sign out
+					</button>
 					</div>
 				</div>
 			)}

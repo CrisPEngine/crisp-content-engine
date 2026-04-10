@@ -787,38 +787,82 @@ export default function IdeaEnginePage() {
 				)}
 
 				{/* ── Step: Generating (Live Generation Workspace) ────────── */}
-				{step === 'generating' && (
-					<motion.div key="generating" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} className="space-y-5">
-						{/* Header with progress */}
-						<div className="card p-6">
-							<div className="flex items-start justify-between mb-4">
-								<div>
-									<h2 className="text-lg font-semibold mb-1">Creating your content series</h2>
-									<p className="text-text-dim text-sm">Turning your idea into channel-ready content.</p>
-								</div>
-								{totalExpected > 0 && (
-									<div className="text-right">
-										<div className="text-sm font-semibold text-text">{totalGenerated} of {totalExpected} ready</div>
-										<div className="text-xs text-text-dim">{Math.round((totalGenerated / totalExpected) * 100)}% complete</div>
-									</div>
+			{step === 'generating' && (
+				<motion.div key="generating" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} className="space-y-5">
+					{/* Header with progress */}
+					<div className={`card p-6 ${runStatus === 'failed' ? 'border-danger/30' : ''}`}>
+						<div className="flex items-start justify-between mb-4">
+							<div>
+								{runStatus === 'failed' ? (
+									<>
+										<h2 className="text-lg font-semibold mb-1 text-danger">Generation failed</h2>
+										<p className="text-text-dim text-sm">{error || 'Something went wrong. Any partial results are shown below.'}</p>
+									</>
+								) : (
+									<>
+										<h2 className="text-lg font-semibold mb-1">Creating your content series</h2>
+										<p className="text-text-dim text-sm">Turning your idea into channel-ready content.</p>
+									</>
 								)}
 							</div>
-
-							{totalExpected > 0 && (
-								<div className="space-y-2">
-									<div className="w-full h-2 bg-edge/60 rounded-full overflow-hidden">
-										<motion.div
-											className="h-full bg-primary rounded-full"
-											animate={{ width: `${Math.max(2, (totalGenerated / totalExpected) * 100)}%` }}
-											transition={{ type: 'spring', stiffness: 50 }}
-										/>
-									</div>
-									<p className="text-xs text-text-dim">
-										{getStageMessage((totalGenerated / totalExpected) * 100, selectedChannels)}
-									</p>
+							{totalExpected > 0 && runStatus !== 'failed' && (
+								<div className="text-right">
+									<div className="text-sm font-semibold text-text">{totalGenerated} of {totalExpected} ready</div>
+									<div className="text-xs text-text-dim">{Math.round((totalGenerated / totalExpected) * 100)}% complete</div>
 								</div>
 							)}
 						</div>
+
+						{totalExpected > 0 && runStatus !== 'failed' && (
+							<div className="space-y-2">
+								<div className="w-full h-2 bg-edge/60 rounded-full overflow-hidden">
+									<motion.div
+										className="h-full bg-primary rounded-full"
+										animate={{ width: `${Math.max(2, (totalGenerated / totalExpected) * 100)}%` }}
+										transition={{ type: 'spring', stiffness: 50 }}
+									/>
+								</div>
+								<p className="text-xs text-text-dim">
+									{getStageMessage((totalGenerated / totalExpected) * 100, selectedChannels)}
+								</p>
+							</div>
+						)}
+
+						{runStatus === 'failed' && (
+							<div className="flex gap-3 mt-4">
+								<button
+									type="button"
+									onClick={() => {
+										setError(null);
+										setItems([]);
+										setRunId('');
+										setRunStatus('');
+										setTotalExpected(0);
+										setTotalGenerated(0);
+										setStep('input');
+									}}
+									className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 text-text-soft font-medium text-sm transition-colors"
+								>
+									← Start over
+								</button>
+								<button
+									type="button"
+									onClick={() => {
+										setError(null);
+										setItems([]);
+										setRunId('');
+										setRunStatus('');
+										setTotalExpected(0);
+										setTotalGenerated(0);
+										setStep('preview');
+									}}
+									className="px-4 py-2 rounded-xl2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-sm transition-colors"
+								>
+									Try again
+								</button>
+							</div>
+						)}
+					</div>
 
 						{/* Items grouped by channel (placeholders + ready) */}
 						{Object.entries(

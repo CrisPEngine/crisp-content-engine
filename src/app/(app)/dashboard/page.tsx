@@ -436,46 +436,51 @@ export default async function Dashboard({
 						<StrategyCard brandProfileId={brandProfiles[0].id} />
 					)}
 
-				{/* Quick Actions */}
-				<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-					<a
-						href="/content/idea-engine"
-						className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border-2 border-dashed border-accent/30 bg-accent/5"
-					>
-						<div className="text-accent text-lg mb-2">💡</div>
-						<h3 className="font-semibold mb-1 text-sm md:text-base text-accent">Idea Engine</h3>
-						<p className="text-xs md:text-sm text-text-dim">
-							Turn one idea into a week of content
-						</p>
-					</a>
-					<a
-						href="/onboarding"
-						className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border-2 border-dashed border-edge/60"
-					>
-						<h3 className="font-semibold mb-2 text-sm md:text-base">Create New Brand</h3>
-						<p className="text-xs md:text-sm text-text-dim">
-							Add a new brand profile to start generating content
-						</p>
-					</a>
-					<a
-						href="/connections"
-						className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border-2 border-dashed border-edge/60"
-					>
-						<h3 className="font-semibold mb-2 text-sm md:text-base">Connect Accounts</h3>
-						<p className="text-xs md:text-sm text-text-dim">
-							Connect your social media accounts for publishing
-						</p>
-					</a>
-					<a
-						href="/content-brief"
-						className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border-2 border-dashed border-edge/60"
-					>
-						<h3 className="font-semibold mb-2 text-sm md:text-base">Monthly Content Brief</h3>
-						<p className="text-xs md:text-sm text-text-dim">
-							Submit a brief to guide next month's content generation
-						</p>
-					</a>
-				</div>
+			{/* Quick Actions — Idea Engine as primary card */}
+			<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+				{/* Idea Engine — full-width primary on mobile, first on grid */}
+				<a
+					href="/content/idea-engine"
+					className="sm:col-span-2 lg:col-span-1 card p-5 md:p-6 hover:bg-accent/10 transition cursor-pointer border border-accent/40 bg-accent/5 group"
+				>
+					<div className="flex items-center gap-2 mb-2">
+						<span className="text-accent text-base">💡</span>
+						<span className="text-xs font-semibold uppercase tracking-wide text-accent/70">Primary</span>
+					</div>
+					<h3 className="font-semibold mb-1 text-sm md:text-base text-accent group-hover:text-accent">Idea Engine</h3>
+					<p className="text-xs md:text-sm text-text-dim leading-relaxed">
+						Turn one idea into a full content system — across LinkedIn, X, Blog and more.
+					</p>
+					<div className="mt-3 text-xs text-accent font-medium">Launch →</div>
+				</a>
+				<a
+					href="/content/generate"
+					className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border border-edge/60"
+				>
+					<h3 className="font-semibold mb-2 text-sm md:text-base">Generate Content</h3>
+					<p className="text-xs md:text-sm text-text-dim">
+						Create posts for your brands within your monthly allowance
+					</p>
+				</a>
+				<a
+					href="/onboarding"
+					className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border border-edge/60"
+				>
+					<h3 className="font-semibold mb-2 text-sm md:text-base">Create New Brand</h3>
+					<p className="text-xs md:text-sm text-text-dim">
+						Add a new brand profile to start generating content
+					</p>
+				</a>
+				<a
+					href="/connections"
+					className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border border-edge/60"
+				>
+					<h3 className="font-semibold mb-2 text-sm md:text-base">Connect Accounts</h3>
+					<p className="text-xs md:text-sm text-text-dim">
+						Connect your social media accounts for publishing
+					</p>
+				</a>
+			</div>
 				</>
 			)}
 			</main>

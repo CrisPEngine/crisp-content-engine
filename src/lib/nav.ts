@@ -21,6 +21,7 @@ export const APP_NAV: NavItem[] = [
 	{
 		label: 'Content',
 		items: [
+			{ label: 'Idea Engine', href: '/content/idea-engine' },
 			{ label: 'Approval Queue', href: '/content/approval' },
 			{ label: 'Scheduled', href: '/content/schedule' },
 			{ label: 'Published', href: '/content/published' },

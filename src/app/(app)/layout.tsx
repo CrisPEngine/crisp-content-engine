@@ -8,7 +8,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 	return (
 		<SupabaseProviderWrapper>
 			<AppHeader />
-			<div className="pt-[140px]">
+			<div className="pt-24">
 				{children}
 			</div>
 		</SupabaseProviderWrapper>

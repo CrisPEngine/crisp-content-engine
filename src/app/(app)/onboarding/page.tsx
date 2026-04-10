@@ -253,6 +253,71 @@ const baseStepFields = {
 	platforms: ['platforms_requested', 'brand_palette', 'brand_assets_urls'] as const,
 };
 
+const LS_KEY = 'crisp_onboarding_draft';
+
+function loadDraft(): Partial<FormData> | null {
+	try {
+		const raw = typeof window !== 'undefined' ? localStorage.getItem(LS_KEY) : null;
+		return raw ? JSON.parse(raw) : null;
+	} catch {
+		return null;
+	}
+}
+
+function saveDraft(data: Partial<FormData>) {
+	try {
+		if (typeof window !== 'undefined') {
+			localStorage.setItem(LS_KEY, JSON.stringify(data));
+		}
+	} catch { /* silent */ }
+}
+
+function clearDraft() {
+	try {
+		if (typeof window !== 'undefined') {
+			localStorage.removeItem(LS_KEY);
+		}
+	} catch { /* silent */ }
+}
+
+const BASE_DEFAULTS: FormData = {
+	brand_type: 'personal',
+	client_name: '',
+	audience: '',
+	value_props: '',
+	offers: '',
+	brand_goals: '',
+	voice_rules: '',
+	brand_keywords: '',
+	exclude_keywords: '',
+	content_rules: '',
+	additional_info: '',
+	platforms_requested: [],
+	timezone: '',
+	language_region: 'US English',
+	preferred_image_source: 'AI Generated',
+	website: '',
+	brand_palette: '',
+	approval_contact_email: '',
+	brand_assets_urls: [],
+	personal_full_name: '',
+	personal_job_title: '',
+	personal_industry: '',
+	personal_links: '',
+	personal_headline: '',
+	personal_audience: '',
+	personal_expertise: '',
+	personal_goals: '',
+	personal_voice_traits: [],
+	personal_tone_avoid: [],
+	avoid_negative_tones: true,
+	personal_risk_tolerance: undefined,
+	personal_content_style: [],
+	personal_exclude_keywords: '',
+	personal_story: '',
+	personal_assets_urls: [],
+};
+
 export default function OnboardingPage() {
 	const supabase = useSupabase();
 	const [mounted, setMounted] = useState(false);
@@ -260,6 +325,8 @@ export default function OnboardingPage() {
 	const [submitting, setSubmitting] = useState(false);
 	const [showLoading, setShowLoading] = useState(false);
 	const [submittedBrandName, setSubmittedBrandName] = useState('');
+
+	const draft = loadDraft();
 
 	const {
 		register,
@@ -269,46 +336,22 @@ export default function OnboardingPage() {
 		watch,
 		trigger,
 		setError,
+		getValues,
 	} = useForm<FormData>({
 		resolver: zodResolver(schema) as any,
 		defaultValues: {
-			brand_type: 'personal',
-			client_name: '',
-			audience: '',
-			value_props: '',
-			offers: '',
-			brand_goals: '',
-			voice_rules: '',
-			brand_keywords: '',
-			exclude_keywords: '',
-			content_rules: '',
-			additional_info: '',
-			platforms_requested: [],
-			timezone: '',
-			language_region: 'US English',
-			preferred_image_source: 'AI Generated',
-			website: '',
-			brand_palette: '',
-			approval_contact_email: '',
-			brand_assets_urls: [],
-			personal_full_name: '',
-			personal_job_title: '',
-			personal_industry: '',
-			personal_links: '',
-			personal_headline: '',
-			personal_audience: '',
-			personal_expertise: '',
-			personal_goals: '',
-			personal_voice_traits: [],
-			personal_tone_avoid: [],
-			avoid_negative_tones: true,
-			personal_risk_tolerance: undefined,
-			personal_content_style: [],
-			personal_exclude_keywords: '',
-			personal_story: '',
-			personal_assets_urls: [],
+			...BASE_DEFAULTS,
+			...(draft || {}),
 		},
 	});
+
+	// Auto-save to localStorage on any field change
+	useEffect(() => {
+		const subscription = watch((values) => {
+			saveDraft(values as Partial<FormData>);
+		});
+		return () => subscription.unsubscribe();
+	}, [watch]);
 
 	const brandType = watch('brand_type');
 	const isPersonal = brandType === 'personal';
@@ -504,6 +547,7 @@ export default function OnboardingPage() {
 			const airtableId: string | undefined = result?.airtableId;
 			const brandName = inferredClientName;
 			setSubmittedBrandName(brandName);
+			clearDraft();
 			setShowLoading(true);
 
 			if (airtableId) {
@@ -594,19 +638,35 @@ export default function OnboardingPage() {
 	return (
 		<div className="mx-auto max-w-3xl">
 			<div className="mb-8">
-				<div className="flex items-center justify-between mb-4">
+				{/* Step X of Y */}
+				<div className="flex items-center justify-between mb-3">
+					<p className="text-sm text-text-dim font-medium">
+						Step {currentStep} of {steps.length}
+					</p>
+					<p className="text-sm text-text-soft">
+						{steps[currentStep - 1]?.title}
+					</p>
+				</div>
+				{/* Progress bar */}
+				<div className="h-1.5 rounded-full bg-edge/40 mb-5">
+					<div
+						className="h-1.5 rounded-full bg-primary transition-all duration-300"
+						style={{ width: `${(currentStep / steps.length) * 100}%` }}
+					/>
+				</div>
+				<div className="flex items-center justify-between">
 					{steps.map((step, index) => (
 						<div key={step.id} className="flex items-center flex-1">
 							<div className="flex flex-col items-center flex-1">
 								<div
 									className={`
-										w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium border-2 transition
+										w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium border-2 transition
 										${currentStep >= step.id ? 'bg-primary/20 border-primary/60 text-primary' : 'bg-surface/30 border-edge/60 text-text-dim'}
 									`}
 								>
 									{currentStep > step.id ? '✓' : step.id}
 								</div>
-								<p className="mt-2 text-xs text-text-dim text-center">{step.title}</p>
+								<p className="mt-1.5 text-[11px] text-text-dim text-center hidden sm:block">{step.title}</p>
 							</div>
 							{index < steps.length - 1 && (
 								<div className={`h-0.5 flex-1 mx-2 ${currentStep > step.id ? 'bg-primary/40' : 'bg-edge/60'}`} />
@@ -1216,25 +1276,42 @@ export default function OnboardingPage() {
 					</motion.div>
 				</AnimatePresence>
 
-				<div className="flex items-center justify-between pt-6">
-					<button
-						type="button"
-						onClick={prevStep}
-						disabled={currentStep === 1}
-						className={`
-							px-6 py-3 rounded-xl2 border transition active:scale-[0.99] active:bg-surface/60
-							${currentStep === 1 ? 'border-edge/40 bg-surface/20 text-text-dim cursor-not-allowed' : 'border-edge/60 bg-surface/30 text-text hover:bg-surface/50'}
-						`}
-					>
-						← Previous
-					</button>
+			<div className="flex items-center justify-between pt-6">
+				<button
+					type="button"
+					onClick={prevStep}
+					disabled={currentStep === 1}
+					className={`
+						px-6 py-3 rounded-xl2 border transition active:scale-[0.99] active:bg-surface/60
+						${currentStep === 1 ? 'border-edge/40 bg-surface/20 text-text-dim cursor-not-allowed' : 'border-edge/60 bg-surface/30 text-text hover:bg-surface/50'}
+					`}
+				>
+					← Back
+				</button>
+
+				<div className="flex items-center gap-3">
+					{/* Skip allowed only on the last step (optional advanced) for company brand */}
+					{currentStep === steps.length && !isPersonal && (
+						<button
+							type="button"
+							onClick={() => {
+								handleSubmit(
+									onSubmit,
+									() => { /* skip validation errors for optional step */ }
+								)();
+							}}
+							className="px-4 py-3 rounded-xl2 border border-edge/60 bg-surface/20 text-text-dim hover:bg-surface/40 text-sm transition"
+						>
+							Skip this step
+						</button>
+					)}
 
 					{currentStep < steps.length ? (
 						<LoadingButton
 							type="button"
 							onClick={nextStep}
 						>
-							Next →
+							Save and continue →
 						</LoadingButton>
 					) : (
 						<LoadingButton
@@ -1246,12 +1323,9 @@ export default function OnboardingPage() {
 								handleSubmit(
 									onSubmit,
 									(validationErrors) => {
-										setSubmitting(false); // Reset loading state on validation error
-										console.log('Form validation failed:', JSON.stringify(validationErrors, null, 2));
-										// Find the first error with a message
-										for (const [fieldName, error] of Object.entries(validationErrors)) {
+										setSubmitting(false);
+										for (const [, error] of Object.entries(validationErrors)) {
 											if (error) {
-												// Handle both single error object and array of errors
 												const errorArray = Array.isArray(error) ? error : [error];
 												for (const err of errorArray) {
 													const errorObj = err as { message?: string; type?: string };
@@ -1262,7 +1336,6 @@ export default function OnboardingPage() {
 												}
 											}
 										}
-										// Fallback if no message found
 										const firstField = Object.keys(validationErrors)[0];
 										alert(`Validation error: Please fix the ${firstField || 'form'} field`);
 									}
@@ -1273,6 +1346,7 @@ export default function OnboardingPage() {
 						</LoadingButton>
 					)}
 				</div>
+			</div>
 			</form>
 		</div>
 	);

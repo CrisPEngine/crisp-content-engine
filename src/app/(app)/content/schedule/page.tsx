@@ -322,11 +322,30 @@ export default function SchedulingDashboard() {
 				<Suspense fallback={<div className="card p-8 text-center text-text-dim">Loading calendar...</div>}>
 					<ScheduleCalendarView items={scheduledContent} onReschedule={handleReschedule} />
 				</Suspense>
-			) : filteredContent.length === 0 ? (
-				<div className="card p-8 text-center">
-					<Calendar className="w-12 h-12 text-text-dim mx-auto mb-4" />
-					<p className="text-text-soft">No content scheduled for this period</p>
+		) : filteredContent.length === 0 ? (
+			<div className="card p-10 text-center flex flex-col items-center gap-4">
+				<div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
+					<Calendar className="w-6 h-6 text-primary/50" />
 				</div>
+				<div>
+					<p className="font-semibold text-text mb-1">No content yet</p>
+					<p className="text-sm text-text-dim">You haven't scheduled any content yet. Generate posts or use Idea Engine to get started.</p>
+				</div>
+				<div className="flex flex-wrap gap-3 justify-center">
+					<a
+						href="/content/generate"
+						className="px-4 py-2 rounded-xl2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-sm transition-colors"
+					>
+						Generate Content
+					</a>
+					<a
+						href="/content/idea-engine"
+						className="px-4 py-2 rounded-xl2 bg-accent/10 hover:bg-accent/20 border border-accent/30 text-accent font-medium text-sm transition-colors"
+					>
+						Use Idea Engine
+					</a>
+				</div>
+			</div>
 			) : (
 				<div className="space-y-4">
 					{filteredContent.map((item) => (
