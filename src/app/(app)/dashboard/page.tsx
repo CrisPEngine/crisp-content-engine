@@ -5,6 +5,7 @@ import { BrandProfilesList } from '@/components/BrandProfilesList';
 import { DashboardTabs } from '@/components/DashboardTabs';
 import { OnboardingDebug } from '@/components/OnboardingDebug';
 import { GenerateContentActions } from '@/components/GenerateContentActions';
+import { RecommendedNextStep } from '@/components/RecommendedNextStep';
 import { StrategyCard } from '@/components/StrategyCard';
 import { CardSkeleton, UsageCardSkeleton } from '@/components/skeletons/Skeleton';
 import { AuthLoadingHandler } from '@/components/AuthLoadingHandler';
@@ -322,11 +323,23 @@ export default async function Dashboard({
 				<NewBrandCallout />
 			</Suspense>
 
-			<DashboardTabs activeTab={activeTab} />
+		<DashboardTabs activeTab={activeTab} />
 
-			{activeTab === 'overview' && (
-				<>
-					{/* Plan and Get Started/Content Actions boxes side by side */}
+		{activeTab === 'overview' && (
+			<>
+				{/* Recommended next step — always shown for subscribed users */}
+				{hasSubscription && (
+					<RecommendedNextStep
+						currentStep={currentStep}
+						hasContentToReview={hasContentToReview}
+						hasBrandProfiles={hasBrandProfiles}
+						hasApprovedStrategies={hasApprovedStrategies}
+						hasSubscription={hasSubscription}
+						brandProfileId={brandProfiles[0]?.id}
+					/>
+				)}
+
+				{/* Plan and Get Started/Content Actions boxes side by side */}
 					<div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
 						{/* Your Plan box - Left side */}
 						<div className="flex">
@@ -453,15 +466,15 @@ export default async function Dashboard({
 					</p>
 					<div className="mt-3 text-xs text-accent font-medium">Launch →</div>
 				</a>
-				<a
-					href="/content/generate"
-					className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border border-edge/60"
-				>
-					<h3 className="font-semibold mb-2 text-sm md:text-base">Generate Content</h3>
-					<p className="text-xs md:text-sm text-text-dim">
-						Create posts for your brands within your monthly allowance
-					</p>
-				</a>
+			<a
+				href="/content/generate"
+				className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border border-edge/60"
+			>
+				<h3 className="font-semibold mb-2 text-sm md:text-base">Quick Generate</h3>
+				<p className="text-xs md:text-sm text-text-dim">
+					Generate individual posts for a brand within your monthly allowance
+				</p>
+			</a>
 				<a
 					href="/onboarding"
 					className="card p-4 md:p-6 hover:bg-surface/50 transition cursor-pointer border border-edge/60"

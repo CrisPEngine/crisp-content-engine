@@ -169,21 +169,21 @@ export default function PublishedContentPage() {
 					<CheckCircle className="w-6 h-6 text-primary/50" />
 				</div>
 				<div>
-					<p className="font-semibold text-text mb-1">No content yet</p>
-					<p className="text-sm text-text-dim">You haven't published any content yet. Generate posts or use Idea Engine to get started.</p>
+					<p className="font-semibold text-text mb-1">No published content yet</p>
+					<p className="text-sm text-text-dim max-w-sm mx-auto">Your published posts will appear here. Approve and schedule content to start building your published library.</p>
 				</div>
 				<div className="flex flex-wrap gap-3 justify-center">
 					<a
-						href="/content/generate"
+						href="/content/approval"
 						className="px-4 py-2 rounded-xl2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-sm transition-colors"
 					>
-						Generate Content
+						Review Drafts
 					</a>
 					<a
 						href="/content/idea-engine"
 						className="px-4 py-2 rounded-xl2 bg-accent/10 hover:bg-accent/20 border border-accent/30 text-accent font-medium text-sm transition-colors"
 					>
-						Use Idea Engine
+						💡 Idea Engine
 					</a>
 				</div>
 			</div>

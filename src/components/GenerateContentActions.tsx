@@ -6,6 +6,12 @@ import { CAPS } from '@/config/pricing';
 import type { PlanId } from '@/config/pricing';
 import Link from 'next/link';
 
+function daysUntilMonthReset(): number {
+	const now = new Date();
+	const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+	return Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 type BrandProfile = {
 	id: string;
 	client_name: string;
@@ -23,8 +29,11 @@ export function GenerateContentActions({ brandProfiles }: GenerateContentActions
 
 	const postsCap = usageData?.caps?.posts_per_month;
 	const isUnlimited = !postsCap || postsCap === 999999 || postsCap === Infinity || postsCap >= 999999;
-	const remainingPosts = isUnlimited ? 999999 : (postsCap - (usageData?.usage?.posts || 0));
+	const usedPosts = usageData?.usage?.posts || 0;
+	const remainingPosts = isUnlimited ? 999999 : (postsCap! - usedPosts);
 	const hasRemainingPosts = isUnlimited || remainingPosts > 0;
+	const usedPercent = !isUnlimited && postsCap ? Math.min(100, Math.round((usedPosts / postsCap) * 100)) : 0;
+	const daysLeft = daysUntilMonthReset();
 
 	if (loading) {
 		return (
@@ -45,24 +54,35 @@ export function GenerateContentActions({ brandProfiles }: GenerateContentActions
 			<h3 className="font-semibold mb-3 text-sm md:text-base">Content Actions</h3>
 			<div className="space-y-2 flex-1">
 
-				{/* Generate More Content */}
+				{/* Quota usage bar */}
+				{!isUnlimited && postsCap && (
+					<div className="p-2 rounded-lg bg-surface/30 border border-edge/40 space-y-1.5 text-[11px]">
+						<div className="flex items-center justify-between text-text-soft">
+							<span><span className="font-semibold text-text">{usedPosts}</span> of {postsCap} posts used</span>
+							<span className="text-text-dim">Resets in {daysLeft}d</span>
+						</div>
+						<div className="w-full h-1.5 rounded-full bg-edge/50 overflow-hidden">
+							<div
+								className={`h-full rounded-full transition-all ${usedPercent >= 90 ? 'bg-warning' : 'bg-primary'}`}
+								style={{ width: `${usedPercent}%` }}
+							/>
+						</div>
+					</div>
+				)}
+
+				{/* Quick Generate */}
 				{hasRemainingPosts ? (
 					<div className="flex flex-col gap-2 p-2 rounded-lg text-xs bg-primary/10 border border-primary/30">
-						<div className="font-medium">Generate More Content</div>
+						<div className="font-medium">Quick Generate</div>
 						<p className="text-[11px] text-text-dim mb-2">
-							Create additional posts for your brands within your monthly allowance.
+							Generate individual posts for a brand within your monthly allowance.
 						</p>
-						{!isUnlimited && (
-							<p className="text-[10px] text-text-soft mb-2">
-								<span className="font-medium text-primary">{remainingPosts}</span> posts remaining this month
-							</p>
-						)}
 						<Link
 							href="/content/generate"
 							className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs flex items-center justify-center gap-1.5"
 						>
 							<Sparkles className="w-3 h-3" />
-							Generate Content
+							Quick Generate
 						</Link>
 					</div>
 				) : (
@@ -72,7 +92,7 @@ export function GenerateContentActions({ brandProfiles }: GenerateContentActions
 							Monthly limit reached
 						</div>
 						<p className="text-[11px] text-text-dim">
-							You've reached your monthly content limit. Upgrade your plan or wait until next month.
+							You've used all {postsCap} posts this month. Resets in {daysLeft} day{daysLeft !== 1 ? 's' : ''} or upgrade now.
 						</p>
 						<Link
 							href="/billing"

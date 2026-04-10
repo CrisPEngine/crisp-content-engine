@@ -142,6 +142,10 @@ export default function IdeaEnginePage() {
 	const [totalGenerated, setTotalGenerated] = useState<number>(0);
 	const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+	// Track which item IDs were "just added" so we can show a transient badge
+	const [newlyReadyIds, setNewlyReadyIds] = useState<Set<string>>(new Set());
+	const prevReadyIds = useRef<Set<string>>(new Set());
+
 	// ── Review ───────────────────────────────────────────────────
 	const [items, setItems] = useState<SeriesItem[]>([]);
 
@@ -240,23 +244,46 @@ export default function IdeaEnginePage() {
 				setTotalExpected(run.total_expected || 0);
 				setTotalGenerated(generated_items_count || run.total_generated || 0);
 
-				// Always update items (placeholders + filled) during generation
-				if (runItems && runItems.length > 0) {
-					const mappedItems: SeriesItem[] = runItems.map((item: any) => ({
-						...item,
-						_editing: false,
-						_editDraft: {
-							post_title: item.post_title || '',
-							body_draft: item.body_draft || '',
-							hashtags: item.hashtags || '',
-							image_prompt: item.image_prompt || '',
-						},
-						_saving: false,
-						_regenerating: false,
-						_deleted: false,
-					}));
-					setItems(mappedItems);
+			// Always update items (placeholders + filled) during generation
+			if (runItems && runItems.length > 0) {
+				const mappedItems: SeriesItem[] = runItems.map((item: any) => ({
+					...item,
+					_editing: false,
+					_editDraft: {
+						post_title: item.post_title || '',
+						body_draft: item.body_draft || '',
+						hashtags: item.hashtags || '',
+						image_prompt: item.image_prompt || '',
+					},
+					_saving: false,
+					_regenerating: false,
+					_deleted: false,
+				}));
+				setItems(mappedItems);
+
+				// Detect newly ready items (transitioned from placeholder → ready this poll)
+				const currentReadyIds = new Set(
+					mappedItems
+						.filter(it => it.body_draft || it.status === 'ready')
+						.map(it => it.id)
+				);
+				const justAdded = new Set<string>();
+				currentReadyIds.forEach(id => {
+					if (!prevReadyIds.current.has(id)) justAdded.add(id);
+				});
+				prevReadyIds.current = currentReadyIds;
+				if (justAdded.size > 0) {
+					setNewlyReadyIds(prev => new Set([...prev, ...justAdded]));
+					// Clear "just added" badges after 2.5 seconds
+					setTimeout(() => {
+						setNewlyReadyIds(prev => {
+							const next = new Set(prev);
+							justAdded.forEach(id => next.delete(id));
+							return next;
+						});
+					}, 2500);
 				}
+			}
 
 				if (run.status === 'review' || run.status === 'completed') {
 					clearInterval(pollRef.current!);
@@ -864,81 +891,102 @@ export default function IdeaEnginePage() {
 						)}
 					</div>
 
-						{/* Items grouped by channel (placeholders + ready) */}
-						{Object.entries(
-							items.reduce((acc, item) => {
-								if (!acc[item.channel]) acc[item.channel] = [];
-								acc[item.channel].push(item);
-								return acc;
-							}, {} as Record<string, SeriesItem[]>)
-						).map(([channel, chItems]) => (
-							<div key={channel}>
-								<div className="flex items-center gap-2 mb-3">
-									<span>{CHANNEL_ICONS[channel]}</span>
-									<span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${PLATFORM_COLORS[channel] || 'text-text-dim border-edge/60 bg-surface/30'}`}>
-										{channel}
-									</span>
-									<span className="text-xs text-text-dim">
-										{chItems.filter(it => it.body_draft || it.status === 'ready').length} of {chItems.length}
-									</span>
-								</div>
-								<div className="space-y-3">
-									{chItems.map(item => {
-										const isReady = item.body_draft || item.status === 'ready';
-										const isFailedPlaceholder = item.status === 'failed' && !isReady;
-										
-										if (!isReady) {
-											if (isFailedPlaceholder) {
-												return (
-													<div key={item.id} className="card p-4 border border-danger/30 bg-danger/10">
-														<div className="flex items-center justify-between">
-															<div className="h-4 bg-danger/20 rounded w-2/3"></div>
-															<span className="text-xs px-2 py-0.5 rounded-full bg-danger/20 text-danger border border-danger/30">
-																Failed
-															</span>
-														</div>
-														<div className="mt-3 space-y-2">
-															<div className="h-3 bg-danger/10 rounded w-full"></div>
-															<div className="h-3 bg-danger/10 rounded w-5/6"></div>
-														</div>
-													</div>
-												);
-											}
-
-											// Skeleton placeholder
+					{/* Items grouped by channel (placeholders + ready) */}
+					{Object.entries(
+						items.reduce((acc, item) => {
+							if (!acc[item.channel]) acc[item.channel] = [];
+							acc[item.channel].push(item);
+							return acc;
+						}, {} as Record<string, SeriesItem[]>)
+					).map(([channel, chItems]) => {
+						const readyCount = chItems.filter(it => it.body_draft || it.status === 'ready').length;
+						const totalCount = chItems.length;
+						const channelComplete = readyCount === totalCount;
+						return (
+						<div key={channel}>
+							<div className="flex items-center gap-2 mb-3">
+								<span>{CHANNEL_ICONS[channel]}</span>
+								<span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${PLATFORM_COLORS[channel] || 'text-text-dim border-edge/60 bg-surface/30'}`}>
+									{channel}
+								</span>
+								{/* Channel progress badge */}
+								<span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+									channelComplete
+										? 'bg-accent/20 text-accent border border-accent/30'
+										: 'bg-edge/40 text-text-dim border border-edge/60'
+								}`}>
+									{readyCount}/{totalCount}
+								</span>
+								{channelComplete && (
+									<span className="text-xs text-accent">✓</span>
+								)}
+							</div>
+							<div className="space-y-3">
+								{chItems.map(item => {
+									const isReady = !!(item.body_draft || item.status === 'ready');
+									const isFailedPlaceholder = item.status === 'failed' && !isReady;
+									const isJustAdded = newlyReadyIds.has(item.id);
+									
+									if (!isReady) {
+										if (isFailedPlaceholder) {
 											return (
-												<div key={item.id} className="card p-4 animate-pulse">
-													<div className="h-4 bg-edge/40 rounded w-3/4 mb-3"></div>
-													<div className="space-y-2">
-														<div className="h-3 bg-edge/30 rounded w-full"></div>
-														<div className="h-3 bg-edge/30 rounded w-5/6"></div>
-														<div className="h-3 bg-edge/30 rounded w-4/6"></div>
+												<div key={item.id} className="card p-4 border border-danger/30 bg-danger/10">
+													<div className="flex items-center justify-between">
+														<div className="h-4 bg-danger/20 rounded w-2/3"></div>
+														<span className="text-xs px-2 py-0.5 rounded-full bg-danger/20 text-danger border border-danger/30">
+															Failed
+														</span>
+													</div>
+													<div className="mt-3 space-y-2">
+														<div className="h-3 bg-danger/10 rounded w-full"></div>
+														<div className="h-3 bg-danger/10 rounded w-5/6"></div>
 													</div>
 												</div>
 											);
 										}
 
-										// Ready item - show actual content
+										// Skeleton placeholder
 										return (
-											<div key={item.id} className="card p-4 border border-accent/20 bg-accent/5">
-												<div className="flex items-start justify-between mb-2">
-													<h3 className="font-medium text-text flex-1">{item.post_title || 'Untitled'}</h3>
-													<span className="text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent border border-accent/30 shrink-0">
+											<div key={item.id} className="card p-4 animate-pulse">
+												<div className="h-4 bg-edge/40 rounded w-3/4 mb-3"></div>
+												<div className="space-y-2">
+													<div className="h-3 bg-edge/30 rounded w-full"></div>
+													<div className="h-3 bg-edge/30 rounded w-5/6"></div>
+													<div className="h-3 bg-edge/30 rounded w-4/6"></div>
+												</div>
+											</div>
+										);
+									}
+
+									// Ready item - show actual content with optional "Just added" badge
+									return (
+										<div key={item.id} className="card p-4 border border-accent/20 bg-accent/5">
+											<div className="flex items-start justify-between mb-2 gap-2">
+												<h3 className="font-medium text-text flex-1">{item.post_title || 'Untitled'}</h3>
+												<div className="flex items-center gap-1.5 shrink-0">
+													{isJustAdded && (
+														<span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 animate-pulse">
+															Just added
+														</span>
+													)}
+													<span className="text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent border border-accent/30">
 														Ready
 													</span>
 												</div>
-												<p className="text-sm text-text-dim whitespace-pre-wrap line-clamp-3">
-													{item.body_draft}
-												</p>
-												{item.hashtags && (
-													<p className="text-xs text-primary/70 mt-2">{item.hashtags}</p>
-												)}
 											</div>
-										);
-									})}
-								</div>
+											<p className="text-sm text-text-dim whitespace-pre-wrap line-clamp-3">
+												{item.body_draft}
+											</p>
+											{item.hashtags && (
+												<p className="text-xs text-primary/70 mt-2">{item.hashtags}</p>
+											)}
+										</div>
+									);
+								})}
 							</div>
-						))}
+						</div>
+					);}
+					)}
 
 						{items.length === 0 && (
 							<div className="card p-10 text-center">

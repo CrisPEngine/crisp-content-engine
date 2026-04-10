@@ -880,21 +880,21 @@ export default function ContentApprovalPage() {
 							<Eye className="w-6 h-6 text-primary/50" />
 						</div>
 						<div>
-							<p className="font-semibold text-text mb-1">No content yet</p>
-							<p className="text-sm text-text-dim">You haven't created any content yet. Generate posts or use Idea Engine to get started.</p>
+							<p className="font-semibold text-text mb-1">Your approval queue is empty</p>
+							<p className="text-sm text-text-dim max-w-sm mx-auto">No content is waiting for your review. Use Idea Engine to create a full content series, or Quick Generate for individual posts.</p>
 						</div>
 						<div className="flex flex-wrap gap-3 justify-center">
-							<a
-								href="/content/generate"
-								className="px-4 py-2 rounded-xl2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-sm flex items-center gap-1.5 transition-colors"
-							>
-								Generate Content
-							</a>
 							<a
 								href="/content/idea-engine"
 								className="px-4 py-2 rounded-xl2 bg-accent/10 hover:bg-accent/20 border border-accent/30 text-accent font-medium text-sm flex items-center gap-1.5 transition-colors"
 							>
-								Use Idea Engine
+								💡 Launch Idea Engine
+							</a>
+							<a
+								href="/content/generate"
+								className="px-4 py-2 rounded-xl2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-sm flex items-center gap-1.5 transition-colors"
+							>
+								Quick Generate
 							</a>
 						</div>
 					</div>

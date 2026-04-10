@@ -1289,30 +1289,40 @@ export default function OnboardingPage() {
 					← Back
 				</button>
 
-				<div className="flex items-center gap-3">
-					{/* Skip allowed only on the last step (optional advanced) for company brand */}
-					{currentStep === steps.length && !isPersonal && (
-						<button
-							type="button"
-							onClick={() => {
-								handleSubmit(
-									onSubmit,
-									() => { /* skip validation errors for optional step */ }
-								)();
-							}}
-							className="px-4 py-3 rounded-xl2 border border-edge/60 bg-surface/20 text-text-dim hover:bg-surface/40 text-sm transition"
-						>
-							Skip this step
-						</button>
-					)}
+			<div className="flex items-center gap-3">
+				{/* Skip for now — available on steps 2+ for company brand (all non-required steps) */}
+				{currentStep > 1 && !isPersonal && currentStep < steps.length && (
+					<button
+						type="button"
+						onClick={() => setCurrentStep(s => Math.min(s + 1, steps.length))}
+						className="px-4 py-3 rounded-xl2 border border-edge/60 bg-surface/20 text-text-dim hover:bg-surface/40 text-sm transition"
+					>
+						Skip for now
+					</button>
+				)}
+				{/* Skip on final step — submit anyway without strict validation of optional fields */}
+				{currentStep === steps.length && !isPersonal && (
+					<button
+						type="button"
+						onClick={() => {
+							handleSubmit(
+								onSubmit,
+								() => { /* intentionally skip optional step validation */ }
+							)();
+						}}
+						className="px-4 py-3 rounded-xl2 border border-edge/60 bg-surface/20 text-text-dim hover:bg-surface/40 text-sm transition"
+					>
+						Skip this step
+					</button>
+				)}
 
-					{currentStep < steps.length ? (
-						<LoadingButton
-							type="button"
-							onClick={nextStep}
-						>
-							Save and continue →
-						</LoadingButton>
+				{currentStep < steps.length ? (
+					<LoadingButton
+						type="button"
+						onClick={nextStep}
+					>
+						Save and continue →
+					</LoadingButton>
 					) : (
 						<LoadingButton
 							type="submit"
