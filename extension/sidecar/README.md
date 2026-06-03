@@ -32,10 +32,12 @@ Output: `extension/sidecar/dist/`
 
 ## Usage
 
-1. Select text on any supported page (optional but recommended).
-2. Click the Sidecar toolbar icon to open the side panel.
-3. Click **Refresh page context** to capture selection, URL, and title (only runs on your click).
-4. Choose brand, message type, objective, CTA strength, relationship stage.
+1. Open Sidecar — first run shows **Set up CRISP Sidecar** (API URL + Bearer token).
+2. Click **Save**, then **Test connection** (loads brands only after success).
+3. Open a normal website tab (not `chrome://` pages).
+4. Click the Sidecar toolbar icon on that tab (grants `activeTab` for scripting).
+5. Click **Refresh page context** to capture selection, URL, and title (only on your click).
+6. Choose brand, message type, objective, CTA strength, relationship stage.
 4. **Generate draft** → review → **Copy draft** (paste manually on the platform).
 5. Optionally **Save opportunity**, **Save contact**, or **Create content idea**.
 

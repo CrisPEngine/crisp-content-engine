@@ -1,80 +1,136 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Brand, DraftResult, SidecarConfig } from '../lib/api';
+import type { Brand, BrandsMeta, DraftResult, SidecarConfig, ConnectionTestResult } from '../lib/api';
 import {
 	createContentIdea,
-	fetchBrands,
-	fetchConfig,
 	generateDraft,
 	saveContact,
 	saveOpportunity,
+	testConnection,
 } from '../lib/api';
 import { captureActiveTabContext } from '../lib/context';
+import { formatApiErrorForUi, SidecarApiError } from '../lib/errors';
 import { detectPlatformFromUrl } from '../lib/platform';
-import { loadSettings, saveSettings, type SidecarSettings } from '../lib/settings';
+import {
+	DEFAULT_SETTINGS,
+	isSettingsComplete,
+	loadSettings,
+	type SidecarSettings,
+} from '../lib/settings';
+import { SettingsPanel } from './SettingsPanel';
 
-const EMPTY_ERROR =
+const EMPTY_DRAFT_ERROR =
 	'Sidecar could not generate a draft. Check the API connection, selected brand and available AI configuration.';
 
 const EMPTY_STATE =
-	'Select a post, comment, profile note or conversation snippet, then open Sidecar to draft a reply or message in the right brand voice.';
+	'Select a post, comment, profile note or conversation snippet, then click Refresh page context.';
+
+type AppPhase = 'loading' | 'setup' | 'ready';
 
 export function App() {
+	const [phase, setPhase] = useState<AppPhase>('loading');
+	const [settings, setSettings] = useState<SidecarSettings>(DEFAULT_SETTINGS);
+	const [showSettings, setShowSettings] = useState(false);
+	const [connected, setConnected] = useState(false);
+
 	const [config, setConfig] = useState<SidecarConfig | null>(null);
 	const [brands, setBrands] = useState<Brand[]>([]);
-	const [settings, setSettings] = useState<SidecarSettings | null>(null);
-	const [showSettings, setShowSettings] = useState(false);
+	const [brandsMeta, setBrandsMeta] = useState<BrandsMeta | null>(null);
 
 	const [selectedText, setSelectedText] = useState('');
 	const [pageUrl, setPageUrl] = useState('');
 	const [pageTitle, setPageTitle] = useState('');
 	const [platform, setPlatform] = useState('web');
 	const [userNotes, setUserNotes] = useState('');
+	const [contextMessage, setContextMessage] = useState<string | null>(null);
 
 	const [brandId, setBrandId] = useState('');
-	const [messageType, setMessageType] = useState('');
-	const [objective, setObjective] = useState('');
+	const [messageType, setMessageType] = useState('Public reply');
+	const [objective, setObjective] = useState('Community value');
 	const [ctaStrength, setCtaStrength] = useState('Soft');
 	const [relationshipStage, setRelationshipStage] = useState('Unknown');
 	const [contactType, setContactType] = useState('Other');
 	const [consentStatus, setConsentStatus] = useState('Unknown');
 
 	const [loading, setLoading] = useState(false);
+	const [contextRefreshing, setContextRefreshing] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [statusMessage, setStatusMessage] = useState<string | null>(null);
 	const [draft, setDraft] = useState<DraftResult | null>(null);
 
-	const refreshContext = useCallback(async () => {
-		const ctx = await captureActiveTabContext();
-		if (ctx) {
-			setSelectedText(ctx.selectedText);
-			setPageUrl(ctx.pageUrl);
-			setPageTitle(ctx.pageTitle);
-			setPlatform(detectPlatformFromUrl(ctx.pageUrl));
-		}
+	const applyConnection = useCallback((result: ConnectionTestResult) => {
+		setConfig(result.config);
+		setBrands(result.brands);
+		setBrandsMeta(result.brandsMeta);
+		setBrandId((prev) => prev || result.brands[0]?.id || '');
+		setMessageType((prev) =>
+			result.config.enums.messageTypes.includes(prev)
+				? prev
+				: result.config.enums.messageTypes[0] || prev,
+		);
+		setObjective((prev) =>
+			result.config.enums.objectives.includes(prev)
+				? prev
+				: result.config.enums.objectives[0] || prev,
+		);
+		setConnected(true);
+		setPhase('ready');
 	}, []);
 
-	const bootstrap = useCallback(async () => {
-		setError(null);
-		try {
-			const [cfg, brandList, stored] = await Promise.all([
-				fetchConfig(),
-				fetchBrands(),
-				loadSettings(),
-			]);
-			setConfig(cfg);
-			setBrands(brandList.brands);
-			setSettings(stored);
-			setBrandId((prev) => prev || brandList.brands[0]?.id || '');
-			setMessageType((prev) => prev || cfg.enums.messageTypes[0] || '');
-			setObjective((prev) => prev || cfg.enums.objectives[0] || '');
-		} catch (err) {
-			setError(err instanceof Error ? err.message : EMPTY_ERROR);
-		}
-	}, [refreshContext]);
+	const loadAppData = useCallback(
+		async (stored: SidecarSettings) => {
+			const result = await testConnection(stored);
+			applyConnection(result);
+		},
+		[applyConnection],
+	);
 
 	useEffect(() => {
-		void bootstrap();
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- mount only
+		void (async () => {
+			const stored = await loadSettings();
+			setSettings(stored);
+			if (!isSettingsComplete(stored)) {
+				setPhase('setup');
+				setShowSettings(true);
+				return;
+			}
+			try {
+				await loadAppData(stored);
+			} catch {
+				setPhase('setup');
+				setShowSettings(true);
+			}
+		})();
+	}, [loadAppData]);
+
+	const refreshContext = useCallback(async () => {
+		setContextRefreshing(true);
+		setContextMessage(null);
+		try {
+			const result = await captureActiveTabContext();
+
+			if (result.ok) {
+				setSelectedText(result.context.selectedText);
+				setPageUrl(result.context.pageUrl);
+				setPageTitle(result.context.pageTitle);
+				setPlatform(detectPlatformFromUrl(result.context.pageUrl));
+				setContextMessage(
+					result.context.selectedText
+						? 'Page context updated.'
+						: 'Page URL captured. No text selected — select text on the page and refresh again.',
+				);
+				return;
+			}
+
+			if (result.partial?.pageUrl) {
+				setSelectedText(result.partial.selectedText);
+				setPageUrl(result.partial.pageUrl);
+				setPageTitle(result.partial.pageTitle);
+				setPlatform(detectPlatformFromUrl(result.partial.pageUrl));
+			}
+			setContextMessage(result.message);
+		} finally {
+			setContextRefreshing(false);
+		}
 	}, []);
 
 	const selectedBrand = brands.find((b) => b.id === brandId);
@@ -93,38 +149,47 @@ export function App() {
 		...(existingDraft ? { existingDraft } : {}),
 	});
 
-	const handleGenerate = async () => {
-		if (!brandId) {
-			setError('Select a brand first.');
+	const runApiAction = async (action: () => Promise<void>) => {
+		if (!isSettingsComplete(settings)) {
+			setError('Configure API URL and Bearer token in Settings first.');
+			setPhase('setup');
+			setShowSettings(true);
 			return;
 		}
 		setLoading(true);
 		setError(null);
-		setStatusMessage(null);
 		try {
-			const result = await generateDraft(buildDraftPayload());
-			setDraft(result);
+			await action();
 		} catch (err) {
-			setError(err instanceof Error ? err.message : EMPTY_ERROR);
-			setDraft(null);
+			const apiError =
+				err instanceof SidecarApiError
+					? err
+					: new SidecarApiError(err instanceof Error ? err.message : EMPTY_DRAFT_ERROR, {
+							kind: 'unknown',
+						});
+			setError(formatApiErrorForUi(apiError));
 		} finally {
 			setLoading(false);
 		}
 	};
 
-	const handleRewrite = async () => {
-		if (!draft?.draftText) return;
-		setLoading(true);
-		setError(null);
-		try {
-			const result = await generateDraft(buildDraftPayload(draft.draftText));
+	const handleGenerate = () =>
+		runApiAction(async () => {
+			if (!brandId) {
+				setError('Select a brand first.');
+				return;
+			}
+			const result = await generateDraft(settings, buildDraftPayload());
 			setDraft(result);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : EMPTY_ERROR);
-		} finally {
-			setLoading(false);
-		}
-	};
+			setStatusMessage(null);
+		});
+
+	const handleRewrite = () =>
+		runApiAction(async () => {
+			if (!draft?.draftText) return;
+			const result = await generateDraft(settings, buildDraftPayload(draft.draftText));
+			setDraft(result);
+		});
 
 	const handleCopy = async () => {
 		if (!draft?.draftText) return;
@@ -132,12 +197,10 @@ export function App() {
 		setStatusMessage('Draft copied to clipboard.');
 	};
 
-	const handleSaveOpportunity = async () => {
-		if (!selectedBrand || !draft) return;
-		setLoading(true);
-		setError(null);
-		try {
-			await saveOpportunity({
+	const handleSaveOpportunity = () =>
+		runApiAction(async () => {
+			if (!selectedBrand || !draft) return;
+			await saveOpportunity(settings, {
 				brand: selectedBrand.name,
 				brandId,
 				platform,
@@ -162,19 +225,12 @@ export function App() {
 				notes: userNotes,
 			});
 			setStatusMessage('Opportunity saved to CCE.');
-		} catch (err) {
-			setError(err instanceof Error ? err.message : 'Failed to save opportunity.');
-		} finally {
-			setLoading(false);
-		}
-	};
+		});
 
-	const handleSaveContact = async () => {
-		if (!selectedBrand || !config?.features.saveContacts) return;
-		setLoading(true);
-		setError(null);
-		try {
-			const result = await saveContact({
+	const handleSaveContact = () =>
+		runApiAction(async () => {
+			if (!selectedBrand || !config?.features.saveContacts) return;
+			const result = await saveContact(settings, {
 				brand: selectedBrand.name,
 				brandId,
 				platform,
@@ -187,20 +243,13 @@ export function App() {
 				tags: draft?.suggestedTags || [],
 			});
 			setStatusMessage(result.updated ? 'Contact updated.' : 'Contact saved.');
-		} catch (err) {
-			setError(err instanceof Error ? err.message : 'Failed to save contact.');
-		} finally {
-			setLoading(false);
-		}
-	};
+		});
 
-	const handleContentIdea = async () => {
-		if (!selectedBrand || !draft?.suggestedContentIdea || !config?.features.contentIdeas) return;
-		const idea = draft.suggestedContentIdea;
-		setLoading(true);
-		setError(null);
-		try {
-			await createContentIdea({
+	const handleContentIdea = () =>
+		runApiAction(async () => {
+			if (!selectedBrand || !draft?.suggestedContentIdea || !config?.features.contentIdeas) return;
+			const idea = draft.suggestedContentIdea;
+			await createContentIdea(settings, {
 				brand: selectedBrand.name,
 				brandId,
 				platform,
@@ -215,93 +264,141 @@ export function App() {
 				sourceUrl: pageUrl,
 			});
 			setStatusMessage('Content idea created in ContentQueue.');
-		} catch (err) {
-			setError(err instanceof Error ? err.message : 'Failed to create content idea.');
-		} finally {
-			setLoading(false);
-		}
+		});
+
+	const openSettings = () => {
+		setShowSettings(true);
+		setError(null);
 	};
 
-	const handleSaveSettings = async () => {
-		if (!settings) return;
-		await saveSettings(settings);
-		setShowSettings(false);
-		setStatusMessage('Settings saved. Reloading…');
-		await bootstrap();
-	};
+	const hasContext = Boolean(selectedText.trim() || pageUrl.trim());
 
-	const hasContext = Boolean(selectedText.trim() || pageUrl);
+	if (phase === 'loading') {
+		return (
+			<div className="app">
+				<header className="header">
+					<h1>CRISP Sidecar</h1>
+				</header>
+				<main className="main">
+					<div className="banner banner-info">Loading…</div>
+				</main>
+			</div>
+		);
+	}
+
+	if (phase === 'setup') {
+		return (
+			<div className="app">
+				<header className="header">
+					<div>
+						<h1>CRISP Sidecar</h1>
+						<div className="header-meta">Setup</div>
+					</div>
+				</header>
+				<main className="main main--setup">
+					<SettingsPanel
+						variant="setup"
+						settings={settings}
+						onChange={setSettings}
+						onSaved={(s) => setSettings(s)}
+						onConnected={(result) => {
+							applyConnection(result);
+							setShowSettings(false);
+							if (result.brands.length === 0 && result.brandsMeta.emptyReason) {
+								setError(`Brands: ${result.brandsMeta.emptyReason}`);
+							} else {
+								setError(null);
+								setStatusMessage('Connected to CCE.');
+							}
+						}}
+					/>
+				</main>
+			</div>
+		);
+	}
 
 	return (
 		<div className="app">
 			<header className="header">
 				<div>
 					<h1>CRISP Sidecar</h1>
-					<div className="header-meta">Platform: {platform}</div>
+					<div className="header-meta">
+						Platform: {platform}
+						{connected ? ' · Connected' : ''}
+					</div>
 				</div>
-				<button
-					type="button"
-					className="icon-btn"
-					title="Settings"
-					onClick={() => setShowSettings((v) => !v)}
-				>
-					⚙
-				</button>
+				<div className="header-actions">
+					<button type="button" className="btn btn-ghost btn-sm" onClick={openSettings}>
+						Settings
+					</button>
+				</div>
 			</header>
 
-			{showSettings && settings && (
-				<div className="settings-panel">
-					<div className="field">
-						<label htmlFor="apiBaseUrl">CCE API URL</label>
-						<input
-							id="apiBaseUrl"
-							value={settings.apiBaseUrl}
-							onChange={(e) => setSettings({ ...settings, apiBaseUrl: e.target.value })}
-						/>
-					</div>
-					<div className="field">
-						<label htmlFor="apiToken">API token (Bearer)</label>
-						<input
-							id="apiToken"
-							type="password"
-							value={settings.apiToken}
-							onChange={(e) => setSettings({ ...settings, apiToken: e.target.value })}
-						/>
-					</div>
-					<div className="actions">
-						<button type="button" className="btn btn-primary" onClick={() => void handleSaveSettings()}>
-							Save settings
-						</button>
-						<button type="button" className="btn btn-secondary" onClick={() => setShowSettings(false)}>
-							Cancel
-						</button>
-					</div>
-				</div>
+			{showSettings && (
+				<SettingsPanel
+					variant="inline"
+					settings={settings}
+					onChange={setSettings}
+					onSaved={(s) => {
+						setSettings(s);
+						setStatusMessage('Settings saved.');
+					}}
+					onConnected={(result) => {
+						applyConnection(result);
+						setShowSettings(false);
+						if (result.brands.length === 0 && result.brandsMeta.emptyReason) {
+							setError(`Brands: ${result.brandsMeta.emptyReason}`);
+						} else {
+							setError(null);
+							setStatusMessage('Connected to CCE.');
+						}
+					}}
+					onClose={() => setShowSettings(false)}
+				/>
 			)}
 
 			<main className="main">
 				{error && <div className="banner banner-error">{error}</div>}
 				{statusMessage && <div className="banner banner-success">{statusMessage}</div>}
+				{contextMessage && !error && <div className="banner banner-info">{contextMessage}</div>}
 
-				{!hasContext && !draft && (
-					<div className="banner banner-info">{EMPTY_STATE}</div>
-				)}
+				{!hasContext && !draft && <div className="banner banner-info">{EMPTY_STATE}</div>}
 
 				<div className="actions">
-					<button type="button" className="btn btn-secondary" onClick={() => void refreshContext()}>
-						Refresh page context
+					<button
+						type="button"
+						className="btn btn-secondary"
+						disabled={contextRefreshing}
+						onClick={() => void refreshContext()}
+					>
+						{contextRefreshing ? 'Refreshing…' : 'Refresh page context'}
 					</button>
 				</div>
 
 				<div className="field">
 					<label htmlFor="brand">Brand</label>
 					<select id="brand" value={brandId} onChange={(e) => setBrandId(e.target.value)}>
+						{brands.length === 0 && <option value="">No brands loaded</option>}
 						{brands.map((b) => (
 							<option key={b.id} value={b.id}>
 								{b.name}
 							</option>
 						))}
 					</select>
+					{brands.length === 0 && brandsMeta && (
+						<p className="field-hint field-hint--warn">
+							{brandsMeta.emptyReason ||
+								`Airtable returned ${brandsMeta.airtableCount} record(s); none are available in Sidecar.`}
+							{brandsMeta.allowlistActive ? ' (allowlist active)' : ''}
+							{brandsMeta.userFilterActive ? ' (user filter active)' : ''}
+						</p>
+					)}
+					{brands.length > 0 && brandsMeta && (
+						<p className="field-hint">
+							{brands.length} brand(s) from Airtable
+							{brandsMeta.allowlistActive ? ' · allowlist applied' : ''}
+						</p>
+					)}
 				</div>
 
 				<div className="field">
@@ -362,12 +459,14 @@ export function App() {
 
 				<div className="field">
 					<label>Selected text</label>
-					<div className="preview">{selectedText || '(none — select text on the page, then refresh)'}</div>
+					<div className="preview">
+						{selectedText || '(none — select text on the page, then Refresh)'}
+					</div>
 				</div>
 
 				<div className="field">
 					<label>Page URL</label>
-					<div className="preview">{pageUrl || '(none)'}</div>
+					<div className="preview">{pageUrl || '(none — click Refresh page context)'}</div>
 				</div>
 
 				<div className="field">

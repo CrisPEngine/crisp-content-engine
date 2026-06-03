@@ -11,7 +11,7 @@ export async function OPTIONS(request: Request) {
 
 export async function GET(request: Request) {
 	return runSidecarRoute(request, async (actor) => {
-		const brands = await listSidecarBrands(actor.userId);
-		return { brands };
+		const { brands, meta } = await listSidecarBrands(actor.userId);
+		return { brands, meta };
 	});
 }

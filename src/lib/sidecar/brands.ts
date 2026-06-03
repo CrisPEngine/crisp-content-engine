@@ -2,7 +2,6 @@ import 'server-only';
 
 import { getRecord, listRecords } from '@/lib/airtable/client';
 import { SidecarError } from './errors';
-import { DEFAULT_BRAND_ALLOWLIST } from './schemas';
 
 const BRAND_VOICE_FIELDS = [
 	'client_name',
@@ -47,6 +46,19 @@ export type SidecarBrandProfile = SidecarBrandSummary & {
 	fields: Record<string, unknown>;
 };
 
+export type SidecarBrandsMeta = {
+	airtableCount: number;
+	returnedCount: number;
+	allowlistActive: boolean;
+	userFilterActive: boolean;
+	emptyReason?: string;
+};
+
+export type SidecarBrandsResult = {
+	brands: SidecarBrandSummary[];
+	meta: SidecarBrandsMeta;
+};
+
 function requireEnv(name: string): string {
 	const value = process.env[name];
 	if (!value) {
@@ -59,17 +71,20 @@ function requireEnv(name: string): string {
 	return value;
 }
 
+/** Only filter when SIDECAR_BRAND_ALLOWLIST is explicitly set (trimmed, case-insensitive). */
 function parseBrandAllowlist(): Set<string> | null {
 	const raw = process.env.SIDECAR_BRAND_ALLOWLIST;
-	if (!raw?.trim()) {
-		return new Set(DEFAULT_BRAND_ALLOWLIST.map((n) => n.toLowerCase()));
-	}
+	if (!raw?.trim()) return null;
 	return new Set(
 		raw
 			.split(',')
 			.map((s) => s.trim().toLowerCase())
 			.filter(Boolean),
 	);
+}
+
+function shouldFilterByUserId(): boolean {
+	return process.env.SIDECAR_FILTER_BRANDS_BY_USER_ID === 'true';
 }
 
 function fieldString(fields: Record<string, unknown>, key: string): string {
@@ -80,33 +95,105 @@ function fieldString(fields: Record<string, unknown>, key: string): string {
 	return String(value);
 }
 
-export async function listSidecarBrands(ownerUserId: string): Promise<SidecarBrandSummary[]> {
+function mapBrandRecord(record: { id: string; fields?: Record<string, unknown> }): SidecarBrandSummary {
+	const fields = (record.fields || {}) as Record<string, unknown>;
+	return {
+		id: record.id,
+		name: fieldString(fields, 'client_name'),
+		status: fieldString(fields, 'status') || 'New Brief',
+		brand_type: fieldString(fields, 'brand_type') || undefined,
+		platforms_requested: Array.isArray(fields.platforms_requested)
+			? (fields.platforms_requested as string[])
+			: [],
+	};
+}
+
+function buildEmptyReason(options: {
+	airtableCount: number;
+	namedCount: number;
+	returnedCount: number;
+	allowlistActive: boolean;
+	userFilterActive: boolean;
+}): string | undefined {
+	if (options.returnedCount > 0) return undefined;
+	if (options.airtableCount === 0) {
+		if (options.userFilterActive) {
+			return 'No BrandProfiles matched SIDECAR_FILTER_BRANDS_BY_USER_ID. Clear that flag or check user_id on Airtable records.';
+		}
+		return 'No BrandProfiles records found in Airtable.';
+	}
+	if (options.namedCount === 0) {
+		return 'BrandProfiles records exist but none have client_name populated.';
+	}
+	if (options.allowlistActive) {
+		return 'No brands matched SIDECAR_BRAND_ALLOWLIST (matching is trimmed and case-insensitive).';
+	}
+	return 'No brands available after filtering.';
+}
+
+/**
+ * List brands for Sidecar. SIDECAR_OWNER_USER_ID is for Supabase writes only unless
+ * SIDECAR_FILTER_BRANDS_BY_USER_ID=true.
+ */
+export async function listSidecarBrands(ownerUserId: string): Promise<SidecarBrandsResult> {
 	const table = requireEnv('AIRTABLE_BRANDPROFILES_TABLE');
 	const allowlist = parseBrandAllowlist();
+	const userFilterActive = shouldFilterByUserId();
 
-	const records = await listRecords({
+	const listOptions = {
 		table,
-		filterByFormula: `{user_id} = "${ownerUserId}"`,
-		fields: ['client_name', 'status', 'brand_type', 'platforms_requested', 'user_id'],
-		cache: false,
+		fields: ['client_name', 'status', 'brand_type', 'platforms_requested'],
+		cache: false as const,
 		endpoint: '/api/sidecar/brands',
+		sort: [{ field: 'client_name', direction: 'asc' as const }],
+	};
+
+	let records: Array<{ id: string; fields?: Record<string, unknown> }>;
+	try {
+		records = await listRecords({
+			...listOptions,
+			...(userFilterActive
+				? { filterByFormula: `{user_id} = "${ownerUserId}"` }
+				: {}),
+		});
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (userFilterActive && message.includes('UNKNOWN_FIELD_NAME')) {
+			console.warn('[Sidecar brands] user_id field missing — listing all BrandProfiles');
+			records = await listRecords(listOptions);
+		} else {
+			throw error;
+		}
+	}
+
+	const mapped = records.map(mapBrandRecord);
+	const withNames = mapped.filter((b) => b.name.trim());
+	const filtered = allowlist
+		? withNames.filter((b) => allowlist.has(b.name.trim().toLowerCase()))
+		: withNames;
+
+	const meta: SidecarBrandsMeta = {
+		airtableCount: records.length,
+		returnedCount: filtered.length,
+		allowlistActive: allowlist !== null,
+		userFilterActive,
+		emptyReason: buildEmptyReason({
+			airtableCount: records.length,
+			namedCount: withNames.length,
+			returnedCount: filtered.length,
+			allowlistActive: allowlist !== null,
+			userFilterActive,
+		}),
+	};
+
+	console.log('[Sidecar brands]', {
+		airtableCount: meta.airtableCount,
+		returnedCount: meta.returnedCount,
+		allowlistActive: meta.allowlistActive,
+		userFilterActive: meta.userFilterActive,
 	});
 
-	return records
-		.map((record) => {
-			const fields = record.fields || {};
-			const name = fieldString(fields as Record<string, unknown>, 'client_name');
-			return {
-				id: record.id,
-				name,
-				status: fieldString(fields as Record<string, unknown>, 'status') || 'New Brief',
-				brand_type: fieldString(fields as Record<string, unknown>, 'brand_type') || undefined,
-				platforms_requested: Array.isArray(fields.platforms_requested)
-					? (fields.platforms_requested as string[])
-					: [],
-			};
-		})
-		.filter((b) => b.name && (!allowlist || allowlist.has(b.name.toLowerCase())));
+	return { brands: filtered, meta };
 }
 
 export async function resolveBrandProfile(options: {
@@ -115,6 +202,7 @@ export async function resolveBrandProfile(options: {
 	brandName?: string;
 }): Promise<SidecarBrandProfile> {
 	const table = requireEnv('AIRTABLE_BRANDPROFILES_TABLE');
+	const userFilterActive = shouldFilterByUserId();
 
 	let record: { id: string; fields: Record<string, unknown> } | null = null;
 
@@ -127,9 +215,12 @@ export async function resolveBrandProfile(options: {
 		record = { id: fetched.id, fields: (fetched.fields || {}) as Record<string, unknown> };
 	} else if (options.brandName) {
 		const escaped = options.brandName.replace(/"/g, '""');
+		const formula = userFilterActive
+			? `AND({user_id} = "${options.ownerUserId}", {client_name} = "${escaped}")`
+			: `{client_name} = "${escaped}"`;
 		const records = await listRecords({
 			table,
-			filterByFormula: `AND({user_id} = "${options.ownerUserId}", {client_name} = "${escaped}")`,
+			filterByFormula: formula,
 			fields: [...BRAND_VOICE_FIELDS],
 			maxRecords: 1,
 			cache: false,
@@ -144,14 +235,16 @@ export async function resolveBrandProfile(options: {
 		throw new SidecarError('Brand not found', { status: 404, code: 'sidecar_brand_not_found' });
 	}
 
-	const userId = fieldString(record.fields, 'user_id');
-	if (userId && userId !== options.ownerUserId) {
-		throw new SidecarError('Brand access denied', { status: 403, code: 'sidecar_brand_forbidden' });
+	if (userFilterActive) {
+		const userId = fieldString(record.fields, 'user_id');
+		if (userId && userId !== options.ownerUserId) {
+			throw new SidecarError('Brand access denied', { status: 403, code: 'sidecar_brand_forbidden' });
+		}
 	}
 
 	const name = fieldString(record.fields, 'client_name');
 	const allowlist = parseBrandAllowlist();
-	if (allowlist && name && !allowlist.has(name.toLowerCase())) {
+	if (allowlist && name && !allowlist.has(name.trim().toLowerCase())) {
 		throw new SidecarError('Brand is not enabled for Sidecar', {
 			status: 403,
 			code: 'sidecar_brand_not_allowed',

@@ -1,25 +1,26 @@
-# Idea Engine – Make.com webhook contract
+# Idea Engine — automation webhook contract
 
-Use this to wire the Make scenario that receives the Idea Engine run and calls back with generated items.
+**Audience:** Operators wiring the external automation that receives Idea Engine runs and returns generated content. **Not** for end users—see **[USER_GUIDE.md](./USER_GUIDE.md)** for how customers use Idea Engine in the app.
 
-**Webhook URL (env):** `MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL`
+**Webhook URL (environment variable):** `MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL`
 
-Set in your environment (e.g. Vercel / `.env.local`) to your Make webhook URL, for example:
-`https://hook.eu2.make.com/5wpmpho96i8zk4gyc4ikkelqiw9ctrc6`
+Set this in your deployment configuration to your automation platform’s inbound webhook URL.
+
+**End-user experience** (progressive UI, review, queue) is described in [USER_GUIDE.md](./USER_GUIDE.md).
 
 ---
 
 ## How progressive generation works
 
-The app creates **placeholder rows** in `idea_engine_items` immediately when a run starts. Each placeholder represents one expected content item (channel + position).
+The application creates **placeholder records** for each expected item immediately when a run starts (channel + position).
 
-The run polling endpoint `GET /api/idea-engine/run/:id` returns:
+The run status endpoint `GET /api/idea-engine/run/:id` returns:
 - All placeholders (status `generating`) and any filled items (status `ready`)
 - Progress fields: `expected_total_items`, `generated_items_count`, `expected_counts_by_channel`, `generated_counts_by_channel`
 
-This enables the UI to show skeleton cards immediately and progressively replace them as Make fills content.
+This enables the in-app workspace to show placeholder cards immediately and replace them as your automation returns content.
 
-When Make calls back with generated items, the callback **updates** existing placeholders (not inserts new rows), matching by `run_id` + `channel` + `series_position`.
+When the automation calls back with generated items, the callback **updates** existing placeholders (it does not create duplicate rows), matching by `run_id` + `channel` + `series_position`.
 
 ---
 
@@ -36,38 +37,38 @@ These are the default counts the app sends in `requested_counts`. Quota shrinkin
 
 - Starter is locked. No Idea Engine access.
 - Creator cannot access Facebook or Instagram channels (they resolve to 0).
-- Quota shrinking may reduce counts further; Make should only be called with counts > 0.
+- Quota shrinking may reduce counts further; only trigger generation when counts are greater than zero.
 
 ---
 
-## 1. Payload sent by the app → Make (POST to `MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL`)
+## 1. Payload sent by the app → automation (POST to `MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL`)
 
 This is the **dedicated Idea Engine contract**. It does not reuse or extend the standard content-generation payload. Fields like `monthly_brief`, `channels[]`, `generation_job_id`, `strategy_json` (top-level), `brand_voice_context` and `scheduling_context` are **not sent** — they belong to the legacy generation flow.
 
-Note: `strategy_json` is accessible inside `brand_context` as a nested key (it is part of the Airtable BrandProfiles record), but it is not promoted to the top level.
+Note: `strategy_json` is accessible inside `brand_context` as a nested key (from the stored brand profile), but it is not promoted to the top level.
 
 All fields below are present in every Idea Engine webhook call.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `series_run_id` | string (UUID) | Unique run id. Use this when calling back. |
-| `run_id` | string (UUID) | Internal DB run id. |
-| `user_id` | string (UUID) | Supabase auth user id. |
+| `run_id` | string (UUID) | Internal run id. |
+| `user_id` | string (UUID) | Signed-in account id for the run. |
 | `plan` | string | `"creator"` \| `"growth"` \| `"pro"` \| `"scale"`. |
-| `brand_profile_id` | string | Airtable BrandProfiles record id. |
+| `brand_profile_id` | string | Brand profile record id. |
 | `idea` | string | The user's raw idea text (10–2000 chars). Verbatim from the UI. |
 | `goal` | string \| null | `"Awareness"` \| `"Engagement"` \| `"Traffic"` \| `"Conversion"` or null. |
 | `notes` | string \| null | Optional user notes on the idea. Verbatim from the UI. |
 | `selected_channels` | string[] | **Only channels with count > 0** after quota resolution. No zero-count channels included. |
 | `publish_mode` | string | Always `"queue_only"`. Items go to queue as drafts. |
-| `requested_counts` | Record<string, number> | **Exact per-channel counts Make must generate.** Keys match `selected_channels`. Computed as `min(plan_default, quota_remaining)`. |
+| `requested_counts` | Record<string, number> | **Exact per-channel counts to generate.** Keys match `selected_channels`. Computed as `min(plan_default, quota_remaining)`. |
 | `quota_remaining_by_channel` | Record<string, number> | Remaining quota per pool (`linkedin`, `x`, `blog`, `meta_pool`). Informational. |
 | `autopublish_capabilities` | Record<string, boolean> | Per-channel autopublish flags (`linkedin`, `instagram`, `facebook`, `x`, `blog`). |
 | `timezone` | string | Brand profile timezone (e.g. `"Asia/Dubai"`) or `"UTC"` if missing. |
 | `posting_windows` | unknown \| null | Brand profile posting windows or null. |
-| `brand_context` | object | Full Airtable BrandProfiles fields. Includes `client_name`, `voice_rules`, `audience`, `value_props`, `offers`, `brand_palette`, `strategy_json`, `brand_goals`, `content_rules`, `language_region`, etc. |
+| `brand_context` | object | Structured brand profile and strategy context (e.g. `client_name`, `voice_rules`, `audience`, `value_props`, `offers`, `brand_palette`, `strategy_json`, `brand_goals`, `content_rules`, `language_region`, etc.). |
 | `previous_content_json` | array | Up to 30 recent published/approved/scheduled content items for this brand. Use for deduplication. Empty array if unavailable — generation is safe without it. |
-| `callback_url` | string | URL to POST results to. Always `{APP_URL}/api/idea-engine/webhook/callback`. |
+| `callback_url` | string | URL to POST results to. Environment-specific base URL + `/api/idea-engine/webhook/callback`. |
 
 **Complete example (Growth plan):**
 
@@ -111,9 +112,9 @@ All fields below are present in every Idea Engine webhook call.
 
 ---
 
-## 2. Callback payload: Make → app (POST to `callback_url`)
+## 2. Callback payload: automation → app (POST to `callback_url`)
 
-Make must POST JSON to the `callback_url` with either a list of items or an error.
+Your automation must POST JSON to the `callback_url` with either a list of items or an error.
 
 **How callback updates work:**
 
@@ -121,7 +122,7 @@ The callback **updates existing placeholder rows**, not inserts. Matching strate
 1. If `series_position` is provided: match by `run_id` + `channel` + `series_position`.
 2. Otherwise: fill the next available `generating` placeholder for that channel in order.
 
-This means Make can send `series_position` explicitly (recommended) or omit it and let the app fill placeholders sequentially.
+Your automation can send `series_position` explicitly (recommended) or omit it and let the app fill placeholders sequentially.
 
 **Success:**
 
@@ -143,7 +144,7 @@ This means Make can send `series_position` explicitly (recommended) or omit it a
 | `series_position` | number (int) | **Recommended** | 1-based index. If omitted, app fills placeholders in order. |
 | `series_total` | number (int) | No | Total items in the series. |
 
-**Failure (Make reports error):**
+**Failure (automation reports error):**
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -180,10 +181,10 @@ This means Make can send `series_position` explicitly (recommended) or omit it a
 
 **Item status field:**
 - `generating`: Placeholder waiting to be filled.
-- `ready`: Content has been filled by Make callback.
+- `ready`: Content has been filled by the callback from your automation.
 
-The UI polls this endpoint and renders:
-- Skeleton cards for `generating` items.
+The application polls this endpoint and renders:
+- Placeholder cards for `generating` items.
 - Actual content cards for `ready` items.
 
 ---
@@ -288,7 +289,7 @@ Use for channels where image use is optional or secondary. Keeps token usage low
 }
 ```
 
-The app accepts either schema in the `image_prompt` field. The review UI and queue display will render whichever object is returned without breaking.
+The application accepts either schema in the `image_prompt` field. Review and queue views render whichever object is returned.
 
 ---
 
@@ -308,14 +309,14 @@ The app accepts either schema in the `image_prompt` field. The review UI and que
 actual = min(plan_default, quota_remaining)
 ```
 
-Channels with `actual = 0` are dropped before Make is called — they will not appear in `selected_channels` or `requested_counts`. The run only fails if **all** selected channels resolve to zero. Make will never receive a channel with a zero count.
+Channels with `actual = 0` are dropped before the automation is triggered — they will not appear in `selected_channels` or `requested_counts`. The run only fails if **all** selected channels resolve to zero. The automation will never receive a channel with a zero count.
 
-`requested_counts` may therefore be **smaller** than the plan default table above when a user is near their monthly limit. Make should generate **exactly** what `requested_counts` specifies — no more, no fewer.
+`requested_counts` may therefore be **smaller** than the plan default table above when a user is near their monthly limit. Generate **exactly** what `requested_counts` specifies — no more, no fewer.
 
-`requested_counts` and the UI preview are computed from the same function (`computeIdeaEngineRequestedCounts`), so what the preview shows is exactly what Make receives.
+`requested_counts` and the in-app preview use the same computation, so what the preview shows is exactly what the webhook payload contains.
 
 ---
 
 ## 7. Regenerate single item (optional)
 
-For "regenerate one item" the app calls the **same** `MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL` with an extra `action: "regenerate_single"` and item/run context. Make then updates that item and calls the item-update webhook. See the regenerate route and `webhook/item-update` for the exact shape when implementing this.
+For “regenerate one item” the application calls the **same** `MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL` with an extra `action: "regenerate_single"` and item/run context. The automation then updates that item and calls the item-update webhook. See the regenerate route and `webhook/item-update` in the codebase for the exact shape when implementing this.

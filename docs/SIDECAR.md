@@ -26,6 +26,8 @@ NEXT_PUBLIC_ENABLE_SIDECAR=true        # client flag only (future UI)
 
 Extension: set **CCE API URL** and **Bearer token** (`SIDECAR_API_SECRET`) in Sidecar settings.
 
+**Brands:** `/api/sidecar/brands` lists all Airtable BrandProfiles unless `SIDECAR_BRAND_ALLOWLIST` is set (optional, case-insensitive). `SIDECAR_OWNER_USER_ID` is for Supabase writes only unless `SIDECAR_FILTER_BRANDS_BY_USER_ID=true`. Response includes `meta.emptyReason` when the list is empty.
+
 ## Supabase migration
 
 Apply manually when ready (not automated):

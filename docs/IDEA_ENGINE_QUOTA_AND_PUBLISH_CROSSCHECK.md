@@ -1,4 +1,10 @@
-# Idea Engine: Quota Integrity & Publish Mode Cross-Check
+# Idea Engine: Quota integrity and publish mode (internal reference)
+
+**Audience:** Engineering, operations, and support who need **API-level** detail. **Not** for customers—see **[USER_GUIDE.md](./USER_GUIDE.md)** for how limits and workflows are experienced in the product.
+
+This document predates some UX and reservation-model refinements; treat behaviour described here as directional and confirm in code for audits.
+
+---
 
 ## 1. Quota handling
 
