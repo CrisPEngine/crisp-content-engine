@@ -1,9 +1,14 @@
 import 'server-only';
 
 import { getRecord, listRecords } from '@/lib/airtable/client';
+import {
+	identifyBrandProfileFields,
+	logBrandProfilesFetchDiagnostics,
+	readBrandProfileRecord,
+} from '@/lib/airtable/readBrandProfileRecord';
 import { SidecarError } from './errors';
 
-const BRAND_VOICE_FIELDS = [
+const BRAND_VOICE_FIELD_NAMES = [
 	'client_name',
 	'brand_type',
 	'website',
@@ -32,6 +37,13 @@ const BRAND_VOICE_FIELDS = [
 	'personal_content_style',
 	'personal_exclude_keywords',
 	'personal_story',
+] as const;
+
+const SIDECAR_LIST_FIELD_NAMES = [
+	'client_name',
+	'status',
+	'brand_type',
+	'platforms_requested',
 ] as const;
 
 export type SidecarBrandSummary = {
@@ -96,15 +108,13 @@ function fieldString(fields: Record<string, unknown>, key: string): string {
 }
 
 function mapBrandRecord(record: { id: string; fields?: Record<string, unknown> }): SidecarBrandSummary {
-	const fields = (record.fields || {}) as Record<string, unknown>;
+	const parsed = readBrandProfileRecord(record);
 	return {
-		id: record.id,
-		name: fieldString(fields, 'client_name'),
-		status: fieldString(fields, 'status') || 'New Brief',
-		brand_type: fieldString(fields, 'brand_type') || undefined,
-		platforms_requested: Array.isArray(fields.platforms_requested)
-			? (fields.platforms_requested as string[])
-			: [],
+		id: parsed.id,
+		name: parsed.client_name,
+		status: parsed.status,
+		brand_type: parsed.brand_type,
+		platforms_requested: parsed.platforms_requested,
 	};
 }
 
@@ -123,7 +133,7 @@ function buildEmptyReason(options: {
 		return 'No BrandProfiles records found in Airtable.';
 	}
 	if (options.namedCount === 0) {
-		return 'BrandProfiles records exist but none have client_name populated.';
+		return 'BrandProfiles records exist but client_name could not be read. Check Airtable field IDs vs names.';
 	}
 	if (options.allowlistActive) {
 		return 'No brands matched SIDECAR_BRAND_ALLOWLIST (matching is trimmed and case-insensitive).';
@@ -135,17 +145,18 @@ function buildEmptyReason(options: {
  * List brands for Sidecar. SIDECAR_OWNER_USER_ID is for Supabase writes only unless
  * SIDECAR_FILTER_BRANDS_BY_USER_ID=true.
  */
-export async function listSidecarBrands(ownerUserId: string): Promise<SidecarBrandsResult> {
+export async function listSidecarBrands(_ownerUserId: string): Promise<SidecarBrandsResult> {
 	const table = requireEnv('AIRTABLE_BRANDPROFILES_TABLE');
 	const allowlist = parseBrandAllowlist();
 	const userFilterActive = shouldFilterByUserId();
 
 	const listOptions = {
 		table,
-		fields: ['client_name', 'status', 'brand_type', 'platforms_requested'],
+		fields: [...SIDECAR_LIST_FIELD_NAMES],
 		cache: false as const,
 		endpoint: '/api/sidecar/brands',
 		sort: [{ field: 'client_name', direction: 'asc' as const }],
+		returnFieldsByFieldId: true as const,
 	};
 
 	let records: Array<{ id: string; fields?: Record<string, unknown> }>;
@@ -153,7 +164,7 @@ export async function listSidecarBrands(ownerUserId: string): Promise<SidecarBra
 		records = await listRecords({
 			...listOptions,
 			...(userFilterActive
-				? { filterByFormula: `{user_id} = "${ownerUserId}"` }
+				? { filterByFormula: `{user_id} = "${_ownerUserId}"` }
 				: {}),
 		});
 	} catch (error) {
@@ -172,6 +183,13 @@ export async function listSidecarBrands(ownerUserId: string): Promise<SidecarBra
 		? withNames.filter((b) => allowlist.has(b.name.trim().toLowerCase()))
 		: withNames;
 
+	logBrandProfilesFetchDiagnostics({
+		endpoint: 'Sidecar brands',
+		recordCount: records.length,
+		mappedCount: filtered.length,
+		firstRecord: records[0],
+	});
+
 	const meta: SidecarBrandsMeta = {
 		airtableCount: records.length,
 		returnedCount: filtered.length,
@@ -185,13 +203,6 @@ export async function listSidecarBrands(ownerUserId: string): Promise<SidecarBra
 			userFilterActive,
 		}),
 	};
-
-	console.log('[Sidecar brands]', {
-		airtableCount: meta.airtableCount,
-		returnedCount: meta.returnedCount,
-		allowlistActive: meta.allowlistActive,
-		userFilterActive: meta.userFilterActive,
-	});
 
 	return { brands: filtered, meta };
 }
@@ -210,7 +221,7 @@ export async function resolveBrandProfile(options: {
 		const fetched = await getRecord({
 			table,
 			recordId: options.brandId,
-			fields: [...BRAND_VOICE_FIELDS],
+			fields: [...BRAND_VOICE_FIELD_NAMES],
 		});
 		record = { id: fetched.id, fields: (fetched.fields || {}) as Record<string, unknown> };
 	} else if (options.brandName) {
@@ -221,9 +232,10 @@ export async function resolveBrandProfile(options: {
 		const records = await listRecords({
 			table,
 			filterByFormula: formula,
-			fields: [...BRAND_VOICE_FIELDS],
+			fields: [...BRAND_VOICE_FIELD_NAMES],
 			maxRecords: 1,
 			cache: false,
+			returnFieldsByFieldId: true,
 			endpoint: '/api/sidecar/draft',
 		});
 		if (records[0]) {
@@ -242,7 +254,8 @@ export async function resolveBrandProfile(options: {
 		}
 	}
 
-	const name = fieldString(record.fields, 'client_name');
+	const parsed = identifyBrandProfileFields(record.fields);
+	const name = parsed.client_name;
 	const allowlist = parseBrandAllowlist();
 	if (allowlist && name && !allowlist.has(name.trim().toLowerCase())) {
 		throw new SidecarError('Brand is not enabled for Sidecar', {
@@ -254,19 +267,20 @@ export async function resolveBrandProfile(options: {
 	return {
 		id: record.id,
 		name,
-		status: fieldString(record.fields, 'status'),
-		brand_type: fieldString(record.fields, 'brand_type') || undefined,
+		status: parsed.status,
+		brand_type: parsed.brand_type,
+		platforms_requested: parsed.platforms_requested,
 		fields: record.fields,
 	};
 }
 
 export function buildBrandVoiceContext(profile: SidecarBrandProfile): string {
 	const f = profile.fields;
-	const isPersonal = fieldString(f, 'brand_type') === 'personal';
+	const isPersonal = fieldString(f, 'brand_type') === 'personal' || profile.brand_type === 'personal';
 
 	const sections: string[] = [
 		`Brand: ${profile.name}`,
-		`Type: ${fieldString(f, 'brand_type') || 'company'}`,
+		`Type: ${fieldString(f, 'brand_type') || profile.brand_type || 'company'}`,
 	];
 
 	if (isPersonal) {
