@@ -20,3 +20,18 @@ export const isMetaPublishingEnabled = (): boolean => {
 export const isMetaPublishingEnabledClient = (): boolean => {
 	return process.env.NEXT_PUBLIC_META_PUBLISHING_ENABLED !== 'false';
 };
+
+/**
+ * Operator console / MCP groundwork
+ *
+ * Disabled by default (unset or any value other than "true").
+ * Set OPERATOR_CONSOLE_ENABLED=true (server) and
+ * NEXT_PUBLIC_OPERATOR_CONSOLE_ENABLED=true (admin UI link only) to enable.
+ */
+export const isOperatorConsoleEnabled = (): boolean => {
+	return process.env.OPERATOR_CONSOLE_ENABLED === 'true';
+};
+
+export const isOperatorConsoleEnabledClient = (): boolean => {
+	return process.env.NEXT_PUBLIC_OPERATOR_CONSOLE_ENABLED === 'true';
+};

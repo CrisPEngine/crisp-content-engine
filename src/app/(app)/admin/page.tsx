@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { PRICING, type PlanId } from '@/config/pricing';
 import Link from 'next/link';
+import { isOperatorConsoleEnabledClient } from '@/lib/featureFlags';
 import { Skeleton } from '@/components/skeletons/Skeleton';
 import { LoadingButton } from '@/components/LoadingButton';
 
@@ -407,6 +408,14 @@ export default function AdminPage() {
 			<div className="flex items-center justify-between">
 				<h1 className="text-3xl font-semibold">Admin Dashboard</h1>
 				<div className="flex items-center gap-3">
+					{isOperatorConsoleEnabledClient() && (
+						<Link
+							href="/admin/operator"
+							className="rounded-xl2 border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/20"
+						>
+							Operator Console
+						</Link>
+					)}
 					<LoadingButton
 						onClick={() => setShowCreateUser(!showCreateUser)}
 						variant="primary"
