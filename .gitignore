@@ -33,6 +33,10 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# CRISP Sidecar extension build artifacts
+extension/sidecar/dist/
+extension/sidecar/node_modules/
+
 # vercel
 .vercel
 

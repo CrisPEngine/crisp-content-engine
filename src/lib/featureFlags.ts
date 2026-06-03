@@ -35,3 +35,24 @@ export const isOperatorConsoleEnabled = (): boolean => {
 export const isOperatorConsoleEnabledClient = (): boolean => {
 	return process.env.NEXT_PUBLIC_OPERATOR_CONSOLE_ENABLED === 'true';
 };
+
+/**
+ * CRISP Sidecar API (extension + /api/sidecar/*)
+ *
+ * Disabled by default. Set SIDECAR_API_ENABLED=true to enable server routes.
+ */
+export const isSidecarApiEnabled = (): boolean => {
+	return process.env.SIDECAR_API_ENABLED === 'true';
+};
+
+export const isSidecarSaveContactsEnabled = (): boolean => {
+	return process.env.SIDECAR_SAVE_CONTACTS_ENABLED !== 'false';
+};
+
+export const isSidecarContentIdeasEnabled = (): boolean => {
+	return process.env.SIDECAR_CONTENT_IDEAS_ENABLED !== 'false';
+};
+
+export const isSidecarEnabledClient = (): boolean => {
+	return process.env.NEXT_PUBLIC_ENABLE_SIDECAR === 'true';
+};

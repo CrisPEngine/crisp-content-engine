@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:sidecar": "npm run build --prefix extension/sidecar"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.20",
