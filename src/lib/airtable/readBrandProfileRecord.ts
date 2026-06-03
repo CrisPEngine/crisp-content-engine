@@ -47,7 +47,13 @@ function fieldToString(value: unknown): string {
 export function identifyBrandProfileFields(
 	fields: Record<string, unknown>,
 ): ParsedBrandProfileFields {
-	let clientName = fieldToString(getBrandProfileField(fields, 'client_name'));
+	let clientName = fieldToString(
+		getBrandProfileField(
+			fields,
+			'client_name',
+			process.env.AIRTABLE_BRANDPROFILES_CLIENT_NAME_FIELD_ID?.trim(),
+		),
+	);
 	let status = fieldToString(getBrandProfileField(fields, 'status'));
 	let brandType = fieldToString(getBrandProfileField(fields, 'brand_type'));
 	let platformsRequested = getBrandProfileField(fields, 'platforms_requested');

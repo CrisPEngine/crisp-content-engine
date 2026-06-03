@@ -26,7 +26,9 @@ NEXT_PUBLIC_ENABLE_SIDECAR=true        # client flag only (future UI)
 
 Extension: set **CCE API URL** and **Bearer token** (`SIDECAR_API_SECRET`) in Sidecar settings.
 
-**Brands:** `/api/sidecar/brands` lists all Airtable BrandProfiles unless `SIDECAR_BRAND_ALLOWLIST` is set (optional, case-insensitive). `SIDECAR_OWNER_USER_ID` is for Supabase writes only unless `SIDECAR_FILTER_BRANDS_BY_USER_ID=true`. Response includes `meta.emptyReason` when the list is empty.
+**Brands:** `/api/sidecar/brands` lists all Airtable BrandProfiles unless `SIDECAR_BRAND_ALLOWLIST` is set (optional, case-insensitive). `SIDECAR_OWNER_USER_ID` is for Supabase writes only unless `SIDECAR_FILTER_BRANDS_BY_USER_ID=true`. Records are read via `readBrandProfileRecord()` (field-ID keyed Airtable responses). Response includes `meta.emptyReason` when the list is empty.
+
+**Extension page context:** The service worker remembers the last normal http(s) tab (excluding `chrome://`, extension pages, and `/api/sidecar/*`). “Refresh page context” uses the active normal tab, or that remembered tab when the side panel or API tab is focused.
 
 ## Supabase migration
 

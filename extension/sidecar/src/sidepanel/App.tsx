@@ -9,7 +9,6 @@ import {
 } from '../lib/api';
 import { captureActiveTabContext } from '../lib/context';
 import { formatApiErrorForUi, SidecarApiError } from '../lib/errors';
-import { detectPlatformFromUrl } from '../lib/platform';
 import {
 	DEFAULT_SETTINGS,
 	isSettingsComplete,
@@ -112,20 +111,20 @@ export function App() {
 				setSelectedText(result.context.selectedText);
 				setPageUrl(result.context.pageUrl);
 				setPageTitle(result.context.pageTitle);
-				setPlatform(detectPlatformFromUrl(result.context.pageUrl));
+				setPlatform(result.context.platform);
 				setContextMessage(
 					result.context.selectedText
-						? 'Page context updated.'
-						: 'Page URL captured. No text selected — select text on the page and refresh again.',
+						? `Page context updated (${result.context.hostname || result.context.platform}).`
+						: `Page URL captured (${result.context.hostname || result.context.platform}). No text selected — select text on the page and refresh again.`,
 				);
 				return;
 			}
 
-			if (result.partial?.pageUrl) {
+			if (result.partial?.pageUrl && result.kind !== 'wrong_tab') {
 				setSelectedText(result.partial.selectedText);
 				setPageUrl(result.partial.pageUrl);
 				setPageTitle(result.partial.pageTitle);
-				setPlatform(detectPlatformFromUrl(result.partial.pageUrl));
+				setPlatform(result.partial.platform);
 			}
 			setContextMessage(result.message);
 		} finally {
