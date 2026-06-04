@@ -3,6 +3,7 @@ import { ZodError } from 'zod';
 import { assertSidecarApiEnabled } from './enabled';
 import { requireSidecarAuth } from './auth';
 import { sidecarCorsHeaders } from './cors';
+import { wrapUnknownDraftError } from './draftErrors';
 import { SidecarError } from './errors';
 import { redactValue } from './redaction';
 
@@ -28,10 +29,23 @@ export async function runSidecarRoute<T>(
 				{ status: error.status, headers: sidecarCorsHeaders(request) },
 			);
 		}
-		console.error('[Sidecar]', redactValue({ message: error instanceof Error ? error.message : 'Unknown' }));
+		const mapped = error instanceof SidecarError ? error : wrapUnknownDraftError(error);
+		console.error(
+			'[Sidecar]',
+			redactValue({
+				message: error instanceof Error ? error.message : 'Unknown',
+				name: error instanceof Error ? error.name : undefined,
+				code: mapped.code,
+			}),
+		);
 		return NextResponse.json(
-			{ ok: false, error: 'Internal server error', code: 'sidecar_internal_error' },
-			{ status: 500, headers: sidecarCorsHeaders(request) },
+			{
+				ok: false,
+				error: mapped.message,
+				code: mapped.code,
+				details: mapped.details,
+			},
+			{ status: mapped.status, headers: sidecarCorsHeaders(request) },
 		);
 	}
 }

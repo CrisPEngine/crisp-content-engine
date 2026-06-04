@@ -61,6 +61,40 @@ export function classifyFetchError(error: unknown, status?: number, code?: strin
 		return new SidecarApiError(message || 'Invalid request.', { kind: 'validation', status, code });
 	}
 
+	if (code === 'sidecar_missing_openai_key') {
+		return new SidecarApiError(
+			'Server missing OPENAI_API_KEY — add it in Vercel env vars (Sidecar uses server-side OpenAI, not Make).',
+			{ kind: 'server', status: status ?? 503, code },
+		);
+	}
+	if (code === 'sidecar_invalid_llm_provider') {
+		return new SidecarApiError('Server LLM_PROVIDER must be openai for Sidecar drafts.', {
+			kind: 'server',
+			status: status ?? 503,
+			code,
+		});
+	}
+	if (code === 'sidecar_brand_fetch_failed' || code === 'sidecar_brand_not_found') {
+		return new SidecarApiError(message || 'Brand could not be loaded from Airtable.', {
+			kind: 'server',
+			status: status ?? 502,
+			code,
+		});
+	}
+	if (code === 'sidecar_schema_validation_failed' || code === 'sidecar_llm_parse_failed') {
+		return new SidecarApiError(
+			message || 'AI returned an invalid draft shape — try Generate draft again.',
+			{ kind: 'server', status: status ?? 502, code },
+		);
+	}
+	if (code === 'sidecar_llm_request_failed') {
+		return new SidecarApiError(message || 'AI provider request failed.', {
+			kind: 'server',
+			status: status ?? 502,
+			code,
+		});
+	}
+
 	if (status && status >= 500) {
 		return new SidecarApiError(message || `Server error (${status}).`, { kind: 'server', status, code });
 	}

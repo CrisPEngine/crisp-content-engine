@@ -28,6 +28,13 @@ Extension: set **CCE API URL** and **Bearer token** (`SIDECAR_API_SECRET`) in Si
 
 **Brands:** `/api/sidecar/brands` lists all Airtable BrandProfiles unless `SIDECAR_BRAND_ALLOWLIST` is set (optional, case-insensitive). `SIDECAR_OWNER_USER_ID` is for Supabase writes only unless `SIDECAR_FILTER_BRANDS_BY_USER_ID=true`. Records are read via `readBrandProfileRecord()` (field-ID keyed Airtable responses). Response includes `meta.emptyReason` when the list is empty.
 
+**Generate draft (`POST /api/sidecar/draft`):**
+
+- **Airtable:** `AIRTABLE_BRANDPROFILES_TABLE` only — loads voice fields for the selected `brandId` (or `brand` name). Missing optional columns do not break the request (falls back to full record fetch). ContentQueue / `generated_from` are not used.
+- **Supabase:** `sidecar_usage_events` logging only; failures are non-blocking.
+- **LLM:** Server-side `OPENAI_API_KEY` + `LLM_PROVIDER=openai` + optional `SIDECAR_LLM_MODEL` (default `gpt-4o-mini`). This is separate from Make automations; CCE does not route Sidecar drafts through Make.
+- **Extension payload:** sends `brandId`, enums exactly as in `/api/sidecar/config` (e.g. `Public reply`, `Community value`, `First interaction`).
+
 **Extension page context:** Manifest `host_permissions` include X, LinkedIn, Reddit, Facebook, Instagram, YouTube, Bluesky, and Threads (see `extension/sidecar/src/lib/supportedPlatforms.ts`) plus API hosts only for `app.crispdigital.io` / localhost. The service worker remembers `lastReadableTabId` for supported platforms only; `app.crispdigital.io` is never reply context. After permission changes, remove and re-load the unpacked extension in Chrome (Reload alone may not update site access).
 
 ## Supabase migration

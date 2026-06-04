@@ -2,6 +2,7 @@ import 'server-only';
 
 import { getRecord, listRecords } from '@/lib/airtable/client';
 import {
+	getBrandProfileField,
 	identifyBrandProfileFields,
 	logBrandProfilesFetchDiagnostics,
 	readBrandProfileRecord,
@@ -100,11 +101,36 @@ function shouldFilterByUserId(): boolean {
 }
 
 function fieldString(fields: Record<string, unknown>, key: string): string {
-	const value = fields[key];
+	const value = getBrandProfileField(fields, key);
 	if (value === null || value === undefined) return '';
 	if (typeof value === 'string') return value;
 	if (Array.isArray(value)) return value.map(String).join(', ');
 	return String(value);
+}
+
+function isAirtableUnknownFieldError(error: unknown): boolean {
+	if (!(error instanceof Error)) return false;
+	const message = error.message;
+	return message.includes('UNKNOWN_FIELD_NAME') || message.includes('INVALID_VALUE_FOR_COLUMN');
+}
+
+/** Load BrandProfiles for draft voice — retries without fields[] if Airtable rejects unknown columns. */
+export async function fetchBrandProfileRecordById(
+	table: string,
+	recordId: string,
+): Promise<{ id: string; fields: Record<string, unknown> }> {
+	try {
+		const fetched = await getRecord({
+			table,
+			recordId,
+			fields: [...BRAND_VOICE_FIELD_NAMES],
+		});
+		return { id: fetched.id, fields: (fetched.fields || {}) as Record<string, unknown> };
+	} catch (error) {
+		if (!isAirtableUnknownFieldError(error)) throw error;
+		const fetched = await getRecord({ table, recordId });
+		return { id: fetched.id, fields: (fetched.fields || {}) as Record<string, unknown> };
+	}
 }
 
 function mapBrandRecord(record: { id: string; fields?: Record<string, unknown> }): SidecarBrandSummary {
@@ -218,12 +244,7 @@ export async function resolveBrandProfile(options: {
 	let record: { id: string; fields: Record<string, unknown> } | null = null;
 
 	if (options.brandId) {
-		const fetched = await getRecord({
-			table,
-			recordId: options.brandId,
-			fields: [...BRAND_VOICE_FIELD_NAMES],
-		});
-		record = { id: fetched.id, fields: (fetched.fields || {}) as Record<string, unknown> };
+		record = await fetchBrandProfileRecordById(table, options.brandId);
 	} else if (options.brandName) {
 		const escaped = options.brandName.replace(/"/g, '""');
 		const formula = userFilterActive
