@@ -79,6 +79,37 @@ body {
   font-size: 12px;
 }
 
+.context-debug {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  font-size: 10px;
+  line-height: 1.4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  word-break: break-all;
+}
+
+.manual-context {
+  margin-bottom: 12px;
+}
+
+.manual-context-toggle {
+  margin-bottom: 8px;
+}
+
+.manual-context-fields input[type='url'] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+
 .btn-ghost {
   background: transparent;
   color: var(--accent);

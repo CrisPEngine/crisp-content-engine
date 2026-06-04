@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite build --watch",
     "icons": "node scripts/generate-icons.mjs",
-    "build": "node scripts/generate-icons.mjs && vite build",
+		"build": "node scripts/generate-icons.mjs && vite build",
+		"build:dev": "node scripts/generate-icons.mjs && vite build --mode development",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

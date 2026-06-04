@@ -7,7 +7,12 @@ import {
 	saveOpportunity,
 	testConnection,
 } from '../lib/api';
-import { captureActiveTabContext } from '../lib/context';
+import {
+	captureActiveTabContext,
+	type ContextCaptureDebug,
+	WRONG_TAB_MESSAGE,
+} from '../lib/context';
+import { detectPlatformFromUrl } from '../lib/platform';
 import { formatApiErrorForUi, SidecarApiError } from '../lib/errors';
 import {
 	DEFAULT_SETTINGS,
@@ -41,6 +46,10 @@ export function App() {
 	const [platform, setPlatform] = useState('web');
 	const [userNotes, setUserNotes] = useState('');
 	const [contextMessage, setContextMessage] = useState<string | null>(null);
+	const [contextDebug, setContextDebug] = useState<ContextCaptureDebug | null>(null);
+	const [showManualContext, setShowManualContext] = useState(false);
+	const [manualPageUrl, setManualPageUrl] = useState('');
+	const [manualSelectedText, setManualSelectedText] = useState('');
 
 	const [brandId, setBrandId] = useState('');
 	const [messageType, setMessageType] = useState('Public reply');
@@ -101,17 +110,48 @@ export function App() {
 		})();
 	}, [loadAppData]);
 
+	const applyManualContext = useCallback(() => {
+		const url = manualPageUrl.trim();
+		if (!url) {
+			setContextMessage('Paste a page URL (e.g. an X or LinkedIn post link) first.');
+			return;
+		}
+		try {
+			const parsed = new URL(url);
+			if (!['http:', 'https:'].includes(parsed.protocol)) {
+				setContextMessage('URL must start with http:// or https://');
+				return;
+			}
+		} catch {
+			setContextMessage('Paste a valid URL.');
+			return;
+		}
+		const text = manualSelectedText.trim();
+		setPageUrl(url);
+		setPageTitle('');
+		setSelectedText(text);
+		setPlatform(detectPlatformFromUrl(url));
+		setContextMessage(
+			text
+				? 'Manual page context applied.'
+				: 'Manual URL applied. Add selected text above if needed.',
+		);
+		setShowManualContext(false);
+	}, [manualPageUrl, manualSelectedText]);
+
 	const refreshContext = useCallback(async () => {
 		setContextRefreshing(true);
 		setContextMessage(null);
 		try {
 			const result = await captureActiveTabContext();
+			setContextDebug(result.debug);
 
 			if (result.ok) {
 				setSelectedText(result.context.selectedText);
 				setPageUrl(result.context.pageUrl);
 				setPageTitle(result.context.pageTitle);
 				setPlatform(result.context.platform);
+				setShowManualContext(false);
 				setContextMessage(
 					result.context.selectedText
 						? `Page context updated (${result.context.hostname || result.context.platform}).`
@@ -120,13 +160,20 @@ export function App() {
 				return;
 			}
 
+			if (result.kind === 'wrong_tab' || result.kind === 'script_failed') {
+				setShowManualContext(true);
+			}
+
 			if (result.partial?.pageUrl && result.kind !== 'wrong_tab') {
 				setSelectedText(result.partial.selectedText);
 				setPageUrl(result.partial.pageUrl);
 				setPageTitle(result.partial.pageTitle);
 				setPlatform(result.partial.platform);
 			}
-			setContextMessage(result.message);
+
+			setContextMessage(
+				result.kind === 'wrong_tab' ? WRONG_TAB_MESSAGE : result.message,
+			);
 		} finally {
 			setContextRefreshing(false);
 		}
@@ -372,6 +419,57 @@ export function App() {
 					>
 						{contextRefreshing ? 'Refreshing…' : 'Refresh page context'}
 					</button>
+				</div>
+
+				{import.meta.env.DEV && contextDebug && (
+					<p className="context-debug" aria-live="polite">
+						Tab target: id={contextDebug.tabId ?? '—'} · url={contextDebug.tabUrl || '(none)'} ·
+						reason={contextDebug.reason}
+						{contextDebug.lastReadableTabUrl
+							? ` · lastReadable: id=${contextDebug.lastReadableTabId} url=${contextDebug.lastReadableTabUrl}`
+							: ''}
+					</p>
+				)}
+
+				<div className="manual-context">
+					<button
+						type="button"
+						className="btn btn-ghost btn-sm manual-context-toggle"
+						onClick={() => setShowManualContext((v) => !v)}
+					>
+						{showManualContext ? 'Hide manual page URL' : 'Paste page URL manually'}
+					</button>
+					{showManualContext && (
+						<div className="manual-context-fields">
+							<div className="field">
+								<label htmlFor="manualPageUrl">Page URL</label>
+								<input
+									id="manualPageUrl"
+									type="url"
+									value={manualPageUrl}
+									onChange={(e) => setManualPageUrl(e.target.value)}
+									placeholder="https://x.com/... or https://www.linkedin.com/..."
+								/>
+							</div>
+							<div className="field">
+								<label htmlFor="manualSelectedText">Selected text (optional)</label>
+								<textarea
+									id="manualSelectedText"
+									value={manualSelectedText}
+									onChange={(e) => setManualSelectedText(e.target.value)}
+									placeholder="Paste the post or comment you want to reply to"
+									rows={4}
+								/>
+							</div>
+							<button
+								type="button"
+								className="btn btn-secondary btn-sm"
+								onClick={applyManualContext}
+							>
+								Apply pasted context
+							</button>
+						</div>
+					)}
 				</div>
 
 				<div className="field">

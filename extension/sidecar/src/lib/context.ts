@@ -1,4 +1,5 @@
-export type { ContextCaptureResult, PageContext } from './tabContext';
+export type { ContextCaptureDebug, ContextCaptureResult, PageContext } from './tabContext';
+export { WRONG_TAB_MESSAGE } from './tabContext';
 
 import type { ContextCaptureResult } from './tabContext';
 
@@ -17,5 +18,12 @@ export async function captureActiveTabContext(): Promise<ContextCaptureResult> {
 		kind: 'no_tab',
 		message:
 			'Sidecar could not reach the extension background. Reload the extension at chrome://extensions, then try again.',
+		debug: {
+			tabId: null,
+			tabUrl: '',
+			reason: 'none',
+			lastReadableTabId: null,
+			lastReadableTabUrl: null,
+		},
 	};
 }

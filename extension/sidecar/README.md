@@ -21,6 +21,12 @@ Or from repo root:
 npm run build:sidecar
 ```
 
+For tab-target debug in the side panel (`import.meta.env.DEV`), use a development build:
+
+```bash
+cd extension/sidecar && npm run build:dev
+```
+
 Output: `extension/sidecar/dist/`
 
 ## Load in Chrome (local only)
@@ -34,16 +40,19 @@ Output: `extension/sidecar/dist/`
 
 1. Open Sidecar — first run shows **Set up CRISP Sidecar** (API URL + Bearer token).
 2. Click **Save**, then **Test connection** (loads brands only after success).
-3. Open a normal website tab (not `chrome://` pages).
-4. Click the Sidecar toolbar icon on that tab (grants `activeTab` for scripting).
-5. Click **Refresh page context** to capture selection, URL, and title (only on your click).
+3. Open X, LinkedIn, or another supported site in a normal tab (not `app.crispdigital.io`).
+4. Click that tab once so Sidecar remembers it, then open the Sidecar side panel.
+5. Click **Refresh page context** to capture selection, URL, and title (only on your click). If capture fails, use **Paste page URL manually**.
 6. Choose brand, message type, objective, CTA strength, relationship stage.
 4. **Generate draft** → review → **Copy draft** (paste manually on the platform).
 5. Optionally **Save opportunity**, **Save contact**, or **Create content idea**.
 
 ## Host permissions
 
-Default manifest allows `localhost:3000` and `https://app.crispdigital.io`. For another API host, add it to `host_permissions` in `manifest.config.ts` and rebuild.
+- **API:** `localhost:3000`, `127.0.0.1:3000`, `https://app.crispdigital.io` (Sidecar API calls only).
+- **Page context:** explicit hosts for X, LinkedIn, Reddit, Facebook, Instagram, YouTube, Bluesky, and Threads (`scripting.executeScript` on Refresh). `app.crispdigital.io` is never used as reply context.
+
+After changing `manifest.config.ts`, run `npm run build` and reload the extension in Chrome.
 
 ## Not included
 

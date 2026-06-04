@@ -24,4 +24,25 @@ describe('readBrandProfileRecord', () => {
 		expect(result.status).toBe('New Brief');
 		expect(result.brand_type).toBe('personal');
 	});
+
+	it('reads client_name by configured BrandProfiles field ID', () => {
+		const prev = process.env.AIRTABLE_BRANDPROFILES_CLIENT_NAME_FIELD_ID;
+		process.env.AIRTABLE_BRANDPROFILES_CLIENT_NAME_FIELD_ID = 'fldBrandPrimary';
+		try {
+			const result = readBrandProfileRecord({
+				id: 'rec2',
+				fields: {
+					fldBrandPrimary: 'CrisP Digital',
+					fldStatus456: 'Strategy Ready',
+				},
+			});
+			expect(result.client_name).toBe('CrisP Digital');
+		} finally {
+			if (prev === undefined) {
+				delete process.env.AIRTABLE_BRANDPROFILES_CLIENT_NAME_FIELD_ID;
+			} else {
+				process.env.AIRTABLE_BRANDPROFILES_CLIENT_NAME_FIELD_ID = prev;
+			}
+		}
+	});
 });
