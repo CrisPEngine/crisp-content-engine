@@ -1,44 +1,17 @@
 import 'server-only';
 
-import { getRecord, listRecords } from '@/lib/airtable/client';
+import { listRecords } from '@/lib/airtable/client';
 import {
 	getBrandProfileField,
-	identifyBrandProfileFields,
 	logBrandProfilesFetchDiagnostics,
 	readBrandProfileRecord,
 } from '@/lib/airtable/readBrandProfileRecord';
+import {
+	fetchBrandProfileByName,
+	fetchBrandProfileRecordById,
+	parseBrandProfileFromFields,
+} from './brandProfileFetch';
 import { SidecarError } from './errors';
-
-const BRAND_VOICE_FIELD_NAMES = [
-	'client_name',
-	'brand_type',
-	'website',
-	'audience',
-	'value_props',
-	'offers',
-	'brand_goals',
-	'voice_rules',
-	'brand_keywords',
-	'exclude_keywords',
-	'content_rules',
-	'additional_info',
-	'platforms_requested',
-	'timezone',
-	'language_region',
-	'approval_contact_email',
-	'user_id',
-	'status',
-	'personal_full_name',
-	'personal_headline',
-	'personal_audience',
-	'personal_expertise',
-	'personal_goals',
-	'personal_voice_traits',
-	'personal_tone_avoid',
-	'personal_content_style',
-	'personal_exclude_keywords',
-	'personal_story',
-] as const;
 
 const SIDECAR_LIST_FIELD_NAMES = [
 	'client_name',
@@ -106,31 +79,6 @@ function fieldString(fields: Record<string, unknown>, key: string): string {
 	if (typeof value === 'string') return value;
 	if (Array.isArray(value)) return value.map(String).join(', ');
 	return String(value);
-}
-
-function isAirtableUnknownFieldError(error: unknown): boolean {
-	if (!(error instanceof Error)) return false;
-	const message = error.message;
-	return message.includes('UNKNOWN_FIELD_NAME') || message.includes('INVALID_VALUE_FOR_COLUMN');
-}
-
-/** Load BrandProfiles for draft voice — retries without fields[] if Airtable rejects unknown columns. */
-export async function fetchBrandProfileRecordById(
-	table: string,
-	recordId: string,
-): Promise<{ id: string; fields: Record<string, unknown> }> {
-	try {
-		const fetched = await getRecord({
-			table,
-			recordId,
-			fields: [...BRAND_VOICE_FIELD_NAMES],
-		});
-		return { id: fetched.id, fields: (fetched.fields || {}) as Record<string, unknown> };
-	} catch (error) {
-		if (!isAirtableUnknownFieldError(error)) throw error;
-		const fetched = await getRecord({ table, recordId });
-		return { id: fetched.id, fields: (fetched.fields || {}) as Record<string, unknown> };
-	}
 }
 
 function mapBrandRecord(record: { id: string; fields?: Record<string, unknown> }): SidecarBrandSummary {
@@ -246,22 +194,12 @@ export async function resolveBrandProfile(options: {
 	if (options.brandId) {
 		record = await fetchBrandProfileRecordById(table, options.brandId);
 	} else if (options.brandName) {
-		const escaped = options.brandName.replace(/"/g, '""');
-		const formula = userFilterActive
-			? `AND({user_id} = "${options.ownerUserId}", {client_name} = "${escaped}")`
-			: `{client_name} = "${escaped}"`;
-		const records = await listRecords({
+		record = await fetchBrandProfileByName(
 			table,
-			filterByFormula: formula,
-			fields: [...BRAND_VOICE_FIELD_NAMES],
-			maxRecords: 1,
-			cache: false,
-			returnFieldsByFieldId: true,
-			endpoint: '/api/sidecar/draft',
-		});
-		if (records[0]) {
-			record = { id: records[0].id, fields: (records[0].fields || {}) as Record<string, unknown> };
-		}
+			options.brandName,
+			options.ownerUserId,
+			userFilterActive,
+		);
 	}
 
 	if (!record) {
@@ -275,8 +213,14 @@ export async function resolveBrandProfile(options: {
 		}
 	}
 
-	const parsed = identifyBrandProfileFields(record.fields);
-	const name = parsed.client_name;
+	const parsed = parseBrandProfileFromFields(record);
+	const name = parsed.name.trim();
+	if (!name) {
+		throw new SidecarError('Brand profile has no readable client_name', {
+			status: 502,
+			code: 'sidecar_brand_fetch_failed',
+		});
+	}
 	const allowlist = parseBrandAllowlist();
 	if (allowlist && name && !allowlist.has(name.trim().toLowerCase())) {
 		throw new SidecarError('Brand is not enabled for Sidecar', {

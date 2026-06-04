@@ -42,8 +42,19 @@ export function mapLlmErrorToSidecar(error: LlmError): SidecarError {
 	});
 }
 
+function isAirtableNotFound(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return message.includes('404') || message.includes('NOT_FOUND') || message.includes('Could not find');
+}
+
 export function mapAirtableErrorToSidecar(error: unknown, context: string): SidecarError {
 	const message = error instanceof Error ? error.message : String(error);
+	if (isAirtableNotFound(error)) {
+		return new SidecarError('Brand not found in Airtable', {
+			status: 404,
+			code: 'sidecar_brand_not_found',
+		});
+	}
 	return new SidecarError(`Failed to load brand profile from Airtable (${context})`, {
 		status: 502,
 		code: 'sidecar_brand_fetch_failed',
