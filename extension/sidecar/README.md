@@ -50,9 +50,9 @@ Output: `extension/sidecar/dist/`
 ## Host permissions
 
 - **API:** `localhost:3000`, `127.0.0.1:3000`, `https://app.crispdigital.io` (Sidecar API calls only).
-- **Page context:** explicit hosts for X, LinkedIn, Reddit, Facebook, Instagram, YouTube, Bluesky, and Threads (`scripting.executeScript` on Refresh). `app.crispdigital.io` is never used as reply context.
+- **Page context:** `https://x.com/*`, `twitter.com`, `linkedin.com`, `reddit.com`, `facebook.com`, `instagram.com`, `youtube.com`, `bsky.app`, `threads.net` (see `src/lib/supportedPlatforms.ts`). `app.crispdigital.io` is API-only and is never used as reply context.
 
-After changing `manifest.config.ts`, run `npm run build` and reload the extension in Chrome.
+After changing permissions, run `npm run build:sidecar`, **remove** the old unpacked extension in Chrome, then **Load unpacked** on `extension/sidecar/dist` again (Chrome does not always refresh `host_permissions` on a simple Reload).
 
 ## Not included
 

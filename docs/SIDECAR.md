@@ -28,7 +28,7 @@ Extension: set **CCE API URL** and **Bearer token** (`SIDECAR_API_SECRET`) in Si
 
 **Brands:** `/api/sidecar/brands` lists all Airtable BrandProfiles unless `SIDECAR_BRAND_ALLOWLIST` is set (optional, case-insensitive). `SIDECAR_OWNER_USER_ID` is for Supabase writes only unless `SIDECAR_FILTER_BRANDS_BY_USER_ID=true`. Records are read via `readBrandProfileRecord()` (field-ID keyed Airtable responses). Response includes `meta.emptyReason` when the list is empty.
 
-**Extension page context:** The service worker tracks `lastReadableTabId` / `lastReadableTabUrl` from user-activated tabs only (not `tabs.onUpdated`). Excluded from targeting: `chrome://`, extension pages, `app.crispdigital.io`, localhost API hosts, and `/api/sidecar/*`. “Refresh page context” resolves via the background worker (active readable tab → last readable → recent readable in window). Host permissions include supported platforms (X, LinkedIn, Reddit, etc.) for `scripting.executeScript`. Dev builds show tab-target debug in the side panel.
+**Extension page context:** Manifest `host_permissions` include X, LinkedIn, Reddit, Facebook, Instagram, YouTube, Bluesky, and Threads (see `extension/sidecar/src/lib/supportedPlatforms.ts`) plus API hosts only for `app.crispdigital.io` / localhost. The service worker remembers `lastReadableTabId` for supported platforms only; `app.crispdigital.io` is never reply context. After permission changes, remove and re-load the unpacked extension in Chrome (Reload alone may not update site access).
 
 ## Supabase migration
 

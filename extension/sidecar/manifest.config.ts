@@ -1,28 +1,10 @@
 import { defineManifest } from '@crxjs/vite-plugin';
-
-/** Host permissions for executeScript on supported reply platforms (not CCE). */
-const PLATFORM_HOST_PERMISSIONS = [
-	'https://x.com/*',
-	'https://twitter.com/*',
-	'https://www.linkedin.com/*',
-	'https://linkedin.com/*',
-	'https://www.reddit.com/*',
-	'https://reddit.com/*',
-	'https://www.facebook.com/*',
-	'https://facebook.com/*',
-	'https://www.instagram.com/*',
-	'https://instagram.com/*',
-	'https://www.youtube.com/*',
-	'https://youtube.com/*',
-	'https://youtu.be/*',
-	'https://bsky.app/*',
-	'https://threads.net/*',
-] as const;
+import { PLATFORM_HOST_PERMISSIONS } from './src/lib/supportedPlatforms';
 
 export default defineManifest({
 	manifest_version: 3,
 	name: 'CRISP Sidecar',
-	version: '0.1.0',
+	version: '0.1.1',
 	description: 'Draft replies in brand voice. Manual copy only — no auto-posting.',
 	permissions: ['storage', 'sidePanel', 'activeTab', 'scripting', 'tabs'],
 	host_permissions: [

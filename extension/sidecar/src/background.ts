@@ -1,7 +1,11 @@
 import { capturePageContextWithTabResolver } from './lib/tabContext';
-import { getTabUrl, isReadableWebTab } from './lib/readableTab';
-import type { ReadableTabMemory } from './lib/readableTab';
-import { pickMostRecentReadableTab, resolveReadableTargetTab } from './lib/tabResolver';
+import { getTabUrl } from './lib/readableTab';
+import type { ReadableTabMemory } from './lib/tabResolver';
+import {
+	pickMostRecentSupportedPlatformTab,
+	resolveReadableTargetTab,
+} from './lib/tabResolver';
+import { isSupportedPlatformTab } from './lib/supportedPlatforms';
 
 const STORAGE_TAB_ID = 'sidecarLastReadableTabId';
 const STORAGE_TAB_URL = 'sidecarLastReadableTabUrl';
@@ -19,7 +23,7 @@ async function loadReadableTabMemory(): Promise<void> {
 		if (typeof id === 'number') {
 			try {
 				const tab = await chrome.tabs.get(id);
-				if (isReadableWebTab(tab)) {
+				if (isSupportedPlatformTab(tab)) {
 					memory.tabId = id;
 					memory.tabUrl = typeof url === 'string' ? url : getTabUrl(tab);
 					return;
@@ -48,10 +52,11 @@ async function persistReadableTab(tabId: number, tabUrl: string): Promise<void> 
 	}
 }
 
+/** Only remember supported outreach platforms — not CCE or generic sites. */
 async function rememberReadableTab(tabId: number): Promise<void> {
 	try {
 		const tab = await chrome.tabs.get(tabId);
-		if (!isReadableWebTab(tab)) return;
+		if (!isSupportedPlatformTab(tab)) return;
 		await persistReadableTab(tabId, getTabUrl(tab));
 	} catch {
 		/* tab closed */
@@ -60,7 +65,7 @@ async function rememberReadableTab(tabId: number): Promise<void> {
 
 async function seedReadableTabMemory(): Promise<void> {
 	const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
-	const best = pickMostRecentReadableTab(tabs);
+	const best = pickMostRecentSupportedPlatformTab(tabs);
 	if (best?.id) {
 		await persistReadableTab(best.id, getTabUrl(best));
 	}

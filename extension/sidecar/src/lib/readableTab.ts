@@ -65,6 +65,9 @@ export function isReadableWebTab(tab: chrome.tabs.Tab): boolean {
 }
 
 export type TabTargetReason =
+	| 'active_supported_platform_tab'
+	| 'last_supported_platform_tab'
+	| 'most_recent_supported_platform_tab'
 	| 'active_readable_in_focused_window'
 	| 'last_readable_tab'
 	| 'highlighted_readable_in_focused_window'
