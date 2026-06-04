@@ -3,6 +3,7 @@ import 'server-only';
 import { createRecord } from '@/lib/airtable/client';
 import { getSupabaseService } from '@/lib/supabaseService';
 import type { z } from 'zod';
+import { resolveBrandProfile } from './brands';
 import { SidecarError } from './errors';
 import type {
 	sidecarContactRequestSchema,
@@ -26,10 +27,26 @@ function requireEnv(name: string): string {
 	return value;
 }
 
+async function requireAccessibleBrand(
+	userId: string,
+	input: { brand: string; brandId?: string },
+): Promise<{ id: string; name: string }> {
+	const profile = await resolveBrandProfile({
+		ownerUserId: userId,
+		brandId: input.brandId,
+		brandName: input.brand,
+	});
+	return { id: profile.id, name: profile.name };
+}
+
 export async function saveSidecarOpportunity(
 	userId: string,
 	input: OpportunityInput,
 ): Promise<{ id: string }> {
+	const brand = await requireAccessibleBrand(userId, {
+		brand: input.brand,
+		brandId: input.brandId,
+	});
 	const admin = getSupabaseService();
 	const status = input.status || (input.draftText ? 'Drafted' : 'Captured');
 	const tags = input.tags?.length ? input.tags : input.suggestedTags;
@@ -38,8 +55,8 @@ export async function saveSidecarOpportunity(
 		.from('sidecar_engagement_opportunities')
 		.insert({
 			user_id: userId,
-			brand_profile_id: input.brandId || null,
-			brand: input.brand,
+			brand_profile_id: brand.id,
+			brand: brand.name,
 			platform: input.platform,
 			page_url: input.pageUrl || null,
 			page_title: input.pageTitle || null,
@@ -78,7 +95,7 @@ export async function saveSidecarOpportunity(
 
 	await logSidecarUsage({
 		userId,
-		brand: input.brand,
+		brand: brand.name,
 		platform: input.platform,
 		action: 'opportunity_saved',
 		messageType: input.messageType,
@@ -92,14 +109,18 @@ export async function saveSidecarContact(
 	userId: string,
 	input: ContactInput,
 ): Promise<{ id: string; updated: boolean }> {
+	const brand = await requireAccessibleBrand(userId, {
+		brand: input.brand,
+		brandId: input.brandId,
+	});
 	const admin = getSupabaseService();
-	const brandProfileId = input.brandId || null;
+	const brandProfileId = brand.id;
 	const handle = input.handle?.trim() || null;
 
 	const row = {
 		user_id: userId,
 		brand_profile_id: brandProfileId,
-		brand: input.brand,
+		brand: brand.name,
 		name: input.name || null,
 		handle,
 		platform: input.platform,
@@ -148,7 +169,7 @@ export async function saveSidecarContact(
 
 			await logSidecarUsage({
 				userId,
-				brand: input.brand,
+				brand: brand.name,
 				platform: input.platform,
 				action: 'contact_updated',
 			}).catch(() => {});
@@ -173,7 +194,7 @@ export async function saveSidecarContact(
 
 	await logSidecarUsage({
 		userId,
-		brand: input.brand,
+		brand: brand.name,
 		platform: input.platform,
 		action: 'contact_saved',
 	}).catch(() => {});
@@ -212,6 +233,10 @@ export async function createSidecarContentIdea(
 	userId: string,
 	input: ContentIdeaInput,
 ): Promise<{ airtableRecordId: string }> {
+	const brand = await requireAccessibleBrand(userId, {
+		brand: input.brand,
+		brandId: input.brandId,
+	});
 	const table = requireEnv('AIRTABLE_CONTENTQUEUE_TABLE');
 
 	const bodyParts = [
@@ -228,7 +253,7 @@ export async function createSidecarContentIdea(
 		post_content: bodyParts || input.suggestedTitle,
 		platform: input.platform,
 		status: 'Draft',
-		brand_profile_id: [input.brandId],
+		brand_profile_id: [brand.id],
 		objective: input.objective || '',
 		campaign_name: `Sidecar: ${input.topicBucket || input.suggestedTitle}`.slice(0, 200),
 		generated_from: 'sidecar',
@@ -236,7 +261,7 @@ export async function createSidecarContentIdea(
 
 	await logSidecarUsage({
 		userId,
-		brand: input.brand,
+		brand: brand.name,
 		platform: input.platform,
 		action: 'content_idea_created',
 		metadata: { airtableRecordId: record.id },

@@ -20,13 +20,31 @@ Optional:
 ```bash
 SIDECAR_SAVE_CONTACTS_ENABLED=true   # default on unless false
 SIDECAR_CONTENT_IDEAS_ENABLED=true     # default on unless false
-SIDECAR_BRAND_ALLOWLIST=Premium Die-Cast,Folian,CrisP Digital,CRISP Content Engine,ABL International
+# Required when BrandProfiles has no user_id column (see Brand access below)
+SIDECAR_BRAND_ALLOWLIST=Premium Die-Cast,Folian,CrisP Digital
 NEXT_PUBLIC_ENABLE_SIDECAR=true        # client flag only (future UI)
 ```
 
 Extension: set **CCE API URL** and **Bearer token** (`SIDECAR_API_SECRET`) in Sidecar settings.
 
-**Brands:** `/api/sidecar/brands` lists all Airtable BrandProfiles unless `SIDECAR_BRAND_ALLOWLIST` is set (optional, case-insensitive). `SIDECAR_OWNER_USER_ID` is for Supabase writes only unless `SIDECAR_FILTER_BRANDS_BY_USER_ID=true`. Records are read via `readBrandProfileRecord()` (field-ID keyed Airtable responses). Response includes `meta.emptyReason` when the list is empty.
+### Brand access (server-enforced)
+
+Sidecar uses the same ownership model as the main app (`/api/brands`): Airtable **BrandProfiles** field `user_id` = Supabase auth UUID.
+
+| Mode | When | What the API returns |
+|------|------|----------------------|
+| `user_id` | `user_id` exists on BrandProfiles (default) | Only rows where `{user_id} = SIDECAR_OWNER_USER_ID` |
+| `allowlist_only` | `user_id` missing **and** `SIDECAR_BRAND_ALLOWLIST` set | Only `client_name` values on the allowlist (trimmed, case-insensitive) |
+| Error `sidecar_brand_access_not_configured` (503) | `user_id` missing **and** no allowlist | Safe failure — never lists the full table |
+
+Implementation: [`src/lib/sidecar/brandAccess.ts`](../src/lib/sidecar/brandAccess.ts). Every route that touches a brand calls `resolveBrandProfile()` or `listSidecarBrands()` — the extension cannot widen access.
+
+- **GET `/api/sidecar/brands`** — filtered list; `meta.accessMode`, `meta.userFilterActive`, `meta.allowlistActive`, `meta.emptyReason`
+- **POST `/api/sidecar/draft`**, **opportunity**, **contact**, **content-idea** — `brandId` / `brand` resolved only within permitted profiles; otherwise `sidecar_brand_forbidden`, `sidecar_brand_not_allowed`, or `sidecar_brand_not_found`
+
+Optional: `SIDECAR_BRAND_USER_ID_FIELD=false` forces allowlist-only (skips `user_id` probe). Optional allowlist **narrows further** when `user_id` mode is active.
+
+Airtable PAT stays server-side. Do not rely on Airtable UI permissions or extension-side filtering.
 
 **Generate draft (`POST /api/sidecar/draft`):**
 
@@ -80,7 +98,9 @@ See [extension/sidecar/README.md](../extension/sidecar/README.md).
 
 ## Security
 
+- Bearer `SIDECAR_API_SECRET` + `SIDECAR_OWNER_USER_ID` (personal MVP; not multi-tenant yet)
+- **BrandProfiles visibility enforced on the server** (see Brand access above)
 - Minimal permissions: `storage`, `sidePanel`, `activeTab`, `scripting`
 - Page context captured only when panel opens / user clicks Refresh
 - No background monitoring
-- API keys never shipped in the extension
+- Airtable PAT and OpenAI keys never shipped in the extension

@@ -7,6 +7,13 @@ import {
 	readBrandProfileRecord,
 } from '@/lib/airtable/readBrandProfileRecord';
 import {
+	assertRecordAccessible,
+	BRAND_OWNER_FIELD_NAME,
+	buildBrandListFilterFormula,
+	type BrandAccessPolicy,
+	resolveBrandAccessPolicy,
+} from './brandAccess';
+import {
 	fetchBrandProfileByName,
 	fetchBrandProfileRecordById,
 	parseBrandProfileFromFields,
@@ -18,6 +25,7 @@ const SIDECAR_LIST_FIELD_NAMES = [
 	'status',
 	'brand_type',
 	'platforms_requested',
+	BRAND_OWNER_FIELD_NAME,
 ] as const;
 
 export type SidecarBrandSummary = {
@@ -37,6 +45,7 @@ export type SidecarBrandsMeta = {
 	returnedCount: number;
 	allowlistActive: boolean;
 	userFilterActive: boolean;
+	accessMode: BrandAccessPolicy['mode'];
 	emptyReason?: string;
 };
 
@@ -55,22 +64,6 @@ function requireEnv(name: string): string {
 		});
 	}
 	return value;
-}
-
-/** Only filter when SIDECAR_BRAND_ALLOWLIST is explicitly set (trimmed, case-insensitive). */
-function parseBrandAllowlist(): Set<string> | null {
-	const raw = process.env.SIDECAR_BRAND_ALLOWLIST;
-	if (!raw?.trim()) return null;
-	return new Set(
-		raw
-			.split(',')
-			.map((s) => s.trim().toLowerCase())
-			.filter(Boolean),
-	);
-}
-
-function shouldFilterByUserId(): boolean {
-	return process.env.SIDECAR_FILTER_BRANDS_BY_USER_ID === 'true';
 }
 
 function fieldString(fields: Record<string, unknown>, key: string): string {
@@ -96,89 +89,81 @@ function buildEmptyReason(options: {
 	airtableCount: number;
 	namedCount: number;
 	returnedCount: number;
-	allowlistActive: boolean;
-	userFilterActive: boolean;
+	policy: BrandAccessPolicy;
 }): string | undefined {
 	if (options.returnedCount > 0) return undefined;
 	if (options.airtableCount === 0) {
-		if (options.userFilterActive) {
-			return 'No BrandProfiles matched SIDECAR_FILTER_BRANDS_BY_USER_ID. Clear that flag or check user_id on Airtable records.';
+		if (options.policy.mode === 'user_id') {
+			return `No BrandProfiles found for ${BRAND_OWNER_FIELD_NAME}=${options.policy.ownerUserId}.`;
 		}
-		return 'No BrandProfiles records found in Airtable.';
+		return 'No BrandProfiles matched SIDECAR_BRAND_ALLOWLIST.';
 	}
 	if (options.namedCount === 0) {
 		return 'BrandProfiles records exist but client_name could not be read. Check Airtable field IDs vs names.';
 	}
-	if (options.allowlistActive) {
-		return 'No brands matched SIDECAR_BRAND_ALLOWLIST (matching is trimmed and case-insensitive).';
+	if (options.policy.allowlistNames.length > 0) {
+		return 'No brands matched your access rules and SIDECAR_BRAND_ALLOWLIST.';
 	}
-	return 'No brands available after filtering.';
+	return 'No brands available for this Sidecar owner.';
 }
 
 /**
- * List brands for Sidecar. SIDECAR_OWNER_USER_ID is for Supabase writes only unless
- * SIDECAR_FILTER_BRANDS_BY_USER_ID=true.
+ * List BrandProfiles visible to SIDECAR_OWNER_USER_ID. Never returns the full Airtable table.
  */
-export async function listSidecarBrands(_ownerUserId: string): Promise<SidecarBrandsResult> {
+export async function listSidecarBrands(ownerUserId: string): Promise<SidecarBrandsResult> {
 	const table = requireEnv('AIRTABLE_BRANDPROFILES_TABLE');
-	const allowlist = parseBrandAllowlist();
-	const userFilterActive = shouldFilterByUserId();
+	const policy = await resolveBrandAccessPolicy(ownerUserId);
+	const filterByFormula = buildBrandListFilterFormula(policy);
+
+	const listFields =
+		policy.mode === 'user_id'
+			? [...SIDECAR_LIST_FIELD_NAMES]
+			: (['client_name', 'status', 'brand_type', 'platforms_requested'] as const);
 
 	const listOptions = {
 		table,
-		fields: [...SIDECAR_LIST_FIELD_NAMES],
+		fields: [...listFields],
 		cache: false as const,
 		endpoint: '/api/sidecar/brands',
 		sort: [{ field: 'client_name', direction: 'asc' as const }],
 		returnFieldsByFieldId: true as const,
+		filterByFormula,
 	};
 
-	let records: Array<{ id: string; fields?: Record<string, unknown> }>;
-	try {
-		records = await listRecords({
-			...listOptions,
-			...(userFilterActive
-				? { filterByFormula: `{user_id} = "${_ownerUserId}"` }
-				: {}),
-		});
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		if (userFilterActive && message.includes('UNKNOWN_FIELD_NAME')) {
-			console.warn('[Sidecar brands] user_id field missing — listing all BrandProfiles');
-			records = await listRecords(listOptions);
-		} else {
-			throw error;
+	const records = await listRecords(listOptions);
+	const accessible = records.filter((record) => {
+		try {
+			assertRecordAccessible(policy, record);
+			return true;
+		} catch {
+			return false;
 		}
-	}
+	});
 
-	const mapped = records.map(mapBrandRecord);
-	const withNames = mapped.filter((b) => b.name.trim());
-	const filtered = allowlist
-		? withNames.filter((b) => allowlist.has(b.name.trim().toLowerCase()))
-		: withNames;
+	const mapped = accessible.map(mapBrandRecord).filter((b) => b.name.trim());
 
 	logBrandProfilesFetchDiagnostics({
 		endpoint: 'Sidecar brands',
 		recordCount: records.length,
-		mappedCount: filtered.length,
-		firstRecord: records[0],
+		mappedCount: mapped.length,
+		firstRecord: accessible[0],
 	});
 
 	const meta: SidecarBrandsMeta = {
 		airtableCount: records.length,
-		returnedCount: filtered.length,
-		allowlistActive: allowlist !== null,
-		userFilterActive,
+		returnedCount: mapped.length,
+		allowlistActive: policy.allowlistNames.length > 0,
+		userFilterActive: policy.mode === 'user_id',
+		accessMode: policy.mode,
 		emptyReason: buildEmptyReason({
 			airtableCount: records.length,
-			namedCount: withNames.length,
-			returnedCount: filtered.length,
-			allowlistActive: allowlist !== null,
-			userFilterActive,
+			namedCount: mapped.length,
+			returnedCount: mapped.length,
+			policy,
 		}),
 	};
 
-	return { brands: filtered, meta };
+	return { brands: mapped, meta };
 }
 
 export async function resolveBrandProfile(options: {
@@ -187,30 +172,41 @@ export async function resolveBrandProfile(options: {
 	brandName?: string;
 }): Promise<SidecarBrandProfile> {
 	const table = requireEnv('AIRTABLE_BRANDPROFILES_TABLE');
-	const userFilterActive = shouldFilterByUserId();
+	const policy = await resolveBrandAccessPolicy(options.ownerUserId);
 
 	let record: { id: string; fields: Record<string, unknown> } | null = null;
 
 	if (options.brandId) {
 		record = await fetchBrandProfileRecordById(table, options.brandId);
+		assertRecordAccessible(policy, record);
 	} else if (options.brandName) {
+		if (!policy.allowlistNormalized && policy.mode === 'allowlist_only') {
+			throw new SidecarError('Brand access is not configured', {
+				status: 503,
+				code: 'sidecar_brand_access_not_configured',
+			});
+		}
+		const normalized = options.brandName.trim().toLowerCase();
+		if (policy.allowlistNormalized && !policy.allowlistNormalized.has(normalized)) {
+			throw new SidecarError('Brand is not enabled for Sidecar', {
+				status: 403,
+				code: 'sidecar_brand_not_allowed',
+			});
+		}
+
 		record = await fetchBrandProfileByName(
 			table,
 			options.brandName,
-			options.ownerUserId,
-			userFilterActive,
+			policy.mode === 'user_id' ? options.ownerUserId : undefined,
+			policy.mode === 'user_id',
 		);
+		if (record) {
+			assertRecordAccessible(policy, record);
+		}
 	}
 
 	if (!record) {
 		throw new SidecarError('Brand not found', { status: 404, code: 'sidecar_brand_not_found' });
-	}
-
-	if (userFilterActive) {
-		const userId = fieldString(record.fields, 'user_id');
-		if (userId && userId !== options.ownerUserId) {
-			throw new SidecarError('Brand access denied', { status: 403, code: 'sidecar_brand_forbidden' });
-		}
 	}
 
 	const parsed = parseBrandProfileFromFields(record);
@@ -219,13 +215,6 @@ export async function resolveBrandProfile(options: {
 		throw new SidecarError('Brand profile has no readable client_name', {
 			status: 502,
 			code: 'sidecar_brand_fetch_failed',
-		});
-	}
-	const allowlist = parseBrandAllowlist();
-	if (allowlist && name && !allowlist.has(name.trim().toLowerCase())) {
-		throw new SidecarError('Brand is not enabled for Sidecar', {
-			status: 403,
-			code: 'sidecar_brand_not_allowed',
 		});
 	}
 

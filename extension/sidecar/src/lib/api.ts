@@ -28,6 +28,7 @@ export type BrandsMeta = {
 	returnedCount: number;
 	allowlistActive: boolean;
 	userFilterActive: boolean;
+	accessMode?: 'user_id' | 'allowlist_only';
 	emptyReason?: string;
 };
 
