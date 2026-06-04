@@ -21,6 +21,18 @@ export type ParsedBrandProfileFields = {
 	platforms_requested: string[];
 };
 
+export type BrandProfilesFieldIds = {
+	clientName: string | undefined;
+	userId: string | undefined;
+};
+
+export function getBrandProfilesFieldIds(): BrandProfilesFieldIds {
+	return {
+		clientName: process.env.AIRTABLE_BRANDPROFILES_CLIENT_NAME_FIELD_ID?.trim() || undefined,
+		userId: process.env.AIRTABLE_BRANDPROFILES_USER_ID_FIELD_ID?.trim() || undefined,
+	};
+}
+
 export function getBrandProfileField(
 	fields: Record<string, unknown>,
 	fieldName: string,
@@ -40,19 +52,78 @@ function fieldToString(value: unknown): string {
 	return String(value);
 }
 
+function isUuidLike(value: string): boolean {
+	return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
+function looksLikeClientNameCandidate(value: string): boolean {
+	if (!value || value.length >= 200) return false;
+	if (isUuidLike(value)) return false;
+	const isDate =
+		/^\d{4}-\d{2}-\d{2}/.test(value) || /^\d{1,2}\/\d{1,2}\/\d{4}/.test(value);
+	if (isDate) return false;
+	if (value.includes('http://') || value.includes('https://')) return false;
+	if (KNOWN_STATUS_SNIPPETS.some((s) => value.includes(s))) return false;
+	return true;
+}
+
+function isUserIdFieldKey(fieldKey: string, ids: BrandProfilesFieldIds): boolean {
+	return fieldKey === 'user_id' || (ids.userId !== undefined && fieldKey === ids.userId);
+}
+
+/**
+ * Resolve BrandProfiles owner UUID from field-ID or name-keyed responses.
+ */
+export function readBrandProfileUserId(fields: Record<string, unknown>): string {
+	const ids = getBrandProfilesFieldIds();
+	const value = getBrandProfileField(fields, 'user_id', ids.userId);
+	return fieldToString(value).trim();
+}
+
+export type BrandProfileFieldResolutionDiagnostic = {
+	resolvedClientName: string;
+	resolvedUserId: string;
+	fieldsKeyedById: boolean;
+	hasClientNameFieldIdKey: boolean;
+	hasUserIdFieldIdKey: boolean;
+	hasClientNameNameKey: boolean;
+	hasUserIdNameKey: boolean;
+	configuredClientNameFieldId?: string;
+	configuredUserIdFieldId?: string;
+	fieldKeyCount: number;
+};
+
+export function diagnoseBrandProfileFieldResolution(
+	fields: Record<string, unknown>,
+): BrandProfileFieldResolutionDiagnostic {
+	const ids = getBrandProfilesFieldIds();
+	const fieldKeys = Object.keys(fields);
+	const parsed = identifyBrandProfileFields(fields);
+	return {
+		resolvedClientName: parsed.client_name,
+		resolvedUserId: readBrandProfileUserId(fields),
+		fieldsKeyedById: fieldKeys.length > 0 && fieldKeys.every((k) => k.startsWith('fld')),
+		hasClientNameFieldIdKey: Boolean(ids.clientName && ids.clientName in fields),
+		hasUserIdFieldIdKey: Boolean(ids.userId && ids.userId in fields),
+		hasClientNameNameKey: 'client_name' in fields,
+		hasUserIdNameKey: 'user_id' in fields,
+		configuredClientNameFieldId: ids.clientName,
+		configuredUserIdFieldId: ids.userId,
+		fieldKeyCount: fieldKeys.length,
+	};
+}
+
 /**
  * When returnFieldsByFieldId=true, logical names are not present as keys.
- * Mirror /api/brands heuristics to resolve client_name, status, etc.
+ * Resolve client_name, status, etc. via env field IDs, names, then heuristics.
  */
 export function identifyBrandProfileFields(
 	fields: Record<string, unknown>,
 ): ParsedBrandProfileFields {
+	const ids = getBrandProfilesFieldIds();
+
 	let clientName = fieldToString(
-		getBrandProfileField(
-			fields,
-			'client_name',
-			process.env.AIRTABLE_BRANDPROFILES_CLIENT_NAME_FIELD_ID?.trim(),
-		),
+		getBrandProfileField(fields, 'client_name', ids.clientName),
 	);
 	let status = fieldToString(getBrandProfileField(fields, 'status'));
 	let brandType = fieldToString(getBrandProfileField(fields, 'brand_type'));
@@ -72,16 +143,26 @@ export function identifyBrandProfileFields(
 		};
 	}
 
-	for (const fieldId of fieldKeys) {
-		const value = fields[fieldId];
+	if (clientName) {
+		return {
+			client_name: clientName.trim(),
+			status: status || 'New Brief',
+			brand_type: brandType || undefined,
+			platforms_requested: Array.isArray(platformsRequested)
+				? (platformsRequested as string[])
+				: [],
+		};
+	}
 
-		if (!clientName && typeof value === 'string' && value.length > 0 && value.length < 200) {
-			const isDate =
-				/^\d{4}-\d{2}-\d{2}/.test(value) || /^\d{1,2}\/\d{1,2}\/\d{4}/.test(value);
-			const looksLikeUrl = value.includes('http://') || value.includes('https://');
-			if (!isDate && !looksLikeUrl && !KNOWN_STATUS_SNIPPETS.some((s) => value.includes(s))) {
-				clientName = value;
-			}
+	for (const fieldKey of fieldKeys) {
+		const value = fields[fieldKey];
+
+		if (isUserIdFieldKey(fieldKey, ids)) {
+			continue;
+		}
+
+		if (!clientName && typeof value === 'string' && looksLikeClientNameCandidate(value)) {
+			clientName = value;
 		} else if (
 			!status &&
 			typeof value === 'string' &&
@@ -134,16 +215,13 @@ export function logBrandProfilesFetchDiagnostics(options: {
 }): void {
 	if (process.env.NODE_ENV === 'production') return;
 
-	const keys = options.firstRecord ? Object.keys(options.firstRecord.fields || {}) : [];
 	const fields = (options.firstRecord?.fields || {}) as Record<string, unknown>;
-	const parsed = options.firstRecord ? identifyBrandProfileFields(fields) : null;
+	const diag = options.firstRecord ? diagnoseBrandProfileFieldResolution(fields) : null;
 
 	console.log(`[${options.endpoint}] BrandProfiles fetch`, {
 		recordCount: options.recordCount,
 		mappedCount: options.mappedCount,
-		firstRecordFieldKeys: keys.slice(0, 15),
-		hasClientNameKey: keys.includes('client_name'),
-		hasClientNameValue: Boolean(parsed?.client_name),
-		fieldsKeyedById: keys.length > 0 && keys.every((k) => k.startsWith('fld')),
+		firstRecordFieldKeys: Object.keys(fields).slice(0, 15),
+		...diag,
 	});
 }

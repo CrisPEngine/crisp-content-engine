@@ -21,7 +21,7 @@ vi.mock('@/lib/airtable/client', () => ({
 const OWNER = '11111111-1111-1111-1111-111111111111';
 const OTHER = '22222222-2222-2222-2222-222222222222';
 
-function userIdPolicy(allowlist: string[] = []): BrandAccessPolicy {
+function userIdPolicy(allowlist: string[] = [], enforceAllowlist = false): BrandAccessPolicy {
 	const normalized =
 		allowlist.length > 0 ? new Set(allowlist.map((n) => n.toLowerCase())) : null;
 	return {
@@ -29,6 +29,7 @@ function userIdPolicy(allowlist: string[] = []): BrandAccessPolicy {
 		ownerUserId: OWNER,
 		allowlistNames: allowlist,
 		allowlistNormalized: normalized,
+		enforceAllowlist,
 	};
 }
 
@@ -38,6 +39,7 @@ function allowlistPolicy(names: string[]): BrandAccessPolicy {
 		ownerUserId: OWNER,
 		allowlistNames: names,
 		allowlistNormalized: new Set(names.map((n) => n.toLowerCase())),
+		enforceAllowlist: true,
 	};
 }
 
@@ -78,10 +80,16 @@ describe('buildBrandListFilterFormula', () => {
 		expect(formula).toContain(OWNER);
 	});
 
-	it('combines user_id and allowlist when both configured', () => {
-		const formula = buildBrandListFilterFormula(userIdPolicy(['My Brand']));
+	it('combines user_id and allowlist only when enforceAllowlist is set', () => {
+		const formula = buildBrandListFilterFormula(userIdPolicy(['My Brand'], true));
 		expect(formula).toMatch(/^AND\(/);
 		expect(formula).toContain('LOWER({client_name})');
+	});
+
+	it('does not combine allowlist in user_id mode unless enforceAllowlist', () => {
+		const formula = buildBrandListFilterFormula(userIdPolicy(['My Brand']));
+		expect(formula).not.toContain('OR(');
+		expect(formula).toContain(OWNER);
 	});
 
 	it('uses allowlist OR for allowlist_only mode', () => {
@@ -111,10 +119,19 @@ describe('assertRecordAccessible', () => {
 		);
 	});
 
-	it('rejects brand not on allowlist when allowlist is set', () => {
+	it('allows brand outside allowlist in user_id mode when allowlist is not enforced', () => {
 		expect(() =>
 			assertRecordAccessible(
 				userIdPolicy(['Allowed Only']),
+				brandRecord('rec3', 'Other Brand'),
+			),
+		).not.toThrow();
+	});
+
+	it('rejects brand not on allowlist when enforceAllowlist is set', () => {
+		expect(() =>
+			assertRecordAccessible(
+				userIdPolicy(['Allowed Only'], true),
 				brandRecord('rec3', 'Other Brand'),
 			),
 		).toThrow(

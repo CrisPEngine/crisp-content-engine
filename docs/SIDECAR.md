@@ -13,6 +13,9 @@ SIDECAR_OWNER_USER_ID=<your-supabase-auth-uuid>
 OPENAI_API_KEY=<key>
 LLM_PROVIDER=openai
 SIDECAR_LLM_MODEL=gpt-4o-mini
+# Field-ID keyed Airtable responses (returnFieldsByFieldId=true)
+AIRTABLE_BRANDPROFILES_CLIENT_NAME_FIELD_ID=fld9i3rA29NuS0Mjn
+AIRTABLE_BRANDPROFILES_USER_ID_FIELD_ID=fld70rABHKmGpVHFM
 ```
 
 Optional:
@@ -42,7 +45,16 @@ Implementation: [`src/lib/sidecar/brandAccess.ts`](../src/lib/sidecar/brandAcces
 - **GET `/api/sidecar/brands`** — filtered list; `meta.accessMode`, `meta.userFilterActive`, `meta.allowlistActive`, `meta.emptyReason`
 - **POST `/api/sidecar/draft`**, **opportunity**, **contact**, **content-idea** — `brandId` / `brand` resolved only within permitted profiles; otherwise `sidecar_brand_forbidden`, `sidecar_brand_not_allowed`, or `sidecar_brand_not_found`
 
-Optional: `SIDECAR_BRAND_USER_ID_FIELD=false` forces allowlist-only (skips `user_id` probe). Optional allowlist **narrows further** when `user_id` mode is active.
+Optional: `SIDECAR_BRAND_USER_ID_FIELD=false` forces allowlist-only (skips `user_id` probe). `SIDECAR_BRAND_ALLOWLIST` only narrows `user_id` mode when `SIDECAR_BRAND_ALLOWLIST_ENFORCE=true`.
+
+**Field-ID mapping:** Sidecar lists BrandProfiles with `returnFieldsByFieldId=true`. Set both field IDs on the server (not in the extension):
+
+| Env | Example (this base) | Resolves |
+|-----|---------------------|----------|
+| `AIRTABLE_BRANDPROFILES_CLIENT_NAME_FIELD_ID` | `fld9i3rA29NuS0Mjn` | `client_name` |
+| `AIRTABLE_BRANDPROFILES_USER_ID_FIELD_ID` | `fld70rABHKmGpVHFM` | `user_id` |
+
+[`readBrandProfileRecord()`](../src/lib/airtable/readBrandProfileRecord.ts) checks env field IDs first, then field names, then heuristics (UUIDs and `user_id` are never used as `client_name`). If rows match `user_id` but names stay empty, `meta.emptyReason` explains missing/wrong field IDs.
 
 Airtable PAT stays server-side. Do not rely on Airtable UI permissions or extension-side filtering.
 

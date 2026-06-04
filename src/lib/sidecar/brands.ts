@@ -3,8 +3,10 @@ import 'server-only';
 import { listRecords } from '@/lib/airtable/client';
 import {
 	getBrandProfileField,
+	getBrandProfilesFieldIds,
 	logBrandProfilesFetchDiagnostics,
 	readBrandProfileRecord,
+	readBrandProfileUserId,
 } from '@/lib/airtable/readBrandProfileRecord';
 import {
 	assertRecordAccessible,
@@ -85,11 +87,33 @@ function mapBrandRecord(record: { id: string; fields?: Record<string, unknown> }
 	};
 }
 
+function buildClientNameUnresolvedMessage(ownerMatchCount: number): string {
+	const ids = getBrandProfilesFieldIds();
+	const hints: string[] = [
+		`${ownerMatchCount} BrandProfiles matched ${BRAND_OWNER_FIELD_NAME} but client_name could not be read.`,
+	];
+	if (!ids.clientName) {
+		hints.push(
+			'Set AIRTABLE_BRANDPROFILES_CLIENT_NAME_FIELD_ID (e.g. fld9i3rA29NuS0Mjn for this base).',
+		);
+	} else {
+		hints.push(
+			`Check AIRTABLE_BRANDPROFILES_CLIENT_NAME_FIELD_ID=${ids.clientName} matches your Airtable column.`,
+		);
+	}
+	if (!ids.userId) {
+		hints.push(
+			'Set AIRTABLE_BRANDPROFILES_USER_ID_FIELD_ID (e.g. fld70rABHKmGpVHFM) for field-ID keyed responses.',
+		);
+	}
+	return hints.join(' ');
+}
+
 function buildEmptyReason(options: {
 	airtableCount: number;
-	namedCount: number;
 	returnedCount: number;
 	policy: BrandAccessPolicy;
+	ownerMatchUnreadableCount: number;
 }): string | undefined {
 	if (options.returnedCount > 0) return undefined;
 	if (options.airtableCount === 0) {
@@ -98,10 +122,12 @@ function buildEmptyReason(options: {
 		}
 		return 'No BrandProfiles matched SIDECAR_BRAND_ALLOWLIST.';
 	}
-	if (options.namedCount === 0) {
-		return 'BrandProfiles records exist but client_name could not be read. Check Airtable field IDs vs names.';
+	if (options.ownerMatchUnreadableCount > 0) {
+		const suffix =
+			options.policy.mode === 'user_id' ? ' (user filter active)' : '';
+		return `${buildClientNameUnresolvedMessage(options.ownerMatchUnreadableCount)}${suffix}`;
 	}
-	if (options.policy.allowlistNames.length > 0) {
+	if (options.policy.enforceAllowlist && options.policy.allowlistNames.length > 0) {
 		return 'No brands matched your access rules and SIDECAR_BRAND_ALLOWLIST.';
 	}
 	return 'No brands available for this Sidecar owner.';
@@ -131,7 +157,18 @@ export async function listSidecarBrands(ownerUserId: string): Promise<SidecarBra
 	};
 
 	const records = await listRecords(listOptions);
+	let ownerMatchUnreadableCount = 0;
+
 	const accessible = records.filter((record) => {
+		const fields = (record.fields || {}) as Record<string, unknown>;
+		if (policy.mode === 'user_id') {
+			const ownerId = readBrandProfileUserId(fields);
+			const parsed = readBrandProfileRecord(record);
+			if (ownerId === policy.ownerUserId && !parsed.client_name.trim()) {
+				ownerMatchUnreadableCount += 1;
+				return false;
+			}
+		}
 		try {
 			assertRecordAccessible(policy, record);
 			return true;
@@ -152,14 +189,14 @@ export async function listSidecarBrands(ownerUserId: string): Promise<SidecarBra
 	const meta: SidecarBrandsMeta = {
 		airtableCount: records.length,
 		returnedCount: mapped.length,
-		allowlistActive: policy.allowlistNames.length > 0,
+		allowlistActive: policy.enforceAllowlist && policy.allowlistNames.length > 0,
 		userFilterActive: policy.mode === 'user_id',
 		accessMode: policy.mode,
 		emptyReason: buildEmptyReason({
 			airtableCount: records.length,
-			namedCount: mapped.length,
 			returnedCount: mapped.length,
 			policy,
+			ownerMatchUnreadableCount,
 		}),
 	};
 
@@ -180,7 +217,10 @@ export async function resolveBrandProfile(options: {
 		record = await fetchBrandProfileRecordById(table, options.brandId);
 		assertRecordAccessible(policy, record);
 	} else if (options.brandName) {
-		if (!policy.allowlistNormalized && policy.mode === 'allowlist_only') {
+		if (
+			policy.mode === 'allowlist_only' &&
+			(!policy.allowlistNormalized || policy.allowlistNormalized.size === 0)
+		) {
 			throw new SidecarError('Brand access is not configured', {
 				status: 503,
 				code: 'sidecar_brand_access_not_configured',

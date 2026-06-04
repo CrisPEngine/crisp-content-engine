@@ -1,7 +1,10 @@
 import 'server-only';
 
 import { listRecords } from '@/lib/airtable/client';
-import { getBrandProfileField, readBrandProfileRecord } from '@/lib/airtable/readBrandProfileRecord';
+import {
+	readBrandProfileRecord,
+	readBrandProfileUserId,
+} from '@/lib/airtable/readBrandProfileRecord';
 import { SidecarError } from './errors';
 
 /** Same ownership field as `/api/brands` and onboarding. */
@@ -16,7 +19,13 @@ export type BrandAccessPolicy = {
 	allowlistNames: string[];
 	/** Lowercase trimmed names for post-fetch checks. */
 	allowlistNormalized: Set<string> | null;
+	/** When true, SIDECAR_BRAND_ALLOWLIST also narrows user_id mode (SIDECAR_BRAND_ALLOWLIST_ENFORCE=true). */
+	enforceAllowlist: boolean;
 };
+
+function parseEnforceAllowlist(): boolean {
+	return process.env.SIDECAR_BRAND_ALLOWLIST_ENFORCE === 'true';
+}
 
 export type ParsedAllowlist = {
 	names: string[];
@@ -116,7 +125,7 @@ export function buildAllowlistFilterFormula(allowlistNames: string[]): string {
 export function buildBrandListFilterFormula(policy: BrandAccessPolicy): string {
 	const ownerClause = `{${BRAND_OWNER_FIELD_NAME}} = "${escapeFormulaString(policy.ownerUserId)}"`;
 	if (policy.mode === 'user_id') {
-		if (policy.allowlistNames.length > 0) {
+		if (policy.enforceAllowlist && policy.allowlistNames.length > 0) {
 			return `AND(${ownerClause}, ${buildAllowlistFilterFormula(policy.allowlistNames)})`;
 		}
 		return ownerClause;
@@ -138,6 +147,7 @@ export async function resolveBrandAccessPolicy(ownerUserId: string): Promise<Bra
 			ownerUserId,
 			allowlistNames: allowlist.names,
 			allowlistNormalized: allowlist.normalized,
+			enforceAllowlist: parseEnforceAllowlist(),
 		};
 	}
 
@@ -159,23 +169,25 @@ export async function resolveBrandAccessPolicy(ownerUserId: string): Promise<Bra
 		ownerUserId,
 		allowlistNames: allowlist.names,
 		allowlistNormalized: allowlist.normalized,
+		enforceAllowlist: true,
 	};
 }
 
 export function brandNameAllowedByPolicy(policy: BrandAccessPolicy, clientName: string): boolean {
 	const normalized = clientName.trim().toLowerCase();
 	if (!normalized) return false;
-	if (policy.allowlistNormalized && !policy.allowlistNormalized.has(normalized)) {
+	if (
+		policy.enforceAllowlist &&
+		policy.allowlistNormalized &&
+		!policy.allowlistNormalized.has(normalized)
+	) {
 		return false;
 	}
 	return true;
 }
 
 export function recordOwnerUserId(fields: Record<string, unknown>): string {
-	const value = getBrandProfileField(fields, BRAND_OWNER_FIELD_NAME);
-	if (value === null || value === undefined) return '';
-	if (typeof value === 'string') return value.trim();
-	return String(value).trim();
+	return readBrandProfileUserId(fields);
 }
 
 /**
@@ -189,7 +201,14 @@ export function assertRecordAccessible(
 	const parsed = readBrandProfileRecord(record);
 	const name = parsed.client_name.trim();
 
-	if (!name || !brandNameAllowedByPolicy(policy, name)) {
+	if (!name) {
+		throw new SidecarError('Brand profile has no readable client_name', {
+			status: 502,
+			code: 'sidecar_brand_name_unresolved',
+		});
+	}
+
+	if (!brandNameAllowedByPolicy(policy, name)) {
 		throw new SidecarError('Brand is not enabled for Sidecar', {
 			status: 403,
 			code: 'sidecar_brand_not_allowed',
