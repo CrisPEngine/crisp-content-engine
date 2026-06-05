@@ -293,7 +293,8 @@ export async function POST(request: Request) {
 		let previousContentJson: Record<string, any>[] = [];
 		if (!useNative) {
 			brandContext = await loadBrandProfile(brand_profile_id);
-			previousContentJson = await loadContentHistory(brand_profile_id);
+			const history = await loadContentHistory(brand_profile_id);
+			previousContentJson = history.entries;
 		}
 
 		// ── Build autopublish capability map ─────────────────────

@@ -69,7 +69,9 @@ export async function loadRunContextFromDb(runId: string): Promise<{
 
 	const brandContext = await loadBrandProfile(run.brand_profile_id);
 	const { timezone, postingWindows } = extractTimezoneAndWindows(brandContext);
-	const previousContentJson = await loadContentHistory(run.brand_profile_id);
+	const { entries: previousContentJson, warning: historyWarning } = await loadContentHistory(
+		run.brand_profile_id,
+	);
 
 	const autopublishCapabilities: Record<string, boolean> = {
 		linkedin: planCaps.autopublishLinkedIn,
@@ -97,6 +99,7 @@ export async function loadRunContextFromDb(runId: string): Promise<{
 		postingWindows,
 		brandContext,
 		previousContentJson,
+		historyWarning: historyWarning ?? null,
 	};
 
 	return { run, context };

@@ -2,31 +2,58 @@ import 'server-only';
 
 import { listRecords } from '@/lib/airtable/client';
 import type { PreviousContentEntry } from '../types';
+import {
+	IDEA_ENGINE_CONTENTQUEUE_FIELD_NAMES,
+	IDEA_ENGINE_HISTORY_WARNING,
+	mapContentHistoryRecord,
+} from '../airtable/contentQueueQuery';
+
+export type ContentHistoryLoadResult = {
+	entries: PreviousContentEntry[];
+	warning?: string;
+};
 
 export async function loadContentHistory(
 	brandProfileId: string,
 	maxRecords = 30,
-): Promise<PreviousContentEntry[]> {
+): Promise<ContentHistoryLoadResult> {
 	const table = process.env.AIRTABLE_TABLE_NAME || process.env.AIRTABLE_CONTENTQUEUE_TABLE;
 	if (!table || !process.env.AIRTABLE_PAT || !process.env.AIRTABLE_BASE_ID) {
-		return [];
+		return { entries: [] };
 	}
 
 	try {
 		const escapedId = brandProfileId.replace(/"/g, '""');
 		const records = await listRecords({
 			table,
-			filterByFormula: `AND({Brand Profile} = "${escapedId}", OR({Status} = "Published", {Status} = "Approved", {Status} = "Scheduled"))`,
-			fields: ['Post Title', 'Post Content', 'Platform', 'Status'],
-			sort: [{ field: 'Created Time', direction: 'desc' }],
+			filterByFormula: `FIND("${escapedId}", {${IDEA_ENGINE_CONTENTQUEUE_FIELD_NAMES.brand_profile_id}})`,
+			fields: [
+				IDEA_ENGINE_CONTENTQUEUE_FIELD_NAMES.platform,
+				IDEA_ENGINE_CONTENTQUEUE_FIELD_NAMES.hook,
+				IDEA_ENGINE_CONTENTQUEUE_FIELD_NAMES.post_content,
+				IDEA_ENGINE_CONTENTQUEUE_FIELD_NAMES.status,
+				IDEA_ENGINE_CONTENTQUEUE_FIELD_NAMES.created_time,
+			],
+			sort: [
+				{
+					field: IDEA_ENGINE_CONTENTQUEUE_FIELD_NAMES.created_time,
+					direction: 'desc',
+				},
+			],
 			maxRecords,
 			cache: false,
+			returnFieldsByFieldId: true,
 			endpoint: '/api/idea-engine/load-history',
 		});
 
-		return records.map((r) => (r.fields || {}) as PreviousContentEntry);
+		return {
+			entries: records.map((record) => mapContentHistoryRecord(record) as PreviousContentEntry),
+		};
 	} catch (error) {
 		console.warn('[IdeaEngine] Content history fetch failed:', error);
-		return [];
+		return {
+			entries: [],
+			warning: IDEA_ENGINE_HISTORY_WARNING,
+		};
 	}
 }

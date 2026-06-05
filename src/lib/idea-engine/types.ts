@@ -25,6 +25,7 @@ export type IdeaEngineRunContext = {
 	postingWindows: unknown;
 	brandContext: BrandContext;
 	previousContentJson: PreviousContentEntry[];
+	historyWarning?: string | null;
 };
 
 export type GeneratedItemInput = {

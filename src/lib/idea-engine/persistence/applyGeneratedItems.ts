@@ -103,7 +103,10 @@ export async function applyGeneratedItems(options: {
 	return { applied };
 }
 
-export async function markRunFailed(runId: string, errorMessage: string): Promise<void> {
+export async function markRunFailed(
+	runId: string,
+	errorMessage: string,
+): Promise<void> {
 	const admin = getSupabaseService();
 	await admin
 		.from('idea_engine_runs')

@@ -3,6 +3,7 @@ import 'server-only';
 import { LlmError } from '@/lib/llm';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { loadRunContextFromDb } from '../data/loadRunContext';
+import { IDEA_ENGINE_GENERATION_FAILED_MESSAGE } from '../airtable/contentQueueQuery';
 import { IdeaEngineError } from '../errors';
 import { applyGeneratedItems, markRunFailed } from '../persistence/applyGeneratedItems';
 import type { GeneratedItemInput } from '../types';
@@ -76,6 +77,13 @@ export async function generateSeries(runId: string): Promise<void> {
 
 	try {
 		const { context } = await loadRunContextFromDb(runId);
+
+		if (context.historyWarning) {
+			await admin
+				.from('idea_engine_runs')
+				.update({ generation_warning: context.historyWarning })
+				.eq('id', runId);
+		}
 		const { counts: requestedCounts, rejectedChannels } = clampRequestedCountsForGeneration(
 			context.requestedCounts,
 			context.plan,
@@ -144,9 +152,14 @@ export async function generateSeries(runId: string): Promise<void> {
 					? error.message
 					: error instanceof Error
 						? error.message
-						: 'Generation failed';
+						: IDEA_ENGINE_GENERATION_FAILED_MESSAGE;
 
 		console.error('[IdeaEngine] Series failed', { runId, message });
-		await markRunFailed(runId, message);
+		await markRunFailed(
+			runId,
+			message === IDEA_ENGINE_GENERATION_FAILED_MESSAGE
+				? message
+				: `${IDEA_ENGINE_GENERATION_FAILED_MESSAGE} (${message})`,
+		);
 	}
 }

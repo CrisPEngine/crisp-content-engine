@@ -10,6 +10,7 @@ import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { releaseRunReservation } from '@/lib/enforceCaps';
+import { markStaleGeneratingRunIfNeeded } from '@/lib/idea-engine/persistence/staleRunGuard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,9 +41,9 @@ export async function GET(
 		const { runId } = await context.params;
 		const admin = getSupabaseService();
 
-		const { data: run, error: runError } = await admin
+		let { data: run, error: runError } = await admin
 			.from('idea_engine_runs')
-			.select('id, series_run_id, user_id, idea, goal, selected_channels, publish_mode, status, total_expected, total_generated, error, created_at')
+			.select('id, series_run_id, user_id, idea, goal, selected_channels, publish_mode, status, total_expected, total_generated, error, generation_warning, created_at')
 			.eq('id', runId)
 			.single();
 
@@ -52,6 +53,13 @@ export async function GET(
 
 		if (run.user_id !== user.id) {
 			return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+		}
+
+		if (run) {
+			const staleError = await markStaleGeneratingRunIfNeeded(run);
+			if (staleError) {
+				run = { ...run, status: 'failed', error: staleError };
+			}
 		}
 
 		// ── Return items (placeholders + filled) for all states ───
@@ -96,6 +104,7 @@ export async function GET(
 				total_expected: run.total_expected,
 				total_generated: run.total_generated,
 				error: run.error,
+				generation_warning: run.generation_warning ?? null,
 				created_at: run.created_at,
 			},
 			items,

@@ -138,6 +138,7 @@ export default function IdeaEnginePage() {
 	// ── Generation ───────────────────────────────────────────────
 	const [runId, setRunId] = useState<string>('');
 	const [runStatus, setRunStatus] = useState<string>('');
+	const [generationWarning, setGenerationWarning] = useState<string | null>(null);
 	const [totalExpected, setTotalExpected] = useState<number>(0);
 	const [totalGenerated, setTotalGenerated] = useState<number>(0);
 	const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -241,6 +242,7 @@ export default function IdeaEnginePage() {
 				const { run, items: runItems, generated_items_count } = data;
 
 				setRunStatus(run.status);
+				setGenerationWarning(run.generation_warning || null);
 				setTotalExpected(run.total_expected || 0);
 				setTotalGenerated(generated_items_count || run.total_generated || 0);
 
@@ -297,11 +299,15 @@ export default function IdeaEnginePage() {
 				) {
 					clearInterval(pollRef.current!);
 					setStep('review');
-				} else if (run.status === 'failed') {
+				} else if (run.status === 'failed' || run.status === 'cancelled') {
 					clearInterval(pollRef.current!);
 					// Keep the user in the generation workspace so they can see partial results
 					// (ready items) and clearly understand what failed.
-					setError(run.error || 'Generation failed. Please try again.');
+					setError(
+						run.status === 'cancelled'
+							? 'Generation was cancelled.'
+							: (run.error || 'Content generation failed. Please try again.'),
+					);
 					setStep('generating');
 				}
 			} catch {
@@ -380,6 +386,7 @@ export default function IdeaEnginePage() {
 
 			setRunId(data.run_id);
 			setRunStatus('generating');
+			setGenerationWarning(null);
 			const expectedTotal = Object.values(computedCounts).reduce((a, b) => a + b, 0);
 			setTotalExpected(expectedTotal > 0 ? expectedTotal : selectedChannels.length);
 			setTotalGenerated(0);
@@ -850,6 +857,13 @@ export default function IdeaEnginePage() {
 								</div>
 							)}
 						</div>
+
+						{generationWarning && runStatus !== 'failed' && (
+							<div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+								<AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+								<span>{generationWarning}</span>
+							</div>
+						)}
 
 						{totalExpected > 0 && runStatus !== 'failed' && (
 							<div className="space-y-2">
