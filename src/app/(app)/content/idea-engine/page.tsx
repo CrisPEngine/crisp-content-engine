@@ -246,26 +246,29 @@ export default function IdeaEnginePage() {
 
 			// Always update items (placeholders + filled) during generation
 			if (runItems && runItems.length > 0) {
-				const mappedItems: SeriesItem[] = runItems.map((item: any) => ({
-					...item,
-					_editing: false,
-					_editDraft: {
-						post_title: item.post_title || '',
-						body_draft: item.body_draft || '',
-						hashtags: item.hashtags || '',
-						image_prompt: item.image_prompt || '',
-					},
-					_saving: false,
-					_regenerating: false,
-					_deleted: false,
-				}));
-				setItems(mappedItems);
+				setItems((prev) => {
+					const prevMap = new Map(prev.map((it) => [it.id, it]));
+					return runItems.map((item: any) => ({
+						...item,
+						_editing: prevMap.get(item.id)?._editing ?? false,
+						_editDraft: prevMap.get(item.id)?._editDraft ?? {
+							post_title: item.post_title || '',
+							body_draft: item.body_draft || '',
+							hashtags: item.hashtags || '',
+							image_prompt: item.image_prompt || '',
+						},
+						_saving: false,
+						_regenerating: item.status === 'regenerating',
+						_deleted: prevMap.get(item.id)?._deleted ?? false,
+					}));
+				});
 
 				// Detect newly ready items (transitioned from placeholder → ready this poll)
-				const currentReadyIds = new Set(
-					mappedItems
-						.filter(it => it.body_draft || it.status === 'ready')
-						.map(it => it.id)
+				const currentReadyIds = new Set<string>(
+					runItems
+						.filter((it: { body_draft?: string; status?: string; id: string }) =>
+							it.body_draft || it.status === 'ready')
+						.map((it: { id: string }) => it.id as string)
 				);
 				const justAdded = new Set<string>();
 				currentReadyIds.forEach(id => {
@@ -285,7 +288,13 @@ export default function IdeaEnginePage() {
 				}
 			}
 
-				if (run.status === 'review' || run.status === 'completed') {
+				const hasRegenerating = runItems?.some(
+					(it: { status?: string }) => it.status === 'regenerating',
+				);
+				if (
+					(run.status === 'review' || run.status === 'completed') &&
+					!hasRegenerating
+				) {
 					clearInterval(pollRef.current!);
 					setStep('review');
 				} else if (run.status === 'failed') {
@@ -461,8 +470,10 @@ export default function IdeaEnginePage() {
 			const res = await fetch(`/api/idea-engine/items/${itemId}/regenerate`, { method: 'POST' });
 			if (!res.ok) {
 				setItems(prev => prev.map(it => it.id === itemId ? { ...it, _regenerating: false } : it));
+				return;
 			}
-			// Item will be updated by webhook; for now show "regenerating" state
+			// Native engine updates item in DB; poll until status leaves regenerating
+			if (runId) startPolling(runId);
 		} catch {
 			setItems(prev => prev.map(it => it.id === itemId ? { ...it, _regenerating: false } : it));
 		}

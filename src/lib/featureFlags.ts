@@ -56,3 +56,11 @@ export const isSidecarContentIdeasEnabled = (): boolean => {
 export const isSidecarEnabledClient = (): boolean => {
 	return process.env.NEXT_PUBLIC_ENABLE_SIDECAR === 'true';
 };
+
+/**
+ * Native Idea Engine generation (replaces Make.com for series + regenerate).
+ * When false, falls back to MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL.
+ */
+export const isIdeaEngineNativeEnabled = (): boolean => {
+	return process.env.IDEA_ENGINE_NATIVE_ENABLED === 'true';
+};

@@ -1,0 +1,15 @@
+{
+  "series_run_id": "550e8400-e29b-41d4-a716-446655440000",
+  "items": [
+    {
+      "channel": "LinkedIn",
+      "post_title": "Systems beat motivation for content consistency",
+      "post_type": "thought_leadership",
+      "body_draft": "Full post body here.",
+      "hashtags": "#content #founders",
+      "image_prompt": { "objective": { "primary_intent": "Stop scroll" } },
+      "series_position": 1,
+      "series_total": 2
+    }
+  ]
+}

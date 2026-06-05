@@ -1,4 +1,6 @@
-# Idea Engine — automation webhook contract
+# Idea Engine — automation webhook contract (legacy Make)
+
+> **Deprecated** when `IDEA_ENGINE_NATIVE_ENABLED=true`. See **[IDEA_ENGINE_NATIVE.md](./IDEA_ENGINE_NATIVE.md)** for the in-app generator.
 
 **Audience:** Operators wiring the external automation that receives Idea Engine runs and returns generated content. **Not** for end users—see **[USER_GUIDE.md](./USER_GUIDE.md)** for how customers use Idea Engine in the app.
 

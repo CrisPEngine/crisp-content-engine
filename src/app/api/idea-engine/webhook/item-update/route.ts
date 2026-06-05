@@ -1,6 +1,7 @@
 /**
  * POST /api/idea-engine/webhook/item-update
  *
+ * @deprecated Legacy Make.com callback. Disabled when IDEA_ENGINE_NATIVE_ENABLED=true.
  * Receives a regenerated single item from Make.com.
  * Updates the specific idea_engine_items row and resets status to 'pending'.
  *
@@ -9,6 +10,7 @@
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { isIdeaEngineNativeEnabled } from '@/lib/featureFlags';
 import { getSupabaseService } from '@/lib/supabaseService';
 
 export const runtime = 'nodejs';
@@ -25,6 +27,13 @@ const ItemUpdateSchema = z.object({
 
 export async function POST(request: Request) {
 	try {
+		if (isIdeaEngineNativeEnabled()) {
+			return NextResponse.json(
+				{ error: 'Make callbacks are disabled; native Idea Engine is enabled.' },
+				{ status: 410 },
+			);
+		}
+
 		const secret = request.headers.get('x-make-secret');
 		const apiKey = request.headers.get('x-api-key') || request.headers.get('x-make-apikey');
 		const isAuthorised =

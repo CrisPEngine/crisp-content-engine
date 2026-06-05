@@ -1,6 +1,7 @@
 /**
  * POST /api/idea-engine/webhook/callback
  *
+ * @deprecated Legacy Make.com callback. Disabled when IDEA_ENGINE_NATIVE_ENABLED=true.
  * Receives generated items from the Make.com Idea Engine scenario.
  * Stores items in idea_engine_items, updates run status to 'review',
  * and creates a quota RESERVATION (does NOT increment usage_posts).
@@ -13,6 +14,7 @@
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { isIdeaEngineNativeEnabled } from '@/lib/featureFlags';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { upsertReservation } from '@/lib/enforceCaps';
 
@@ -52,6 +54,13 @@ const CallbackSchema = z.union([SuccessCallbackSchema, FailureCallbackSchema]);
 
 export async function POST(request: Request) {
 	try {
+		if (isIdeaEngineNativeEnabled()) {
+			return NextResponse.json(
+				{ error: 'Make callbacks are disabled; native Idea Engine is enabled.' },
+				{ status: 410 },
+			);
+		}
+
 		// ── Auth ──────────────────────────────────────────────────
 		const secret = request.headers.get('x-make-secret');
 		const expected = process.env.MAKE_SHARED_SECRET;

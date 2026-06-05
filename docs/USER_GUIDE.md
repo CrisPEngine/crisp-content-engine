@@ -72,6 +72,8 @@ If youâ€™ve reached your monthly post limit, Quick Generate is limited, but youâ
 
 ## Idea Engine (content series)
 
+Generation runs inside CRISP when native mode is enabled (no external automation wait). You still review drafts before they enter your content queue.
+
 ### Before you start
 
 - Choose a **brand**  

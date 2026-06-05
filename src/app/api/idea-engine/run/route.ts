@@ -7,7 +7,7 @@
  * Auth: Supabase cookie session.
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { z } from 'zod';
@@ -16,6 +16,17 @@ import { resolvePlan } from '@/lib/planResolver';
 import { getChannelUsage, getIdeaEngineRunsUsed, incrementIdeaEngineRunsUsed } from '@/lib/enforceCaps';
 import { CAPS } from '@/config/pricing';
 import { computeIdeaEngineRequestedCounts } from '@/lib/ideaEngineQuota';
+import { isIdeaEngineNativeEnabled } from '@/lib/featureFlags';
+import { generateSeries } from '@/lib/idea-engine';
+import {
+	extractTimezoneAndWindows,
+	loadBrandProfile,
+} from '@/lib/idea-engine/data/loadBrandProfile';
+import { loadContentHistory } from '@/lib/idea-engine/data/loadContentHistory';
+import {
+	extractIdempotencyKey,
+	findExistingRunByIdempotencyKey,
+} from '@/lib/idea-engine/idempotency';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -61,6 +72,8 @@ export async function POST(request: Request) {
 
 		const { brand_profile_id, idea, goal, notes, selected_channels, publish_mode } = parsed.data;
 
+		const idempotencyKey = extractIdempotencyKey(request, body);
+
 		// ── Plan check ────────────────────────────────────────────
 		const resolved = await resolvePlan(user.id);
 		const plan = resolved.plan === 'free' ? 'starter' : resolved.plan;
@@ -100,6 +113,20 @@ export async function POST(request: Request) {
 
 		// ── Rate limiting: 1 run per minute per user ──────────────
 		const admin = getSupabaseService();
+
+		// ── Idempotency: return existing run for duplicate requests ─
+		if (idempotencyKey) {
+			const existing = await findExistingRunByIdempotencyKey(user.id, idempotencyKey);
+			if (existing) {
+				return NextResponse.json({
+					ok: true,
+					run_id: existing.id,
+					series_run_id: existing.series_run_id,
+					idempotent_replay: true,
+					generation: isIdeaEngineNativeEnabled() ? 'native' : 'make',
+				});
+			}
+		}
 		const oneMinuteAgo = new Date(Date.now() - 60 * 1000).toISOString();
 		const { data: recentRun } = await admin
 			.from('idea_engine_runs')
@@ -175,25 +202,46 @@ export async function POST(request: Request) {
 		// Calculate total expected items upfront for progress tracking
 		const totalExpected = Object.values(requestedCounts).reduce((sum, count) => sum + count, 0);
 
+		const insertPayload: Record<string, unknown> = {
+			user_id: user.id,
+			brand_profile_id,
+			idea,
+			goal: goal || null,
+			notes: notes || null,
+			selected_channels,
+			publish_mode,
+			status: 'generating',
+			total_expected: totalExpected,
+			total_generated: 0,
+		};
+		if (idempotencyKey) {
+			insertPayload.idempotency_key = idempotencyKey;
+		}
+
 		const { data: run, error: insertError } = await admin
 			.from('idea_engine_runs')
-			.insert({
-				user_id: user.id,
-				brand_profile_id,
-				idea,
-				goal: goal || null,
-				notes: notes || null,
-				selected_channels,
-				publish_mode,
-				status: 'generating',
-				total_expected: totalExpected,
-				total_generated: 0,
-			})
+			.insert(insertPayload)
 			.select('id, series_run_id')
 			.single();
 
-		if (insertError || !run) {
+		if (insertError) {
+			if (insertError.code === '23505' && idempotencyKey) {
+				const replay = await findExistingRunByIdempotencyKey(user.id, idempotencyKey);
+				if (replay) {
+					return NextResponse.json({
+						ok: true,
+						run_id: replay.id,
+						series_run_id: replay.series_run_id,
+						idempotent_replay: true,
+						generation: isIdeaEngineNativeEnabled() ? 'native' : 'make',
+					});
+				}
+			}
 			console.error('[IdeaEngine/Run] Failed to create run:', insertError);
+			return NextResponse.json({ error: 'Failed to create series run' }, { status: 500 });
+		}
+
+		if (!run) {
 			return NextResponse.json({ error: 'Failed to create series run' }, { status: 500 });
 		}
 
@@ -238,52 +286,14 @@ export async function POST(request: Request) {
 			);
 		}
 
-		// ── Fetch brand context for Make payload ──────────────────
-		let brandContext: Record<string, any> = {};
-		try {
-			const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
-			const BASE_ID = process.env.AIRTABLE_BASE_ID;
-			const BRANDPROFILES_TABLE = process.env.AIRTABLE_BRANDPROFILES_TABLE;
-			if (AIRTABLE_TOKEN && BASE_ID && BRANDPROFILES_TABLE) {
-				const brandRes = await fetch(
-					`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}/${brand_profile_id}`,
-					{ headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } }
-				);
-				if (brandRes.ok) {
-					const brandData = await brandRes.json();
-					brandContext = brandData.fields || {};
-				}
-			}
-		} catch (err) {
-			console.warn('[IdeaEngine/Run] Could not fetch brand context:', err);
-		}
+		const useNative = isIdeaEngineNativeEnabled();
 
-		// ── Fetch recent content for deduplication context ────────
-		// Passed to Make as previous_content_json so OpenAI can avoid repeating
-		// angles, hooks and structures already in the content queue.
-		// Currently returns the 30 most recent queue items for this brand.
-		// Empty array is safe — Make/OpenAI will simply skip deduplication.
+		// ── Brand + history (Make payload only; native reloads in generateSeries) ──
+		let brandContext: Record<string, any> = {};
 		let previousContentJson: Record<string, any>[] = [];
-		try {
-			const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
-			const BASE_ID = process.env.AIRTABLE_BASE_ID;
-			const CONTENT_TABLE = process.env.AIRTABLE_TABLE_NAME;
-			if (AIRTABLE_TOKEN && BASE_ID && CONTENT_TABLE) {
-				const filterFormula = encodeURIComponent(
-					`AND({Brand Profile} = "${brand_profile_id}", OR({Status} = "Published", {Status} = "Approved", {Status} = "Scheduled"))`
-				);
-				const contentRes = await fetch(
-					`https://api.airtable.com/v0/${BASE_ID}/${CONTENT_TABLE}?filterByFormula=${filterFormula}&fields[]=Post Title&fields[]=Post Content&fields[]=Platform&fields[]=Status&sort[0][field]=Created Time&sort[0][direction]=desc&maxRecords=30`,
-					{ headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } }
-				);
-				if (contentRes.ok) {
-					const contentData = await contentRes.json();
-					previousContentJson = (contentData.records || []).map((r: any) => r.fields || {});
-				}
-			}
-		} catch (err) {
-			console.warn('[IdeaEngine/Run] Could not fetch previous content:', err);
-			// Non-fatal: generation proceeds without deduplication context
+		if (!useNative) {
+			brandContext = await loadBrandProfile(brand_profile_id);
+			previousContentJson = await loadContentHistory(brand_profile_id);
 		}
 
 		// ── Build autopublish capability map ─────────────────────
@@ -299,11 +309,41 @@ export async function POST(request: Request) {
 		// activeChannels = channels with count > 0 (dropped channels are excluded).
 		// Make only receives channels the app has approved — no zero-count channels.
 
-		// ── Fire Make webhook ─────────────────────────────────────
+		if (useNative) {
+			if (!process.env.OPENAI_API_KEY?.trim()) {
+				await admin
+					.from('idea_engine_runs')
+					.update({ status: 'failed', error: 'OPENAI_API_KEY not configured' })
+					.eq('id', run.id);
+				return NextResponse.json(
+					{ error: 'Idea Engine is not configured. Please contact support.' },
+					{ status: 503 },
+				);
+			}
+
+			after(async () => {
+				try {
+					await generateSeries(run.id);
+				} catch (err) {
+					console.error('[IdeaEngine/Run] Native generation failed:', err);
+				}
+			});
+
+			return NextResponse.json({
+				ok: true,
+				run_id: run.id,
+				series_run_id: run.series_run_id,
+				generation: 'native',
+			});
+		}
+
+		// ── Fire Make webhook (legacy fallback) ───────────────────
 		const MAKE_URL = process.env.MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL;
 		if (!MAKE_URL) {
-			// Mark as failed if no webhook is configured
-			await admin.from('idea_engine_runs').update({ status: 'failed', error: 'MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL not configured' }).eq('id', run.id);
+			await admin
+				.from('idea_engine_runs')
+				.update({ status: 'failed', error: 'MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL not configured' })
+				.eq('id', run.id);
 			return NextResponse.json({ error: 'Idea Engine is not configured. Please contact support.' }, { status: 503 });
 		}
 
@@ -311,8 +351,9 @@ export async function POST(request: Request) {
 
 		// Brand timezone and posting windows (for scheduling and Make context).
 		// Used by confirm route for TZ-aware scheduled_time; passed to Make for context.
-		const timezone = (brandContext?.timezone && String(brandContext.timezone).trim()) ? String(brandContext.timezone) : 'UTC';
-		const posting_windows = brandContext?.posting_windows ?? null;
+		const { timezone, postingWindows: posting_windows } = useNative
+			? { timezone: 'UTC', postingWindows: null }
+			: extractTimezoneAndWindows(brandContext);
 
 		// ── Build the clean Idea Engine Make payload ─────────────
 		// This is the authoritative contract. Do NOT add legacy content-generation

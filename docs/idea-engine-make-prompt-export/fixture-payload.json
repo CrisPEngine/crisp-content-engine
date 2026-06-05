@@ -1,0 +1,22 @@
+{
+  "series_run_id": "550e8400-e29b-41d4-a716-446655440000",
+  "run_id": "660e8400-e29b-41d4-a716-446655440001",
+  "user_id": "770e8400-e29b-41d4-a716-446655440002",
+  "plan": "growth",
+  "brand_profile_id": "recXXXXXXXXXXXXXX",
+  "idea": "Why founders struggle with content consistency and how systems solve it.",
+  "goal": "Engagement",
+  "notes": "Include angles: batching, systems, automation.",
+  "selected_channels": ["LinkedIn", "X", "Blog"],
+  "publish_mode": "queue_only",
+  "requested_counts": { "LinkedIn": 2, "X": 2, "Blog": 1 },
+  "timezone": "Asia/Dubai",
+  "posting_windows": null,
+  "brand_context": {
+    "client_name": "CrisP Digital",
+    "voice_rules": "Direct, practical, no em dash",
+    "audience": "Founders and marketing leads",
+    "strategy_json": "{}"
+  },
+  "previous_content_json": []
+}

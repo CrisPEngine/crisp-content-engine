@@ -29,6 +29,10 @@ import { consumeConfirmedItems } from '@/lib/enforceCaps';
 import { resolvePlan } from '@/lib/planResolver';
 import { CAPS } from '@/config/pricing';
 import type { PlanId } from '@/config/pricing';
+import {
+	buildContentQueueCoreFields,
+	IDEA_ENGINE_QUEUE_STATUS,
+} from '@/lib/idea-engine/airtable/contentQueueFields';
 
 export const runtime = 'nodejs';
 
@@ -82,10 +86,10 @@ function computeSchedule(
 ): Map<string, ScheduleEntry> {
 	const result = new Map<string, ScheduleEntry>();
 
-	// ── queue_only: everything goes in as Draft ──────────────────
+	// ── queue_only: everything goes in as Needs Approval ─────────
 	if (publishMode === 'queue_only') {
 		for (const item of items) {
-			result.set(item.id, { scheduled_time: null, airtable_status: 'Draft' });
+			result.set(item.id, { scheduled_time: null, airtable_status: IDEA_ENGINE_QUEUE_STATUS });
 		}
 		return result;
 	}
@@ -111,7 +115,7 @@ function computeSchedule(
 
 	// X and Blog never autopublish regardless of mode
 	for (const item of [...xItems, ...blogItems]) {
-		result.set(item.id, { scheduled_time: null, airtable_status: 'Draft' });
+		result.set(item.id, { scheduled_time: null, airtable_status: IDEA_ENGINE_QUEUE_STATUS });
 	}
 
 	if (publishMode === 'approve_first_immediately') {
@@ -134,12 +138,12 @@ function computeSchedule(
 			}
 		} else {
 			for (const item of linkedInItems) {
-				result.set(item.id, { scheduled_time: null, airtable_status: 'Draft' });
+				result.set(item.id, { scheduled_time: null, airtable_status: IDEA_ENGINE_QUEUE_STATUS });
 			}
 		}
 
 		for (const item of [...igItems, ...fbItems]) {
-			result.set(item.id, { scheduled_time: null, airtable_status: 'Draft' });
+			result.set(item.id, { scheduled_time: null, airtable_status: IDEA_ENGINE_QUEUE_STATUS });
 		}
 
 	} else if (publishMode === 'approve_and_schedule') {
@@ -155,7 +159,7 @@ function computeSchedule(
 			}
 		} else {
 			for (const item of linkedInItems) {
-				result.set(item.id, { scheduled_time: null, airtable_status: 'Draft' });
+				result.set(item.id, { scheduled_time: null, airtable_status: IDEA_ENGINE_QUEUE_STATUS });
 			}
 		}
 
@@ -172,15 +176,15 @@ function computeSchedule(
 			}
 		} else {
 			for (const item of [...igItems, ...fbItems]) {
-				result.set(item.id, { scheduled_time: null, airtable_status: 'Draft' });
+				result.set(item.id, { scheduled_time: null, airtable_status: IDEA_ENGINE_QUEUE_STATUS });
 			}
 		}
 	}
 
-	// Safety net: any item not yet assigned gets Draft
+	// Safety net: any item not yet assigned goes to approval queue
 	for (const item of items) {
 		if (!result.has(item.id)) {
-			result.set(item.id, { scheduled_time: null, airtable_status: 'Draft' });
+			result.set(item.id, { scheduled_time: null, airtable_status: IDEA_ENGINE_QUEUE_STATUS });
 		}
 	}
 
@@ -272,6 +276,7 @@ export async function POST(request: Request) {
 		// ── Brand timezone and posting windows (for TZ-aware scheduling) ─
 		let timezone: string | null = null;
 		let posting_windows: unknown = null;
+		let clientName: string | null = null;
 		const brandProfileId = run.brand_profile_id;
 		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
 		const BASE_ID        = process.env.AIRTABLE_BASE_ID;
@@ -287,6 +292,9 @@ export async function POST(request: Request) {
 					const fields = brandData.fields || {};
 					if (fields.timezone && String(fields.timezone).trim()) {
 						timezone = String(fields.timezone).trim();
+					}
+					if (fields.client_name && String(fields.client_name).trim()) {
+						clientName = String(fields.client_name).trim();
 					}
 					posting_windows = fields.posting_windows ?? null;
 				}
@@ -319,24 +327,30 @@ export async function POST(request: Request) {
 		const results: Array<{ item_id: string; airtable_record_id?: string; ok: boolean; channel?: string; error?: string }> = [];
 
 		for (const item of items) {
-			const sched = schedule.get(item.id) || { scheduled_time: null, airtable_status: 'Draft' };
-
-			// Core fields — always present; status and scheduled_time from publish mode
-			const coreFields: Record<string, any> = {
-				hook:          item.post_title || '',
-				post_content:  item.body_draft  || '',
-				platform:      item.channel,
-				status:        sched.airtable_status,
-				generated_from: 'idea_engine',
+			const sched = schedule.get(item.id) || {
+				scheduled_time: null,
+				airtable_status: IDEA_ENGINE_QUEUE_STATUS,
 			};
+			// Prefer native-generated scheduled_time on item; fall back to publish-mode schedule
+			const scheduledTime =
+				(item as { scheduled_time?: string | null }).scheduled_time || sched.scheduled_time;
 
-			if (item.image_prompt) coreFields.image_prompt  = item.image_prompt;
-			if (item.hashtags)     coreFields.hashtags       = item.hashtags;
-			if (brandProfileId)    coreFields.brand_profile_id = [brandProfileId];
-			if (sched.scheduled_time) {
-				coreFields.scheduled_time = sched.scheduled_time;
-				coreFields.approved_at    = new Date().toISOString();
-			}
+			const coreFields = buildContentQueueCoreFields({
+				item: {
+					channel: item.channel,
+					post_title: item.post_title,
+					hook: (item as { hook?: string | null }).hook,
+					body_draft: item.body_draft,
+					hashtags: item.hashtags,
+					image_prompt: item.image_prompt,
+					scheduled_time: scheduledTime,
+					series_position: item.series_position,
+				},
+				brandProfileId,
+				clientName,
+				airtableStatus: sched.airtable_status,
+				scheduledTime,
+			});
 
 			// Series metadata (written optimistically; retried without on 422)
 			const seriesFields: Record<string, any> = {

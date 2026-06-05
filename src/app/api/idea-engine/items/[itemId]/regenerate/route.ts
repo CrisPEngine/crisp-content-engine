@@ -1,14 +1,15 @@
 /**
  * POST /api/idea-engine/items/[itemId]/regenerate
  *
- * Regenerates a single item using the same Make scenario.
- * Marks the item as 'regenerating' and fires a targeted payload to Make.
+ * Regenerates a single item using native OpenAI or Make (legacy fallback).
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { getSupabaseService } from '@/lib/supabaseService';
+import { isIdeaEngineNativeEnabled } from '@/lib/featureFlags';
+import { generateSingleItem } from '@/lib/idea-engine';
 
 export const runtime = 'nodejs';
 
@@ -36,7 +37,6 @@ export async function POST(
 		const { itemId } = await context.params;
 		const admin = getSupabaseService();
 
-		// Fetch item + parent run context
 		const { data: item } = await admin
 			.from('idea_engine_items')
 			.select('id, run_id, user_id, channel, series_position, series_total, status')
@@ -61,11 +61,27 @@ export async function POST(
 			return NextResponse.json({ error: 'Parent run not found' }, { status: 404 });
 		}
 
-		// Mark as regenerating
 		await admin
 			.from('idea_engine_items')
 			.update({ status: 'regenerating', updated_at: new Date().toISOString() })
 			.eq('id', itemId);
+
+		if (isIdeaEngineNativeEnabled()) {
+			if (!process.env.OPENAI_API_KEY?.trim()) {
+				await admin.from('idea_engine_items').update({ status: 'pending' }).eq('id', itemId);
+				return NextResponse.json({ error: 'Idea Engine is not configured' }, { status: 503 });
+			}
+
+			after(async () => {
+				try {
+					await generateSingleItem(itemId);
+				} catch (err) {
+					console.error('[IdeaEngine/Regenerate] Native regen failed:', err);
+				}
+			});
+
+			return NextResponse.json({ ok: true, message: 'Regeneration started', generation: 'native' });
+		}
 
 		const MAKE_URL = process.env.MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL;
 		if (!MAKE_URL) {
