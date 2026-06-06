@@ -1,6 +1,6 @@
 import 'server-only';
 
-export { generateSeries } from './generator/generateSeries';
+export { generateSeries, generateChannelsForRun } from './generator/generateSeries';
 export { generateSingleItem } from './generator/generateSingleItem';
 export { loadBrandProfile, extractTimezoneAndWindows } from './data/loadBrandProfile';
 export { loadContentHistory } from './data/loadContentHistory';

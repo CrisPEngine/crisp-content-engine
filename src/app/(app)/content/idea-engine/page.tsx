@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -10,8 +10,9 @@ import {
 } from 'lucide-react';
 import type { PlanId } from '@/config/pricing';
 import { CAPS } from '@/config/pricing';
-import { computeIdeaEngineRequestedCounts } from '@/lib/ideaEngineQuota';
+import { computeSingleChannelActionCount } from '@/lib/ideaEngineQuota';
 import type { IdeaEngineQuotaRemaining } from '@/lib/ideaEngineQuota';
+import { ItemDetailModal } from './ItemDetailModal';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,23 @@ const GOAL_OPTIONS = ['Awareness', 'Engagement', 'Traffic', 'Conversion'] as con
 const CHANNEL_ICONS: Record<string, string> = {
 	LinkedIn: '💼', X: '𝕏', Blog: '📝', Instagram: '📷', Facebook: '👥',
 };
+
+const EXPANSION_CHANNELS: ChannelKey[] = ['LinkedIn', 'X', 'Blog', 'Instagram', 'Facebook'];
+
+const EXPANSION_LABELS: Record<ChannelKey, string> = {
+	LinkedIn: 'Generate LinkedIn from this idea',
+	X: 'Generate X from this idea',
+	Blog: 'Generate Blog from this idea',
+	Instagram: 'Generate Instagram from this idea',
+	Facebook: 'Generate Facebook from this idea',
+};
+
+const REVIEW_RUN_STATUSES = new Set([
+	'review',
+	'review_with_errors',
+	'completed',
+	'confirmed',
+]);
 
 const PLATFORM_COLORS: Record<string, string> = {
 	LinkedIn: 'text-blue-400 border-blue-400/30 bg-blue-400/10',
@@ -107,8 +125,37 @@ function platformChannels(plan: PlanId): ChannelKey[] {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
+function mapApiItemsToSeriesItems(
+	runItems: Array<Record<string, unknown>>,
+	prev: SeriesItem[] = [],
+): SeriesItem[] {
+	const prevMap = new Map(prev.map((it) => [it.id, it]));
+	return runItems.map((item) => ({
+		id: item.id as string,
+		channel: item.channel as string,
+		post_title: (item.post_title as string) || '',
+		body_draft: (item.body_draft as string) || '',
+		image_prompt: (item.image_prompt as string) || '',
+		hashtags: (item.hashtags as string) || '',
+		series_position: (item.series_position as number) || 1,
+		series_total: (item.series_total as number) || 1,
+		status: (item.status as string) || '',
+		_editing: prevMap.get(item.id as string)?._editing ?? false,
+		_editDraft: prevMap.get(item.id as string)?._editDraft ?? {
+			post_title: (item.post_title as string) || '',
+			body_draft: (item.body_draft as string) || '',
+			hashtags: (item.hashtags as string) || '',
+			image_prompt: (item.image_prompt as string) || '',
+		},
+		_saving: false,
+		_regenerating: item.status === 'regenerating',
+		_deleted: prevMap.get(item.id as string)?._deleted ?? false,
+	}));
+}
+
 export default function IdeaEnginePage() {
 	const router = useRouter();
+	const searchParams = useSearchParams();
 	const supabase = useSupabase();
 
 	// ── Auth + Plan ──────────────────────────────────────────────
@@ -124,6 +171,7 @@ export default function IdeaEnginePage() {
 	const [idea, setIdea] = useState('');
 	const [goal, setGoal] = useState<string>('');
 	const [notes, setNotes] = useState('');
+	const [primaryChannel, setPrimaryChannel] = useState<ChannelKey | ''>('');
 	const [selectedChannels, setSelectedChannels] = useState<ChannelKey[]>([]);
 
 	// ── Quota ────────────────────────────────────────────────────
@@ -158,6 +206,10 @@ export default function IdeaEnginePage() {
 
 	// ── Done state ───────────────────────────────────────────────
 	const [queuedCount, setQueuedCount] = useState(0);
+	const [detailItemId, setDetailItemId] = useState<string | null>(null);
+	const [expandingChannel, setExpandingChannel] = useState<string | null>(null);
+	const [retryingChannel, setRetryingChannel] = useState<string | null>(null);
+	const [runRestored, setRunRestored] = useState(false);
 
 	// ── Load plan & brands ───────────────────────────────────────
 	useEffect(() => {
@@ -176,13 +228,14 @@ export default function IdeaEnginePage() {
 				setUserPlan(plan);
 				if (plan !== 'starter') {
 					const planChs = platformChannels(plan);
-					const defaults: ChannelKey[] = (['LinkedIn', 'X', 'Blog'] as ChannelKey[]).filter((ch) =>
-						planChs.includes(ch),
-					);
-					// One Meta platform by default — not both unless user explicitly selects both.
-					if (planChs.includes('Instagram')) defaults.push('Instagram');
-					else if (planChs.includes('Facebook')) defaults.push('Facebook');
-					if (defaults.length > 0) setSelectedChannels(defaults);
+					const defaultChannel =
+						(['LinkedIn', 'Blog', 'X'] as ChannelKey[]).find((ch) => planChs.includes(ch)) ||
+						planChs[0] ||
+						'';
+					if (defaultChannel) {
+						setPrimaryChannel(defaultChannel);
+						setSelectedChannels([defaultChannel]);
+					}
 				}
 			}
 		} catch {
@@ -225,8 +278,14 @@ export default function IdeaEnginePage() {
 					blog:      channels.blog?.remaining       ?? 0,
 					meta_pool: channels.meta_pool?.remaining  ?? 0,
 				};
+				const channel = primaryChannel || selectedChannels[0];
+				if (!channel) {
+					setComputedCounts({});
+					setDroppedChannels([]);
+					return;
+				}
 				const { requestedCounts, droppedChannels: dropped } =
-					computeIdeaEngineRequestedCounts(selectedChannels, userPlan ?? 'starter', qr);
+					computeSingleChannelActionCount(channel, userPlan ?? 'starter', qr);
 				setComputedCounts(requestedCounts);
 				setDroppedChannels(dropped);
 			}
@@ -236,6 +295,28 @@ export default function IdeaEnginePage() {
 			setQuotaLoading(false);
 		}
 	}
+
+	const hydrateFromRunResponse = useCallback((data: {
+		run: Record<string, unknown>;
+		items?: Array<Record<string, unknown>>;
+		generated_items_count?: number;
+	}) => {
+		const { run, items: runItems, generated_items_count } = data;
+		setRunStatus(run.status as string);
+		setGenerationWarning((run.generation_warning as string) || null);
+		setTotalExpected((run.total_expected as number) || 0);
+		setTotalGenerated(
+			generated_items_count || (run.total_generated as number) || 0,
+		);
+		if (run.idea) setIdea(run.idea as string);
+		if (run.goal) setGoal((run.goal as string) || '');
+		if (Array.isArray(run.selected_channels)) {
+			setSelectedChannels(run.selected_channels as ChannelKey[]);
+		}
+		if (runItems && runItems.length > 0) {
+			setItems((prev) => mapApiItemsToSeriesItems(runItems, prev));
+		}
+	}, []);
 
 	// ── Polling ──────────────────────────────────────────────────
 	const startPolling = useCallback((id: string) => {
@@ -252,24 +333,8 @@ export default function IdeaEnginePage() {
 				setTotalExpected(run.total_expected || 0);
 				setTotalGenerated(generated_items_count || run.total_generated || 0);
 
-			// Always update items (placeholders + filled) during generation
 			if (runItems && runItems.length > 0) {
-				setItems((prev) => {
-					const prevMap = new Map(prev.map((it) => [it.id, it]));
-					return runItems.map((item: any) => ({
-						...item,
-						_editing: prevMap.get(item.id)?._editing ?? false,
-						_editDraft: prevMap.get(item.id)?._editDraft ?? {
-							post_title: item.post_title || '',
-							body_draft: item.body_draft || '',
-							hashtags: item.hashtags || '',
-							image_prompt: item.image_prompt || '',
-						},
-						_saving: false,
-						_regenerating: item.status === 'regenerating',
-						_deleted: prevMap.get(item.id)?._deleted ?? false,
-					}));
-				});
+				setItems((prev) => mapApiItemsToSeriesItems(runItems, prev));
 
 				// Detect newly ready items (transitioned from placeholder → ready this poll)
 				const currentReadyIds = new Set<string>(
@@ -299,22 +364,36 @@ export default function IdeaEnginePage() {
 				const hasRegenerating = runItems?.some(
 					(it: { status?: string }) => it.status === 'regenerating',
 				);
-				if (
-					(run.status === 'review' || run.status === 'completed') &&
-					!hasRegenerating
-				) {
+				if (REVIEW_RUN_STATUSES.has(run.status) && !hasRegenerating) {
 					clearInterval(pollRef.current!);
 					setStep('review');
+					setError(null);
+					setExpandingChannel(null);
+					setRetryingChannel(null);
 				} else if (run.status === 'failed' || run.status === 'cancelled') {
-					clearInterval(pollRef.current!);
-					// Keep the user in the generation workspace so they can see partial results
-					// (ready items) and clearly understand what failed.
-					setError(
-						run.status === 'cancelled'
-							? 'Generation was cancelled.'
-							: (run.error || 'Content generation failed. Please try again.'),
+					const hasReady = runItems?.some(
+						(it: { status?: string; body_draft?: string }) =>
+							it.status === 'ready' || !!it.body_draft,
 					);
-					setStep('generating');
+					if (hasReady || run.status === 'cancelled') {
+						clearInterval(pollRef.current!);
+						setStep(hasReady ? 'review' : 'generating');
+						setError(
+							run.status === 'cancelled'
+								? 'Generation was cancelled.'
+								: (run.error || 'Some channels failed. Successful drafts are saved below.'),
+						);
+						setExpandingChannel(null);
+						setRetryingChannel(null);
+					} else {
+						clearInterval(pollRef.current!);
+						setError(
+							run.status === 'cancelled'
+								? 'Generation was cancelled.'
+								: (run.error || 'Content generation failed. Please try again.'),
+						);
+						setStep('generating');
+					}
 				}
 			} catch {
 				/* keep polling */
@@ -323,22 +402,54 @@ export default function IdeaEnginePage() {
 	}, []);
 
 	useEffect(() => {
+		const runIdFromUrl = searchParams.get('run_id');
+		if (!runIdFromUrl || runRestored || runId) return;
+
+		(async () => {
+			try {
+				const res = await fetch(`/api/idea-engine/run/${runIdFromUrl}`, { cache: 'no-store' });
+				if (!res.ok) return;
+				const data = await res.json();
+				hydrateFromRunResponse(data);
+				setRunId(runIdFromUrl);
+				const status = data.run?.status as string;
+				if (status === 'generating') {
+					setStep('generating');
+					startPolling(runIdFromUrl);
+				} else if (REVIEW_RUN_STATUSES.has(status)) {
+					setStep('review');
+				} else if (status === 'failed') {
+					const hasReady = (data.items || []).some(
+						(it: { status?: string; body_draft?: string }) =>
+							it.status === 'ready' || !!it.body_draft,
+					);
+					setStep(hasReady ? 'review' : 'generating');
+					setError((data.run?.error as string) || 'Content generation failed.');
+				}
+			} catch {
+				/* non-fatal */
+			} finally {
+				setRunRestored(true);
+			}
+		})();
+	}, [searchParams, runRestored, runId, hydrateFromRunResponse, startPolling]);
+
+	useEffect(() => {
 		return () => { if (pollRef.current) clearInterval(pollRef.current); };
 	}, []);
 
 	// ─── Step: Input ─────────────────────────────────────────────
 
-	function handleChannelToggle(ch: ChannelKey) {
-		setSelectedChannels(prev =>
-			prev.includes(ch) ? prev.filter(c => c !== ch) : [...prev, ch]
-		);
+	function handlePrimaryChannelSelect(ch: ChannelKey) {
+		setPrimaryChannel(ch);
+		setSelectedChannels([ch]);
 	}
 
 	async function handleContinueToPreview() {
 		setError(null);
 		if (!selectedBrand) return setError('Please select a brand.');
 		if (idea.trim().length < 10) return setError('Please describe your idea in at least 10 characters.');
-		if (selectedChannels.length === 0) return setError('Please select at least one channel.');
+		if (!primaryChannel) return setError('Please select a channel.');
 		await loadQuota();
 		setStep('preview');
 	}
@@ -391,10 +502,12 @@ export default function IdeaEnginePage() {
 			}
 
 			setRunId(data.run_id);
+			setSelectedChannels(primaryChannel ? [primaryChannel] : []);
+			router.replace(`/content/idea-engine?run_id=${data.run_id}`, { scroll: false });
 			setRunStatus('generating');
 			setGenerationWarning(null);
 			const expectedTotal = Object.values(computedCounts).reduce((a, b) => a + b, 0);
-			setTotalExpected(expectedTotal > 0 ? expectedTotal : selectedChannels.length);
+			setTotalExpected(expectedTotal > 0 ? expectedTotal : 1);
 			setTotalGenerated(0);
 			setStep('generating');
 			startPolling(data.run_id);
@@ -476,6 +589,56 @@ export default function IdeaEnginePage() {
 		}
 	}
 
+	async function expandChannel(channel: ChannelKey) {
+		if (!runId) return;
+		setExpandingChannel(channel);
+		setError(null);
+		try {
+			const res = await fetch(`/api/idea-engine/run/${runId}/expand`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ channel }),
+			});
+			const data = await res.json();
+			if (!res.ok) {
+				setError(data.error || `Failed to generate ${channel}`);
+				setExpandingChannel(null);
+				return;
+			}
+			setStep('generating');
+			setRunStatus('generating');
+			startPolling(runId);
+		} catch {
+			setError('Network error. Please try again.');
+			setExpandingChannel(null);
+		}
+	}
+
+	async function retryChannel(channel: string) {
+		if (!runId) return;
+		setRetryingChannel(channel);
+		setError(null);
+		try {
+			const res = await fetch(`/api/idea-engine/run/${runId}/retry-channel`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ channel }),
+			});
+			const data = await res.json();
+			if (!res.ok) {
+				setError(data.error || `Failed to retry ${channel}`);
+				setRetryingChannel(null);
+				return;
+			}
+			setStep('generating');
+			setRunStatus('generating');
+			startPolling(runId);
+		} catch {
+			setError('Network error. Please try again.');
+			setRetryingChannel(null);
+		}
+	}
+
 	async function regenerateItem(itemId: string) {
 		setItems(prev => prev.map(it => it.id === itemId ? { ...it, _regenerating: true } : it));
 
@@ -496,9 +659,11 @@ export default function IdeaEnginePage() {
 		setConfirming(true);
 		setError(null);
 
-		const activeItems = items.filter(it => !it._deleted);
-		if (activeItems.length === 0) {
-			setError('No items to add to queue.');
+		const readyItems = items.filter(
+			(it) => !it._deleted && (it.status === 'ready' || !!it.body_draft),
+		);
+		if (readyItems.length === 0) {
+			setError('No ready items to add to queue.');
 			setConfirming(false);
 			return;
 		}
@@ -509,7 +674,7 @@ export default function IdeaEnginePage() {
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					run_id: runId,
-					item_ids: activeItems.map(it => it.id),
+					item_ids: readyItems.map((it) => it.id),
 				}),
 			});
 
@@ -580,6 +745,20 @@ export default function IdeaEnginePage() {
 	// Use effective plan so channel list is never empty: "free"/unknown → scale (full experience)
 	const allowedChannels = platformChannels(userPlan ?? 'starter');
 	const activeItems = items.filter(it => !it._deleted);
+	const readyItems = activeItems.filter(
+		(it) => it.status === 'ready' || !!it.body_draft,
+	);
+	const failedChannels = Array.from(
+		new Set(
+			activeItems
+				.filter((it) => it.status === 'failed' && !it.body_draft)
+				.map((it) => it.channel),
+		),
+	);
+	const channelsWithReady = new Set(readyItems.map((it) => it.channel));
+	const detailItem = detailItemId
+		? items.find((it) => it.id === detailItemId) ?? null
+		: null;
 
 	return (
 		<div className="mx-auto max-w-3xl py-4 md:py-8">
@@ -594,7 +773,7 @@ export default function IdeaEnginePage() {
 				</div>
 				<div>
 					<h1 className="text-2xl font-semibold">Idea Engine</h1>
-					<p className="text-text-dim text-sm">Turn one idea into a week of content</p>
+					<p className="text-text-dim text-sm">Start with one channel, then expand from the same idea</p>
 				</div>
 			</div>
 
@@ -697,9 +876,12 @@ export default function IdeaEnginePage() {
 							</div>
 						</div>
 
-						{/* Channel selection */}
+						{/* Primary channel */}
 						<div className="card p-5">
-							<label className="block text-sm font-medium mb-3">Channels</label>
+							<label className="block text-sm font-medium mb-1">Primary channel</label>
+							<p className="text-xs text-text-dim mb-3">
+								Generate one channel first. You can add LinkedIn, X, Blog, and more after review.
+							</p>
 							{planLoading ? (
 								<div className="flex flex-wrap gap-2 text-text-dim text-sm">
 									<Loader2 className="w-4 h-4 animate-spin" />
@@ -709,12 +891,12 @@ export default function IdeaEnginePage() {
 								<>
 									<div className="flex flex-wrap gap-2">
 										{allowedChannels.map(ch => {
-											const selected = selectedChannels.includes(ch);
+											const selected = primaryChannel === ch;
 											return (
 												<button
 													key={ch}
 													type="button"
-													onClick={() => handleChannelToggle(ch)}
+													onClick={() => handlePrimaryChannelSelect(ch)}
 													className={`px-4 py-2 rounded-xl2 border text-sm font-medium transition flex items-center gap-2 ${
 														selected
 															? 'bg-primary/15 border-primary/40 text-primary'
@@ -734,11 +916,6 @@ export default function IdeaEnginePage() {
 											Instagram &amp; Facebook require Growth or higher.
 										</p>
 									)}
-									{(userPlan === 'growth' || userPlan === 'pro' || userPlan === 'scale') && (
-										<p className="text-xs text-text-dim mt-3">
-											Meta generates 1 post by default. Select both Instagram and Facebook only if you want one on each platform.
-										</p>
-									)}
 								</>
 							)}
 						</div>
@@ -747,7 +924,7 @@ export default function IdeaEnginePage() {
 						<div className="flex justify-end">
 							<button
 								onClick={handleContinueToPreview}
-								disabled={!selectedBrand || idea.trim().length < 10 || selectedChannels.length === 0}
+								disabled={!selectedBrand || idea.trim().length < 10 || !primaryChannel}
 								className="px-6 py-3 rounded-xl2 bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary font-semibold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
 							>
 								<Zap className="w-4 h-4" />
@@ -761,9 +938,11 @@ export default function IdeaEnginePage() {
 				{step === 'preview' && (
 					<motion.div key="preview" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} className="space-y-5">
 						<div className="card p-6">
-							<h2 className="text-lg font-semibold mb-1">Your series will generate</h2>
+							<h2 className="text-lg font-semibold mb-1">
+								{primaryChannel ? `Generate ${primaryChannel}` : 'Preview generation'}
+							</h2>
 							<p className="text-text-dim text-xs mb-4">
-								Default series: 1 LinkedIn, 3 𝕏, 1 Blog, 1 Meta (max 7 items per run). Counts respect your quota.
+								Per channel: Blog 1, LinkedIn 1, Facebook 1, Instagram 1, X up to 3. Counts respect your quota.
 							</p>
 							{quotaLoading ? (
 								<div className="flex items-center gap-2 text-text-dim text-sm py-2">
@@ -836,7 +1015,7 @@ export default function IdeaEnginePage() {
 								className="px-6 py-3 rounded-xl2 bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary font-semibold disabled:opacity-40 flex items-center gap-2"
 							>
 								{submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-								{submitting ? 'Starting…' : 'Generate series'}
+								{submitting ? 'Starting…' : `Generate ${primaryChannel || 'content'}`}
 							</button>
 						</div>
 					</motion.div>
@@ -849,10 +1028,17 @@ export default function IdeaEnginePage() {
 					<div className={`card p-6 ${runStatus === 'failed' ? 'border-danger/30' : ''}`}>
 						<div className="flex items-start justify-between mb-4">
 							<div>
-								{runStatus === 'failed' ? (
+								{runStatus === 'failed' && readyItems.length === 0 ? (
 									<>
 										<h2 className="text-lg font-semibold mb-1 text-danger">Generation failed</h2>
 										<p className="text-text-dim text-sm">{error || 'Something went wrong. Any partial results are shown below.'}</p>
+									</>
+								) : runStatus === 'review_with_errors' || (runStatus === 'failed' && readyItems.length > 0) ? (
+									<>
+										<h2 className="text-lg font-semibold mb-1 text-amber-200">Ready for review — some channels need attention</h2>
+										<p className="text-text-dim text-sm">
+											Successful drafts are saved below. Retry failed channels without affecting ready content.
+										</p>
 									</>
 								) : (
 									<>
@@ -891,7 +1077,7 @@ export default function IdeaEnginePage() {
 							</div>
 						)}
 
-						{runStatus === 'failed' && (
+						{runStatus === 'failed' && readyItems.length === 0 && (
 							<div className="flex gap-3 mt-4">
 								<button
 									type="button"
@@ -967,16 +1153,24 @@ export default function IdeaEnginePage() {
 										if (isFailedPlaceholder) {
 											return (
 												<div key={item.id} className="card p-4 border border-danger/30 bg-danger/10">
-													<div className="flex items-center justify-between">
-														<div className="h-4 bg-danger/20 rounded w-2/3"></div>
+													<div className="flex items-center justify-between gap-2">
+														<span className="text-sm text-danger font-medium">{channel} generation failed</span>
 														<span className="text-xs px-2 py-0.5 rounded-full bg-danger/20 text-danger border border-danger/30">
 															Failed
 														</span>
 													</div>
-													<div className="mt-3 space-y-2">
-														<div className="h-3 bg-danger/10 rounded w-full"></div>
-														<div className="h-3 bg-danger/10 rounded w-5/6"></div>
-													</div>
+													<button
+														type="button"
+														onClick={() => retryChannel(channel)}
+														disabled={retryingChannel === channel}
+														className="mt-3 px-3 py-1.5 rounded-lg bg-danger/20 border border-danger/30 text-danger text-xs font-medium disabled:opacity-50 inline-flex items-center gap-1.5"
+													>
+														{retryingChannel === channel ? (
+															<><Loader2 className="w-3.5 h-3.5 animate-spin" /> Retrying…</>
+														) : (
+															<><RefreshCw className="w-3.5 h-3.5" /> Retry {channel}</>
+														)}
+													</button>
 												</div>
 											);
 										}
@@ -996,7 +1190,12 @@ export default function IdeaEnginePage() {
 
 									// Ready item - show actual content with optional "Just added" badge
 									return (
-										<div key={item.id} className="card p-4 border border-accent/20 bg-accent/5">
+										<button
+											type="button"
+											key={item.id}
+											onClick={() => setDetailItemId(item.id)}
+											className="card p-4 border border-accent/20 bg-accent/5 w-full text-left hover:border-accent/40 transition-colors"
+										>
 											<div className="flex items-start justify-between mb-2 gap-2">
 												<h3 className="font-medium text-text flex-1">{item.post_title || 'Untitled'}</h3>
 												<div className="flex items-center gap-1.5 shrink-0">
@@ -1016,7 +1215,8 @@ export default function IdeaEnginePage() {
 											{item.hashtags && (
 												<p className="text-xs text-primary/70 mt-2">{item.hashtags}</p>
 											)}
-										</div>
+											<p className="text-xs text-primary/60 mt-2">Click to read full draft →</p>
+										</button>
 									);
 								})}
 							</div>
@@ -1040,18 +1240,24 @@ export default function IdeaEnginePage() {
 				{/* ── Step: Review ──────────────────────────────────────── */}
 				{step === 'review' && (
 					<motion.div key="review" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} className="space-y-5">
-						{generationWarning && (
+						<div className="rounded-lg border border-edge/60 bg-surface/20 px-4 py-3 text-sm text-text-soft">
+							Generated drafts are saved here. Confirm to send them to your Content Queue.
+						</div>
+						{(generationWarning || runStatus === 'review_with_errors' || failedChannels.length > 0) && (
 							<div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
 								<AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-								<span>{generationWarning}</span>
+								<span>
+									{generationWarning ||
+										'Some channels failed. You can confirm successful drafts and retry failed channels separately.'}
+								</span>
 							</div>
 						)}
 						<div className="flex items-center justify-between">
 							<div>
-								<h2 className="text-lg font-semibold">Review your series</h2>
+								<h2 className="text-lg font-semibold">Review your drafts</h2>
 								<p className="text-text-dim text-sm truncate max-w-md">"{idea.slice(0, 80)}{idea.length > 80 ? '…' : ''}"</p>
 							</div>
-							<span className="text-xs text-text-dim">{activeItems.length} items</span>
+							<span className="text-xs text-text-dim">{readyItems.length} ready</span>
 						</div>
 
 						{/* Items grouped by channel */}
@@ -1061,20 +1267,39 @@ export default function IdeaEnginePage() {
 								acc[item.channel].push(item);
 								return acc;
 							}, {} as Record<string, SeriesItem[]>)
-						).map(([channel, chItems]) => (
+						).map(([channel, chItems]) => {
+							const channelFailed = chItems.every(
+								(it) => it.status === 'failed' && !it.body_draft,
+							);
+							return (
 							<div key={channel}>
-								<div className="flex items-center gap-2 mb-2">
+								<div className="flex items-center gap-2 mb-2 flex-wrap">
 									<span>{CHANNEL_ICONS[channel]}</span>
 									<span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${PLATFORM_COLORS[channel] || 'text-text-dim border-edge/60 bg-surface/30'}`}>
 										{channel}
 									</span>
 									<span className="text-xs text-text-dim">{chItems.length} post{chItems.length !== 1 ? 's' : ''}</span>
+									{channelFailed && (
+										<button
+											type="button"
+											onClick={() => retryChannel(channel)}
+											disabled={retryingChannel === channel}
+											className="text-xs px-2 py-0.5 rounded-full bg-danger/20 text-danger border border-danger/30 inline-flex items-center gap-1 disabled:opacity-50"
+										>
+											{retryingChannel === channel ? (
+												<><Loader2 className="w-3 h-3 animate-spin" /> Retrying…</>
+											) : (
+												<><RefreshCw className="w-3 h-3" /> Retry {channel}</>
+											)}
+										</button>
+									)}
 								</div>
 								<div className="space-y-3">
 									{chItems.map(item => (
 										<ItemCard
 											key={item.id}
 											item={item}
+											onOpen={() => setDetailItemId(item.id)}
 											onEdit={startEdit}
 											onCancelEdit={cancelEdit}
 											onUpdateDraft={updateDraft}
@@ -1085,9 +1310,46 @@ export default function IdeaEnginePage() {
 									))}
 								</div>
 							</div>
-						))}
+						);})}
 
-						{activeItems.length === 0 && (
+						{allowedChannels.some(
+							(ch) => !channelsWithReady.has(ch) && !failedChannels.includes(ch),
+						) && (
+							<div className="card p-5 space-y-3">
+								<h3 className="text-sm font-semibold text-text">Expand this idea</h3>
+								<p className="text-xs text-text-dim">
+									Generate additional channels one at a time from the same idea.
+								</p>
+								<div className="flex flex-wrap gap-2">
+									{EXPANSION_CHANNELS.filter(
+										(ch) =>
+											allowedChannels.includes(ch) &&
+											!channelsWithReady.has(ch) &&
+											!activeItems.some(
+												(it) =>
+													it.channel === ch &&
+													(it.status === 'generating' || it.status === 'regenerating'),
+											),
+									).map((ch) => (
+										<button
+											key={ch}
+											type="button"
+											onClick={() => expandChannel(ch)}
+											disabled={expandingChannel === ch}
+											className="px-3 py-2 rounded-xl2 border border-edge/60 bg-surface/30 hover:bg-surface/50 text-text-soft text-xs font-medium disabled:opacity-50 inline-flex items-center gap-1.5"
+										>
+											{expandingChannel === ch ? (
+												<><Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating…</>
+											) : (
+												<>{CHANNEL_ICONS[ch]} {EXPANSION_LABELS[ch]}</>
+											)}
+										</button>
+									))}
+								</div>
+							</div>
+						)}
+
+						{readyItems.length === 0 && (
 							<div className="card p-8 text-center">
 								<p className="text-text-soft">All items removed. <button onClick={() => setStep('input')} className="text-primary underline">Start over</button></p>
 							</div>
@@ -1103,11 +1365,11 @@ export default function IdeaEnginePage() {
 							</button>
 							<button
 								onClick={handleConfirm}
-								disabled={confirming || activeItems.length === 0}
+								disabled={confirming || readyItems.length === 0}
 								className="px-6 py-3 rounded-xl2 bg-accent/20 hover:bg-accent/30 border border-accent/40 text-accent font-semibold disabled:opacity-40 flex items-center gap-2"
 							>
 								{confirming ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-								{confirming ? 'Adding to queue…' : `Add ${activeItems.length} item${activeItems.length !== 1 ? 's' : ''} to queue`}
+								{confirming ? 'Adding to queue…' : `Confirm ${readyItems.length} ready item${readyItems.length !== 1 ? 's' : ''} to queue`}
 							</button>
 						</div>
 					</motion.div>
@@ -1153,6 +1415,19 @@ export default function IdeaEnginePage() {
 				)}
 
 			</AnimatePresence>
+
+			{detailItem && (
+				<ItemDetailModal
+					item={detailItem}
+					onClose={() => setDetailItemId(null)}
+					onEdit={() => startEdit(detailItem.id)}
+					onCancelEdit={() => cancelEdit(detailItem.id)}
+					onUpdateDraft={(field, value) => updateDraft(detailItem.id, field, value)}
+					onSaveEdit={() => {
+						void saveEdit(detailItem.id);
+					}}
+				/>
+			)}
 		</div>
 	);
 }
@@ -1161,6 +1436,7 @@ export default function IdeaEnginePage() {
 
 type ItemCardProps = {
 	item: SeriesItem;
+	onOpen: (id: string) => void;
 	onEdit: (id: string) => void;
 	onCancelEdit: (id: string) => void;
 	onUpdateDraft: (id: string, field: keyof SeriesItem['_editDraft'], value: string) => void;
@@ -1169,7 +1445,17 @@ type ItemCardProps = {
 	onRegenerate: (id: string) => void;
 };
 
-function ItemCard({ item, onEdit, onCancelEdit, onUpdateDraft, onSaveEdit, onDelete, onRegenerate }: ItemCardProps) {
+function ItemCard({ item, onOpen, onEdit, onCancelEdit, onUpdateDraft, onSaveEdit, onDelete, onRegenerate }: ItemCardProps) {
+	const isReady = item.status === 'ready' || !!item.body_draft;
+	const isFailed = item.status === 'failed' && !isReady;
+
+	if (isFailed) {
+		return (
+			<div className="card p-4 border border-danger/30 bg-danger/10">
+				<p className="text-sm text-danger">This {item.channel} item failed to generate.</p>
+			</div>
+		);
+	}
 	if (item._regenerating) {
 		return (
 			<div className="card p-4 opacity-60 flex items-center gap-3">
@@ -1232,7 +1518,13 @@ function ItemCard({ item, onEdit, onCancelEdit, onUpdateDraft, onSaveEdit, onDel
 	return (
 		<div className="card p-4 group">
 			<div className="flex items-start justify-between gap-2 mb-2">
-				<p className="text-sm font-semibold text-text line-clamp-2">{item.post_title || 'Untitled'}</p>
+				<button
+					type="button"
+					onClick={() => onOpen(item.id)}
+					className="text-sm font-semibold text-text line-clamp-2 text-left hover:text-primary transition-colors flex-1"
+				>
+					{item.post_title || 'Untitled'}
+				</button>
 				<div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
 					<button
 						onClick={() => onEdit(item.id)}
@@ -1257,9 +1549,13 @@ function ItemCard({ item, onEdit, onCancelEdit, onUpdateDraft, onSaveEdit, onDel
 					</button>
 				</div>
 			</div>
-			<p className="text-xs text-text-soft line-clamp-4 whitespace-pre-line">
+			<button
+				type="button"
+				onClick={() => onOpen(item.id)}
+				className="w-full text-left text-xs text-text-soft line-clamp-4 whitespace-pre-line hover:text-text transition-colors"
+			>
 				{item.body_draft || <span className="italic text-text-dim">No content generated</span>}
-			</p>
+			</button>
 			{item.hashtags && (
 				<p className="text-xs text-primary/70 mt-2">{item.hashtags}</p>
 			)}

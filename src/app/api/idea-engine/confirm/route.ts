@@ -242,7 +242,7 @@ export async function POST(request: Request) {
 		if (!run || run.user_id !== user.id) {
 			return NextResponse.json({ error: 'Run not found' }, { status: 404 });
 		}
-		if (run.status === 'completed') {
+		if (run.status === 'completed' || run.status === 'confirmed') {
 			return NextResponse.json({ error: 'This series has already been confirmed' }, { status: 400 });
 		}
 		if (run.status === 'cancelled') {
@@ -261,7 +261,7 @@ export async function POST(request: Request) {
 			.from('idea_engine_items')
 			.select('*')
 			.eq('run_id', run_id)
-			.neq('status', 'queued');
+			.eq('status', 'ready');
 
 		if (item_ids && item_ids.length > 0) {
 			itemQuery = itemQuery.in('id', item_ids);
@@ -270,7 +270,7 @@ export async function POST(request: Request) {
 		const { data: items } = await itemQuery.order('series_position', { ascending: true });
 
 		if (!items || items.length === 0) {
-			return NextResponse.json({ error: 'No items to confirm' }, { status: 400 });
+			return NextResponse.json({ error: 'No ready items to confirm' }, { status: 400 });
 		}
 
 		// ── Brand timezone and posting windows (for TZ-aware scheduling) ─
@@ -390,7 +390,11 @@ export async function POST(request: Request) {
 
 				await admin
 					.from('idea_engine_items')
-					.update({ status: 'queued', airtable_record_id: airtableRecordId, updated_at: new Date().toISOString() })
+					.update({
+						status: 'confirmed',
+						airtable_record_id: airtableRecordId,
+						updated_at: new Date().toISOString(),
+					})
 					.eq('id', item.id);
 
 				results.push({ item_id: item.id, airtable_record_id: airtableRecordId, channel: item.channel, ok: true });
@@ -425,10 +429,21 @@ export async function POST(request: Request) {
 			console.error('[IdeaEngine/Confirm] Failed to consume reservation:', err)
 		);
 
-		// ── Mark run as completed ─────────────────────────────────
+		const { count: remainingReady } = await admin
+			.from('idea_engine_items')
+			.select('id', { count: 'exact', head: true })
+			.eq('run_id', run_id)
+			.eq('status', 'ready');
+
+		const runStatus =
+			(remainingReady ?? 0) > 0 ? 'review_with_errors' : 'confirmed';
+
 		await admin
 			.from('idea_engine_runs')
-			.update({ status: 'completed', completed_at: new Date().toISOString() })
+			.update({
+				status: runStatus,
+				completed_at: new Date().toISOString(),
+			})
 			.eq('id', run_id);
 
 		return NextResponse.json({

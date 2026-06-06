@@ -3,14 +3,17 @@
  * Shared between client preview and server generation (no server-only imports).
  */
 
-/** Default item count per channel when that channel is selected. */
-export const IDEA_ENGINE_SERIES_DEFAULTS: Record<string, number> = {
+/** Default item count per channel for a single generate/expand action. */
+export const IDEA_ENGINE_ACTION_DEFAULTS: Record<string, number> = {
 	linkedin: 1,
 	x: 3,
 	blog: 1,
 	instagram: 1,
 	facebook: 1,
 };
+
+/** @deprecated Use IDEA_ENGINE_ACTION_DEFAULTS — kept for tests and legacy references. */
+export const IDEA_ENGINE_SERIES_DEFAULTS = IDEA_ENGINE_ACTION_DEFAULTS;
 
 /** Hard per-channel maximum for a single run. */
 export const IDEA_ENGINE_RUN_MAX_PER_CHANNEL: Record<string, number> = {

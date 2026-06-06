@@ -4,21 +4,12 @@
  * Shared between the API run route (server) and the UI preview (client).
  * No server-only imports — safe to import from both environments.
  *
- * Algorithm
- * ---------
- * For each selected channel:
- *   1. Check plan channel access (IDEA_ENGINE_PLAN_CHANNEL_ENABLED).
- *   2. Apply series default (IDEA_ENGINE_SERIES_DEFAULTS).
- *   3. Cap to per-run max (IDEA_ENGINE_RUN_MAX_PER_CHANNEL) and quota remaining.
- *
- * Meta (Instagram / Facebook):
- *   - One platform selected → 1 combined Meta item on that platform.
- *   - Both explicitly selected → 1 each by default, up to per-channel run max.
- *
- * Finally trim to IDEA_ENGINE_RUN_MAX_TOTAL (7).
+ * Primary flow: one channel per generate/expand action (IDEA_ENGINE_ACTION_DEFAULTS).
+ * Multi-channel helper retained for legacy callers.
  */
 
 import {
+	IDEA_ENGINE_ACTION_DEFAULTS,
 	IDEA_ENGINE_RUN_MAX_PER_CHANNEL,
 	IDEA_ENGINE_SERIES_DEFAULTS,
 	applyRunTotalCap,
@@ -49,9 +40,20 @@ function capNonMetaChannel(
 	quotaRemaining: number,
 ): number {
 	const chLower = channel.toLowerCase();
-	const desired = IDEA_ENGINE_SERIES_DEFAULTS[chLower] ?? 0;
+	const desired = IDEA_ENGINE_ACTION_DEFAULTS[chLower] ?? IDEA_ENGINE_SERIES_DEFAULTS[chLower] ?? 0;
 	const runMax = IDEA_ENGINE_RUN_MAX_PER_CHANNEL[chLower] ?? 0;
 	return Math.min(desired, runMax, Math.max(0, quotaRemaining));
+}
+
+/**
+ * Compute counts for a single channel generate or expand action.
+ */
+export function computeSingleChannelActionCount(
+	channel: string,
+	planKey: string,
+	quotaRemaining: IdeaEngineQuotaRemaining,
+): ComputedIdeaEngineCounts {
+	return computeIdeaEngineRequestedCounts([channel], planKey, quotaRemaining);
 }
 
 /**
@@ -100,7 +102,11 @@ export function computeIdeaEngineRequestedCounts(
 	}
 	droppedChannels.push(...meta.dropped);
 
-	const capped = applyRunTotalCap(requestedCounts);
+	// Single-channel actions (primary flow) skip the legacy multi-channel total cap.
+	const capped =
+		selectedChannels.length <= 1
+			? requestedCounts
+			: applyRunTotalCap(requestedCounts);
 	for (const ch of Object.keys(requestedCounts)) {
 		if (!(ch in capped)) droppedChannels.push(ch);
 	}

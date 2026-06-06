@@ -4,6 +4,7 @@ import { getSupabaseService } from '@/lib/supabaseService';
 import { upsertReservation } from '@/lib/enforceCaps';
 import type { GeneratedItemInput } from '../types';
 import { serializeImagePrompt } from '../validation/normalize';
+import { updateRunReviewStatus } from './runStatus';
 
 export async function applyGeneratedItems(options: {
 	runId: string;
@@ -85,19 +86,10 @@ export async function applyGeneratedItems(options: {
 			meta_pool: (channelCounts['instagram'] ?? 0) + (channelCounts['facebook'] ?? 0),
 		});
 
-		const { count } = await admin
-			.from('idea_engine_items')
-			.select('id', { count: 'exact', head: true })
-			.eq('run_id', options.runId)
-			.eq('status', 'ready');
-
-		await admin
-			.from('idea_engine_runs')
-			.update({
-				status: 'review',
-				total_generated: count ?? applied,
-			})
-			.eq('id', options.runId);
+		await updateRunReviewStatus({
+			runId: options.runId,
+			hasChannelErrors: false,
+		});
 	}
 
 	return { applied };
@@ -131,15 +123,32 @@ export async function markRunFailed(
 	errorMessage: string,
 ): Promise<void> {
 	const admin = getSupabaseService();
-	await admin
-		.from('idea_engine_runs')
-		.update({ status: 'failed', error: errorMessage })
-		.eq('id', runId);
+
+	const { count: readyCount } = await admin
+		.from('idea_engine_items')
+		.select('id', { count: 'exact', head: true })
+		.eq('run_id', runId)
+		.eq('status', 'ready');
+
 	await admin
 		.from('idea_engine_items')
 		.update({ status: 'failed' })
 		.eq('run_id', runId)
 		.in('status', ['generating', 'regenerating']);
+
+	if ((readyCount ?? 0) > 0) {
+		await updateRunReviewStatus({
+			runId,
+			hasChannelErrors: true,
+			error: errorMessage,
+		});
+		return;
+	}
+
+	await admin
+		.from('idea_engine_runs')
+		.update({ status: 'failed', error: errorMessage })
+		.eq('id', runId);
 }
 
 export async function finalizeRunAfterGeneration(options: {
@@ -166,20 +175,19 @@ export async function finalizeRunAfterGeneration(options: {
 		markRunComplete: true,
 	});
 
-	if (options.channelErrors.length === 0) return;
+	const partialWarning =
+		options.channelErrors.length > 0
+			? options.channelErrors.map((e) => `${e.channel} generation failed`).join('; ')
+			: null;
+	const generationWarning =
+		partialWarning && options.existingWarning
+			? `${options.existingWarning} ${partialWarning}`
+			: partialWarning ?? options.existingWarning ?? null;
 
-	const partialWarning = options.channelErrors
-		.map((e) => `${e.channel} generation failed`)
-		.join('; ');
-	const generationWarning = options.existingWarning
-		? `${options.existingWarning} ${partialWarning}`
-		: partialWarning;
-
-	await admin
-		.from('idea_engine_runs')
-		.update({
-			generation_warning: generationWarning,
-			error: partialWarning,
-		})
-		.eq('id', options.runId);
+	await updateRunReviewStatus({
+		runId: options.runId,
+		hasChannelErrors: options.channelErrors.length > 0,
+		error: partialWarning,
+		generationWarning,
+	});
 }

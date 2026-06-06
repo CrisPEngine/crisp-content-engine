@@ -123,7 +123,21 @@ async function generateChannelSeries(options: {
 	return { items, timings };
 }
 
+export async function generateChannelsForRun(
+	runId: string,
+	channelsFilter?: string[],
+): Promise<void> {
+	await runChannelGeneration(runId, channelsFilter);
+}
+
 export async function generateSeries(runId: string): Promise<void> {
+	await runChannelGeneration(runId);
+}
+
+async function runChannelGeneration(
+	runId: string,
+	channelsFilter?: string[],
+): Promise<void> {
 	const admin = getSupabaseService();
 
 	const { data: runStatus } = await admin
@@ -174,7 +188,11 @@ export async function generateSeries(runId: string): Promise<void> {
 			});
 		}
 
-		const channels = sortedChannels(requestedCounts);
+		let channels = sortedChannels(requestedCounts);
+		if (channelsFilter?.length) {
+			const allowed = new Set(channelsFilter);
+			channels = channels.filter((ch) => allowed.has(ch));
+		}
 		if (channels.length === 0) {
 			throw new IdeaEngineError('No valid channels to generate', {
 				status: 400,

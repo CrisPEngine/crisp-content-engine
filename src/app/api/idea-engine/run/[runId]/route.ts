@@ -160,7 +160,7 @@ export async function DELETE(
 			return NextResponse.json({ error: 'Run not found' }, { status: 404 });
 		}
 
-		if (run.status === 'completed') {
+		if (run.status === 'completed' || run.status === 'confirmed') {
 			return NextResponse.json({ error: 'Cannot cancel a completed run' }, { status: 400 });
 		}
 
