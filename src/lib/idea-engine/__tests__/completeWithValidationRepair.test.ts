@@ -37,7 +37,7 @@ describe('completeIdeaEngineItemsWithRepair', () => {
 			model: 'gpt-4o-mini',
 		});
 
-		const items = await completeIdeaEngineItemsWithRepair([
+		const { items } = await completeIdeaEngineItemsWithRepair([
 			{ role: 'system', content: 'test' },
 		]);
 		expect(items).toHaveLength(1);
@@ -57,7 +57,7 @@ describe('completeIdeaEngineItemsWithRepair', () => {
 				model: 'gpt-4o-mini',
 			});
 
-		const items = await completeIdeaEngineItemsWithRepair([
+		const { items } = await completeIdeaEngineItemsWithRepair([
 			{ role: 'user', content: 'generate' },
 		]);
 

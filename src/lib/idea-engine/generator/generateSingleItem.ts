@@ -51,7 +51,7 @@ export async function generateSingleItem(itemId: string): Promise<void> {
 	}
 
 	try {
-		const rawItems = await completeIdeaEngineItemsWithRepair(messages);
+		const { items: rawItems } = await completeIdeaEngineItemsWithRepair(messages);
 		const raw = rawItems[0];
 		if (!raw) {
 			throw new IdeaEngineError('Regenerated content failed validation', {

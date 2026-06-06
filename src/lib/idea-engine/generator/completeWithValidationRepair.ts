@@ -26,11 +26,18 @@ function buildRepairPrompt(rawOutput: unknown, validationError: string): string 
 	].join('\n');
 }
 
+export type IdeaEngineCompletionTiming = {
+	openaiDurationMs: number;
+	validationDurationMs: number;
+};
+
 export async function completeIdeaEngineItemsWithRepair(
 	messages: LlmMessage[],
-): Promise<IdeaEngineItem[]> {
+): Promise<{ items: IdeaEngineItem[]; timing: IdeaEngineCompletionTiming }> {
 	let lastValidationError: string | undefined;
 	let lastRaw: unknown;
+	let openaiDurationMs = 0;
+	let validationDurationMs = 0;
 
 	for (let attempt = 1; attempt <= 2; attempt++) {
 		const attemptMessages: LlmMessage[] =
@@ -45,16 +52,23 @@ export async function completeIdeaEngineItemsWithRepair(
 					];
 
 		try {
+			const openAiStartedAt = Date.now();
 			const result = await completeStructuredJson<{ items: IdeaEngineItem[] }>({
 				model: resolveIdeaEngineLlmModel(),
 				messages: attemptMessages,
 				temperature: resolveIdeaEngineTemperature(),
 				maxTokens: resolveIdeaEngineMaxTokens(),
 			});
+			openaiDurationMs += Date.now() - openAiStartedAt;
 
+			const validationStartedAt = Date.now();
 			const parsed = ideaEngineChannelResponseSchema.safeParse(result.data);
+			validationDurationMs += Date.now() - validationStartedAt;
 			if (parsed.success) {
-				return parsed.data.items;
+				return {
+					items: parsed.data.items,
+					timing: { openaiDurationMs, validationDurationMs },
+				};
 			}
 
 			lastValidationError = JSON.stringify(parsed.error.flatten());
