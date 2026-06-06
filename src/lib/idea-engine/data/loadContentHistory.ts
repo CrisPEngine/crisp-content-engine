@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { listRecords } from '@/lib/airtable/client';
+import { resolveIdeaEngineHistoryTimeoutMs } from '../config';
 import type { PreviousContentEntry } from '../types';
 import {
 	IDEA_ENGINE_CONTENTQUEUE_FIELD_NAMES,
@@ -24,7 +25,9 @@ export async function loadContentHistory(
 
 	try {
 		const escapedId = brandProfileId.replace(/"/g, '""');
-		const records = await listRecords({
+		const historyTimeoutMs = resolveIdeaEngineHistoryTimeoutMs();
+		const records = await Promise.race([
+			listRecords({
 			table,
 			filterByFormula: `FIND("${escapedId}", {${IDEA_ENGINE_CONTENTQUEUE_FIELD_NAMES.brand_profile_id}})`,
 			fields: [
@@ -44,7 +47,14 @@ export async function loadContentHistory(
 			cache: false,
 			returnFieldsByFieldId: true,
 			endpoint: '/api/idea-engine/load-history',
-		});
+			}),
+			new Promise<never>((_, reject) => {
+				setTimeout(
+					() => reject(new Error(`Content history fetch timed out after ${historyTimeoutMs}ms`)),
+					historyTimeoutMs,
+				);
+			}),
+		]);
 
 		return {
 			entries: records.map((record) => mapContentHistoryRecord(record) as PreviousContentEntry),

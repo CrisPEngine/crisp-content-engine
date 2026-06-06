@@ -4,8 +4,11 @@ import { completeStructuredJson, LlmError, type LlmMessage } from '@/lib/llm';
 import {
 	resolveIdeaEngineLlmModel,
 	resolveIdeaEngineMaxTokens,
+	resolveIdeaEngineOpenAiTimeoutMs,
 	resolveIdeaEngineTemperature,
 } from '../config';
+import { logIdeaEngineLifecycle } from '../observability/lifecycle';
+import { setRunGenerationStage, IDEA_ENGINE_GENERATION_STAGES } from '../persistence/generationStage';
 import { IdeaEngineError } from '../errors';
 import {
 	ideaEngineChannelResponseSchema,
@@ -33,6 +36,7 @@ export type IdeaEngineCompletionTiming = {
 
 export async function completeIdeaEngineItemsWithRepair(
 	messages: LlmMessage[],
+	options?: { runId?: string; channel?: string },
 ): Promise<{ items: IdeaEngineItem[]; timing: IdeaEngineCompletionTiming }> {
 	let lastValidationError: string | undefined;
 	let lastRaw: unknown;
@@ -52,18 +56,48 @@ export async function completeIdeaEngineItemsWithRepair(
 					];
 
 		try {
+			if (options?.runId) {
+				await setRunGenerationStage(options.runId, IDEA_ENGINE_GENERATION_STAGES.openaiRequest);
+				logIdeaEngineLifecycle('openai_request_started', options.runId, {
+					channel: options.channel,
+					attempt,
+				});
+			}
+
 			const openAiStartedAt = Date.now();
 			const result = await completeStructuredJson<{ items: IdeaEngineItem[] }>({
 				model: resolveIdeaEngineLlmModel(),
 				messages: attemptMessages,
 				temperature: resolveIdeaEngineTemperature(),
 				maxTokens: resolveIdeaEngineMaxTokens(),
+				timeoutMs: resolveIdeaEngineOpenAiTimeoutMs(),
 			});
 			openaiDurationMs += Date.now() - openAiStartedAt;
+
+			if (options?.runId) {
+				logIdeaEngineLifecycle('openai_request_completed', options.runId, {
+					channel: options.channel,
+					attempt,
+					duration_ms: Date.now() - openAiStartedAt,
+				});
+			}
+
+			if (options?.runId) {
+				await setRunGenerationStage(options.runId, IDEA_ENGINE_GENERATION_STAGES.validating);
+				logIdeaEngineLifecycle('validation_started', options.runId, { channel: options.channel });
+			}
 
 			const validationStartedAt = Date.now();
 			const parsed = ideaEngineChannelResponseSchema.safeParse(result.data);
 			validationDurationMs += Date.now() - validationStartedAt;
+
+			if (options?.runId) {
+				logIdeaEngineLifecycle('validation_completed', options.runId, {
+					channel: options.channel,
+					ok: parsed.success,
+					duration_ms: Date.now() - validationStartedAt,
+				});
+			}
 			if (parsed.success) {
 				return {
 					items: parsed.data.items,

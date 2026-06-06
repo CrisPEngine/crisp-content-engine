@@ -1,6 +1,8 @@
 import 'server-only';
 
 import { getSupabaseService } from '@/lib/supabaseService';
+import { logIdeaEngineLifecycle } from '../observability/lifecycle';
+import { IDEA_ENGINE_GENERATION_STAGES } from './generationStage';
 
 export type IdeaEngineRunReviewStatus = 'review' | 'review_with_errors' | 'failed';
 
@@ -51,9 +53,17 @@ export async function updateRunReviewStatus(options: {
 		!!options.hasChannelErrors,
 	);
 
+	const generationStage =
+		status === 'failed'
+			? IDEA_ENGINE_GENERATION_STAGES.failed
+			: status === 'review_with_errors'
+				? IDEA_ENGINE_GENERATION_STAGES.reviewWithErrors
+				: IDEA_ENGINE_GENERATION_STAGES.review;
+
 	const payload: Record<string, unknown> = {
 		status,
 		total_generated: counts.ready + counts.confirmed,
+		generation_stage: generationStage,
 		updated_at: new Date().toISOString(),
 	};
 	if (options.error !== undefined) payload.error = options.error;
@@ -62,5 +72,10 @@ export async function updateRunReviewStatus(options: {
 	}
 
 	await admin.from('idea_engine_runs').update(payload).eq('id', options.runId);
+	logIdeaEngineLifecycle(
+		status === 'failed' ? 'run_marked_failed' : 'run_marked_review',
+		options.runId,
+		{ status, ready: counts.ready, failed: counts.failed },
+	);
 	return status;
 }

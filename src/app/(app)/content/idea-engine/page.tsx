@@ -68,6 +68,12 @@ const REVIEW_RUN_STATUSES = new Set([
 	'confirmed',
 ]);
 
+const TERMINAL_RUN_STATUSES = new Set([
+	...REVIEW_RUN_STATUSES,
+	'failed',
+	'cancelled',
+]);
+
 const PLATFORM_COLORS: Record<string, string> = {
 	LinkedIn: 'text-blue-400 border-blue-400/30 bg-blue-400/10',
 	X: 'text-text-soft border-edge/60 bg-surface/30',
@@ -187,6 +193,8 @@ export default function IdeaEnginePage() {
 	const [runId, setRunId] = useState<string>('');
 	const [runStatus, setRunStatus] = useState<string>('');
 	const [generationWarning, setGenerationWarning] = useState<string | null>(null);
+	const [generationStageLabel, setGenerationStageLabel] = useState<string>('Starting generation…');
+	const [itemCounts, setItemCounts] = useState({ ready: 0, failed: 0, generating: 0, confirmed: 0 });
 	const [totalExpected, setTotalExpected] = useState<number>(0);
 	const [totalGenerated, setTotalGenerated] = useState<number>(0);
 	const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -304,6 +312,9 @@ export default function IdeaEnginePage() {
 		const { run, items: runItems, generated_items_count } = data;
 		setRunStatus(run.status as string);
 		setGenerationWarning((run.generation_warning as string) || null);
+		if (run.generation_stage_label) {
+			setGenerationStageLabel(run.generation_stage_label as string);
+		}
 		setTotalExpected((run.total_expected as number) || 0);
 		setTotalGenerated(
 			generated_items_count || (run.total_generated as number) || 0,
@@ -326,12 +337,19 @@ export default function IdeaEnginePage() {
 				const res = await fetch(`/api/idea-engine/run/${id}`, { cache: 'no-store' });
 				if (!res.ok) return;
 				const data = await res.json();
-				const { run, items: runItems, generated_items_count } = data;
+				const { run, items: runItems, generated_items_count, item_counts } = data;
 
 				setRunStatus(run.status);
 				setGenerationWarning(run.generation_warning || null);
+				setGenerationStageLabel(
+					run.generation_stage_label || run.generation_stage || 'Starting generation…',
+				);
+				if (item_counts) setItemCounts(item_counts);
 				setTotalExpected(run.total_expected || 0);
 				setTotalGenerated(generated_items_count || run.total_generated || 0);
+				if (run.last_error && run.status === 'failed') {
+					setError(run.last_error);
+				}
 
 			if (runItems && runItems.length > 0) {
 				setItems((prev) => mapApiItemsToSeriesItems(runItems, prev));
@@ -370,30 +388,31 @@ export default function IdeaEnginePage() {
 					setError(null);
 					setExpandingChannel(null);
 					setRetryingChannel(null);
-				} else if (run.status === 'failed' || run.status === 'cancelled') {
-					const hasReady = runItems?.some(
-						(it: { status?: string; body_draft?: string }) =>
-							it.status === 'ready' || !!it.body_draft,
-					);
-					if (hasReady || run.status === 'cancelled') {
-						clearInterval(pollRef.current!);
-						setStep(hasReady ? 'review' : 'generating');
-						setError(
-							run.status === 'cancelled'
-								? 'Generation was cancelled.'
-								: (run.error || 'Some channels failed. Successful drafts are saved below.'),
+				} else if (TERMINAL_RUN_STATUSES.has(run.status)) {
+					const hasReady =
+						(item_counts?.ready ?? 0) > 0 ||
+						runItems?.some(
+							(it: { status?: string; body_draft?: string }) =>
+								it.status === 'ready' || !!it.body_draft,
 						);
-						setExpandingChannel(null);
-						setRetryingChannel(null);
+					clearInterval(pollRef.current!);
+					if (REVIEW_RUN_STATUSES.has(run.status) || (run.status === 'failed' && hasReady)) {
+						setStep('review');
+						setError(
+							run.status === 'failed' && hasReady
+								? (run.last_error || run.error || 'Some channels failed. Successful drafts are saved below.')
+								: null,
+						);
 					} else {
-						clearInterval(pollRef.current!);
+						setStep(run.status === 'cancelled' ? 'input' : 'generating');
 						setError(
 							run.status === 'cancelled'
 								? 'Generation was cancelled.'
-								: (run.error || 'Content generation failed. Please try again.'),
+								: (run.last_error || run.error || 'Content generation failed. Please try again.'),
 						);
-						setStep('generating');
 					}
+					setExpandingChannel(null);
+					setRetryingChannel(null);
 				}
 			} catch {
 				/* keep polling */
@@ -1072,8 +1091,15 @@ export default function IdeaEnginePage() {
 									/>
 								</div>
 								<p className="text-xs text-text-dim">
-									{getStageMessage((totalGenerated / totalExpected) * 100, selectedChannels)}
+									{runStatus === 'failed'
+										? (error || 'Generation failed')
+										: generationStageLabel}
 								</p>
+								{itemCounts.generating > 0 && itemCounts.failed > 0 && (
+									<p className="text-xs text-amber-200/80">
+										{itemCounts.ready} ready · {itemCounts.failed} failed · {itemCounts.generating} in progress
+									</p>
+								)}
 							</div>
 						)}
 

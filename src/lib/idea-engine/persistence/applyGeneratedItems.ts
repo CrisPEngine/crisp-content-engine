@@ -4,6 +4,8 @@ import { getSupabaseService } from '@/lib/supabaseService';
 import { upsertReservation } from '@/lib/enforceCaps';
 import type { GeneratedItemInput } from '../types';
 import { serializeImagePrompt } from '../validation/normalize';
+import { logIdeaEngineLifecycle } from '../observability/lifecycle';
+import { IDEA_ENGINE_GENERATION_STAGES, setRunGenerationStage } from './generationStage';
 import { updateRunReviewStatus } from './runStatus';
 
 export async function applyGeneratedItems(options: {
@@ -69,7 +71,18 @@ export async function applyGeneratedItems(options: {
 			})
 			.eq('id', placeholder.id);
 
-		if (!error) applied += 1;
+		if (!error) {
+			applied += 1;
+			logIdeaEngineLifecycle('item_persisted', options.runId, {
+				item_id: placeholder.id,
+				channel,
+				series_position: item.series_position ?? placeholder.series_position,
+			});
+		}
+	}
+
+	if (applied > 0) {
+		await setRunGenerationStage(options.runId, IDEA_ENGINE_GENERATION_STAGES.savingDrafts);
 	}
 
 	if (options.markRunComplete) {
@@ -147,8 +160,13 @@ export async function markRunFailed(
 
 	await admin
 		.from('idea_engine_runs')
-		.update({ status: 'failed', error: errorMessage })
+		.update({
+			status: 'failed',
+			error: errorMessage,
+			generation_stage: IDEA_ENGINE_GENERATION_STAGES.failed,
+		})
 		.eq('id', runId);
+	logIdeaEngineLifecycle('run_marked_failed', runId, { message: errorMessage });
 }
 
 export async function finalizeRunAfterGeneration(options: {

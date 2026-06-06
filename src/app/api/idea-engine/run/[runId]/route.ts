@@ -10,6 +10,7 @@ import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { releaseRunReservation } from '@/lib/enforceCaps';
+import { buildRunPollResponse } from '@/lib/idea-engine/persistence/buildRunPollResponse';
 import { markStaleGeneratingRunIfNeeded } from '@/lib/idea-engine/persistence/staleRunGuard';
 
 export const runtime = 'nodejs';
@@ -43,7 +44,7 @@ export async function GET(
 
 		let { data: run, error: runError } = await admin
 			.from('idea_engine_runs')
-			.select('id, series_run_id, user_id, idea, goal, selected_channels, publish_mode, status, total_expected, total_generated, error, generation_warning, created_at')
+			.select('id, series_run_id, user_id, idea, goal, selected_channels, publish_mode, status, total_expected, total_generated, error, generation_warning, generation_stage, generation_started_at, created_at')
 			.eq('id', runId)
 			.single();
 
@@ -58,7 +59,12 @@ export async function GET(
 		if (run) {
 			const staleError = await markStaleGeneratingRunIfNeeded(run);
 			if (staleError) {
-				run = { ...run, status: 'failed', error: staleError };
+				run = {
+					...run,
+					status: 'failed',
+					error: staleError,
+					generation_stage: 'failed',
+				};
 			}
 		}
 
@@ -75,44 +81,7 @@ export async function GET(
 
 		const items = itemRows || [];
 
-		// ── Compute progress fields ───────────────────────────────
-		// expected_counts_by_channel: how many we expect per channel
-		// generated_counts_by_channel: how many are filled (ready) per channel
-		const expectedCountsByChannel: Record<string, number> = {};
-		const generatedCountsByChannel: Record<string, number> = {};
-
-		for (const item of items) {
-			const ch = item.channel;
-			expectedCountsByChannel[ch] = (expectedCountsByChannel[ch] || 0) + 1;
-			// Consider an item "generated" if it has body_draft or status is 'ready'
-			if (item.body_draft || item.status === 'ready') {
-				generatedCountsByChannel[ch] = (generatedCountsByChannel[ch] || 0) + 1;
-			}
-		}
-
-		const generatedItemsCount = Object.values(generatedCountsByChannel).reduce((sum, c) => sum + c, 0);
-
-		return NextResponse.json({
-			run: {
-				id: run.id,
-				series_run_id: run.series_run_id,
-				idea: run.idea,
-				goal: run.goal,
-				selected_channels: run.selected_channels,
-				publish_mode: run.publish_mode,
-				status: run.status,
-				total_expected: run.total_expected,
-				total_generated: run.total_generated,
-				error: run.error,
-				generation_warning: run.generation_warning ?? null,
-				created_at: run.created_at,
-			},
-			items,
-			expected_total_items: run.total_expected || 0,
-			generated_items_count: generatedItemsCount,
-			expected_counts_by_channel: expectedCountsByChannel,
-			generated_counts_by_channel: generatedCountsByChannel,
-		});
+		return NextResponse.json(buildRunPollResponse(run, items));
 
 	} catch (error: any) {
 		console.error('[IdeaEngine/RunStatus] Error:', error);

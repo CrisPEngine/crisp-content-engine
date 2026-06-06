@@ -22,7 +22,7 @@ IDEA_ENGINE_LLM_MAX_TOKENS=8192
 ```
 POST /api/idea-engine/run
   → placeholders in Supabase
-  → after() → generateSeries(runId)
+  → dispatchGenerationJob → POST /api/idea-engine/run/[runId]/execute → generateSeries(runId)
   → per-channel OpenAI calls
   → progressive item updates
   → run status = review

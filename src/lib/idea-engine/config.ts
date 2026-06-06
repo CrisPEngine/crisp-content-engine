@@ -17,3 +17,19 @@ export function resolveIdeaEngineMaxTokens(): number {
 	const n = parseInt(raw, 10);
 	return Number.isFinite(n) && n > 0 ? n : 8192;
 }
+
+/** Hard timeout per OpenAI request during Idea Engine generation (ms). */
+export function resolveIdeaEngineOpenAiTimeoutMs(): number {
+	const raw = process.env.IDEA_ENGINE_OPENAI_TIMEOUT_MS;
+	if (!raw) return 90_000;
+	const n = parseInt(raw, 10);
+	return Number.isFinite(n) && n > 0 ? n : 90_000;
+}
+
+/** Timeout for Airtable content-history fetch during context load (ms). */
+export function resolveIdeaEngineHistoryTimeoutMs(): number {
+	const raw = process.env.IDEA_ENGINE_HISTORY_TIMEOUT_MS;
+	if (!raw) return 30_000;
+	const n = parseInt(raw, 10);
+	return Number.isFinite(n) && n > 0 ? n : 30_000;
+}

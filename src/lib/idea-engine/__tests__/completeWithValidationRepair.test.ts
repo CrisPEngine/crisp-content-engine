@@ -12,6 +12,19 @@ vi.mock('../config', () => ({
 	resolveIdeaEngineLlmModel: () => 'gpt-4o-mini',
 	resolveIdeaEngineMaxTokens: () => 4096,
 	resolveIdeaEngineTemperature: () => 0.7,
+	resolveIdeaEngineOpenAiTimeoutMs: () => 90_000,
+}));
+
+vi.mock('../persistence/generationStage', () => ({
+	setRunGenerationStage: vi.fn().mockResolvedValue(undefined),
+	IDEA_ENGINE_GENERATION_STAGES: {
+		openaiRequest: 'openai_request',
+		validating: 'validating',
+	},
+}));
+
+vi.mock('../observability/lifecycle', () => ({
+	logIdeaEngineLifecycle: vi.fn(),
 }));
 
 import { completeStructuredJson } from '@/lib/llm';

@@ -7,7 +7,7 @@
  * Auth: Supabase cookie session.
  */
 
-import { NextResponse, after } from 'next/server';
+import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { z } from 'zod';
@@ -17,7 +17,8 @@ import { getChannelUsage, getIdeaEngineRunsUsed, incrementIdeaEngineRunsUsed } f
 import { CAPS } from '@/config/pricing';
 import { computeIdeaEngineRequestedCounts } from '@/lib/ideaEngineQuota';
 import { isIdeaEngineNativeEnabled } from '@/lib/featureFlags';
-import { generateSeries } from '@/lib/idea-engine';
+import { dispatchGenerationJob } from '@/lib/idea-engine/dispatchGeneration';
+import { logIdeaEngineLifecycle } from '@/lib/idea-engine/observability/lifecycle';
 import {
 	extractTimezoneAndWindows,
 	loadBrandProfile,
@@ -322,12 +323,13 @@ export async function POST(request: Request) {
 				);
 			}
 
-			after(async () => {
-				try {
-					await generateSeries(run.id);
-				} catch (err) {
-					console.error('[IdeaEngine/Run] Native generation failed:', err);
-				}
+			logIdeaEngineLifecycle('run_created', run.id, {
+				channels: activeChannels.join(','),
+				total_expected: totalExpected,
+			});
+
+			void dispatchGenerationJob({ runId: run.id }).catch((err) => {
+				console.error('[IdeaEngine/Run] Failed to dispatch generation:', err);
 			});
 
 			return NextResponse.json({

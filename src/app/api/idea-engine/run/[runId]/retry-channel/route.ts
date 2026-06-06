@@ -3,12 +3,12 @@
  * Regenerate failed items for a single channel without touching other channels.
  */
 
-import { NextResponse, after } from 'next/server';
+import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { z } from 'zod';
 import { isIdeaEngineNativeEnabled } from '@/lib/featureFlags';
-import { generateChannelsForRun } from '@/lib/idea-engine';
+import { dispatchGenerationJob } from '@/lib/idea-engine/dispatchGeneration';
 import { IdeaEngineError } from '@/lib/idea-engine/errors';
 import {
 	assertRunOwnedByUser,
@@ -91,12 +91,8 @@ export async function POST(
 			replaceFailed: true,
 		});
 
-		after(async () => {
-			try {
-				await generateChannelsForRun(runId, [channel]);
-			} catch (err) {
-				console.error('[IdeaEngine/RetryChannel] Generation failed:', err);
-			}
+		void dispatchGenerationJob({ runId, channels: [channel] }).catch((err) => {
+			console.error('[IdeaEngine/RetryChannel] Failed to dispatch generation:', err);
 		});
 
 		return NextResponse.json({ ok: true, run_id: runId, channel, count });

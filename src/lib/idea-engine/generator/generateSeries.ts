@@ -29,6 +29,11 @@ import {
 	type BatchTimingRecord,
 } from '../observability/generationTiming';
 import { runWithConcurrency } from './runWithConcurrency';
+import { logIdeaEngineLifecycle } from '../observability/lifecycle';
+import {
+	IDEA_ENGINE_GENERATION_STAGES,
+	setRunGenerationStage,
+} from '../persistence/generationStage';
 
 const CHANNEL_ORDER = ['LinkedIn', 'X', 'Blog', 'Facebook', 'Instagram'];
 
@@ -60,7 +65,10 @@ async function generateChannelBatch(options: {
 	}
 
 	const batchStartedAt = createTimingMark();
-	const { items: rawItems, timing } = await completeIdeaEngineItemsWithRepair(messages);
+	const { items: rawItems, timing } = await completeIdeaEngineItemsWithRepair(messages, {
+		runId: options.runId,
+		channel: options.channel,
+	});
 	const normalized = rawItems.map(normalizeGeneratedItem);
 	const scheduled = computeItemSchedules(normalized, {
 		timezone: options.context.timezone,
@@ -164,9 +172,16 @@ async function runChannelGeneration(
 	};
 
 	try {
+		logIdeaEngineLifecycle('context_load_started', runId);
+		await setRunGenerationStage(runId, IDEA_ENGINE_GENERATION_STAGES.loadingBrandContext);
+
 		const contextStartedAt = createTimingMark();
 		const { context } = await loadRunContextFromDb(runId);
 		const contextLoadDurationMs = elapsedMs(contextStartedAt);
+		logIdeaEngineLifecycle('context_load_completed', runId, {
+			duration_ms: contextLoadDurationMs,
+			history_warning: context.historyWarning ?? null,
+		});
 		historyWarning = context.historyWarning ?? null;
 
 		if (historyWarning) {
@@ -213,6 +228,12 @@ async function runChannelGeneration(
 					if (await isCancelled()) {
 						return { channel, items: [], timings: [] };
 					}
+
+					logIdeaEngineLifecycle('channel_generation_started', runId, {
+						channel,
+						item_count: channelTotal,
+					});
+					await setRunGenerationStage(runId, '', { channel });
 
 					const result = await generateChannelSeries({
 						context,

@@ -27,6 +27,8 @@ export type StructuredJsonRequest = {
 	jsonSchemaHint?: string;
 	temperature?: number;
 	maxTokens?: number;
+	/** Hard timeout for the provider HTTP call (ms). */
+	timeoutMs?: number;
 };
 
 export type StructuredJsonResult<T> = {

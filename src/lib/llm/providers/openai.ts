@@ -23,20 +23,41 @@ export const openaiProvider: LlmProvider = {
 			});
 		}
 
-		const response = await fetch('https://api.openai.com/v1/chat/completions', {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${auth.apiKey}`,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
-				model: request.model,
-				messages: request.messages,
-				temperature: request.temperature ?? 0.7,
-				max_tokens: request.maxTokens ?? 2048,
-				response_format: { type: 'json_object' },
-			}),
-		});
+		const timeoutMs = request.timeoutMs ?? 90_000;
+		let response: Response;
+		try {
+			response = await fetch('https://api.openai.com/v1/chat/completions', {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${auth.apiKey}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					model: request.model,
+					messages: request.messages,
+					temperature: request.temperature ?? 0.7,
+					max_tokens: request.maxTokens ?? 2048,
+					response_format: { type: 'json_object' },
+				}),
+				signal: AbortSignal.timeout(timeoutMs),
+			});
+		} catch (error) {
+			const isTimeout =
+				error instanceof Error &&
+				(error.name === 'TimeoutError' || error.name === 'AbortError');
+			throw new LlmError(
+				isTimeout
+					? `OpenAI request timed out after ${timeoutMs}ms`
+					: error instanceof Error
+						? error.message
+						: 'OpenAI request failed',
+				{
+					code: isTimeout ? 'llm_timeout' : 'llm_provider_error',
+					provider: 'openai',
+					retryable: isTimeout,
+				},
+			);
+		}
 
 		const payload = (await response.json()) as OpenAIChatResponse;
 
