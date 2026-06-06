@@ -103,6 +103,29 @@ export async function applyGeneratedItems(options: {
 	return { applied };
 }
 
+export async function markChannelItemsFailed(
+	runId: string,
+	channel: string,
+	errorMessage?: string,
+): Promise<void> {
+	const admin = getSupabaseService();
+	await admin
+		.from('idea_engine_items')
+		.update({
+			status: 'failed',
+			updated_at: new Date().toISOString(),
+		})
+		.eq('run_id', runId)
+		.eq('channel', channel)
+		.in('status', ['generating', 'regenerating']);
+
+	console.warn('[IdeaEngine] Channel generation failed', {
+		runId,
+		channel,
+		error: errorMessage,
+	});
+}
+
 export async function markRunFailed(
 	runId: string,
 	errorMessage: string,
@@ -117,4 +140,46 @@ export async function markRunFailed(
 		.update({ status: 'failed' })
 		.eq('run_id', runId)
 		.in('status', ['generating', 'regenerating']);
+}
+
+export async function finalizeRunAfterGeneration(options: {
+	runId: string;
+	userId: string;
+	items: GeneratedItemInput[];
+	channelErrors: Array<{ channel: string; message: string }>;
+	existingWarning?: string | null;
+}): Promise<void> {
+	const admin = getSupabaseService();
+
+	if (options.items.length === 0) {
+		const detail =
+			options.channelErrors.map((e) => `${e.channel}: ${e.message}`).join('; ') ||
+			'No items were generated';
+		await markRunFailed(options.runId, detail);
+		return;
+	}
+
+	await applyGeneratedItems({
+		runId: options.runId,
+		userId: options.userId,
+		items: options.items,
+		markRunComplete: true,
+	});
+
+	if (options.channelErrors.length === 0) return;
+
+	const partialWarning = options.channelErrors
+		.map((e) => `${e.channel} generation failed`)
+		.join('; ');
+	const generationWarning = options.existingWarning
+		? `${options.existingWarning} ${partialWarning}`
+		: partialWarning;
+
+	await admin
+		.from('idea_engine_runs')
+		.update({
+			generation_warning: generationWarning,
+			error: partialWarning,
+		})
+		.eq('id', options.runId);
 }

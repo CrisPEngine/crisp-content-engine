@@ -175,8 +175,14 @@ export default function IdeaEnginePage() {
 				const plan = normalisePlan(data.planName || null);
 				setUserPlan(plan);
 				if (plan !== 'starter') {
-					const chs = platformChannels(plan).filter(ch => ch !== 'Blog');
-					if (chs.length > 0) setSelectedChannels(chs);
+					const planChs = platformChannels(plan);
+					const defaults: ChannelKey[] = (['LinkedIn', 'X', 'Blog'] as ChannelKey[]).filter((ch) =>
+						planChs.includes(ch),
+					);
+					// One Meta platform by default — not both unless user explicitly selects both.
+					if (planChs.includes('Instagram')) defaults.push('Instagram');
+					else if (planChs.includes('Facebook')) defaults.push('Facebook');
+					if (defaults.length > 0) setSelectedChannels(defaults);
 				}
 			}
 		} catch {
@@ -728,6 +734,11 @@ export default function IdeaEnginePage() {
 											Instagram &amp; Facebook require Growth or higher.
 										</p>
 									)}
+									{(userPlan === 'growth' || userPlan === 'pro' || userPlan === 'scale') && (
+										<p className="text-xs text-text-dim mt-3">
+											Meta generates 1 post by default. Select both Instagram and Facebook only if you want one on each platform.
+										</p>
+									)}
 								</>
 							)}
 						</div>
@@ -752,7 +763,7 @@ export default function IdeaEnginePage() {
 						<div className="card p-6">
 							<h2 className="text-lg font-semibold mb-1">Your series will generate</h2>
 							<p className="text-text-dim text-xs mb-4">
-								Counts are based on your plan and remaining quota.
+								Default series: 1 LinkedIn, 3 𝕏, 1 Blog, 1 Meta (max 7 items per run). Counts respect your quota.
 							</p>
 							{quotaLoading ? (
 								<div className="flex items-center gap-2 text-text-dim text-sm py-2">
@@ -1029,6 +1040,12 @@ export default function IdeaEnginePage() {
 				{/* ── Step: Review ──────────────────────────────────────── */}
 				{step === 'review' && (
 					<motion.div key="review" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} className="space-y-5">
+						{generationWarning && (
+							<div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+								<AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+								<span>{generationWarning}</span>
+							</div>
+						)}
 						<div className="flex items-center justify-between">
 							<div>
 								<h2 className="text-lg font-semibold">Review your series</h2>

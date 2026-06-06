@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { IDEA_ENGINE_RUN_MAX_TOTAL } from '@/lib/ideaEngineLimits';
 import {
+	CHANNEL_GENERATION_CONCURRENCY,
 	MAX_ITEMS_PER_OPENAI_CALL,
 	clampRequestedCountsForGeneration,
 	splitChannelIntoBatches,
@@ -37,18 +39,23 @@ describe('clampRequestedCountsForGeneration', () => {
 		expect(rejectedChannels).toContain('TikTok');
 	});
 
-	it('clamps channel counts to plan defaults', () => {
-		const { counts } = clampRequestedCountsForGeneration({ LinkedIn: 99, X: 99 }, 'creator');
+	it('clamps channel counts to per-run max', () => {
+		const { counts } = clampRequestedCountsForGeneration({ LinkedIn: 99, X: 99 }, 'growth');
 		expect(counts.LinkedIn).toBe(2);
-		expect(counts.X).toBe(3);
+		expect(counts.X).toBe(4);
 	});
 
-	it('keeps total within plan maximum when counts are inflated', () => {
+	it('enforces total run cap of 7', () => {
 		const { counts } = clampRequestedCountsForGeneration(
-			{ LinkedIn: 99, X: 99, Blog: 99, Instagram: 99, Facebook: 99 },
+			{ LinkedIn: 2, X: 4, Blog: 1, Instagram: 2, Facebook: 2 },
 			'growth',
 		);
 		const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
-		expect(total).toBe(9);
+		expect(total).toBeLessThanOrEqual(IDEA_ENGINE_RUN_MAX_TOTAL);
+	});
+
+	it('uses bounded parallel channel concurrency constant', () => {
+		expect(CHANNEL_GENERATION_CONCURRENCY).toBeGreaterThanOrEqual(2);
+		expect(CHANNEL_GENERATION_CONCURRENCY).toBeLessThanOrEqual(3);
 	});
 });

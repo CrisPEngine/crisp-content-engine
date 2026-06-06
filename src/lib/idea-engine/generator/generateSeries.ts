@@ -5,12 +5,22 @@ import { getSupabaseService } from '@/lib/supabaseService';
 import { loadRunContextFromDb } from '../data/loadRunContext';
 import { IDEA_ENGINE_GENERATION_FAILED_MESSAGE } from '../airtable/contentQueueQuery';
 import { IdeaEngineError } from '../errors';
-import { applyGeneratedItems, markRunFailed } from '../persistence/applyGeneratedItems';
+import {
+	applyGeneratedItems,
+	finalizeRunAfterGeneration,
+	markChannelItemsFailed,
+	markRunFailed,
+} from '../persistence/applyGeneratedItems';
 import type { GeneratedItemInput } from '../types';
 import { normalizeGeneratedItem } from '../validation/normalize';
 import { buildIdeaEnginePrompt } from './buildPrompt';
 import { completeIdeaEngineItemsWithRepair } from './completeWithValidationRepair';
 import { computeItemSchedules } from './computeSchedules';
+import {
+	CHANNEL_GENERATION_CONCURRENCY,
+	clampRequestedCountsForGeneration,
+	splitChannelIntoBatches,
+} from './generationCaps';
 import {
 	createTimingMark,
 	elapsedMs,
@@ -18,10 +28,7 @@ import {
 	logRunTiming,
 	type BatchTimingRecord,
 } from '../observability/generationTiming';
-import {
-	clampRequestedCountsForGeneration,
-	splitChannelIntoBatches,
-} from './generationCaps';
+import { runWithConcurrency } from './runWithConcurrency';
 
 const CHANNEL_ORDER = ['LinkedIn', 'X', 'Blog', 'Facebook', 'Instagram'];
 
@@ -85,6 +92,37 @@ async function generateChannelBatch(options: {
 	return { items: scheduled, timing: batchTiming };
 }
 
+async function generateChannelSeries(options: {
+	context: Awaited<ReturnType<typeof loadRunContextFromDb>>['context'];
+	channel: string;
+	channelTotal: number;
+	runId: string;
+	isCancelled: () => Promise<boolean>;
+}): Promise<{ items: GeneratedItemInput[]; timings: BatchTimingRecord[] }> {
+	const batches = splitChannelIntoBatches(options.channelTotal);
+	const items: GeneratedItemInput[] = [];
+	const timings: BatchTimingRecord[] = [];
+
+	for (const batch of batches) {
+		if (await options.isCancelled()) {
+			break;
+		}
+
+		const result = await generateChannelBatch({
+			context: options.context,
+			channel: options.channel,
+			itemCount: batch.count,
+			seriesPositionStart: batch.positionStart,
+			seriesTotalForChannel: options.channelTotal,
+			runId: options.runId,
+		});
+		items.push(...result.items);
+		timings.push(result.timing);
+	}
+
+	return { items, timings };
+}
+
 export async function generateSeries(runId: string): Promise<void> {
 	const admin = getSupabaseService();
 
@@ -100,18 +138,30 @@ export async function generateSeries(runId: string): Promise<void> {
 
 	const runStartedAt = createTimingMark();
 	const batchTimings: BatchTimingRecord[] = [];
+	let historyWarning: string | null = null;
+
+	const isCancelled = async (): Promise<boolean> => {
+		const { data: stillRun } = await admin
+			.from('idea_engine_runs')
+			.select('status')
+			.eq('id', runId)
+			.single();
+		return stillRun?.status === 'cancelled';
+	};
 
 	try {
 		const contextStartedAt = createTimingMark();
 		const { context } = await loadRunContextFromDb(runId);
 		const contextLoadDurationMs = elapsedMs(contextStartedAt);
+		historyWarning = context.historyWarning ?? null;
 
-		if (context.historyWarning) {
+		if (historyWarning) {
 			await admin
 				.from('idea_engine_runs')
-				.update({ generation_warning: context.historyWarning })
+				.update({ generation_warning: historyWarning })
 				.eq('id', runId);
 		}
+
 		const { counts: requestedCounts, rejectedChannels } = clampRequestedCountsForGeneration(
 			context.requestedCounts,
 			context.plan,
@@ -132,41 +182,59 @@ export async function generateSeries(runId: string): Promise<void> {
 			});
 		}
 
+		const channelErrors: Array<{ channel: string; message: string }> = [];
+
+		const channelResults = await runWithConcurrency(
+			channels.map((channel) => async () => {
+				const channelTotal = requestedCounts[channel] ?? 0;
+				if (channelTotal <= 0) {
+					return { channel, items: [] as GeneratedItemInput[], timings: [] as BatchTimingRecord[] };
+				}
+
+				try {
+					if (await isCancelled()) {
+						return { channel, items: [], timings: [] };
+					}
+
+					const result = await generateChannelSeries({
+						context,
+						channel,
+						channelTotal,
+						runId,
+						isCancelled,
+					});
+					return { channel, items: result.items, timings: result.timings };
+				} catch (error) {
+					const message =
+						error instanceof IdeaEngineError
+							? error.message
+							: error instanceof LlmError
+								? error.message
+								: error instanceof Error
+									? error.message
+									: IDEA_ENGINE_GENERATION_FAILED_MESSAGE;
+
+					await markChannelItemsFailed(runId, channel, message);
+					channelErrors.push({ channel, message });
+					return { channel, items: [] as GeneratedItemInput[], timings: [] as BatchTimingRecord[] };
+				}
+			}),
+			CHANNEL_GENERATION_CONCURRENCY,
+		);
+
 		const allItems: GeneratedItemInput[] = [];
-
-		for (const channel of channels) {
-			const channelTotal = requestedCounts[channel] ?? 0;
-			if (channelTotal <= 0) continue;
-
-			const batches = splitChannelIntoBatches(channelTotal);
-
-			for (const batch of batches) {
-				const { data: stillRun } = await admin
-					.from('idea_engine_runs')
-					.select('status')
-					.eq('id', runId)
-					.single();
-				if (stillRun?.status === 'cancelled') return;
-
-				const { items, timing } = await generateChannelBatch({
-					context,
-					channel,
-					itemCount: batch.count,
-					seriesPositionStart: batch.positionStart,
-					seriesTotalForChannel: channelTotal,
-					runId,
-				});
-				batchTimings.push(timing);
-				allItems.push(...items);
-			}
+		for (const result of channelResults) {
+			batchTimings.push(...result.timings);
+			allItems.push(...result.items);
 		}
 
 		const finalizeStartedAt = createTimingMark();
-		await applyGeneratedItems({
+		await finalizeRunAfterGeneration({
 			runId,
 			userId: context.userId,
 			items: allItems,
-			markRunComplete: true,
+			channelErrors,
+			existingWarning: historyWarning,
 		});
 		const finalizeDurationMs = elapsedMs(finalizeStartedAt);
 
@@ -183,6 +251,8 @@ export async function generateSeries(runId: string): Promise<void> {
 			runId,
 			itemCount: allItems.length,
 			channels: channels.join(','),
+			channel_errors: channelErrors.map((e) => e.channel),
+			parallel_concurrency: CHANNEL_GENERATION_CONCURRENCY,
 			finalize_duration_ms: finalizeDurationMs,
 			total_duration_ms: elapsedMs(runStartedAt),
 		});

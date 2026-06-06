@@ -157,27 +157,23 @@ export const CAPS: Record<PlanId, PlanCaps> = {
  * Scale matches Pro — can be customised per-brand later.
  * 'free' is intentionally omitted; unknown plans fall through to 'starter' (all zeros).
  *
- * Maximum total items per plan (before quota shrinking):
- *   Creator : 2 + 3 + 1          = 6
- *   Growth  : 2 + 4 + 1 + 1 + 1  = 9
- *   Pro     : 3 + 5 + 1 + 1 + 1  = 11
- *   Scale   : 3 + 5 + 1 + 1 + 1  = 11
+ * Legacy plan defaults — prefer IDEA_ENGINE_SERIES_DEFAULTS + IDEA_ENGINE_RUN_MAX_* in
+ * src/lib/ideaEngineLimits.ts for Single Idea Engine counts.
  */
 export const IDEA_ENGINE_PLAN_DEFAULTS: Record<string, Record<string, number>> = {
 	starter:  { linkedin: 0, x: 0, blog: 0, instagram: 0, facebook: 0 },
-	creator:  { linkedin: 2, x: 3, blog: 1, instagram: 0, facebook: 0 },
-	growth:   { linkedin: 2, x: 4, blog: 1, instagram: 1, facebook: 1 },
-	pro:      { linkedin: 3, x: 5, blog: 1, instagram: 1, facebook: 1 },
-	scale:    { linkedin: 3, x: 5, blog: 1, instagram: 1, facebook: 1 },
+	creator:  { linkedin: 1, x: 1, blog: 1, instagram: 0, facebook: 0 },
+	growth:   { linkedin: 1, x: 1, blog: 1, instagram: 1, facebook: 1 },
+	pro:      { linkedin: 1, x: 1, blog: 1, instagram: 1, facebook: 1 },
+	scale:    { linkedin: 1, x: 1, blog: 1, instagram: 1, facebook: 1 },
 };
 
 /**
  * Legacy flat defaults — kept so existing external imports don't break.
- * New code should use IDEA_ENGINE_PLAN_DEFAULTS.
- * Values reflect the creator-tier baseline (the lowest paid tier).
+ * New code should use ideaEngineLimits.ts (IDEA_ENGINE_SERIES_DEFAULTS).
  */
 export const IDEA_ENGINE_DEFAULTS: Record<string, number> = {
-	linkedin: 2,
+	linkedin: 1,
 	x: 3,
 	blog: 1,
 	instagram: 1,

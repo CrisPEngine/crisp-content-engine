@@ -66,6 +66,6 @@ describe('loadRunContextFromDb', () => {
 
 		expect(context.previousContentJson).toEqual([]);
 		expect(context.historyWarning).toBe(IDEA_ENGINE_HISTORY_WARNING);
-		expect(context.requestedCounts.LinkedIn).toBeGreaterThan(0);
+		expect(context.requestedCounts.LinkedIn).toBe(1);
 	});
 });
