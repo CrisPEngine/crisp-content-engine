@@ -1,8 +1,8 @@
 import 'server-only';
 
-import { completeStructuredJson, LlmError, type LlmMessage } from '@/lib/llm';
+import { completeWithRole } from '@/lib/ai';
+import { LlmError, type LlmMessage } from '@/lib/llm';
 import {
-	resolveIdeaEngineLlmModel,
 	resolveIdeaEngineMaxTokens,
 	resolveIdeaEngineOpenAiTimeoutMs,
 	resolveIdeaEngineTemperature,
@@ -65,12 +65,13 @@ export async function completeIdeaEngineItemsWithRepair(
 			}
 
 			const openAiStartedAt = Date.now();
-			const result = await completeStructuredJson<{ items: IdeaEngineItem[] }>({
-				model: resolveIdeaEngineLlmModel(),
+			const result = await completeWithRole<{ items: IdeaEngineItem[] }>('WRITING', {
 				messages: attemptMessages,
 				temperature: resolveIdeaEngineTemperature(),
 				maxTokens: resolveIdeaEngineMaxTokens(),
 				timeoutMs: resolveIdeaEngineOpenAiTimeoutMs(),
+				feature: 'idea_engine',
+				requestId: options?.runId,
 			});
 			openaiDurationMs += Date.now() - openAiStartedAt;
 

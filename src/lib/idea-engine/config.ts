@@ -3,7 +3,7 @@ import 'server-only';
 import { resolveModelForRole } from '@/lib/ai/roles';
 
 export function resolveIdeaEngineLlmModel(): string {
-	return process.env.IDEA_ENGINE_LLM_MODEL || resolveModelForRole('WRITING');
+	return resolveModelForRole('WRITING');
 }
 
 export function resolveIdeaEngineTemperature(): number {

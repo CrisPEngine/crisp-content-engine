@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { getLinkedInConnectionByBrand, publishToLinkedIn } from '@/lib/linkedin/publish';
-import type { ArticlePublishRequest, ArticlePublishResult, ArticlePublisher } from './types';
+import type { ArticlePublishResult, ArticlePublisher } from './types';
 
 function isConnectionError(value: unknown): value is { error: string } {
 	return Boolean(value && typeof value === 'object' && 'error' in value);

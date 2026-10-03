@@ -2,10 +2,26 @@
 
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Loader2, Brain, Map, Layers } from 'lucide-react';
+import { Loader2, Brain, Map, Layers, Activity } from 'lucide-react';
 
 type BrandProfile = { id: string; name: string };
-type Tab = 'brain' | 'strategy' | 'themes';
+type Tab = 'brain' | 'strategy' | 'themes' | 'diagnostics';
+type DiagnosticRole = {
+	role: string;
+	provider: string;
+	preferredModel: string;
+	fallbacks: string[];
+};
+type DiagnosticInvocation = {
+	role: string;
+	provider: string;
+	model: string;
+	fallback_used: boolean;
+	error_code: string | null;
+	duration_ms: number | null;
+	ok: boolean;
+	created_at: string;
+};
 type IntelligencePayload = {
 	brain?: { identity?: unknown; voice?: unknown; guardrails?: unknown };
 	strategy?: {
@@ -49,6 +65,33 @@ function IntelligencePageInner() {
 	const [voice, setVoice] = useState('{\n  "tone": "",\n  "formality": ""\n}');
 	const [guardrails, setGuardrails] = useState('{\n  "phrasesToAvoid": [],\n  "promotionalIntensity": "low"\n}');
 	const [strategyJson, setStrategyJson] = useState('{\n  "objectives": [],\n  "keyMessages": [],\n  "contentPillars": []\n}');
+	const [diagnostics, setDiagnostics] = useState<{ roles: DiagnosticRole[]; recentInvocations: DiagnosticInvocation[] } | null>(null);
+
+	useEffect(() => {
+		if (tab !== 'diagnostics') return;
+		let cancelled = false;
+		fetch('/api/intelligence/diagnostics', { cache: 'no-store' })
+			.then(async (res) => {
+				const data = (await res.json()) as {
+					roles?: DiagnosticRole[];
+					recentInvocations?: DiagnosticInvocation[];
+					error?: string;
+				};
+				if (!res.ok) throw new Error(data.error || 'Diagnostics unavailable');
+				if (!cancelled) {
+					setDiagnostics({
+						roles: data.roles ?? [],
+						recentInvocations: data.recentInvocations ?? [],
+					});
+				}
+			})
+			.catch((err: unknown) => {
+				if (!cancelled) setError(err instanceof Error ? err.message : 'Diagnostics unavailable');
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [tab]);
 	const [themeTitle, setThemeTitle] = useState('');
 	const [themeObjective, setThemeObjective] = useState('');
 	const [coreIdea, setCoreIdea] = useState('');
@@ -233,6 +276,7 @@ function IntelligencePageInner() {
 						['brain', 'Brand Brain', Brain],
 						['strategy', 'Strategy', Map],
 						['themes', 'Themes', Layers],
+						['diagnostics', 'Diagnostics', Activity],
 					] as const
 				).map(([id, label, Icon]) => (
 					<button
@@ -290,6 +334,64 @@ function IntelligencePageInner() {
 								<div className="text-sm text-text-dim">{theme.objective}</div>
 							</div>
 						))}
+					</div>
+				</div>
+			)}
+
+			{tab === 'diagnostics' && (
+				<div className="space-y-4">
+					<div className="card p-4 overflow-x-auto">
+						<table className="w-full text-sm">
+							<thead>
+								<tr className="text-left text-text-dim">
+									<th className="py-2 pr-4">Role</th>
+									<th className="py-2 pr-4">Provider</th>
+									<th className="py-2 pr-4">Preferred model</th>
+									<th className="py-2">Fallbacks</th>
+								</tr>
+							</thead>
+							<tbody>
+								{(diagnostics?.roles || []).map((role) => (
+									<tr key={role.role} className="border-t border-edge/40">
+										<td className="py-2 pr-4">{role.role}</td>
+										<td className="py-2 pr-4">{role.provider}</td>
+										<td className="py-2 pr-4 font-mono text-xs">{role.preferredModel}</td>
+										<td className="py-2 font-mono text-xs">{role.fallbacks.join(', ') || '—'}</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					</div>
+					<div className="card p-4 overflow-x-auto">
+						<div className="text-sm font-medium mb-2">Latest invocations</div>
+						{(diagnostics?.recentInvocations || []).length === 0 ? (
+							<p className="text-sm text-text-dim">No AI usage logs yet.</p>
+						) : (
+							<table className="w-full text-sm">
+								<thead>
+									<tr className="text-left text-text-dim">
+										<th className="py-2 pr-4">When</th>
+										<th className="py-2 pr-4">Role</th>
+										<th className="py-2 pr-4">Model</th>
+										<th className="py-2 pr-4">Fallback</th>
+										<th className="py-2 pr-4">Latency</th>
+										<th className="py-2">Result</th>
+									</tr>
+								</thead>
+								<tbody>
+									{diagnostics?.recentInvocations.map((row) => (
+										<tr key={`${row.created_at}-${row.role}-${row.model}`} className="border-t border-edge/40">
+											<td className="py-2 pr-4">{new Date(row.created_at).toLocaleString()}</td>
+											<td className="py-2 pr-4">{row.role}</td>
+											<td className="py-2 pr-4 font-mono text-xs">{row.model}</td>
+											<td className="py-2 pr-4">{row.fallback_used ? row.error_code || 'yes' : 'no'}</td>
+											<td className="py-2 pr-4">{row.duration_ms ?? '—'} ms</td>
+											<td className="py-2">{row.ok ? 'success' : row.error_code || 'failed'}</td>
+										</tr>
+									))}
+								</tbody>
+							</table>
+						)}
 					</div>
 				</div>
 			)}

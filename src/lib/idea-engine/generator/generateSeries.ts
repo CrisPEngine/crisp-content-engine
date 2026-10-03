@@ -298,9 +298,9 @@ async function runChannelGeneration(
 	} catch (error) {
 		const message =
 			error instanceof IdeaEngineError
-				? error.message
+				? `${error.code}: ${error.message}`
 				: error instanceof LlmError
-					? error.message
+					? `${error.code}: ${error.message}`
 					: error instanceof Error
 						? error.message
 						: IDEA_ENGINE_GENERATION_FAILED_MESSAGE;

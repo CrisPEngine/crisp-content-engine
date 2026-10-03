@@ -1,8 +1,18 @@
 /**
  * Central model-role catalog.
- * Application code should request a role, not a literal model name.
- * Override any role with AI_MODEL_<ROLE> (e.g. AI_MODEL_SIDECAR=gpt-4o).
+ * Application code requests a role. This file resolves provider, model, and reasoning effort.
+ *
+ * Precedence:
+ * 1. AI_MODEL_<ROLE> — explicit registry override
+ * 2. Catalog default (GPT-6 family)
+ * 3. Legacy IDEA_ENGINE_LLM_MODEL / SIDECAR_LLM_MODEL only when AI_LEGACY_MODEL_OVERRIDES=true
+ *
+ * Production still has IDEA_ENGINE_LLM_MODEL=gpt-4o and SIDECAR_LLM_MODEL=gpt-4o-mini.
+ * Those values are ignored unless the migration flag is set, so they cannot silently
+ * replace the registry after this catalog is deployed.
  */
+
+import type { ReasoningEffort } from '@/lib/llm/modelAdapter';
 
 export const MODEL_ROLES = [
 	'FAST',
@@ -13,102 +23,126 @@ export const MODEL_ROLES = [
 	'RESEARCH',
 	'REVIEW',
 	'SIDECAR',
+	'DEEP_STRATEGY',
 ] as const;
 
 export type ModelRole = (typeof MODEL_ROLES)[number];
 
 export type ModelRoleConfig = {
 	role: ModelRole;
-	/** Preferred model. Never read this from feature code — use resolveModelForRole. */
+	provider: 'openai';
 	preferred: string;
 	fallbacks: string[];
+	reasoningEffort: ReasoningEffort;
+	/** Used only by the chat-completions adapter. GPT-6 requests omit temperature. */
 	temperature: number;
 	maxTokens: number;
 	timeoutMs: number;
-	/** Reasoning-style models often reject custom temperature. */
-	omitTemperature: boolean;
 	description: string;
 };
 
-const GPT_5_6 = 'gpt-5.6';
-const GPT_5 = 'gpt-5';
-const GPT_4O = 'gpt-4o';
-const GPT_4O_MINI = 'gpt-4o-mini';
+const LUNA = 'gpt-6-luna';
+const SOL = 'gpt-6.1-sol';
+const ASTRA = 'gpt-6-astra';
 
-const ROLE_DEFAULTS: Record<ModelRole, Omit<ModelRoleConfig, 'role'>> = {
+const ROLE_DEFAULTS: Record<ModelRole, Omit<ModelRoleConfig, 'role' | 'provider'>> = {
 	FAST: {
-		preferred: GPT_4O_MINI,
-		fallbacks: [GPT_4O],
-		temperature: 0.2,
+		preferred: LUNA,
+		fallbacks: [],
+		reasoningEffort: 'none',
+		temperature: 0,
 		maxTokens: 1024,
 		timeoutMs: 30_000,
-		omitTemperature: false,
-		description: 'Cheap/low-latency tasks: tagging, routing, short transforms',
+		description: 'High-volume tagging, routing, and short transforms',
 	},
 	EXTRACTION: {
-		preferred: GPT_4O_MINI,
-		fallbacks: [GPT_4O],
+		preferred: LUNA,
+		fallbacks: [],
+		reasoningEffort: 'none',
 		temperature: 0,
 		maxTokens: 2048,
 		timeoutMs: 45_000,
-		omitTemperature: false,
 		description: 'Structured extraction from existing text',
 	},
 	CLASSIFICATION: {
-		preferred: GPT_4O_MINI,
-		fallbacks: [GPT_4O],
+		preferred: LUNA,
+		fallbacks: [],
+		reasoningEffort: 'none',
 		temperature: 0,
 		maxTokens: 1024,
 		timeoutMs: 30_000,
-		omitTemperature: false,
-		description: 'Labels, routing, experiment variable detection',
+		description: 'Labels, routing, and experiment variable detection',
 	},
 	WRITING: {
-		preferred: GPT_5_6,
-		fallbacks: [GPT_5, GPT_4O],
+		preferred: SOL,
+		fallbacks: [LUNA],
+		reasoningEffort: 'low',
 		temperature: 0.7,
 		maxTokens: 4096,
 		timeoutMs: 90_000,
-		omitTemperature: true,
-		description: 'Long-form and channel-native drafts',
+		description: 'Channel-native drafts',
 	},
 	STRATEGY: {
-		preferred: GPT_5_6,
-		fallbacks: [GPT_5, GPT_4O],
+		preferred: SOL,
+		fallbacks: [LUNA],
+		reasoningEffort: 'low',
 		temperature: 0.4,
 		maxTokens: 4096,
 		timeoutMs: 90_000,
-		omitTemperature: true,
-		description: 'Strategy, theme plans, campaign design',
+		description: 'Strategy, theme plans, and campaign design',
 	},
 	RESEARCH: {
-		preferred: GPT_5,
-		fallbacks: [GPT_4O],
+		preferred: SOL,
+		fallbacks: [LUNA],
+		reasoningEffort: 'medium',
 		temperature: 0.3,
 		maxTokens: 4096,
 		timeoutMs: 90_000,
-		omitTemperature: true,
 		description: 'Research synthesis and evidence packing',
 	},
 	REVIEW: {
-		preferred: GPT_5,
-		fallbacks: [GPT_4O],
+		preferred: SOL,
+		fallbacks: [LUNA],
+		reasoningEffort: 'low',
 		temperature: 0.2,
 		maxTokens: 3072,
 		timeoutMs: 60_000,
-		omitTemperature: true,
 		description: 'Brand compliance and prose review',
 	},
 	SIDECAR: {
-		preferred: GPT_5_6,
-		fallbacks: [GPT_5, GPT_4O],
+		preferred: LUNA,
+		fallbacks: [SOL],
+		reasoningEffort: 'low',
 		temperature: 0.7,
 		maxTokens: 2048,
 		timeoutMs: 60_000,
-		omitTemperature: true,
-		description: 'Conversational brand/content intelligence for Sidecar',
+		description: 'Conversational brand and content help',
+	},
+	DEEP_STRATEGY: {
+		preferred: ASTRA,
+		fallbacks: [SOL],
+		reasoningEffort: 'high',
+		temperature: 0.3,
+		maxTokens: 8192,
+		timeoutMs: 120_000,
+		description: 'Escalated strategy. Not used for ordinary generation.',
 	},
 };
+
+const warnedLegacy = new Set<string>();
+
+export function legacyModelOverridesEnabled(): boolean {
+	return process.env.AI_LEGACY_MODEL_OVERRIDES === 'true';
+}
+
+function warnIgnoredLegacy(name: string): void {
+	const value = process.env[name]?.trim();
+	if (!value || legacyModelOverridesEnabled() || warnedLegacy.has(name)) return;
+	warnedLegacy.add(name);
+	console.warn(
+		`[AI registry] Ignoring legacy ${name}. The central role catalog is authoritative. Set AI_MODEL_<ROLE> to override a role, or AI_LEGACY_MODEL_OVERRIDES=true during migration.`,
+	);
+}
 
 function envKeyForRole(role: ModelRole): string {
 	return `AI_MODEL_${role}`;
@@ -122,34 +156,39 @@ function parseCsv(value: string | undefined): string[] {
 		.filter(Boolean);
 }
 
+function legacyModelForRole(role: ModelRole): string | undefined {
+	if (!legacyModelOverridesEnabled()) {
+		if (role === 'WRITING') warnIgnoredLegacy('IDEA_ENGINE_LLM_MODEL');
+		if (role === 'SIDECAR') {
+			warnIgnoredLegacy('SIDECAR_LLM_MODEL');
+			warnIgnoredLegacy('SIDECAR_OPENAI_MODEL');
+		}
+		return undefined;
+	}
+	if (role === 'WRITING') return process.env.IDEA_ENGINE_LLM_MODEL?.trim() || undefined;
+	if (role === 'SIDECAR') {
+		return process.env.SIDECAR_LLM_MODEL?.trim() || process.env.SIDECAR_OPENAI_MODEL?.trim() || undefined;
+	}
+	return undefined;
+}
+
 export function getRoleConfig(role: ModelRole): ModelRoleConfig {
 	const defaults = ROLE_DEFAULTS[role];
-	const sidecarLegacy = process.env.SIDECAR_LLM_MODEL?.trim() || process.env.SIDECAR_OPENAI_MODEL?.trim();
-	const sidecarOverride = process.env.AI_MODEL_SIDECAR?.trim();
-	const writingOverride = process.env.AI_MODEL_WRITING?.trim() || process.env.IDEA_ENGINE_LLM_MODEL?.trim();
-
-	const preferred =
-		process.env[envKeyForRole(role)]?.trim() ||
-		(role === 'SIDECAR'
-			? sidecarOverride || (sidecarLegacy && sidecarLegacy !== 'gpt-4o-mini' ? sidecarLegacy : undefined)
-			: undefined) ||
-		(role === 'WRITING' ? writingOverride : undefined) ||
-		defaults.preferred;
-
+	const explicit = process.env[envKeyForRole(role)]?.trim();
+	const preferred = explicit || legacyModelForRole(role) || defaults.preferred;
 	const extraFallbacks = parseCsv(process.env[`AI_MODEL_${role}_FALLBACKS`]);
-	const fallbacks = [
-		...extraFallbacks,
-		...defaults.fallbacks.filter((model) => model !== preferred),
-	].filter((model, index, all) => all.indexOf(model) === index && model !== preferred);
+	const fallbacks = [...extraFallbacks, ...defaults.fallbacks]
+		.filter((model, index, all) => all.indexOf(model) === index && model !== preferred);
 
 	return {
 		role,
+		provider: 'openai',
 		preferred,
 		fallbacks,
+		reasoningEffort: defaults.reasoningEffort,
 		temperature: defaults.temperature,
 		maxTokens: defaults.maxTokens,
 		timeoutMs: defaults.timeoutMs,
-		omitTemperature: defaults.omitTemperature || isReasoningFamily(preferred),
 		description: defaults.description,
 	};
 }
@@ -163,10 +202,12 @@ export function resolveModelCandidates(role: ModelRole): string[] {
 	return [config.preferred, ...config.fallbacks];
 }
 
+/** @deprecated GPT-6 routing lives in resolveModelRequestProfile. Kept for older call sites. */
 export function isReasoningFamily(model: string): boolean {
-	return /gpt-5|o1|o3|o4/i.test(model);
+	return /gpt-6|gpt-5|o1|o3|o4/i.test(model);
 }
 
+/** @deprecated Use resolveModelRequestProfile().tokenField. */
 export function usesMaxCompletionTokens(model: string): boolean {
-	return isReasoningFamily(model);
+	return /gpt-5|o1|o3|o4/i.test(model);
 }

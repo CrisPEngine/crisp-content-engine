@@ -176,8 +176,6 @@ export async function finalizeRunAfterGeneration(options: {
 	channelErrors: Array<{ channel: string; message: string }>;
 	existingWarning?: string | null;
 }): Promise<void> {
-	const admin = getSupabaseService();
-
 	if (options.items.length === 0) {
 		const detail =
 			options.channelErrors.map((e) => `${e.channel}: ${e.message}`).join('; ') ||

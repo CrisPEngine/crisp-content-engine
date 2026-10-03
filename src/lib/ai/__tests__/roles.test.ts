@@ -1,45 +1,57 @@
-import { describe, expect, it } from 'vitest';
-import { MODEL_ROLES, getRoleConfig, resolveModelCandidates, resolveModelForRole } from '../roles';
+import { afterEach, describe, expect, it } from 'vitest';
+import { MODEL_ROLES, getRoleConfig, legacyModelOverridesEnabled, resolveModelCandidates, resolveModelForRole } from '../roles';
+
+const ENV_KEYS = [
+	'AI_MODEL_SIDECAR',
+	'AI_MODEL_WRITING',
+	'SIDECAR_LLM_MODEL',
+	'IDEA_ENGINE_LLM_MODEL',
+	'AI_LEGACY_MODEL_OVERRIDES',
+] as const;
+
+afterEach(() => {
+	for (const key of ENV_KEYS) delete process.env[key];
+});
 
 describe('AI model roles', () => {
-	it('defines every required role without exposing literal models to callers via the role name', () => {
-		expect(MODEL_ROLES).toEqual([
-			'FAST',
-			'EXTRACTION',
-			'CLASSIFICATION',
-			'WRITING',
-			'STRATEGY',
-			'RESEARCH',
-			'REVIEW',
-			'SIDECAR',
-		]);
+	it('assigns the GPT-6 catalog and keeps Astra off ordinary generation', () => {
+		expect(MODEL_ROLES).toContain('DEEP_STRATEGY');
+		expect(getRoleConfig('FAST').preferred).toBe('gpt-6-luna');
+		expect(getRoleConfig('EXTRACTION').preferred).toBe('gpt-6-luna');
+		expect(getRoleConfig('CLASSIFICATION').preferred).toBe('gpt-6-luna');
+		expect(getRoleConfig('SIDECAR').preferred).toBe('gpt-6-luna');
+		expect(getRoleConfig('WRITING').preferred).toBe('gpt-6.1-sol');
+		expect(getRoleConfig('STRATEGY').preferred).toBe('gpt-6.1-sol');
+		expect(getRoleConfig('RESEARCH').preferred).toBe('gpt-6.1-sol');
+		expect(getRoleConfig('REVIEW').preferred).toBe('gpt-6.1-sol');
+		expect(getRoleConfig('DEEP_STRATEGY').preferred).toBe('gpt-6-astra');
+		expect(getRoleConfig('STRATEGY').preferred).not.toBe('gpt-6-astra');
+		expect(getRoleConfig('WRITING').fallbacks).not.toContain('gpt-4o');
+		expect(getRoleConfig('WRITING').fallbacks).not.toContain('gpt-5.6');
 	});
 
-	it('keeps FAST cheaper than WRITING/SIDECAR', () => {
-		expect(getRoleConfig('FAST').preferred).toContain('mini');
-		expect(getRoleConfig('SIDECAR').preferred).not.toBe('gpt-4o-mini');
-		expect(resolveModelCandidates('SIDECAR')[0]).toBe(resolveModelForRole('SIDECAR'));
-		expect(resolveModelCandidates('WRITING').length).toBeGreaterThan(1);
+	it('lets AI_MODEL_<ROLE> override the catalog', () => {
+		process.env.AI_MODEL_WRITING = 'gpt-test-writing';
+		expect(resolveModelForRole('WRITING')).toBe('gpt-test-writing');
+		expect(resolveModelCandidates('WRITING')[0]).toBe('gpt-test-writing');
 	});
 
-	it('honours AI_MODEL_SIDECAR and explicit non-mini SIDECAR_LLM_MODEL', () => {
-		process.env.SIDECAR_LLM_MODEL = 'gpt-4o';
-		expect(resolveModelForRole('SIDECAR')).toBe('gpt-4o');
-		delete process.env.SIDECAR_LLM_MODEL;
-		process.env.AI_MODEL_SIDECAR = 'gpt-test-sidecar';
-		expect(resolveModelForRole('SIDECAR')).toBe('gpt-test-sidecar');
-		delete process.env.AI_MODEL_SIDECAR;
-	});
-
-	it('ignores the legacy gpt-4o-mini Sidecar default so the capable writing model is used', () => {
-		process.env.SIDECAR_LLM_MODEL = 'gpt-4o-mini';
-		expect(resolveModelForRole('SIDECAR')).not.toBe('gpt-4o-mini');
-		delete process.env.SIDECAR_LLM_MODEL;
-	});
-
-	it('honours IDEA_ENGINE_LLM_MODEL for WRITING', () => {
+	it('ignores legacy production model env unless the migration flag is set', () => {
 		process.env.IDEA_ENGINE_LLM_MODEL = 'gpt-4o';
+		process.env.SIDECAR_LLM_MODEL = 'gpt-4o-mini';
+		expect(legacyModelOverridesEnabled()).toBe(false);
+		expect(resolveModelForRole('WRITING')).toBe('gpt-6.1-sol');
+		expect(resolveModelForRole('SIDECAR')).toBe('gpt-6-luna');
+
+		process.env.AI_LEGACY_MODEL_OVERRIDES = 'true';
 		expect(resolveModelForRole('WRITING')).toBe('gpt-4o');
-		delete process.env.IDEA_ENGINE_LLM_MODEL;
+		expect(resolveModelForRole('SIDECAR')).toBe('gpt-4o-mini');
+	});
+
+	it('keeps an explicit registry override ahead of the legacy flag', () => {
+		process.env.AI_LEGACY_MODEL_OVERRIDES = 'true';
+		process.env.IDEA_ENGINE_LLM_MODEL = 'gpt-4o';
+		process.env.AI_MODEL_WRITING = 'gpt-6.1-sol';
+		expect(resolveModelForRole('WRITING')).toBe('gpt-6.1-sol');
 	});
 });

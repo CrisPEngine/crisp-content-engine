@@ -1,6 +1,5 @@
 import 'server-only';
 
-import { IDEA_ENGINE_GENERATION_FAILED_MESSAGE } from '../airtable/contentQueueQuery';
 import { logIdeaEngineLifecycle } from '../observability/lifecycle';
 import { markRunFailed } from './applyGeneratedItems';
 import { IDEA_ENGINE_GENERATION_STAGES } from './generationStage';
@@ -8,6 +7,9 @@ import { getSupabaseService } from '@/lib/supabaseService';
 
 /** Slightly above Vercel's 300s function limit so stale runs are marked failed after platform timeout. */
 export const STALE_GENERATING_MS = 6 * 60 * 1000;
+
+export const STALE_GENERATING_ERROR =
+	'Generation did not finish within 6 minutes and no worker result was persisted.';
 
 type GeneratingRun = {
 	id: string;
@@ -39,6 +41,6 @@ export async function markStaleGeneratingRunIfNeeded(
 		.update({ generation_stage: IDEA_ENGINE_GENERATION_STAGES.failed })
 		.eq('id', run.id);
 
-	await markRunFailed(run.id, IDEA_ENGINE_GENERATION_FAILED_MESSAGE);
-	return IDEA_ENGINE_GENERATION_FAILED_MESSAGE;
+	await markRunFailed(run.id, STALE_GENERATING_ERROR);
+	return STALE_GENERATING_ERROR;
 }

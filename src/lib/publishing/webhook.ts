@@ -1,4 +1,4 @@
-import type { ArticlePublishRequest, ArticlePublishResult, ArticlePublisher } from './types';
+import type { ArticlePublishResult, ArticlePublisher } from './types';
 
 function allowedWebhookUrl(url: string): boolean {
 	const allow = (process.env.ARTICLE_PUBLISH_WEBHOOK_ALLOWLIST || process.env.ARTICLE_PUBLISH_WEBHOOK_URL || '')

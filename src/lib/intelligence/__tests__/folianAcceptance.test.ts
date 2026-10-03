@@ -205,7 +205,7 @@ describe('Folian-style intelligence acceptance', () => {
 		expect(result.memory.hook).toBeTruthy();
 		expect(result.modelRole).toBe('WRITING');
 		expect(resolveModelForRole('SIDECAR')).not.toBe('gpt-4o-mini');
-		expect(resolveModelForRole('FAST')).toContain('mini');
+		expect(resolveModelForRole('FAST')).toBe('gpt-6-luna');
 
 		const plan = await dispatchIntelligenceAction(FOLIAN_USER_ID, 'generate_theme_plan', {
 			themeId: theme.id,

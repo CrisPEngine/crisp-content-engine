@@ -20,6 +20,8 @@ export type LlmMessage = {
 	content: string;
 };
 
+export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export type StructuredJsonRequest = {
 	model: string;
 	messages: LlmMessage[];
@@ -29,6 +31,8 @@ export type StructuredJsonRequest = {
 	maxTokens?: number;
 	/** Hard timeout for the provider HTTP call (ms). */
 	timeoutMs?: number;
+	/** Applied by the model adapter when the endpoint supports it. */
+	reasoningEffort?: ReasoningEffort;
 };
 
 export type StructuredJsonResult<T> = {

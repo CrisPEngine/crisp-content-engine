@@ -8,6 +8,8 @@ export type AiInvocationLog = {
 	provider: string;
 	model: string;
 	fallbackUsed: boolean;
+	fallbackReason?: string;
+	requestedModel?: string;
 	promptTokens?: number;
 	completionTokens?: number;
 	durationMs: number;
@@ -22,8 +24,10 @@ export function logAiInvocation(entry: AiInvocationLog): void {
 		request_id: entry.requestId,
 		role: entry.role,
 		provider: entry.provider,
+		requested_model: entry.requestedModel,
 		model: entry.model,
 		fallback_used: entry.fallbackUsed,
+		fallback_reason: entry.fallbackReason,
 		prompt_tokens: entry.promptTokens,
 		completion_tokens: entry.completionTokens,
 		duration_ms: entry.durationMs,
@@ -56,7 +60,9 @@ async function persistUsage(entry: AiInvocationLog): Promise<void> {
 			completion_tokens: entry.completionTokens ?? null,
 			duration_ms: entry.durationMs,
 			ok: entry.ok,
-			error_code: entry.errorCode ?? null,
+			error_code: entry.ok && entry.fallbackReason
+				? `fallback:${entry.fallbackReason}`
+				: entry.errorCode ?? null,
 			feature: entry.feature ?? null,
 		});
 	} catch {

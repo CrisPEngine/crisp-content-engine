@@ -19,8 +19,7 @@ vi.mock('@/lib/supabaseService', () => ({
 }));
 
 import { markRunFailed } from '../persistence/applyGeneratedItems';
-import { IDEA_ENGINE_GENERATION_FAILED_MESSAGE } from '../airtable/contentQueueQuery';
-import { markStaleGeneratingRunIfNeeded } from '../persistence/staleRunGuard';
+import { markStaleGeneratingRunIfNeeded, STALE_GENERATING_ERROR } from '../persistence/staleRunGuard';
 
 describe('markStaleGeneratingRunIfNeeded', () => {
 	beforeEach(() => {
@@ -43,8 +42,8 @@ describe('markStaleGeneratingRunIfNeeded', () => {
 			status: 'generating',
 			created_at: new Date(Date.now() - 7 * 60 * 1000).toISOString(),
 		});
-		expect(result).toBe(IDEA_ENGINE_GENERATION_FAILED_MESSAGE);
-		expect(markRunFailed).toHaveBeenCalledWith('run-1', IDEA_ENGINE_GENERATION_FAILED_MESSAGE);
+		expect(result).toBe(STALE_GENERATING_ERROR);
+		expect(markRunFailed).toHaveBeenCalledWith('run-1', STALE_GENERATING_ERROR);
 	});
 
 	it('uses generation_started_at for stale detection when present', async () => {
@@ -54,7 +53,7 @@ describe('markStaleGeneratingRunIfNeeded', () => {
 			created_at: new Date().toISOString(),
 			generation_started_at: new Date(Date.now() - 7 * 60 * 1000).toISOString(),
 		});
-		expect(result).toBe(IDEA_ENGINE_GENERATION_FAILED_MESSAGE);
+		expect(result).toBe(STALE_GENERATING_ERROR);
 	});
 
 	it('ignores completed runs', async () => {

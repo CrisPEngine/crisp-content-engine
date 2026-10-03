@@ -1,13 +1,52 @@
 import 'server-only';
 
+import { resolveModelRequestProfile } from '../modelAdapter';
 import type { LlmAuthContext, LlmProvider, StructuredJsonRequest, StructuredJsonResult } from '../types';
 import { LlmError } from '../types';
 
+type OpenAIErrorBody = { message?: string; type?: string; code?: string };
+
 type OpenAIChatResponse = {
+	model?: string;
 	choices?: Array<{ message?: { content?: string } }>;
 	usage?: { prompt_tokens?: number; completion_tokens?: number };
-	error?: { message?: string; type?: string };
+	error?: OpenAIErrorBody;
 };
+
+type OpenAIResponsesPayload = {
+	model?: string;
+	output_text?: string;
+	status?: string;
+	incomplete_details?: { reason?: string };
+	output?: Array<{
+		type?: string;
+		content?: Array<{ type?: string; text?: string }>;
+	}>;
+	usage?: { input_tokens?: number; output_tokens?: number };
+	error?: OpenAIErrorBody;
+};
+
+function billingFailure(message: string): boolean {
+	const lower = message.toLowerCase();
+	return (
+		lower.includes('no credits') ||
+		lower.includes('insufficient_quota') ||
+		lower.includes('exceeded your current quota') ||
+		lower.includes('billing')
+	);
+}
+
+function responseText(payload: OpenAIResponsesPayload): string {
+	if (payload.output_text?.trim()) return payload.output_text;
+	const chunks: string[] = [];
+	for (const item of payload.output ?? []) {
+		if (item.type !== 'message') continue;
+		for (const part of item.content ?? []) {
+			if (part.text) chunks.push(part.text);
+		}
+	}
+	return chunks.join('').trim();
+}
 
 export const openaiProvider: LlmProvider = {
 	id: 'openai',
@@ -24,26 +63,34 @@ export const openaiProvider: LlmProvider = {
 		}
 
 		const timeoutMs = request.timeoutMs ?? 90_000;
-		const reasoningFamily = /gpt-5|o1|o3|o4/i.test(request.model);
+		const profile = resolveModelRequestProfile(request.model, request.reasoningEffort);
 		const maxTokens = request.maxTokens ?? 2048;
-		const body: Record<string, unknown> = {
-			model: request.model,
-			messages: request.messages,
-			response_format: { type: 'json_object' },
-		};
-		if (reasoningFamily) {
-			body.max_completion_tokens = maxTokens;
-			if (typeof request.temperature === 'number') {
-				body.temperature = request.temperature;
+		const endpoint = profile.api === 'responses'
+			? 'https://api.openai.com/v1/responses'
+			: 'https://api.openai.com/v1/chat/completions';
+		const input = profile.api === 'responses' && !request.messages.some((message) => /\bjson\b/i.test(message.content))
+			? [...request.messages, { role: 'system' as const, content: 'Respond with json.' }]
+			: request.messages;
+		const body: Record<string, unknown> = profile.api === 'responses'
+			? {
+				model: request.model,
+				input,
+				max_output_tokens: maxTokens,
+				store: false,
+				reasoning: { effort: profile.reasoningEffort },
+				text: { format: { type: 'json_object' } },
 			}
-		} else {
-			body.temperature = request.temperature ?? 0.7;
-			body.max_tokens = maxTokens;
-		}
+			: {
+				model: request.model,
+				messages: request.messages,
+				response_format: { type: 'json_object' },
+				[profile.tokenField]: maxTokens,
+				...(profile.sendTemperature ? { temperature: request.temperature ?? 0.7 } : {}),
+			};
 
 		let response: Response;
 		try {
-			response = await fetch('https://api.openai.com/v1/chat/completions', {
+			response = await fetch(endpoint, {
 				method: 'POST',
 				headers: {
 					Authorization: `Bearer ${auth.apiKey}`,
@@ -70,21 +117,23 @@ export const openaiProvider: LlmProvider = {
 			);
 		}
 
-		const payload = (await response.json()) as OpenAIChatResponse;
+		const payload = (await response.json()) as OpenAIChatResponse & OpenAIResponsesPayload;
 
 		if (!response.ok) {
 			const message = payload.error?.message || `OpenAI request failed (${response.status})`;
+			const billing = billingFailure(message) || payload.error?.code === 'insufficient_quota';
 			throw new LlmError(message, {
 				code: 'llm_provider_error',
 				provider: 'openai',
 				status: response.status,
-				retryable: response.status === 429 || response.status >= 500,
+				retryable: !billing && (response.status === 429 || response.status >= 500),
 			});
 		}
 
-		const content = payload.choices?.[0]?.message?.content;
+		const content = profile.api === 'responses' ? responseText(payload) : payload.choices?.[0]?.message?.content;
 		if (!content) {
-			throw new LlmError('OpenAI returned empty content', {
+			const reason = payload.incomplete_details?.reason;
+			throw new LlmError(reason ? `OpenAI returned empty content (${reason})` : 'OpenAI returned empty content', {
 				code: 'llm_empty_response',
 				provider: 'openai',
 			});
@@ -103,10 +152,10 @@ export const openaiProvider: LlmProvider = {
 		return {
 			data: parsed,
 			provider: 'openai',
-			model: request.model,
+			model: payload.model || request.model,
 			rawUsage: {
-				promptTokens: payload.usage?.prompt_tokens,
-				completionTokens: payload.usage?.completion_tokens,
+				promptTokens: payload.usage?.prompt_tokens ?? payload.usage?.input_tokens,
+				completionTokens: payload.usage?.completion_tokens ?? payload.usage?.output_tokens,
 			},
 		};
 	},
