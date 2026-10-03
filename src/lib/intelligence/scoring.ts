@@ -46,7 +46,9 @@ export function scoreDraft(input: {
 			: null;
 
 	const predictionNote =
-		comparableCount < 8
+		comparableCount === 0
+			? 'insufficient history for performance-informed optimisation'
+			: comparableCount < 8
 			? `Insufficient history (${comparableCount} comparable posts). No performance prediction is claimed.`
 			: learnings.length
 				? `Relative expectation only, based on ${comparableCount} comparable posts and ${learnings.length} observational learnings. Not a guarantee of impressions, clicks, or conversions.`

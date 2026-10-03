@@ -12,6 +12,7 @@ import {
 	resolveModelCandidates,
 	type ModelRole,
 } from './roles';
+import { estimateModelCostUsd } from './pricing';
 import { logAiInvocation } from './logging';
 
 export type CompleteWithRoleOptions = {
@@ -130,6 +131,12 @@ export async function completeWithRole<T>(
 					fallbackReason,
 					promptTokens: result.rawUsage?.promptTokens,
 					completionTokens: result.rawUsage?.completionTokens,
+					reasoningTokens: result.rawUsage?.reasoningTokens,
+					estimatedCostUsd: estimateModelCostUsd({
+						model: result.model,
+						inputTokens: result.rawUsage?.promptTokens,
+						outputTokens: result.rawUsage?.completionTokens,
+					}),
 					durationMs: Date.now() - startedAt,
 					ok: true,
 					userId: options.userId,

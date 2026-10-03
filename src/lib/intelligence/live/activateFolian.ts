@@ -11,6 +11,33 @@ import { readContentQueueField } from '@/lib/idea-engine/airtable/contentQueueQu
 import { createSupabaseIntelligenceStore } from '../supabaseStore';
 import { runContentIntelligencePipeline } from '../pipeline';
 import { confirmMemoryToContentQueue } from '../queueBridge';
+import { ensureFolianNativeBrand } from './ensureFolian';
+import { estimateModelCostUsd } from '@/lib/ai/pricing';
+import type { ContentMemoryRecord } from '../types';
+
+async function reuseAcceptanceDraft(admin: ReturnType<typeof getSupabaseService>, memory: ContentMemoryRecord) {
+	const { data: drafts, error } = await admin
+		.from('content_drafts')
+		.select('ai_version, reviewed_version, review_payload, brief_id')
+		.eq('memory_id', memory.id)
+		.order('created_at', { ascending: false })
+		.limit(1);
+	if (error || !drafts?.[0]) throw new Error(error?.message || 'Acceptance draft was not persisted');
+	const draft = drafts[0];
+	const { data: brief, error: briefError } = await admin
+		.from('native_content_briefs')
+		.select('id, payload')
+		.eq('id', draft.brief_id)
+		.maybeSingle();
+	if (briefError || !brief) throw new Error(briefError?.message || 'Acceptance brief was not persisted');
+	return {
+		brief: { id: String(brief.id), payload: brief.payload as Record<string, unknown> },
+		aiDraft: String(draft.ai_version || ''),
+		reviewedDraft: String(draft.reviewed_version || draft.ai_version || ''),
+		review: draft.review_payload,
+		memory,
+	};
+}
 
 export type ModelProbe = {
 	role: string;
@@ -28,22 +55,9 @@ export type ModelProbe = {
 	reasoningEffort?: ReasoningEffort;
 };
 
-function textField(fields: Record<string, unknown>, names: string[]): string | undefined {
-	for (const name of names) {
-		const value = fields[name];
-		if (typeof value === 'string' && value.trim()) return value.trim();
-		if (Array.isArray(value)) {
-			const joined = value.map((part) => (typeof part === 'string' ? part.trim() : '')).filter(Boolean).join('; ');
-			if (joined) return joined;
-		}
-	}
-	return undefined;
-}
-
 const GPT6_PROBE_TARGETS: Array<{ model: string; reasoningEffort: ReasoningEffort; maxTokens: number }> = [
 	{ model: 'gpt-6-luna', reasoningEffort: 'none', maxTokens: 128 },
 	{ model: 'gpt-6.1-sol', reasoningEffort: 'low', maxTokens: 512 },
-	{ model: 'gpt-6-astra', reasoningEffort: 'low', maxTokens: 512 },
 ];
 
 export async function probeConfiguredModels(): Promise<ModelProbe[]> {
@@ -148,15 +162,6 @@ export async function runIdeaEngineDiagnostic(userId: string, brandProfileId: st
 export async function activateFolianNativeJourney(options?: {
 	skipIdeaEngineDiagnostic?: boolean;
 }): Promise<Record<string, unknown>> {
-	const probes = await probeConfiguredModels();
-	const luna = probes.find((probe) => probe.requestedModel === 'gpt-6-luna');
-	const sol = probes.find((probe) => probe.requestedModel === 'gpt-6.1-sol');
-	if (!luna?.success || !sol?.success) {
-		throw new Error(
-			`GPT-6 probe failed. luna=${luna?.error || luna?.actualModel || 'missing'} sol=${sol?.error || sol?.actualModel || 'missing'}`,
-		);
-	}
-
 	const admin = getSupabaseService();
 	const { data: priorRun } = await admin
 		.from('idea_engine_runs')
@@ -167,81 +172,17 @@ export async function activateFolianNativeJourney(options?: {
 	const userId = process.env.SIDECAR_OWNER_USER_ID || priorRun?.user_id;
 	if (!userId) throw new Error('No user id available for Folian activation');
 
-	const brandTable = process.env.AIRTABLE_BRANDPROFILES_TABLE;
-	if (!brandTable) throw new Error('AIRTABLE_BRANDPROFILES_TABLE missing');
-	const brands = await listRecords({
-		table: brandTable,
-		filterByFormula: 'OR(FIND("Folian", {client_name}), FIND("folian", {client_name}))',
-		maxRecords: 10,
-		fields: ['client_name', 'audience', 'offers', 'voice_rules', 'value_props', 'brand_goals', 'content_rules', 'additional_info'],
-		returnFieldsByFieldId: false,
-		cache: false,
-		endpoint: '/internal/folian-activate',
-	});
-	const folian = brands.find((record) => {
-		const fields = record.fields || {};
-		const name = textField(fields, ['client_name', 'Client Name', 'brand_name']) || '';
-		return name.toLowerCase().includes('folian');
-	});
-	if (!folian) throw new Error('Folian brand profile was not found in Airtable');
-	const fields = folian.fields || {};
-	const name = textField(fields, ['client_name', 'Client Name']) || 'Folian';
-	const incomplete: string[] = [];
-	const positioning = textField(fields, ['value_props', 'positioning', 'brand_positioning']);
-	const audience = textField(fields, ['audience', 'target_audience', 'ideal_customer']);
-	const voice = textField(fields, ['voice_rules', 'brand_voice', 'tone_of_voice']);
-	const offer = textField(fields, ['offers', 'products', 'product']);
-	if (!positioning) incomplete.push('positioning');
-	if (!audience) incomplete.push('audience');
-	if (!voice) incomplete.push('voice');
-	if (!offer) incomplete.push('product');
-
 	const store = createSupabaseIntelligenceStore();
-	const brain = await store.upsertBrandBrain(userId, folian.id, {
-		identity: {
-			name,
-			description: textField(fields, ['description', 'about', 'brand_description']),
-			positioning,
-			productsServices: offer ? [offer] : [],
-			audiences: audience ? [audience] : [],
-		},
-		voice: { tone: voice },
-		guardrails: {
-			phrasesToAvoid: [],
-			styleRestrictions: incomplete.length ? [`Incomplete from Airtable: ${incomplete.join(', ')}`] : [],
-		},
-		knowledge: {
-			proofPoints: [],
-			referenceInformation: ['provenance: airtable_brand_profile', ...incomplete.map((field) => `incomplete: ${field}`)],
-		},
-	});
-
-	const existingStrategy = await store.getStrategyForBrand(userId, brain.id);
-	const strategy = await store.upsertStrategy(userId, {
-		id: existingStrategy?.id,
-		userId,
-		brandBrainId: brain.id,
-		airtableBrandId: folian.id,
-		status: 'active',
-		objectives: positioning ? [`Express this positioning: ${positioning}`] : ['Incomplete: no positioning field on the Airtable brand'],
-		audiences: audience ? [{ name: audience }] : [],
-		audienceProblems: [],
-		desiredOutcomes: [],
-		positioning,
-		keyMessages: positioning ? [positioning] : [],
-		proofPoints: [],
-		contentPillars: offer ? [offer] : [],
-		funnelStages: ['awareness'],
-		ctaStrategy: { provenance: 'imported_from_airtable_brand_profile', incomplete },
-		contentMix: { linkedin: 'primary' },
-		editorialThemes: [],
-	});
+	const native = await ensureFolianNativeBrand(store, userId);
+	const brain = await store.getBrandBrain(userId, native.airtableBrandId);
+	const strategy = await store.getStrategyForBrand(userId, native.brandId);
+	if (!brain || !strategy) throw new Error('Folian native brand was not persisted');
 
 	const queueTable = process.env.AIRTABLE_CONTENTQUEUE_TABLE;
 	if (!queueTable) throw new Error('AIRTABLE_CONTENTQUEUE_TABLE missing');
 	const history = await listRecords({
 		table: queueTable,
-		filterByFormula: `FIND("${folian.id}", ARRAYJOIN({brand_profile_id}))`,
+		filterByFormula: `FIND("${native.airtableBrandId}", ARRAYJOIN({brand_profile_id}))`,
 		maxRecords: 100,
 		fields: ['platform', 'status', 'hook', 'post_content', 'brand_profile_id', 'created_time'],
 		returnFieldsByFieldId: true,
@@ -274,29 +215,46 @@ export async function activateFolianNativeJourney(options?: {
 		ingested += 1;
 	}
 
-	const ideaEngine = options?.skipIdeaEngineDiagnostic ? null : await runIdeaEngineDiagnostic(userId, folian.id);
+	const ideaEngine = options?.skipIdeaEngineDiagnostic ? null : await runIdeaEngineDiagnostic(userId, native.airtableBrandId);
+	const historyNote = ingested === 0 ? 'insufficient history for performance-informed optimisation' : null;
+	const acceptanceIntent = 'Create the next Folian LinkedIn post.';
+	const pending = existing.find(
+		(row) => !row.airtableContentId && row.channel === 'linkedin' && Boolean(row.body) && row.sourceIdea === acceptanceIntent,
+	);
 
-	const generation = await runContentIntelligencePipeline(store, {
-		userId,
-		airtableBrandId: folian.id,
-		userIntent: 'Create the next Folian LinkedIn post.',
-		channel: 'linkedin',
-		contentType: 'founder_post',
-		allowThemeContinuation: true,
-	});
+	const generation = pending
+		? await reuseAcceptanceDraft(admin, pending)
+		: await runContentIntelligencePipeline(store, {
+			userId,
+			airtableBrandId: native.airtableBrandId,
+			userIntent: acceptanceIntent,
+			channel: 'linkedin',
+			contentType: 'founder_post',
+			allowThemeContinuation: true,
+		});
 
 	const queued = await confirmMemoryToContentQueue({
 		store,
 		userId,
 		memory: generation.memory,
-		clientName: name,
+		clientName: brain.identity.name,
 	});
 	const queuedAgain = await confirmMemoryToContentQueue({
 		store,
 		userId,
 		memory: { ...generation.memory, airtableContentId: queued.airtableRecordId },
-		clientName: name,
+		clientName: brain.identity.name,
 	});
+	await admin.from('airtable_entity_map').upsert(
+		{
+			user_id: userId,
+			airtable_table: queueTable,
+			airtable_record_id: queued.airtableRecordId,
+			native_entity_type: 'content_memory',
+			native_entity_id: generation.memory.id,
+		},
+		{ onConflict: 'airtable_table,airtable_record_id,native_entity_type' },
+	);
 
 	const token = process.env.AIRTABLE_PAT!;
 	const baseId = process.env.AIRTABLE_BASE_ID!;
@@ -342,22 +300,39 @@ export async function activateFolianNativeJourney(options?: {
 		.maybeSingle();
 	const { data: reviewLog } = await admin
 		.from('ai_usage_logs')
-		.select('role, provider, model, fallback_used, error_code, duration_ms, ok, feature')
+		.select('role, provider, model, fallback_used, error_code, duration_ms, prompt_tokens, completion_tokens, ok, feature')
 		.eq('feature', 'intelligence_review')
 		.order('created_at', { ascending: false })
 		.limit(1)
 		.maybeSingle();
 
+	const writingCost = estimateModelCostUsd({
+		model: String(writingLog?.model || getRoleConfig('WRITING').preferred),
+		inputTokens: writingLog?.prompt_tokens,
+		outputTokens: writingLog?.completion_tokens,
+	});
+	const reviewCost = estimateModelCostUsd({
+		model: String(reviewLog?.model || getRoleConfig('REVIEW').preferred),
+		inputTokens: reviewLog?.prompt_tokens,
+		outputTokens: reviewLog?.completion_tokens,
+	});
+
 	return {
 		roles: MODEL_ROLES.map((role) => ({ role, model: getRoleConfig(role).preferred, provider: 'openai' })),
-		modelProbes: probes,
+		canonicalBrandId: native.brandId,
+		airtableBrandId: native.airtableBrandId,
+		brandMappingId: native.mappingId,
+		airtableBrandCreated: native.airtableCreated,
 		brainId: brain.id,
 		brainName: brain.identity.name,
-		incomplete,
+		incomplete: native.incomplete,
 		brainIdentity: brain.identity,
 		strategyId: strategy.id,
 		strategyPositioning: strategy.positioning ?? null,
 		strategyObjectives: strategy.objectives,
+		strategyPillars: strategy.contentPillars,
+		themeTitles: native.themeTitles,
+		historyNote,
 		memoryIngested: ingested,
 		memoryRetrieved: generation.brief.payload.relatedPreviousContent,
 		brief: generation.brief.payload,
@@ -366,6 +341,10 @@ export async function activateFolianNativeJourney(options?: {
 		finalDraft: generation.reviewedDraft,
 		writingInvocation: writingLog,
 		reviewInvocation: reviewLog,
+		estimatedCostUsd: {
+			writing: writingCost,
+			review: reviewCost,
+		},
 		ideaEngine,
 		queue: queued,
 		queueIdempotentRetry: queuedAgain.idempotent,

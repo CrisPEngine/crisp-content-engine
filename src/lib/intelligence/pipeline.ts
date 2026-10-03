@@ -12,14 +12,15 @@ import type { IntelligenceStore } from './store';
 import type { ContentBrief, GenerationIntent, GenerationResult } from './types';
 
 export type IntelligenceAi = {
-	completeJson<T>(role: 'WRITING' | 'REVIEW' | 'STRATEGY', messages: LlmMessage[], feature: string): Promise<T>;
+	completeJson<T>(role: 'WRITING' | 'REVIEW' | 'STRATEGY', messages: LlmMessage[], feature: string, userId?: string): Promise<T>;
 };
 
 export const liveIntelligenceAi: IntelligenceAi = {
-	async completeJson(role, messages, feature) {
+	async completeJson(role, messages, feature, userId) {
 		const result = await completeWithRole<Record<string, unknown>>(role, {
 			messages,
 			feature,
+			userId,
 		});
 		return result.data as never;
 	},
@@ -122,6 +123,7 @@ export async function runContentIntelligencePipeline(
 		'WRITING',
 		writerMessages(prompt, briefPayload, intent.userIntent),
 		'intelligence_draft',
+		intent.userId,
 	);
 
 	const aiDraft = (generated.draft || '').trim();
@@ -145,6 +147,7 @@ export async function runContentIntelligencePipeline(
 				},
 			],
 			'intelligence_review',
+			intent.userId,
 		);
 		improvedByModel = reviewed.improvedDraft;
 	} catch {

@@ -64,7 +64,8 @@ describe.skipIf(!probeOnly)('configured model probe', () => {
 		const { writeFileSync } = await import('fs');
 		const probes = await probeConfiguredModels();
 		writeFileSync('/tmp/folian-model-probes.json', JSON.stringify(probes, null, 2));
-		expect(probes.length).toBe(3);
+		expect(probes.length).toBe(2);
+		expect(probes.some((probe) => probe.requestedModel === 'gpt-6-astra')).toBe(false);
 		expect(probes.every((probe) => probe.fallbackUsed === false)).toBe(true);
 	}, 180_000);
 });

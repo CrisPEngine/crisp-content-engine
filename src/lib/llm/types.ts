@@ -42,6 +42,7 @@ export type StructuredJsonResult<T> = {
 	rawUsage?: {
 		promptTokens?: number;
 		completionTokens?: number;
+		reasoningTokens?: number;
 	};
 };
 

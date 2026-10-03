@@ -67,6 +67,7 @@ describe('confirmMemoryToContentQueue', () => {
 		expect(body.fields.platform).toBe('LinkedIn');
 		expect(body.fields.generated_from).toBe('intelligence');
 		expect(body.fields.brand_profile_id).toEqual(['recBrand']);
+		expect(body.fields.client_name).toEqual(['recBrand']);
 		expect(intel.saveMemory).toHaveBeenCalledWith(
 			'user-1',
 			expect.objectContaining({ airtableContentId: 'recNew' }),

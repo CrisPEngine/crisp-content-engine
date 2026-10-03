@@ -12,6 +12,8 @@ export type AiInvocationLog = {
 	requestedModel?: string;
 	promptTokens?: number;
 	completionTokens?: number;
+	reasoningTokens?: number;
+	estimatedCostUsd?: number | null;
 	durationMs: number;
 	ok: boolean;
 	errorCode?: string;
@@ -30,6 +32,8 @@ export function logAiInvocation(entry: AiInvocationLog): void {
 		fallback_reason: entry.fallbackReason,
 		prompt_tokens: entry.promptTokens,
 		completion_tokens: entry.completionTokens,
+		reasoning_tokens: entry.reasoningTokens,
+		estimated_cost_usd: entry.estimatedCostUsd,
 		duration_ms: entry.durationMs,
 		ok: entry.ok,
 		error_code: entry.errorCode,
@@ -49,7 +53,7 @@ async function persistUsage(entry: AiInvocationLog): Promise<void> {
 	try {
 		const { getSupabaseService } = await import('@/lib/supabaseService');
 		const supabase = getSupabaseService();
-		await supabase.from('ai_usage_logs').insert({
+		const row = {
 			user_id: entry.userId ?? null,
 			request_id: entry.requestId,
 			role: entry.role,
@@ -58,13 +62,22 @@ async function persistUsage(entry: AiInvocationLog): Promise<void> {
 			fallback_used: entry.fallbackUsed,
 			prompt_tokens: entry.promptTokens ?? null,
 			completion_tokens: entry.completionTokens ?? null,
+			reasoning_tokens: entry.reasoningTokens ?? null,
+			estimated_cost_usd: entry.estimatedCostUsd ?? null,
 			duration_ms: entry.durationMs,
 			ok: entry.ok,
 			error_code: entry.ok && entry.fallbackReason
 				? `fallback:${entry.fallbackReason}`
 				: entry.errorCode ?? null,
 			feature: entry.feature ?? null,
-		});
+		};
+		const inserted = await supabase.from('ai_usage_logs').insert(row);
+		if (inserted.error && /reasoning_tokens|estimated_cost_usd/.test(inserted.error.message)) {
+			const legacy: Record<string, unknown> = { ...row };
+			delete legacy.reasoning_tokens;
+			delete legacy.estimated_cost_usd;
+			await supabase.from('ai_usage_logs').insert(legacy);
+		}
 	} catch {
 		// Table may not be applied yet; ignore.
 	}

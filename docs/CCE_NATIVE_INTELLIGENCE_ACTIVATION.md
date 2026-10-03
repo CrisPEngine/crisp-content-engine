@@ -2,6 +2,27 @@
 
 Date: 2026-10-03. This report only treats a step as operational when it was actually run.
 
+## Folian native brand, 2026-10-03 23:37 +04
+
+Supabase is the source of the Folian Brand Brain. Airtable BrandProfiles is a compatibility row only.
+
+| Item | Value |
+| --- | --- |
+| Canonical brand id | `03cba45a-6faf-4b6c-a20b-2c2496318b58` |
+| Airtable BrandProfiles id | `recampvDrWLSi3FrA` |
+| Brand mapping | `airtable_entity_map` `fbff4b32-11d9-4b3c-b9da-2c63c8fdf493` |
+| ContentQueue id | `recfekUP2n9mhLGar` |
+| Queue mapping | `content_memory` `cd85ae6d-8493-4a0d-afc4-65a6719c0171` |
+| Status | Needs Approval |
+| Platform | LinkedIn |
+| generated_from | intelligence |
+| Writing model | gpt-6.1-sol, no fallback, 830 in / 338 out, 8928 ms |
+| Review model | gpt-6.1-sol, no fallback, 313 in / 234 out, 4539 ms |
+| Estimated cost | $0.005040 writing + $0.002966 review |
+| Historical ContentQueue rows | 0 |
+
+A second setup found the existing Folian BrandProfiles row and did not create another. The approval formula used by `/api/content/queue` matched this record. The LinkedIn due-publisher formula matched 0 records. Nothing was approved, scheduled, or published. Migration `025_ai_usage_cost.sql` is not applied, so reasoning tokens and estimated cost are not stored on `ai_usage_logs` yet. The estimate is computed from the central price table.
+
 ## GPT-6 registry and acceptance attempt, 2026-10-03 23:21 +04
 
 The role catalog now targets the GPT-6 family through `POST /v1/responses`. Temperature is omitted. Reasoning effort is `none` for Luna task roles and `low` or `medium` for Sol. Astra is `DEEP_STRATEGY` only. `IDEA_ENGINE_LLM_MODEL` and `SIDECAR_LLM_MODEL` are ignored unless `AI_LEGACY_MODEL_OVERRIDES=true`. `AI_MODEL_<ROLE>` still wins.
@@ -60,8 +81,9 @@ The Intelligence Foundation checkpoint was already on `main`. This phase wired t
 | Commit | Meaning |
 | --- | --- |
 | `2cdf2621920832333f0277672ff079085730fbc2` | Checkpoint the CCE Intelligence Foundation before native activation. Not pushed. |
+| `90152a514d536b0a4bbc5a9f4efa4fcc9055b606` | Checkpoint native intelligence activation and the GPT-6 role registry. Not pushed. |
 
-The activation diff after that checkpoint is still uncommitted. Nothing was deployed.
+The Folian native-brand code after `90152a5` is still uncommitted. Nothing was deployed.
 
 ## Idea Engine root cause
 

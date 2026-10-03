@@ -22,7 +22,11 @@ type OpenAIResponsesPayload = {
 		type?: string;
 		content?: Array<{ type?: string; text?: string }>;
 	}>;
-	usage?: { input_tokens?: number; output_tokens?: number };
+	usage?: {
+		input_tokens?: number;
+		output_tokens?: number;
+		output_tokens_details?: { reasoning_tokens?: number };
+	};
 	error?: OpenAIErrorBody;
 };
 
@@ -156,6 +160,7 @@ export const openaiProvider: LlmProvider = {
 			rawUsage: {
 				promptTokens: payload.usage?.prompt_tokens ?? payload.usage?.input_tokens,
 				completionTokens: payload.usage?.completion_tokens ?? payload.usage?.output_tokens,
+				reasoningTokens: payload.usage?.output_tokens_details?.reasoning_tokens,
 			},
 		};
 	},

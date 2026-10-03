@@ -65,6 +65,9 @@ export function retrieveRelevantMemory(
 		.map((entry) => entry.row);
 
 	const warnings: string[] = [];
+	if (sorted.length === 0) {
+		warnings.push('insufficient history for performance-informed optimisation');
+	}
 	for (const row of recentSameChannel.slice(0, 5)) {
 		if (overlapScore(intent.hook, row.hook) > 0.55) {
 			warnings.push(`Recent hook collision with ${row.id}: "${row.hook}"`);

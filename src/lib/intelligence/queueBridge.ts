@@ -47,6 +47,9 @@ export async function confirmMemoryToContentQueue(options: {
 		airtableStatus: IDEA_ENGINE_QUEUE_STATUS,
 	});
 	fields.generated_from = 'intelligence';
+	// ContentQueue client_name is a BrandProfiles link, not a display name.
+	fields.client_name = [brain.airtableBrandId];
+	fields.brand_profile_id = [brain.airtableBrandId];
 
 	const response = await fetch(`https://api.airtable.com/v0/${baseId}/${table}`, {
 		method: 'POST',

@@ -85,6 +85,15 @@ describe('content memory retrieval', () => {
 		expect(result.related.some((row) => row.id === 'same-theme')).toBe(true);
 	});
 
+	it('names insufficient history when a brand has no memory', () => {
+		const result = retrieveRelevantMemory([], {
+			channel: 'linkedin',
+			userIntent: 'Create the next Folian LinkedIn post.',
+		});
+		expect(result.related).toHaveLength(0);
+		expect(result.warnings).toContain('insufficient history for performance-informed optimisation');
+	});
+
 	it('detects near-duplicate bodies', () => {
 		const existing = [
 			memory({
