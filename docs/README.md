@@ -5,6 +5,9 @@ Documents in this folder serve different audiences.
 | Document | Audience | Purpose |
 |----------|----------|---------|
 | **[USER_GUIDE.md](./USER_GUIDE.md)** | **Customers and end users** | How to use CRISP: dashboard, Idea Engine, Quick Generate, content workflow, onboarding, billing, and plans—without implementation details. |
+| **[CCE_ARCHITECTURE_AUDIT.md](./CCE_ARCHITECTURE_AUDIT.md)** | **Engineering** | Pre-upgrade map of AI, Make, Airtable, auth, publish, and jobs. |
+| **[CCE_INTELLIGENCE_UPGRADE.md](./CCE_INTELLIGENCE_UPGRADE.md)** | **Engineering** | What the intelligence foundation added and how to operate it. |
+| **[CCE_NATIVE_MIGRATION_ROADMAP.md](./CCE_NATIVE_MIGRATION_ROADMAP.md)** | **Engineering** | How to move off Make/Airtable without breaking production. |
 | **[IDEA_ENGINE_NATIVE.md](./IDEA_ENGINE_NATIVE.md)** | **Engineering** | Native Idea Engine (OpenAI in-app). Preferred when `IDEA_ENGINE_NATIVE_ENABLED=true`. |
 | **[IDEA_ENGINE_MAKE_WEBHOOK.md](./IDEA_ENGINE_MAKE_WEBHOOK.md)** | **Automation / integration operators** | Legacy Make connector contract (rollback / migration reference). |
 | **[IDEA_ENGINE_QUOTA_AND_PUBLISH_CROSSCHECK.md](./IDEA_ENGINE_QUOTA_AND_PUBLISH_CROSSCHECK.md)** | **Internal / engineering reference** | Detailed Q&A on quota, publish modes, and edge cases for audits and support escalation. |

@@ -16,6 +16,7 @@ export const APP_NAV: NavItem[] = [
 		items: [
 			{ label: 'View Strategy', href: '/strategy' },
 			{ label: 'Monthly Updates', href: '/strategy/monthly-updates' },
+			{ label: 'Brand Intelligence', href: '/intelligence' },
 		],
 	},
 	{

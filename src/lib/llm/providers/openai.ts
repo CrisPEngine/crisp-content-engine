@@ -24,6 +24,23 @@ export const openaiProvider: LlmProvider = {
 		}
 
 		const timeoutMs = request.timeoutMs ?? 90_000;
+		const reasoningFamily = /gpt-5|o1|o3|o4/i.test(request.model);
+		const maxTokens = request.maxTokens ?? 2048;
+		const body: Record<string, unknown> = {
+			model: request.model,
+			messages: request.messages,
+			response_format: { type: 'json_object' },
+		};
+		if (reasoningFamily) {
+			body.max_completion_tokens = maxTokens;
+			if (typeof request.temperature === 'number') {
+				body.temperature = request.temperature;
+			}
+		} else {
+			body.temperature = request.temperature ?? 0.7;
+			body.max_tokens = maxTokens;
+		}
+
 		let response: Response;
 		try {
 			response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -32,13 +49,7 @@ export const openaiProvider: LlmProvider = {
 					Authorization: `Bearer ${auth.apiKey}`,
 					'Content-Type': 'application/json',
 				},
-				body: JSON.stringify({
-					model: request.model,
-					messages: request.messages,
-					temperature: request.temperature ?? 0.7,
-					max_tokens: request.maxTokens ?? 2048,
-					response_format: { type: 'json_object' },
-				}),
+				body: JSON.stringify(body),
 				signal: AbortSignal.timeout(timeoutMs),
 			});
 		} catch (error) {

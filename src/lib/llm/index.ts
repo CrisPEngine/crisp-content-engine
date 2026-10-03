@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { resolveModelForRole } from '@/lib/ai/roles';
 import { openaiProvider } from './providers/openai';
 import type { LlmAuthContext, LlmProvider, LlmProviderId, StructuredJsonRequest, StructuredJsonResult } from './types';
 import { LlmError } from './types';
@@ -19,11 +20,7 @@ export function resolveLlmProviderId(): LlmProviderId {
 }
 
 export function resolveSidecarLlmModel(): string {
-	return (
-		process.env.SIDECAR_LLM_MODEL ||
-		process.env.SIDECAR_OPENAI_MODEL ||
-		'gpt-4o-mini'
-	);
+	return resolveModelForRole('SIDECAR');
 }
 
 /**

@@ -1,7 +1,9 @@
 import 'server-only';
 
+import { resolveModelForRole } from '@/lib/ai/roles';
+
 export function resolveIdeaEngineLlmModel(): string {
-	return process.env.IDEA_ENGINE_LLM_MODEL || 'gpt-4o';
+	return process.env.IDEA_ENGINE_LLM_MODEL || resolveModelForRole('WRITING');
 }
 
 export function resolveIdeaEngineTemperature(): number {

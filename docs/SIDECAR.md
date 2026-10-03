@@ -12,7 +12,7 @@ SIDECAR_API_SECRET=<long-random-secret>
 SIDECAR_OWNER_USER_ID=<your-supabase-auth-uuid>
 OPENAI_API_KEY=<key>
 LLM_PROVIDER=openai
-SIDECAR_LLM_MODEL=gpt-4o-mini
+SIDECAR_LLM_MODEL=gpt-5.6
 # Field-ID keyed Airtable responses (returnFieldsByFieldId=true)
 AIRTABLE_BRANDPROFILES_CLIENT_NAME_FIELD_ID=fld9i3rA29NuS0Mjn
 AIRTABLE_BRANDPROFILES_USER_ID_FIELD_ID=fld70rABHKmGpVHFM
@@ -62,7 +62,7 @@ Airtable PAT stays server-side. Do not rely on Airtable UI permissions or extens
 
 - **Airtable:** `AIRTABLE_BRANDPROFILES_TABLE` only — loads voice fields for the selected `brandId` (or `brand` name). Missing optional columns do not break the request (falls back to full record fetch). ContentQueue / `generated_from` are not used.
 - **Supabase:** `sidecar_usage_events` logging only; failures are non-blocking.
-- **LLM:** Server-side `OPENAI_API_KEY` + `LLM_PROVIDER=openai` + optional `SIDECAR_LLM_MODEL` (default `gpt-4o-mini`). This is separate from Make automations; CCE does not route Sidecar drafts through Make.
+- **LLM:** Server-side `OPENAI_API_KEY` + `LLM_PROVIDER=openai`. Sidecar uses the central AI role `SIDECAR` (preferred `gpt-5.6`, fallbacks `gpt-5` then `gpt-4o`). Override with `AI_MODEL_SIDECAR` or legacy `SIDECAR_LLM_MODEL`. This is separate from Make automations; CCE does not route Sidecar drafts through Make.
 - **Extension payload:** sends `brandId`, enums exactly as in `/api/sidecar/config` (e.g. `Public reply`, `Community value`, `First interaction`).
 
 **Extension page context:** Manifest `host_permissions` include X, LinkedIn, Reddit, Facebook, Instagram, YouTube, Bluesky, and Threads (see `extension/sidecar/src/lib/supportedPlatforms.ts`) plus API hosts only for `app.crispdigital.io` / localhost. The service worker remembers `lastReadableTabId` for supported platforms only; `app.crispdigital.io` is never reply context. After permission changes, remove and re-load the unpacked extension in Chrome (Reload alone may not update site access).

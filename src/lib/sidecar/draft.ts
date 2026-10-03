@@ -1,6 +1,7 @@
 import 'server-only';
 
-import { completeStructuredJson, resolveLlmProviderId, resolveSidecarLlmModel } from '@/lib/llm';
+import { completeWithRole } from '@/lib/ai';
+import { resolveLlmProviderId, resolveSidecarLlmModel } from '@/lib/llm';
 import { LlmError } from '@/lib/llm';
 import type { z } from 'zod';
 import { resolveBrandProfile } from './brands';
@@ -72,7 +73,37 @@ export async function generateSidecarDraft(
 
 	let messages;
 	try {
-		messages = buildSidecarDraftMessages(profile, input);
+		let brandBrainContext: string | undefined;
+		try {
+			const { getIntelligenceStore } = await import('@/lib/intelligence/actions');
+			const { buildComposableContext } = await import('@/lib/intelligence/context');
+			const { retrieveRelevantMemory } = await import('@/lib/intelligence/contentMemory');
+			const store = getIntelligenceStore();
+			const brain = await store.getBrandBrain(ownerUserId, profile.id);
+			if (brain) {
+				const [strategy, memoryRows, learnings] = await Promise.all([
+					store.getStrategyForBrand(ownerUserId, brain.id),
+					store.listMemory(ownerUserId, brain.id),
+					store.listLearnings(ownerUserId, brain.id),
+				]);
+				const memory = retrieveRelevantMemory(memoryRows, {
+					channel: input.platform,
+					userIntent: input.selectedText || input.userNotes || input.objective,
+					allowThemeContinuation: false,
+				});
+				brandBrainContext = buildComposableContext({
+					brain,
+					strategy,
+					memory,
+					learnings,
+					channel: input.platform,
+				}).prompt;
+			}
+		} catch {
+			brandBrainContext = undefined;
+		}
+
+		messages = buildSidecarDraftMessages(profile, input, brandBrainContext);
 		logSidecarDraftStep('prompt_built', {
 			messageCount: messages.length,
 			userContentLength: messages[1]?.content.length ?? 0,
@@ -87,19 +118,21 @@ export async function generateSidecarDraft(
 
 	const provider = resolveLlmProviderId();
 	const model = resolveSidecarLlmModel();
-	logSidecarDraftStep('llm_request_start', { provider, model });
+	logSidecarDraftStep('llm_request_start', { provider, model, role: 'SIDECAR' });
 
 	let result: SidecarDraftOutput;
 	try {
-		const llmResult = await completeStructuredJson<unknown>({
-			model,
+		const llmResult = await completeWithRole<unknown>('SIDECAR', {
 			messages,
-			temperature: 0.7,
 			maxTokens: 2048,
+			userId: ownerUserId,
+			feature: 'sidecar_draft',
 		});
 		logSidecarDraftStep('llm_response_received', {
 			provider: llmResult.provider,
 			model: llmResult.model,
+			requestId: llmResult.requestId,
+			fallbackUsed: llmResult.fallbackUsed,
 			outputKeys: Object.keys((llmResult.data as object) || {}),
 		});
 

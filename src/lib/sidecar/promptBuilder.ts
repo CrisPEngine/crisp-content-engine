@@ -41,6 +41,7 @@ Required JSON schema:
 export function buildSidecarDraftMessages(
 	profile: SidecarBrandProfile,
 	input: DraftRequest,
+	brandBrainContext?: string,
 ): LlmMessage[] {
 	const brandContext = buildBrandVoiceContext(profile);
 	const rewriteMode = Boolean(input.existingDraft?.trim());
@@ -48,6 +49,7 @@ export function buildSidecarDraftMessages(
 	const userParts = [
 		'--- Brand profile ---',
 		brandContext,
+		brandBrainContext ? `--- Brand Brain (authoritative; do not genericise this voice) ---\n${brandBrainContext}` : null,
 		'',
 		'--- Engagement context ---',
 		`Platform: ${input.platform}`,
