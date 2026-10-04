@@ -52,7 +52,8 @@ export function buildComposableContext(input: {
 		lines([
 			...(brain.guardrails.phrasesToAvoid ?? []).map((item) => `Avoid phrase: ${item}`),
 			...(brain.guardrails.prohibitedClaims ?? []).map((item) => `Do not claim: ${item}`),
-			...(brain.guardrails.requiredTerminology ?? []).map((item) => `Required term: ${item}`),
+			...(brain.guardrails.termRules ?? []).map((rule) => `${rule.level} term: ${rule.term}`),
+			...(brain.guardrails.requiredTerminology ?? []).map((item) => `REQUIRED term: ${item}`),
 			...(brain.guardrails.unwantedAiBehaviours ?? []),
 			brain.guardrails.promotionalIntensity
 				? `Promotional intensity: ${brain.guardrails.promotionalIntensity}`

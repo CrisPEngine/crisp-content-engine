@@ -10,7 +10,7 @@ import { generateSeries } from '@/lib/idea-engine/generator/generateSeries';
 import { readContentQueueField } from '@/lib/idea-engine/airtable/contentQueueQuery';
 import { createSupabaseIntelligenceStore } from '../supabaseStore';
 import { runContentIntelligencePipeline } from '../pipeline';
-import { confirmMemoryToContentQueue } from '../queueBridge';
+import { confirmMemoryToContentQueue, memoryBlocksQueueConfirm } from '../queueBridge';
 import { ensureFolianNativeBrand } from './ensureFolian';
 import { estimateModelCostUsd } from '@/lib/ai/pricing';
 import type { ContentMemoryRecord } from '../types';
@@ -161,6 +161,8 @@ export async function runIdeaEngineDiagnostic(userId: string, brandProfileId: st
 
 export async function activateFolianNativeJourney(options?: {
 	skipIdeaEngineDiagnostic?: boolean;
+	skipQueue?: boolean;
+	forceNewDraft?: boolean;
 }): Promise<Record<string, unknown>> {
 	const admin = getSupabaseService();
 	const { data: priorRun } = await admin
@@ -218,9 +220,16 @@ export async function activateFolianNativeJourney(options?: {
 	const ideaEngine = options?.skipIdeaEngineDiagnostic ? null : await runIdeaEngineDiagnostic(userId, native.airtableBrandId);
 	const historyNote = ingested === 0 ? 'insufficient history for performance-informed optimisation' : null;
 	const acceptanceIntent = 'Create the next Folian LinkedIn post.';
-	const pending = existing.find(
-		(row) => !row.airtableContentId && row.channel === 'linkedin' && Boolean(row.body) && row.sourceIdea === acceptanceIntent,
-	);
+	const pending = options?.forceNewDraft
+		? undefined
+		: existing.find(
+			(row) =>
+				!row.airtableContentId &&
+				row.channel === 'linkedin' &&
+				Boolean(row.body) &&
+				row.sourceIdea === acceptanceIntent &&
+				!memoryBlocksQueueConfirm(row),
+		);
 
 	const generation = pending
 		? await reuseAcceptanceDraft(admin, pending)
@@ -232,6 +241,43 @@ export async function activateFolianNativeJourney(options?: {
 			contentType: 'founder_post',
 			allowThemeContinuation: true,
 		});
+
+	if (options?.skipQueue) {
+		const payload = generation.brief.payload;
+		return {
+			canonicalBrandId: native.brandId,
+			airtableBrandId: native.airtableBrandId,
+			brandMappingId: native.mappingId,
+			queueSkipped: true,
+			strategyId: strategy.id,
+			strategyPositioning: strategy.positioning ?? null,
+			strategyObjectives: strategy.objectives,
+			strategyPillars: strategy.contentPillars,
+			themeTitles: native.themeTitles,
+			incomplete: native.incomplete,
+			historyNote,
+			memoryIngested: ingested,
+			selectedTheme: payload.theme ?? null,
+			topic: payload.topic,
+			objective: payload.objective,
+			audience: payload.audience,
+			angle: payload.angle,
+			centralArgument: payload.centralArgument,
+			whyNow: payload.whyNow ?? null,
+			contentOpportunity: payload.contentOpportunity ?? null,
+			hookDirection: payload.hookDirection,
+			cta: payload.cta,
+			repetitionRisk: payload.repetitionRisk ?? null,
+			experimentOpportunity: payload.experimentOpportunity ?? null,
+			brief: payload,
+			memoriesConsidered: 'memoriesConsidered' in generation ? generation.memoriesConsidered : [],
+			aiDraft: generation.aiDraft,
+			review: generation.review,
+			finalDraft: generation.reviewedDraft,
+			usage: 'usage' in generation ? generation.usage : [],
+			estimatedCostUsd: 'estimatedCostUsd' in generation ? generation.estimatedCostUsd : null,
+		};
+	}
 
 	const queued = await confirmMemoryToContentQueue({
 		store,

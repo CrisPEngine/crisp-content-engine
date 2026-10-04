@@ -33,7 +33,19 @@ export const folianVoice = {
 export const folianGuardrails = {
 	phrasesToAvoid: ['unlock your potential', 'delve', 'in today’s fast-paced world', 'game-changer'],
 	prohibitedClaims: ['guaranteed bestseller', 'write a novel in a weekend', 'replaces the author'],
-	requiredTerminology: ['canon', 'continuity'],
+	requiredTerminology: [],
+	termRules: [
+		{
+			term: 'canon',
+			level: 'STRONGLY_PREFERRED' as const,
+			reason: 'Strategic product vocabulary for pieces about story memory. Not required in every post, and not a legal claim.',
+		},
+		{
+			term: 'continuity',
+			level: 'STRONGLY_PREFERRED' as const,
+			reason: 'Strategic product vocabulary for pieces about story memory. Not required in every post, and not a legal claim.',
+		},
+	],
 	styleRestrictions: ['Do not sound like a social media growth agency'],
 	regulatoryConsiderations: [],
 	unwantedAiBehaviours: ['fake intimacy', 'hype lists of three', 'motivational-poster closings'],

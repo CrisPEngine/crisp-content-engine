@@ -92,4 +92,18 @@ describe.skipIf(!live)('Folian native activation', () => {
 		const { writeFileSync } = await import('fs');
 		writeFileSync('/tmp/folian-acceptance-report.json', JSON.stringify(report, null, 2));
 	}, 600_000);
+
+	it('selects an editorial topic without creating another ContentQueue row', async () => {
+		const { activateFolianNativeJourney } = await import('../live/activateFolian');
+		const report = await activateFolianNativeJourney({
+			skipIdeaEngineDiagnostic: true,
+			skipQueue: true,
+			forceNewDraft: true,
+		});
+		expect(report.queueSkipped).toBe(true);
+		expect(String(report.topic).toLowerCase()).not.toMatch(/^create the next/);
+		expect(String(report.topic)).not.toBe('Create the next Folian LinkedIn post.');
+		const { writeFileSync } = await import('fs');
+		writeFileSync('/tmp/folian-pilot-report.json', JSON.stringify(report, null, 2));
+	}, 600_000);
 });

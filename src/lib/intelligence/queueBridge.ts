@@ -11,12 +11,21 @@ export type QueueBridgeResult = {
 	platform: string;
 };
 
+export function memoryBlocksQueueConfirm(memory: ContentMemoryRecord): boolean {
+	const metadata = memory.metadata ?? {};
+	return metadata.queueHold === true || metadata.pilotDraftOnly === true;
+}
+
 export async function confirmMemoryToContentQueue(options: {
 	store: IntelligenceStore;
 	userId: string;
 	memory: ContentMemoryRecord;
 	clientName?: string;
 }): Promise<QueueBridgeResult> {
+	if (memoryBlocksQueueConfirm(options.memory)) {
+		throw new Error('This draft is held and cannot be confirmed into ContentQueue.');
+	}
+
 	if (options.memory.airtableContentId) {
 		return {
 			airtableRecordId: options.memory.airtableContentId,

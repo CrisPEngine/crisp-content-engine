@@ -15,17 +15,38 @@ import {
 
 function folianAi(draft: string): IntelligenceAi {
 	return {
-		async completeJson<T>(role: 'WRITING' | 'REVIEW' | 'STRATEGY') {
+		async completeJson<T>(role: string) {
 			if (role === 'REVIEW') {
-				return { improvedDraft: draft } as T;
+				return { data: { revisedDraft: draft } as T, model: 'gpt-6.1-sol', estimatedCostUsd: 0 };
+			}
+			if (role === 'FAST') {
+				return {
+					data: {
+						selectedTheme: 'AI and authorship',
+						topic: 'Why autocomplete fails a novel',
+						angle: 'Authors remain the authority',
+						centralArgument: 'Memory is the product',
+						supportingConcepts: ['Authors remain the authority'],
+					} as T,
+					model: 'gpt-6-luna',
+					promptTokens: 40,
+					completionTokens: 30,
+					estimatedCostUsd: 0.000019,
+				};
 			}
 			return {
-				draft,
-				hook: 'Most writing tools forget the book.',
-				argument: 'Canon has to persist with author approval or continuity collapses.',
-				cta: 'Look at how story memory keeps canon from drifting.',
-				topic: 'AI and authorship',
-			} as T;
+				data: {
+					draft,
+					hook: 'Most writing tools forget the book.',
+					argument: 'Canon has to persist with author approval or continuity collapses.',
+					cta: 'Look at how story memory keeps canon from drifting.',
+					topic: 'Why autocomplete fails a novel',
+				} as T,
+				model: 'gpt-6.1-sol',
+				promptTokens: 100,
+				completionTokens: 80,
+				estimatedCostUsd: 0.001,
+			};
 		},
 	};
 }
@@ -192,6 +213,8 @@ describe('Folian-style intelligence acceptance', () => {
 		expect(strategy.objectives.length).toBeGreaterThan(0);
 		expect(theme.title).toBe('AI and authorship');
 		expect(result.brief.payload.theme).toBe('AI and authorship');
+		expect(result.brief.payload.topic).toBe('Why autocomplete fails a novel');
+		expect(result.brief.payload.topic).not.toBe('Explain why novelists need story memory rather than another writing chatbot');
 		expect(result.brief.payload.optimizationObjective).toBe('authority');
 		expect(result.brief.payload.relatedPreviousContent.length).toBeGreaterThan(0);
 		expect(result.brief.payload.differentiationFromRecent.join(' ')).toMatch(/chatbot/i);

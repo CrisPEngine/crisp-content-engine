@@ -28,15 +28,30 @@ import { FOLIAN_BRAND_ID, FOLIAN_USER_ID } from './folianFixture';
 
 function stubAi(draft: string): IntelligenceAi {
 	return {
-		async completeJson<T>(role: 'WRITING' | 'REVIEW' | 'STRATEGY') {
-			if (role === 'REVIEW') return { improvedDraft: draft } as T;
+		async completeJson<T>(role: string) {
+			if (role === 'REVIEW') return { data: { revisedDraft: draft } as T, estimatedCostUsd: 0 };
+			if (role === 'FAST') {
+				return {
+					data: {
+						selectedTheme: 'AI and authorship',
+						topic: 'Why autocomplete fails a novel',
+						angle: 'Canon must persist',
+						centralArgument: 'Canon must persist',
+						supportingConcepts: [],
+					} as T,
+					estimatedCostUsd: 0,
+				};
+			}
 			return {
-				draft,
-				hook: 'Most writing tools forget the book.',
-				argument: 'Canon has to persist with author approval.',
-				cta: 'Look at story memory.',
-				topic: 'AI and authorship',
-			} as T;
+				data: {
+					draft,
+					hook: 'Most writing tools forget the book.',
+					argument: 'Canon has to persist with author approval.',
+					cta: 'Look at story memory.',
+					topic: 'Why autocomplete fails a novel',
+				} as T,
+				estimatedCostUsd: 0,
+			};
 		},
 	};
 }
@@ -69,9 +84,12 @@ describe('Folian brand + theme campaign + experiments', () => {
 		setIntelligenceStoreForTests(undefined);
 		setIntelligenceAiForTests(undefined);
 		resetArticlePublishers();
+		delete process.env.NATIVE_INTELLIGENCE_ENABLED;
+		delete process.env.NATIVE_INTELLIGENCE_BRAND_ALLOWLIST;
 	});
 
 	it('seeds Folian, executes a multi-channel plan, publishes, compares, and feeds experiment learnings into the next brief', async () => {
+		process.env.NATIVE_INTELLIGENCE_ENABLED = 'true';
 		const store = createMemoryIntelligenceStore();
 		setIntelligenceStoreForTests(store);
 		const draft = [
@@ -83,8 +101,9 @@ describe('Folian brand + theme campaign + experiments', () => {
 
 		const seeded = (await dispatchIntelligenceAction(FOLIAN_USER_ID, 'seed_folian_brain', {
 			airtableBrandId: FOLIAN_BRAND_ID,
-		})) as { validation: { ok: boolean; issues: unknown[] } };
+		})) as { brain: { id: string }; validation: { ok: boolean; issues: unknown[] } };
 		expect(seeded.validation.ok).toBe(true);
+		process.env.NATIVE_INTELLIGENCE_BRAND_ALLOWLIST = seeded.brain.id;
 
 		const validation = (await dispatchIntelligenceAction(FOLIAN_USER_ID, 'validate_brand', {
 			airtableBrandId: FOLIAN_BRAND_ID,

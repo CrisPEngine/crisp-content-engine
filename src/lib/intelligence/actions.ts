@@ -15,6 +15,7 @@ import { attachExperimentVariant, collectExperimentResults } from './experimentO
 import type { IntelligenceStore } from './store';
 import type { OptimizationObjective } from './types';
 import { deriveRates } from './performance';
+import { isNativeIntelligenceEnabledForBrand } from '@/lib/featureFlags';
 
 export const INTELLIGENCE_ACTION_NAMES = [
 	'get_brand',
@@ -85,6 +86,15 @@ async function requireBrain(store: IntelligenceStore, userId: string, brandId: s
 	const brain = await store.getBrandBrain(userId, brandId);
 	if (!brain) throw new Error('Brand brain not found');
 	return brain;
+}
+
+async function assertNativeIntelligence(store: IntelligenceStore, userId: string, compatibilityBrandId: string) {
+	const brain = await store.getBrandBrain(userId, compatibilityBrandId);
+	if (brain && isNativeIntelligenceEnabledForBrand(brain.id)) return;
+	const error = new Error('Native intelligence is not enabled for this brand. Make generation is unchanged.');
+	(error as Error & { status: number; code: string }).status = 403;
+	(error as Error & { code: string }).code = 'native_intelligence_brand_not_enabled';
+	throw error;
 }
 
 export async function dispatchIntelligenceAction(
@@ -168,6 +178,7 @@ export async function dispatchIntelligenceAction(
 					allowThemeContinuation: z.boolean().optional(),
 				})
 				.parse(input);
+			await assertNativeIntelligence(store, userId, parsed.airtableBrandId);
 			if (action === 'create_brief') {
 				const result = await runContentIntelligencePipeline(
 					store,
@@ -427,6 +438,7 @@ export async function dispatchIntelligenceAction(
 					maxPieces: z.number().int().positive().optional(),
 				})
 				.parse(input);
+			await assertNativeIntelligence(store, userId, parsed.airtableBrandId);
 			return executeThemePlan({
 				store,
 				userId,

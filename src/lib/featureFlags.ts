@@ -64,3 +64,24 @@ export const isSidecarEnabledClient = (): boolean => {
 export const isIdeaEngineNativeEnabled = (): boolean => {
 	return process.env.IDEA_ENGINE_NATIVE_ENABLED === 'true';
 };
+
+/**
+ * Brand-scoped native intelligence pilot.
+ * Off unless NATIVE_INTELLIGENCE_ENABLED=true and the canonical brand_brains.id
+ * is listed in NATIVE_INTELLIGENCE_BRAND_ALLOWLIST. An empty list enables nobody.
+ * Airtable BrandProfiles ids are not eligibility keys. Callers resolve the
+ * compatibility record to the brand brain, then check that canonical id here.
+ * Make generation stays available for every brand that is not on the list.
+ */
+export function nativeIntelligenceBrandAllowlist(): string[] {
+	return (process.env.NATIVE_INTELLIGENCE_BRAND_ALLOWLIST || '')
+		.split(',')
+		.map((value) => value.trim())
+		.filter(Boolean);
+}
+
+export function isNativeIntelligenceEnabledForBrand(canonicalBrandId: string | null | undefined): boolean {
+	if (process.env.NATIVE_INTELLIGENCE_ENABLED !== 'true') return false;
+	if (!canonicalBrandId) return false;
+	return nativeIntelligenceBrandAllowlist().includes(canonicalBrandId);
+}

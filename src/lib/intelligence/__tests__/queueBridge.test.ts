@@ -49,6 +49,19 @@ describe('confirmMemoryToContentQueue', () => {
 		fetchSpy.mockRestore();
 	});
 
+	it('refuses to queue a held pilot draft', async () => {
+		const fetchSpy = vi.spyOn(global, 'fetch');
+		await expect(
+			confirmMemoryToContentQueue({
+				store: store(),
+				userId: 'user-1',
+				memory: { ...memory, metadata: { queueHold: true, pilotDraftOnly: true } },
+			}),
+		).rejects.toThrow(/held/i);
+		expect(fetchSpy).not.toHaveBeenCalled();
+		fetchSpy.mockRestore();
+	});
+
 	it('writes Needs Approval LinkedIn fields and stores the Airtable id', async () => {
 		const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({
 			ok: true,

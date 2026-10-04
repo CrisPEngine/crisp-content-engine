@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import type { BrandBrain, BrandStrategy, ContentBrief, ContentTheme, OptimizationObjective } from './types';
 import type { MemoryRetrieval } from './contentMemory';
+import type { EditorialPlan } from './plan';
+import type { BrandBrain, BrandStrategy, ContentBrief, ContentTheme, OptimizationObjective } from './types';
 
 export const contentBriefSchema = z.object({
 	objective: z.string().min(1),
@@ -28,6 +29,10 @@ export const contentBriefSchema = z.object({
 		.default([]),
 	differentiationFromRecent: z.array(z.string()).default([]),
 	sourceRequirements: z.array(z.string()).default([]),
+	contentOpportunity: z.string().optional(),
+	whyNow: z.string().optional(),
+	repetitionRisk: z.string().optional(),
+	experimentOpportunity: z.string().optional(),
 	optimizationObjective: z.enum([
 		'awareness',
 		'authority',
@@ -78,6 +83,7 @@ export function buildStructuredBrief(input: {
 	campaignTitle?: string;
 	memory: MemoryRetrieval;
 	learnings?: string[];
+	plan?: EditorialPlan;
 }): ContentBrief {
 	const audience =
 		input.theme?.targetAudience ||
@@ -109,22 +115,27 @@ export function buildStructuredBrief(input: {
 		...(input.brain.guardrails.prohibitedClaims ?? []),
 	];
 
+	const plan = input.plan;
 	const brief: ContentBrief = {
-		objective: input.theme?.objective || input.strategy?.objectives[0] || input.userIntent,
-		audience,
+		objective: plan?.objective || input.theme?.objective || input.strategy?.objectives[0] || 'Serve the standing brand objective',
+		audience: plan?.audience || audience,
 		channel: input.channel,
 		contentType: input.contentType || 'founder_post',
 		funnelStage: input.strategy?.funnelStages[0] || 'awareness',
-		theme: input.theme?.title,
+		theme: plan?.selectedTheme || input.theme?.title,
 		contentPillar: pillar,
 		campaign: input.campaignTitle,
-		topic: input.theme?.subtopics[0] || input.userIntent,
-		angle: input.theme?.keyArguments[0] || input.userIntent,
-		hookDirection: input.memory.warnings.some((warning) => warning.includes('hook'))
+		topic: plan?.topic || input.theme?.subtopics[0] || input.theme?.title || 'The standing brand argument',
+		angle: plan?.angle || input.theme?.keyArguments[0] || input.strategy?.keyMessages[0] || 'The brand distinction',
+		hookDirection: plan?.hookDirection || (input.memory.warnings.some((warning) => warning.includes('hook'))
 			? 'Use a distinct problem-led or evidence-led opening; avoid repeating recent hooks'
-			: 'Open on the specific tension in the user intent',
-		centralArgument: input.theme?.keyArguments[0] || input.strategy?.keyMessages[0] || input.userIntent,
-		supportingPoints: take(input.theme?.keyArguments.slice(1) || input.strategy?.keyMessages, 4),
+			: 'Open on the concrete problem the audience already has'),
+		centralArgument: plan?.centralArgument || input.theme?.keyArguments[0] || input.strategy?.keyMessages[0] || 'The brand distinction',
+		supportingPoints: take(plan?.supportingConcepts || input.theme?.keyArguments.slice(1) || input.strategy?.keyMessages, 4),
+		contentOpportunity: plan?.contentOpportunity,
+		whyNow: plan?.whyNow,
+		repetitionRisk: plan?.repetitionRisk,
+		experimentOpportunity: plan?.experimentOpportunity,
 		evidence: pickRelevantKnowledge(input.brain, input.userIntent, input.theme?.title),
 		proofPoints: take(input.theme?.proofPoints.length ? input.theme.proofPoints : input.brain.knowledge.proofPoints, 4),
 		relevantBrandContext: [
@@ -133,9 +144,9 @@ export function buildStructuredBrief(input: {
 			...take(input.brain.identity.differentiators, 3),
 		].filter((value): value is string => Boolean(value)),
 		voiceRequirements,
-		cta: typeof input.strategy?.ctaStrategy.default === 'string'
+		cta: plan?.cta || (typeof input.strategy?.ctaStrategy.default === 'string'
 			? input.strategy.ctaStrategy.default
-			: 'Invite a specific next step appropriate to the channel; respect CTA restrictions',
+			: 'Invite a specific next step appropriate to the channel; respect CTA restrictions'),
 		guardrails: [
 			...(input.brain.guardrails.styleRestrictions ?? []),
 			...(input.brain.guardrails.unwantedAiBehaviours ?? []),
@@ -167,9 +178,14 @@ export function briefToWriterContext(brief: ContentBrief): string {
 		brief.theme ? `Theme: ${brief.theme}` : null,
 		brief.contentPillar ? `Pillar: ${brief.contentPillar}` : null,
 		`Topic: ${brief.topic}`,
+		'The topic above is the editorial subject. Do not write about the wording of the user instruction.',
+		brief.contentOpportunity ? `Opportunity: ${brief.contentOpportunity}` : null,
+		brief.whyNow ? `Why now: ${brief.whyNow}` : null,
 		`Angle: ${brief.angle}`,
 		`Hook direction: ${brief.hookDirection}`,
 		`Central argument: ${brief.centralArgument}`,
+		brief.repetitionRisk ? `Repetition risk: ${brief.repetitionRisk}` : null,
+		brief.experimentOpportunity ? `Experiment: ${brief.experimentOpportunity}` : null,
 		`Supporting points: ${brief.supportingPoints.join('; ')}`,
 		`Evidence: ${brief.evidence.join('; ')}`,
 		`Proof: ${brief.proofPoints.join('; ')}`,

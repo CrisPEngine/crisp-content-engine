@@ -88,10 +88,27 @@ export type BrandVoice = {
 	formattingPreferences?: string;
 };
 
+export const TERM_ENFORCEMENT_LEVELS = [
+	'REQUIRED',
+	'STRONGLY_PREFERRED',
+	'PREFERRED',
+	'AVOID',
+	'PROHIBITED',
+] as const;
+
+export type TermEnforcementLevel = (typeof TERM_ENFORCEMENT_LEVELS)[number];
+
+export type BrandTermRule = {
+	term: string;
+	level: TermEnforcementLevel;
+	reason?: string;
+};
+
 export type BrandGuardrails = {
 	phrasesToAvoid?: string[];
 	prohibitedClaims?: string[];
 	requiredTerminology?: string[];
+	termRules?: BrandTermRule[];
 	styleRestrictions?: string[];
 	regulatoryConsiderations?: string[];
 	unwantedAiBehaviours?: string[];
@@ -282,6 +299,10 @@ export type ContentBrief = {
 	differentiationFromRecent: string[];
 	sourceRequirements: string[];
 	optimizationObjective: OptimizationObjective;
+	contentOpportunity?: string;
+	whyNow?: string;
+	repetitionRisk?: string;
+	experimentOpportunity?: string;
 };
 
 export type StoredBrief = {
@@ -304,6 +325,13 @@ export type ProsePatternHit = {
 	examples: string[];
 };
 
+export type ReviewFinding = {
+	code: string;
+	message: string;
+	level: TermEnforcementLevel | 'editorial';
+	forcesRevision: boolean;
+};
+
 export type ReviewResult = {
 	brandFit: {
 		score: number;
@@ -315,8 +343,12 @@ export type ReviewResult = {
 		hits: ProsePatternHit[];
 		notes: string[];
 	};
+	originalDraft: string;
 	improvedDraft: string;
 	changed: boolean;
+	findings: ReviewFinding[];
+	revisionReason: string | null;
+	materialPassed: boolean;
 };
 
 export type ContentScorecard = {
@@ -462,4 +494,17 @@ export type GenerationResult = {
 	memory: ContentMemoryRecord;
 	modelRole: 'WRITING';
 	requestIds: string[];
+	usage: IntelligenceUsage[];
+	estimatedCostUsd: number | null;
+	memoriesConsidered: Array<{ id: string; hook?: string; topic?: string; reason: string }>;
+};
+
+export type IntelligenceUsage = {
+	role: string;
+	feature: string;
+	model?: string;
+	promptTokens?: number;
+	completionTokens?: number;
+	reasoningTokens?: number;
+	estimatedCostUsd?: number | null;
 };

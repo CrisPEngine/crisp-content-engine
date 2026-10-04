@@ -76,13 +76,28 @@ export function validateFolianBrand(brain: BrandBrain, strategy?: BrandStrategy 
 			message: 'Folian positioning must mention memory, canon, or continuity',
 		});
 	}
-	const required = brain.guardrails.requiredTerminology ?? [];
-	if (!required.some((term) => /canon/i.test(term)) || !required.some((term) => /continuity/i.test(term))) {
-		extra.push({
-			path: 'guardrails.requiredTerminology',
-			severity: 'error',
-			message: 'Folian requires terminology: canon and continuity',
-		});
+	const rules = brain.guardrails.termRules ?? [];
+	for (const term of ['canon', 'continuity'] as const) {
+		const rule = rules.find((item) => item.term.toLowerCase() === term);
+		if (!rule) {
+			extra.push({
+				path: 'guardrails.termRules',
+				severity: 'error',
+				message: `Folian should classify "${term}" as preferred strategic terminology`,
+			});
+		} else if (rule.level === 'REQUIRED') {
+			extra.push({
+				path: 'guardrails.termRules',
+				severity: 'error',
+				message: `"${term}" is strategic vocabulary, not a term that must appear in every post`,
+			});
+		} else if (rule.level !== 'STRONGLY_PREFERRED' && rule.level !== 'PREFERRED') {
+			extra.push({
+				path: 'guardrails.termRules',
+				severity: 'error',
+				message: `Folian should classify "${term}" as preferred strategic terminology`,
+			});
+		}
 	}
 	if ((brain.guardrails.promotionalIntensity || '').toLowerCase() !== 'low') {
 		extra.push({
