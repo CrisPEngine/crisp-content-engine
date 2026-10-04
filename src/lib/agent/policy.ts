@@ -44,6 +44,9 @@ export const AGENT_CAPABILITIES = [
 	'ads:propose',
 	'ads:activate',
 	'feedback:write',
+	'media:read',
+	'media:propose',
+	'media:generate',
 ] as const;
 
 export type AgentCapability = (typeof AGENT_CAPABILITIES)[number];
@@ -77,6 +80,9 @@ export const CAPABILITY_GROUP: Record<AgentCapability, CapabilityGroup> = {
 	'ads:propose': 'ADVERTISE',
 	'ads:activate': 'ADVERTISE',
 	'feedback:write': 'PROPOSE',
+	'media:read': 'READ',
+	'media:propose': 'PROPOSE',
+	'media:generate': 'DRAFT',
 };
 
 /**
@@ -108,6 +114,9 @@ export const FOLIAN_GROK_CAPABILITIES: AgentCapability[] = [
 	'ads:analyse',
 	'ads:propose',
 	'feedback:write',
+	'media:read',
+	'media:propose',
+	'media:generate',
 ];
 
 export const FOLIAN_GROK_DENIED: AgentCapability[] = [
@@ -123,6 +132,8 @@ export type RateLimitPolicy = {
 	researchRequestsPerDay: number;
 	publishActionsPerDay: number;
 	adProposalsPerDay: number;
+	imagesPerDay?: number;
+	imageCostUsdPerDay?: number;
 	dailyCostUsd?: number;
 };
 
@@ -140,5 +151,7 @@ export const FOLIAN_GROK_RATE_LIMIT: RateLimitPolicy = {
 	researchRequestsPerDay: 30,
 	publishActionsPerDay: 5,
 	adProposalsPerDay: 10,
+	imagesPerDay: 4,
+	imageCostUsdPerDay: 2,
 	dailyCostUsd: 25,
 };

@@ -1,6 +1,6 @@
 # Connect Grok to CCE for Folian
 
-Do this after the agent control plane is deployed and migration `026_agent_control_plane.sql` is applied. This document does not contain a credential secret. The secret is shown once in CCE and should not be pasted into a ticket or a doc.
+Do this after the agent control plane is deployed and migrations `026_agent_control_plane.sql` and `027_content_assets_articles.sql` are applied. This document does not contain a credential secret. The secret is shown once in CCE and should not be pasted into a ticket or a doc.
 
 ## 1. Create the Folian credential
 
@@ -10,11 +10,11 @@ Do this after the agent control plane is deployed and migration `026_agent_contr
 4. CCE brand id: `03cba45a-6faf-4b6c-a20b-2c2496318b58`.
 5. Choose **Create Folian operator credential**.
 
-That policy can read Folian, create opportunities, briefs, drafts, and revisions, submit for approval, schedule only after a human has approved, and propose experiments or ad changes. It cannot approve its own content, publish, send a reply, activate an ad, or change spend.
+That policy can read Folian, create opportunities, briefs, drafts, revisions, and article briefs, submit for approval, propose media, generate an image only when a provider is configured, schedule only after a human has approved, and propose experiments or ad changes. It cannot approve its own content, publish, send a reply, activate an ad, or change spend.
 
 Copy the `cce_agent_…` secret immediately. CCE stores only a hash. If it is lost, revoke the credential and create another. Do not commit the secret.
 
-Recommended limits on that credential are 60 requests an hour, 15 generations a day, 30 research writes a day, 5 schedule records a day, 10 ad proposals a day, and a 25 USD estimated generation budget. The Folian button applies those limits.
+Recommended limits on that credential are 60 requests an hour, 15 generations a day, 30 research writes a day, 5 schedule records a day, 10 ad proposals a day, 4 generated images a day, 2 USD of estimated image cost, and a 25 USD estimated generation budget. The Folian button applies those limits.
 
 Set `AGENT_KEY_PEPPER` in the production environment before creating the first key. Leave `AGENT_SUBMIT_TO_QUEUE` unset until you explicitly want a submitted draft to appear in the existing approval queue. Even then, the queue status is Needs Approval, not Ready To Publish.
 
@@ -63,8 +63,9 @@ Use this as the standing instruction:
 Grok may, without asking first:
 
 - read Folian marketing state
-- save an opportunity, a research note, a brief, a draft, or a revision
-- submit a draft for your approval
+- save an opportunity, a research note, a brief, a draft, a revision, or an article
+- ask whether media is useful, and generate an image only from CCE’s proposal
+- submit a draft or an article for your approval
 - propose an experiment, a theme, a strategy change, or an ad change
 
 Grok must bring these to you:
@@ -91,7 +92,7 @@ Start with one morning pass, not an autonomous poster:
 2. `cce_get_next_best_actions`
 3. Tell you what is waiting, what is missing from the calendar, and what performance cannot yet support.
 4. If it found a relevant public conversation, `cce_create_opportunity`, then `cce_evaluate_opportunity`.
-5. Only if CCE’s evaluation says draft: `cce_create_brief`, `cce_generate_content`, optional `cce_request_revision`, then `cce_submit_for_approval`.
+5. Only if CCE’s evaluation says draft: `cce_create_brief`, `cce_generate_content`, optional `cce_request_revision`, then `cce_submit_for_approval`. Read `mediaPlan` on the result. Do not add an image when the role is `NONE`. For Instagram, follow `cce_get_media_plan` and, when you want the visual, `cce_generate_image` with the content id. For a long piece, use `cce_create_article_brief` and `cce_generate_article`, then `cce_submit_article_for_approval`.
 6. Stop. You approve in CCE.
 
 Do not add a routine that calls approve, publish, or budget tools. Those capabilities are absent on this credential, and a budget proposal must remain unapplied.

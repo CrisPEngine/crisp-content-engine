@@ -66,6 +66,12 @@ function rateSpec(action: string, policy: RateLimitPolicy): { key: string; limit
 	if (['cce_propose_ad_campaign', 'cce_propose_budget_change'].includes(action)) {
 		return { key: 'ads', limit: policy.adProposalsPerDay, windowMs: DAY };
 	}
+	if (action === 'cce_generate_image') {
+		return { key: 'images', limit: policy.imagesPerDay ?? 4, windowMs: DAY };
+	}
+	if (action === 'cce_generate_article') {
+		return { key: 'generation', limit: policy.generationsPerDay, windowMs: DAY };
+	}
 	return null;
 }
 

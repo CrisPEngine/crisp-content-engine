@@ -1,3 +1,5 @@
+import { mediaSpecFor } from '@/lib/media/channelMedia';
+
 export const CHANNEL_IDS = [
 	'LINKEDIN_PERSONAL',
 	'LINKEDIN_ORGANIZATION',
@@ -196,5 +198,6 @@ export function channelCatalog() {
 		adaptation: channel.adaptation,
 		capabilities: channel.capabilities,
 		notes: channel.notes,
+		media: mediaSpecFor(channel.id),
 	}));
 }

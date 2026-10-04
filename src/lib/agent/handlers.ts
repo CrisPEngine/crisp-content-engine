@@ -12,6 +12,10 @@ import { channelCatalog, resolveChannel } from './channels';
 import { getAgentStore } from './controlStore';
 import { AgentError } from './errors';
 import { CAPABILITY_GROUP } from './policy';
+import { dispatchContentExtensions } from './extensions';
+import { planMedia } from '@/lib/media/planner';
+import { getNativeContentStore } from '@/lib/media/store';
+import { publicAsset } from '@/lib/media/images';
 import type { AgentCredential, MarketingOpportunity } from './types';
 
 export type AgentContext = {
@@ -608,7 +612,7 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 				createdAt: new Date().toISOString(),
 				contentIds: [],
 			});
-			return { briefId: brief.id, objective: brief.objective, audience: brief.audience, channel: brief.channel, channels: brief.channels, themeId: brief.themeId, status: brief.status };
+			return { briefId: brief.id, objective: brief.objective, audience: brief.audience, channel: brief.channel, channels: brief.channels, themeId: brief.themeId, status: brief.status, mediaPlan: planMedia({ channel: brief.channel, topic: brief.instruction ?? brief.objective, objective: brief.objective }) };
 		}
 		case 'cce_generate_content': {
 			const brain = await requireBrand(ctx, brandId);
@@ -622,7 +626,11 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			if (!instruction) throw new AgentError('invalid_input', 'A brief or instruction is required.', 400);
 			const outputs = [];
 			for (const channel of channels) {
-				outputs.push(await generateForChannel(ctx, brain, { instruction, channel, themeId: brief?.themeId ?? inputString(input, 'themeId'), objective: brief?.objective }));
+				const output = await generateForChannel(ctx, brain, { instruction, channel, themeId: brief?.themeId ?? inputString(input, 'themeId'), objective: brief?.objective });
+				outputs.push({
+					...output,
+					mediaPlan: planMedia({ channel, topic: output.topic ?? instruction, objective: brief?.objective, contentType: output.channel === 'blog' ? 'article' : 'founder_post' }),
+				});
 			}
 			if (brief) {
 				brief.status = 'generated';
@@ -943,10 +951,31 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			return { interactionId, status: 'awaiting_approval', approver: 'human', published: false };
 		}
 		case 'cce_record_external_publish': {
-			const contentId = inputString(input, 'contentId');
+			const contentId = inputString(input, 'contentId') ?? inputString(input, 'articleId');
 			const externalUrl = inputString(input, 'externalUrl');
 			if (!contentId || !externalUrl) throw new AgentError('invalid_input', 'contentId and externalUrl are required.', 400);
 			assertHttpsUrl(externalUrl);
+			const article = await getNativeContentStore().getArticle(ctx.credential.ownerUserId, contentId);
+			if (article) {
+				if (!ctx.credential.allowedBrandIds.includes(article.brandId)) {
+					throw new AgentError('brand_not_accessible', 'This agent cannot access that article.', 403);
+				}
+				if (article.approval.status !== 'approved') {
+					throw new AgentError('content_not_approved', 'Record an article publication only after a human has approved it. This call did not publish.', 403);
+				}
+				article.publication = {
+					destination: inputString(input, 'channel') ?? 'external',
+					externalId: inputString(input, 'externalId'),
+					url: externalUrl,
+					publishedAt: inputString(input, 'publishedAt') ?? new Date().toISOString(),
+					method: 'external',
+				};
+				article.status = 'published';
+				article.updatedAt = new Date().toISOString();
+				await getNativeContentStore().saveArticle(article);
+				await emit(ctx, article.brandId, 'content.published', { articleId: article.id, source: 'external_record' });
+				return { articleId: article.id, performanceContentId: article.performanceContentId, recorded: true, publishedByCce: false };
+			}
 			const memory = await requireContent(ctx, contentId);
 			const next = await getIntelligenceStore().saveMemory(ctx.credential.ownerUserId, {
 				...memory,
@@ -1042,28 +1071,46 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			return { id: saved.id, appliedToBrandBrain: false };
 		}
 		case 'cce_attach_asset': {
-			const brain = await requireBrand(ctx, brandId);
-			const kind = inputString(input, 'kind') as 'image' | 'video' | 'audio' | 'document' | 'link_preview' | 'carousel';
-			const asset = await getAgentStore().saveAsset(ctx.credential.ownerUserId, {
+			const assetId = inputString(input, 'assetId');
+			const targetId = inputString(input, 'targetId') ?? inputString(input, 'contentId') ?? inputString(input, 'articleId') ?? inputString(input, 'briefId');
+			const targetType = (inputString(input, 'targetType') ?? (inputString(input, 'articleId') ? 'article' : inputString(input, 'briefId') ? 'brief' : 'content')) as 'content' | 'article' | 'brief' | 'version' | 'section' | 'campaign';
+			if (!assetId || !targetId) throw new AgentError('invalid_input', 'assetId and a target id are required.', 400);
+			const asset = await getNativeContentStore().getAsset(ctx.credential.ownerUserId, assetId);
+			if (!asset || (asset.brandId && !ctx.credential.allowedBrandIds.includes(asset.brandId))) {
+				throw new AgentError('brand_not_accessible', 'This agent cannot access that asset.', 403);
+			}
+			await getNativeContentStore().saveLink({
 				id: crypto.randomUUID(),
-				brandId: brain.id,
-				kind,
-				source: inputString(input, 'source'),
-				altText: inputString(input, 'altText'),
-				mime: inputString(input, 'mime'),
-				channels: [],
+				ownerUserId: ctx.credential.ownerUserId,
+				assetId,
+				targetType,
+				targetId,
+				role: inputString(input, 'role'),
 				createdAt: new Date().toISOString(),
 			});
+			if (targetType === 'article') {
+				const article = await getNativeContentStore().getArticle(ctx.credential.ownerUserId, targetId);
+				if (article && ctx.credential.allowedBrandIds.includes(article.brandId) && !article.featuredAssetId) {
+					article.featuredAssetId = assetId;
+					article.updatedAt = new Date().toISOString();
+					await getNativeContentStore().saveArticle(article);
+				}
+			}
 			const briefId = inputString(input, 'briefId');
 			if (briefId) {
-				const brief = await getAgentStore().getBrief(ctx.credential.ownerUserId, briefId);
-				if (!brief || brief.brandId !== brain.id) throw new AgentError('brand_not_accessible', 'This agent cannot access that brief.', 403);
-				brief.assetIds = [...brief.assetIds, asset.id];
-				await getAgentStore().saveBrief(ctx.credential.ownerUserId, brief);
+				const current = await getAgentStore().getBrief(ctx.credential.ownerUserId, briefId);
+				if (!current || !ctx.credential.allowedBrandIds.includes(current.brandId)) {
+					throw new AgentError('brand_not_accessible', 'This agent cannot access that brief.', 403);
+				}
+				current.assetIds = [...new Set([...current.assetIds, assetId])];
+				await getAgentStore().saveBrief(ctx.credential.ownerUserId, current);
 			}
-			return { assetId: asset.id, briefId: briefId ?? null };
+			return { asset: publicAsset(asset), targetId, attached: true, published: false };
 		}
-		default:
+		default: {
+			const extra = await dispatchContentExtensions(name, ctx, input);
+			if (extra !== undefined) return extra;
 			throw new AgentError('unknown_action', `Unknown agent action ${name}.`, 404);
+		}
 	}
 }

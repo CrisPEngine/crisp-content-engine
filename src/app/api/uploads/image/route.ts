@@ -77,16 +77,32 @@ export async function POST(req: Request) {
 		// Upload to Cloudinary
 		const result = await uploadImageFromBuffer(buffer, file.name);
 
+		try {
+			const { recordUploadedAsset } = await import('@/lib/media/images');
+			await recordUploadedAsset({
+				ownerUserId: user.id,
+				url: result.secure_url,
+				providerAssetId: result.public_id,
+				width: result.width,
+				height: result.height,
+				mimeType: file.type,
+				fileSize: file.size,
+			});
+		} catch {
+			// The publisher still receives the Cloudinary URL if asset metadata is unavailable.
+		}
+
 		return NextResponse.json({
 			secureUrl: result.secure_url,
 			publicId: result.public_id,
 			width: result.width,
 			height: result.height,
 		});
-	} catch (error: any) {
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : 'Failed to upload image';
 		console.error('Image upload error:', error);
 		return NextResponse.json(
-			{ error: error?.message || 'Failed to upload image' },
+			{ error: message },
 			{ status: 500 }
 		);
 	}

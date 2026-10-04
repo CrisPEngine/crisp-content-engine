@@ -5,6 +5,14 @@ export type ArticleDocument = {
 	canonicalUrl?: string;
 	tags?: string[];
 	imageUrl?: string;
+	slug?: string;
+	seoTitle?: string;
+	metaDescription?: string;
+	featuredAssetId?: string;
+	categories?: string[];
+	author?: string;
+	disclosure?: string | null;
+	sponsorship?: 'none' | 'sponsored' | 'partner' | 'affiliate';
 	metadata?: Record<string, unknown>;
 };
 

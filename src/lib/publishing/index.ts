@@ -8,6 +8,21 @@ const defaultPublishers: Record<string, ArticlePublisher> = {
 	article: webhookArticlePublisher,
 };
 
+/**
+ * Destinations a future adapter can register without changing Article or the agent actions.
+ * Only webhook, blog, newsletter, and article are connected today.
+ */
+export const PLANNED_ARTICLE_DESTINATIONS = [
+	'folian',
+	'crisp-digital',
+	'framer',
+	'webflow',
+	'wordpress',
+	'payload',
+	'next',
+	'authority',
+] as const;
+
 const publishers: Record<string, ArticlePublisher> = { ...defaultPublishers };
 
 export function registerArticlePublisher(destination: string, publisher: ArticlePublisher): void {
