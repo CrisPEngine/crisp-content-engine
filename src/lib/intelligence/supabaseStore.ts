@@ -525,6 +525,23 @@ export function createSupabaseIntelligenceStore(): IntelligenceStore {
 			} satisfies StoredBrief;
 		},
 
+		async listDrafts(userId, memoryId) {
+			const { data, error } = await db()
+				.from('content_drafts')
+				.select('id,ai_version,reviewed_version,user_version,created_at')
+				.eq('user_id', userId)
+				.eq('memory_id', memoryId)
+				.order('created_at', { ascending: true });
+			if (error) throw new Error(error.message);
+			return (data ?? []).map((row) => ({
+				id: row.id as string,
+				aiVersion: row.ai_version as string,
+				reviewedVersion: (row.reviewed_version as string | null) ?? undefined,
+				userVersion: (row.user_version as string | null) ?? undefined,
+				createdAt: row.created_at as string,
+			}));
+		},
+
 		async saveDraft(input) {
 			const { data, error } = await db()
 				.from('content_drafts')

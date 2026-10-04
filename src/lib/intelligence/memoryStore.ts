@@ -26,6 +26,7 @@ type DraftRow = {
 	aiVersion: string;
 	reviewedVersion?: string;
 	userVersion?: string;
+	createdAt?: string;
 };
 
 type ExperimentResultRow = {
@@ -201,9 +202,21 @@ export function createMemoryIntelligenceStore(): IntelligenceStore {
 		},
 
 		async saveDraft(input) {
-			const row: DraftRow = { id: newId(), ...input };
+			const row: DraftRow = { id: newId(), createdAt: nowIso(), ...input };
 			drafts.set(row.id, row);
 			return { id: row.id };
+		},
+
+		async listDrafts(userId, memoryId) {
+			return [...drafts.values()]
+				.filter((row) => row.userId === userId && row.memoryId === memoryId)
+				.map((row) => ({
+					id: row.id,
+					aiVersion: row.aiVersion,
+					reviewedVersion: row.reviewedVersion,
+					userVersion: row.userVersion,
+					createdAt: row.createdAt,
+				}));
 		},
 
 		async updateDraftUserVersion(userId, draftId, userVersion) {

@@ -53,6 +53,10 @@ export type IntelligenceStore = {
 		reviewPayload?: Record<string, unknown>;
 		scorePayload?: Record<string, unknown>;
 	}): Promise<{ id: string }>;
+	listDrafts(
+		userId: string,
+		memoryId: string,
+	): Promise<Array<{ id: string; aiVersion: string; reviewedVersion?: string; userVersion?: string; createdAt?: string }>>;
 	updateDraftUserVersion(userId: string, draftId: string, userVersion: string): Promise<{ aiVersion: string; userVersion: string } | null>;
 
 	saveEditLearning(userId: string, learning: Omit<UserEditLearning, 'id'> & { id?: string }): Promise<UserEditLearning>;

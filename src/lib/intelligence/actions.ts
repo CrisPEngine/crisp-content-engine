@@ -3,7 +3,7 @@ import { destinationForChannel, publishArticle } from '@/lib/publishing';
 import { analyseExperiment, metricForObjective, PRAGMATIC_CONTROLS } from './experiments';
 import { enqueueWorkflowJob } from './jobs';
 import { publishStoredMemory } from './publishMemory';
-import { recordUserEdit, runContentIntelligencePipeline, type IntelligenceAi } from './pipeline';
+import { liveIntelligenceAi, recordUserEdit, runContentIntelligencePipeline, type IntelligenceAi } from './pipeline';
 import { createSupabaseIntelligenceStore } from './supabaseStore';
 import { buildThemePlan, themePlanToIdeas } from './themes';
 import { executeThemePlan } from './themeExecution';
@@ -80,6 +80,10 @@ export function setIntelligenceAiForTests(ai?: IntelligenceAi): void {
 
 export function getIntelligenceStore(): IntelligenceStore {
 	return storeOverride ?? createSupabaseIntelligenceStore();
+}
+
+export function getIntelligenceAi(): IntelligenceAi {
+	return aiOverride ?? liveIntelligenceAi;
 }
 
 async function requireBrain(store: IntelligenceStore, userId: string, brandId: string) {
