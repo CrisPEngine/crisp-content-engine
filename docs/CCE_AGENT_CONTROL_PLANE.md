@@ -208,3 +208,13 @@ P2: Folian CMS and other article adapters, paid read and analyse, paused campaig
 P3: selected autonomous publishing, selected replies, controlled spend changes, more brands, removal of Make, native replacement of the Airtable queue.
 
 Make and Airtable paths used by the current product are unchanged. This API does not add a Make dependency and does not expose Airtable fields.
+
+## Account scope and human approval
+
+Credential scope is `BRAND`, `SELECTED_BRANDS`, or `OWNER_ACCOUNT`. `BRAND` remains the default. `OWNER_ACCOUNT` resolves the owner’s brand brains on each call and does not store a wildcard. A brand owned by another user is not included.
+
+`cce_list_brands` returns id, name, status, and channel names. The Chief of Staff preset uses `OWNER_ACCOUNT` and the same draft capabilities as the Folian operator. It is created from `/admin/agents`. This change does not create that credential and does not alter an existing Folian credential.
+
+Human approval is an `approval_requests` row. The agent can create and read it. `cce_resolve_approval_request` refuses the agent bearer. The account owner approves at `/approve/<token>` after signing in. MCP elicitation can ask a client to confirm, but that confirmation arrives on the same agent session and does not prove the CCE user. The authenticated page is the authorization method.
+
+Migration `028_account_scope_assets_approvals.sql` adds `agent_credentials.scope`, brand-library columns on `content_assets`, and `approval_requests`. It does not drop or rename existing tables. Brand assets are uploaded at `/content/brand-assets` through the existing Cloudinary path. Verified references are considered by media planning before a new image is generated. Reference generation uses the OpenAI image edits endpoint when a permitted reference URL is supplied.

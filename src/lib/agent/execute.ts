@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { credentialForInvocation } from './access';
 import { resolveAgentCredential } from './credentials';
 import { getAgentStore } from './controlStore';
 import { AgentError, agentErrorFromUnknown } from './errors';
@@ -138,7 +139,8 @@ export async function executeAgentAction(input: {
 			}
 		}
 		await enforceActionRate(input.credential, input.action);
-		const ctx: AgentContext = { credential: input.credential, requestId };
+		const credential = await credentialForInvocation(input.credential);
+		const ctx: AgentContext = { credential, requestId };
 		const result = await dispatchAgentHandler(input.action, ctx, parsed.data as Record<string, unknown>);
 		if (definition.level >= 4) {
 			const approval = result && typeof result === 'object' ? (result as { status?: string }).status : undefined;

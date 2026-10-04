@@ -13,6 +13,7 @@ import { getAgentStore } from './controlStore';
 import { AgentError } from './errors';
 import { CAPABILITY_GROUP } from './policy';
 import { dispatchContentExtensions } from './extensions';
+import { assertScheduleMatchesApproval, createApprovalRequest } from './approvals';
 import { planMedia } from '@/lib/media/planner';
 import { getNativeContentStore } from '@/lib/media/store';
 import { publicAsset } from '@/lib/media/images';
@@ -374,6 +375,21 @@ async function nextBestActions(ctx: AgentContext, input: Record<string, unknown>
 export async function dispatchAgentHandler(name: string, ctx: AgentContext, input: Record<string, unknown>): Promise<unknown> {
 	const brandId = inputString(input, 'brandId');
 	switch (name) {
+		case 'cce_list_brands': {
+			const brands = [];
+			for (const id of ctx.credential.allowedBrandIds) {
+				const brain = await getIntelligenceStore().getBrandBrainById(ctx.credential.ownerUserId, id);
+				if (!brain) continue;
+				const strategy = await getIntelligenceStore().getStrategyForBrand(ctx.credential.ownerUserId, brain.id);
+				brands.push({
+					id: brain.id,
+					name: brain.identity.name,
+					status: strategy?.status ?? 'active',
+					channels: strategy?.channelStrategies.map((channel) => channel.channel) ?? [],
+				});
+			}
+			return { brands };
+		}
 		case 'cce_get_capabilities': {
 			const groups = [...new Set(ctx.credential.capabilities.map((capability) => CAPABILITY_GROUP[capability]))];
 			return {
@@ -802,6 +818,7 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			if (name !== 'cce_unschedule_content' && !['approved', 'scheduled'].includes(String(memory.publicationStatus))) {
 				throw new AgentError('content_not_approved', 'Only approved content can be scheduled.', 409);
 			}
+			if (name !== 'cce_unschedule_content') await assertScheduleMatchesApproval(memory);
 			const publishAt = name === 'cce_unschedule_content' ? undefined : inputString(input, 'publishAt');
 			const next = await getIntelligenceStore().saveMemory(ctx.credential.ownerUserId, {
 				...memory,
@@ -1052,6 +1069,46 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			});
 			return response;
 		}
+		case 'cce_create_approval_request': {
+			const brain = await requireBrand(ctx, brandId);
+			const targetType = inputString(input, 'targetType') === 'article' ? 'article' : 'content';
+			const targetId = inputString(input, 'targetId') ?? inputString(input, 'contentId') ?? inputString(input, 'articleId');
+			const requestedAction = inputString(input, 'requestedAction') === 'approve_and_schedule' ? 'approve_and_schedule' : 'approve_content';
+			if (!targetId) throw new AgentError('invalid_input', 'targetId is required.', 400);
+			const created = await createApprovalRequest({
+				credential: ctx.credential,
+				brandId: brain.id,
+				targetType,
+				targetId,
+				requestedAction,
+				publishAt: inputString(input, 'publishAt'),
+			});
+			return {
+				id: created.request.id,
+				status: created.request.status,
+				expiresAt: created.request.expiresAt,
+				approvalUrl: created.approvalUrl,
+				requestedAction: created.request.requestedAction,
+				published: false,
+				approvedByAgent: false,
+			};
+		}
+		case 'cce_get_approval_request': {
+			const id = inputString(input, 'approvalId') ?? inputString(input, 'id');
+			if (!id) throw new AgentError('invalid_input', 'approvalId is required.', 400);
+			const request = await getAgentStore().getApprovalRequest(id);
+			if (!request || request.ownerUserId !== ctx.credential.ownerUserId || !ctx.credential.allowedBrandIds.includes(request.brandId)) {
+				throw new AgentError('brand_not_accessible', 'This agent cannot access that approval request.', 403);
+			}
+			return { id: request.id, status: request.status, brandId: request.brandId, targetType: request.targetType, targetId: request.targetId, requestedAction: request.requestedAction, expiresAt: request.expiresAt, resolvedAt: request.resolvedAt ?? null, executionStatus: request.executionStatus };
+		}
+		case 'cce_list_approval_requests': {
+			const brain = await requireBrand(ctx, brandId);
+			const rows = await getAgentStore().listApprovalRequests(ctx.credential.ownerUserId, 'PENDING');
+			return { requests: rows.filter((row) => row.brandId === brain.id).map((row) => ({ id: row.id, status: row.status, summary: row.summary, targetType: row.targetType, targetId: row.targetId, expiresAt: row.expiresAt })) };
+		}
+		case 'cce_resolve_approval_request':
+			throw new AgentError('human_authorization_required', 'An agent credential cannot approve. The CCE account owner must open the approval link and confirm.', 403);
 		case 'cce_get_marketing_brief':
 			return getMarketingBrief(ctx, input);
 		case 'cce_get_next_best_actions':

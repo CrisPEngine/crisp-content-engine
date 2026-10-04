@@ -7,9 +7,20 @@ function tokens(text: string): string[] {
 	return text.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 3);
 }
 
-function matchingAsset(topic: string, assets: PublicAsset[]): PublicAsset | undefined {
+function assetText(asset: PublicAsset): string {
+	return [asset.title, asset.altText, asset.caption, asset.description, asset.productFeature, asset.libraryType, ...(asset.tags ?? [])].filter(Boolean).join(' ');
+}
+
+function matchScore(topic: string, asset: PublicAsset): number {
 	const wanted = new Set(tokens(topic));
-	return assets.find((asset) => tokens(`${asset.title ?? ''} ${asset.altText ?? ''} ${asset.caption ?? ''}`).some((word) => wanted.has(word)));
+	const overlap = tokens(assetText(asset)).filter((word) => wanted.has(word)).length;
+	if (overlap === 0 || !asset.verifiedReference) return 0;
+	const product = asset.libraryType === 'PRODUCT_SCREENSHOT' || asset.libraryType === 'PRODUCT_UI' || asset.libraryType === 'PRODUCT_PHOTO';
+	return overlap + (product ? 2 : 0);
+}
+
+function bestAsset(topic: string, assets: PublicAsset[]): PublicAsset | undefined {
+	return [...assets].sort((a, b) => matchScore(topic, b) - matchScore(topic, a)).find((asset) => matchScore(topic, asset) > 0);
 }
 
 export function planMedia(input: {
@@ -22,7 +33,9 @@ export function planMedia(input: {
 	const spec = mediaSpecFor(input.channel);
 	const topic = input.topic ?? input.objective ?? '';
 	const visualTopic = VISUAL_TOPIC.test(topic);
-	const existing = matchingAsset(topic, input.assets ?? []);
+	const existing = bestAsset(topic, input.assets ?? []);
+	const direct = existing && (existing.libraryType === 'PRODUCT_SCREENSHOT' || existing.libraryType === 'PRODUCT_UI' || existing.libraryType === 'PRODUCT_PHOTO' || existing.libraryType === 'FOUNDER_PHOTO');
+	const reference = existing?.verifiedReference && existing.referenceAllowed ? existing : undefined;
 	const article = input.contentType === 'article' || spec.supportedTypes.includes('HERO_IMAGE');
 
 	if (spec.mediaRequired) {
@@ -32,12 +45,33 @@ export function planMedia(input: {
 			mediaRole: 'REQUIRED_BY_CHANNEL',
 			mediaType: spec.supportedTypes[0] ?? 'IMAGE',
 			reason: `${input.channel} cannot be published as text alone. The visual has to carry the idea, not decorate a caption.`,
-			preferredSource: existing ? 'existing' : 'generate',
+			preferredSource: direct ? 'existing' : reference ? 'generate' : 'generate',
 			visualConcept: conceptFor(topic, spec.aspectRatios[0] ?? '1:1'),
 			aspectRatio: spec.aspectRatios[0] ?? null,
 			textOverlayRecommendation: 'No text baked into the image. Put the argument in the caption and alt text.',
 			altTextDirection: `Describe the concrete visual for ${topic || 'this post'}, not a slogan.`,
-			existingAssetId: existing?.id ?? null,
+			existingAssetId: direct ? existing.id : null,
+			referenceAssetIds: !direct && reference ? [reference.id] : [],
+			mediaChoice: direct ? 'existing' : reference ? 'reference' : 'generate',
+			generateNow: false,
+		};
+	}
+
+	if (!spec.mediaRequired && direct && existing) {
+		return {
+			mediaRequired: false,
+			mediaRecommended: true,
+			mediaRole: 'SUPPORTING',
+			mediaType: 'SCREENSHOT',
+			reason: 'A verified product image matches this subject. Use it when it shows the point. Do not add a second generated picture.',
+			preferredSource: 'existing',
+			visualConcept: conceptFor(topic, spec.aspectRatios[0] ?? '1:1'),
+			aspectRatio: spec.aspectRatios[0] ?? null,
+			textOverlayRecommendation: 'Do not cover the product interface with a slogan.',
+			altTextDirection: 'Name the product view and what the reader is meant to notice.',
+			existingAssetId: existing.id,
+			referenceAssetIds: [],
+			mediaChoice: 'existing',
 			generateNow: false,
 		};
 	}

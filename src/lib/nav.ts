@@ -27,6 +27,7 @@ export const APP_NAV: NavItem[] = [
 			{ label: 'Scheduled', href: '/content/schedule' },
 			{ label: 'Published', href: '/content/published' },
 			{ label: 'Generate', href: '/content/generate' },
+			{ label: 'Brand assets', href: '/content/brand-assets' },
 		],
 	},
 ];

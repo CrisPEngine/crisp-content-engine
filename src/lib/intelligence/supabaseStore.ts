@@ -182,6 +182,12 @@ export function createSupabaseIntelligenceStore(): IntelligenceStore {
 			})));
 		},
 
+		async listBrandBrains(userId) {
+			const { data, error } = await db().from('brand_brains').select('*').eq('user_id', userId);
+			if (error) throw new Error(error.message);
+			return (data ?? []).map((row) => mapBrain(row, []));
+		},
+
 		async getBrandBrainById(userId, id) {
 			const { data, error } = await db().from('brand_brains').select('*').eq('id', id).eq('user_id', userId).maybeSingle();
 			if (error) throw new Error(error.message);

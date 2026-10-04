@@ -97,6 +97,10 @@ export function createMemoryIntelligenceStore(): IntelligenceStore {
 			return owned(brains.get(id), userId);
 		},
 
+		async listBrandBrains(userId) {
+			return [...brains.values()].filter((row) => row.userId === userId);
+		},
+
 		async addExample(userId, example) {
 			const brain = owned(brains.get(example.brandBrainId), userId);
 			if (!brain) throw new Error('Brand brain not found');

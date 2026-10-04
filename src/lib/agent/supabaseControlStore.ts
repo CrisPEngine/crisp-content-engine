@@ -6,6 +6,7 @@ import type {
 	AgentControlStore,
 	AgentCredential,
 	AgentEvent,
+	ApprovalRequest,
 	AuditEntry,
 	CommunityInteraction,
 	ContentAsset,
@@ -26,6 +27,7 @@ function credentialFromRow(row: Record<string, unknown>): AgentCredential {
 		name: String(row.name),
 		ownerUserId: String(row.owner_user_id),
 		organisationId: (row.organisation_id as string | null) ?? undefined,
+		scope: row.scope === 'SELECTED_BRANDS' || row.scope === 'OWNER_ACCOUNT' ? row.scope : 'BRAND',
 		allowedBrandIds: (row.allowed_brand_ids as string[]) ?? [],
 		capabilities: (row.capabilities as AgentCapability[]) ?? [],
 		environment: row.environment as AgentCredential['environment'],
@@ -71,14 +73,93 @@ async function listRecords<T extends { brandId?: string }>(ownerUserId: string, 
 	return (data ?? []).map((row) => row.payload as T);
 }
 
+function approvalToRow(request: ApprovalRequest) {
+	return {
+		id: request.id,
+		owner_user_id: request.ownerUserId,
+		brand_id: request.brandId,
+		credential_id: request.credentialId,
+		action: request.action,
+		target_type: request.targetType,
+		target_id: request.targetId,
+		summary: request.summary,
+		preview: request.preview,
+		consequence_level: request.consequenceLevel,
+		requested_action: request.requestedAction,
+		parameters: request.parameters,
+		parameter_hash: request.parameterHash,
+		content_hash: request.contentHash,
+		status: request.status,
+		token_hash: request.tokenHash,
+		created_at: request.createdAt,
+		expires_at: request.expiresAt,
+		resolved_at: request.resolvedAt ?? null,
+		resolved_by: request.resolvedBy ?? null,
+		authorization_method: request.authorizationMethod ?? null,
+		execution_status: request.executionStatus,
+		idempotency_key: request.idempotencyKey ?? null,
+	};
+}
+
+function approvalFromRow(row: Record<string, unknown>): ApprovalRequest {
+	return {
+		id: String(row.id),
+		ownerUserId: String(row.owner_user_id),
+		brandId: String(row.brand_id),
+		credentialId: String(row.credential_id),
+		action: String(row.action),
+		targetType: row.target_type === 'article' ? 'article' : 'content',
+		targetId: String(row.target_id),
+		summary: String(row.summary),
+		preview: (row.preview as Record<string, unknown>) ?? {},
+		consequenceLevel: Number(row.consequence_level),
+		requestedAction: row.requested_action === 'approve_and_schedule' ? 'approve_and_schedule' : 'approve_content',
+		parameters: (row.parameters as Record<string, unknown>) ?? {},
+		parameterHash: String(row.parameter_hash),
+		contentHash: String(row.content_hash),
+		status: row.status as ApprovalRequest['status'],
+		tokenHash: String(row.token_hash),
+		createdAt: String(row.created_at),
+		expiresAt: String(row.expires_at),
+		resolvedAt: (row.resolved_at as string | null) ?? undefined,
+		resolvedBy: (row.resolved_by as string | null) ?? undefined,
+		authorizationMethod: (row.authorization_method as string | null) ?? undefined,
+		executionStatus: row.execution_status as ApprovalRequest['executionStatus'],
+		idempotencyKey: (row.idempotency_key as string | null) ?? undefined,
+	};
+}
+
 export function createSupabaseAgentStore(): AgentControlStore {
 	return {
+		async saveApprovalRequest(request) {
+			const { error } = await db().from('approval_requests').upsert(approvalToRow(request));
+			if (error) throw new Error(error.message);
+			return request;
+		},
+		async getApprovalRequest(id) {
+			const { data, error } = await db().from('approval_requests').select('*').eq('id', id).maybeSingle();
+			if (error) throw new Error(error.message);
+			return data ? approvalFromRow(data as Record<string, unknown>) : null;
+		},
+		async getApprovalRequestByTokenHash(tokenHash) {
+			const { data, error } = await db().from('approval_requests').select('*').eq('token_hash', tokenHash).maybeSingle();
+			if (error) throw new Error(error.message);
+			return data ? approvalFromRow(data as Record<string, unknown>) : null;
+		},
+		async listApprovalRequests(ownerUserId, status) {
+			let query = db().from('approval_requests').select('*').eq('owner_user_id', ownerUserId);
+			if (status) query = query.eq('status', status);
+			const { data, error } = await query;
+			if (error) throw new Error(error.message);
+			return (data ?? []).map((row) => approvalFromRow(row as Record<string, unknown>));
+		},
 		async insertCredential(credential) {
 			const { error } = await db().from('agent_credentials').insert({
 				id: credential.id,
 				name: credential.name,
 				owner_user_id: credential.ownerUserId,
 				organisation_id: credential.organisationId ?? null,
+				scope: credential.scope ?? 'BRAND',
 				allowed_brand_ids: credential.allowedBrandIds,
 				capabilities: credential.capabilities,
 				environment: credential.environment,

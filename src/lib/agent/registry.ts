@@ -24,6 +24,7 @@ function action(
 
 export const AGENT_ACTIONS: AgentActionDefinition[] = [
 	action('cce_get_capabilities', 'system:read', 0, 'Capabilities for this agent, by brand and channel. Unavailable means unavailable.'),
+	action('cce_list_brands', 'brand:read', 0, 'Brands this credential can access. Names and ids only. No tokens.'),
 	action('cce_get_system_status', 'system:read', 0, 'Operational status, failed jobs, pending approvals, and model roles. No secrets.'),
 	action('cce_get_brands', 'brand:read', 0, 'Brands this agent is allowed to access.'),
 	action(
@@ -265,6 +266,10 @@ export const AGENT_ACTIONS: AgentActionDefinition[] = [
 		'Propose a budget change for human approval. Does not change spend.',
 		z.object({ brandId, platform: z.string().min(1), campaign: z.string().min(1), reason: z.string().min(1), dailyBudgetDelta: z.string().optional(), totalBudgetDelta: z.string().optional() }).passthrough(),
 	),
+	action('cce_create_approval_request', 'content:submit_for_approval', 2, 'Ask the CCE account owner to approve an exact action. Does not approve it.', z.object({ brandId, targetType: z.enum(['content', 'article']).optional(), targetId: z.string().optional(), contentId: z.string().optional(), articleId: z.string().optional(), requestedAction: z.enum(['approve_content', 'approve_and_schedule']).optional(), publishAt: z.string().optional(), idempotencyKey: z.string().optional() }).passthrough()),
+	action('cce_get_approval_request', 'content:read', 0, 'Read one human approval request. Does not resolve it.', z.object({ brandId, approvalId: z.string().optional(), id: z.string().optional() }).passthrough()),
+	action('cce_list_approval_requests', 'content:read', 0, 'Pending human approval requests for a brand.'),
+	action('cce_resolve_approval_request', 'content:submit_for_approval', 3, 'Refuses agent approval. Human authorization uses the authenticated CCE approval page.', z.object({ brandId, approvalId: z.string().optional(), approved: z.boolean().optional() }).passthrough()),
 	action('cce_get_marketing_brief', 'system:read', 0, 'Daily marketing brief assembled from CCE state.'),
 	action('cce_get_next_best_actions', 'system:read', 0, 'Prioritised actions, with approval requirements.'),
 	action(

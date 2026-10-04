@@ -97,7 +97,7 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 			const query = (text(input, 'query') ?? '').toLowerCase();
 			const assets = (await store.listAssets(ctx.credential.ownerUserId, brain.id))
 				.map(publicAsset)
-				.filter((asset) => !query || `${asset.title ?? ''} ${asset.altText ?? ''} ${asset.caption ?? ''}`.toLowerCase().includes(query));
+				.filter((asset) => !query || `${asset.title ?? ''} ${asset.altText ?? ''} ${asset.caption ?? ''} ${asset.description ?? ''} ${asset.productFeature ?? ''} ${(asset.tags ?? []).join(' ')}`.toLowerCase().includes(query));
 			return { assets };
 		}
 		case 'cce_detach_asset': {

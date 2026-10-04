@@ -2,11 +2,42 @@ import type { AgentCapability, RateLimitPolicy } from './policy';
 
 export type AgentEnvironment = 'production' | 'staging' | 'test';
 
+export type CredentialScope = 'BRAND' | 'SELECTED_BRANDS' | 'OWNER_ACCOUNT';
+
+export type ApprovalRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED' | 'EXECUTED' | 'FAILED';
+
+export type ApprovalRequest = {
+	id: string;
+	ownerUserId: string;
+	brandId: string;
+	credentialId: string;
+	action: string;
+	targetType: 'content' | 'article';
+	targetId: string;
+	summary: string;
+	preview: Record<string, unknown>;
+	consequenceLevel: number;
+	requestedAction: 'approve_content' | 'approve_and_schedule';
+	parameters: Record<string, unknown>;
+	parameterHash: string;
+	contentHash: string;
+	status: ApprovalRequestStatus;
+	tokenHash: string;
+	createdAt: string;
+	expiresAt: string;
+	resolvedAt?: string;
+	resolvedBy?: string;
+	authorizationMethod?: string;
+	executionStatus: 'pending' | 'executed' | 'failed' | 'not_executed';
+	idempotencyKey?: string;
+};
+
 export type AgentCredential = {
 	id: string;
 	name: string;
 	ownerUserId: string;
 	organisationId?: string;
+	scope: CredentialScope;
 	allowedBrandIds: string[];
 	capabilities: AgentCapability[];
 	environment: AgentEnvironment;
@@ -180,6 +211,10 @@ export type IdempotencyRecord = {
 
 export type AgentControlStore = {
 	insertCredential(credential: AgentCredential): Promise<void>;
+	saveApprovalRequest(request: ApprovalRequest): Promise<ApprovalRequest>;
+	getApprovalRequest(id: string): Promise<ApprovalRequest | null>;
+	getApprovalRequestByTokenHash(tokenHash: string): Promise<ApprovalRequest | null>;
+	listApprovalRequests(ownerUserId: string, status?: ApprovalRequest['status']): Promise<ApprovalRequest[]>;
 	updateCredential(id: string, patch: Partial<Pick<AgentCredential, 'lastUsedAt' | 'revokedAt' | 'capabilities' | 'allowedBrandIds'>>): Promise<void>;
 	findCredentialByHash(keyHash: string): Promise<AgentCredential | null>;
 	listCredentials(ownerUserId: string): Promise<AgentCredential[]>;

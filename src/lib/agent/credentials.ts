@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'crypto';
 import { AgentError } from './errors';
 import type { AgentCapability, RateLimitPolicy } from './policy';
 import { DEFAULT_RATE_LIMIT } from './policy';
-import type { AgentCredential, AgentEnvironment, PublicAgentCredential } from './types';
+import type { AgentCredential, AgentEnvironment, CredentialScope, PublicAgentCredential } from './types';
 import { getAgentStore } from './controlStore';
 
 export function hashAgentKey(secret: string): string {
@@ -35,6 +35,7 @@ export async function issueAgentCredential(input: {
 	organisationId?: string;
 	allowedBrandIds: string[];
 	capabilities: AgentCapability[];
+	scope?: CredentialScope;
 	environment?: AgentEnvironment;
 	expiresAt?: string;
 	rateLimit?: RateLimitPolicy;
@@ -45,6 +46,7 @@ export async function issueAgentCredential(input: {
 		name: input.name,
 		ownerUserId: input.ownerUserId,
 		organisationId: input.organisationId,
+		scope: input.scope ?? (input.allowedBrandIds.length > 1 ? 'SELECTED_BRANDS' : 'BRAND'),
 		allowedBrandIds: input.allowedBrandIds,
 		capabilities: input.capabilities,
 		environment: input.environment ?? 'production',

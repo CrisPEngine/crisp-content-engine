@@ -24,6 +24,7 @@ export type IntelligenceStore = {
 	): Promise<BrandBrain>;
 	getBrandBrain(userId: string, airtableBrandId: string): Promise<BrandBrain | null>;
 	getBrandBrainById(userId: string, id: string): Promise<BrandBrain | null>;
+	listBrandBrains(userId: string): Promise<BrandBrain[]>;
 	addExample(userId: string, example: Omit<BrandBrainExample, 'id'> & { brandBrainId: string }): Promise<BrandBrainExample>;
 
 	upsertStrategy(userId: string, strategy: Omit<BrandStrategy, 'id' | 'campaigns' | 'channelStrategies'> & { id?: string }): Promise<BrandStrategy>;

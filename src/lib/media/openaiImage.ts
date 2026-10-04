@@ -55,23 +55,20 @@ export const openaiImageProvider: ImageGenerationProvider = {
 			throw new AgentError('image_provider_unavailable', 'Image generation is not configured.', 503);
 		}
 		const size = imageSizeForRatio(request.aspectRatio);
+		const references = (request.referenceImageUrls ?? []).filter((url) => url.startsWith('https://') || url.startsWith('data:image/'));
+		const endpoint = references.length > 0 ? 'https://api.openai.com/v1/images/edits' : 'https://api.openai.com/v1/images/generations';
+		const body = references.length > 0
+			? { model: IMAGE_MODEL, prompt: request.prompt, images: references.slice(0, 8).map((image_url) => ({ image_url })), size: size.size, quality: 'medium', output_format: 'jpeg', output_compression: 85, n: 1 }
+			: { model: IMAGE_MODEL, prompt: request.prompt, size: size.size, quality: 'medium', output_format: 'jpeg', output_compression: 85, n: 1 };
 		let response: Response;
 		try {
-			response = await fetch('https://api.openai.com/v1/images/generations', {
+			response = await fetch(endpoint, {
 				method: 'POST',
 				headers: {
 					Authorization: `Bearer ${apiKey}`,
 					'Content-Type': 'application/json',
 				},
-				body: JSON.stringify({
-					model: IMAGE_MODEL,
-					prompt: request.prompt,
-					size: size.size,
-					quality: 'medium',
-					output_format: 'jpeg',
-					output_compression: 85,
-					n: 1,
-				}),
+				body: JSON.stringify(body),
 				signal: AbortSignal.timeout(120_000),
 			});
 		} catch (error) {

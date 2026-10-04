@@ -126,6 +126,11 @@ export const FOLIAN_GROK_DENIED: AgentCapability[] = [
 	'ads:activate',
 ];
 
+/** Account-scoped operator. Same draft and propose boundary as the Folian credential. No approve, publish, or spend. */
+export const CHIEF_OF_STAFF_CAPABILITIES: AgentCapability[] = [...FOLIAN_GROK_CAPABILITIES];
+
+export const CHIEF_OF_STAFF_DENIED: AgentCapability[] = [...FOLIAN_GROK_DENIED];
+
 export type RateLimitPolicy = {
 	requestsPerHour: number;
 	generationsPerDay: number;

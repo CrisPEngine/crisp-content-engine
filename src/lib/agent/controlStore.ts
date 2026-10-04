@@ -5,6 +5,7 @@ import type {
 	AgentControlStore,
 	AgentCredential,
 	AgentEvent,
+	ApprovalRequest,
 	AgentFeedback,
 	AuditEntry,
 	CommunityInteraction,
@@ -30,10 +31,24 @@ export function createMemoryAgentStore(): AgentControlStore {
 	const events: Array<Owned<AgentEvent>> = [];
 	const feedback: Array<Owned<AgentFeedback>> = [];
 	const assets = new Map<string, Owned<ContentAsset>>();
+	const approvals = new Map<string, ApprovalRequest>();
 
 	return {
 		async insertCredential(credential) {
-			credentials.set(credential.id, credential);
+			credentials.set(credential.id, { ...credential, scope: credential.scope ?? 'BRAND' });
+		},
+		async saveApprovalRequest(request) {
+			approvals.set(request.id, request);
+			return request;
+		},
+		async getApprovalRequest(id) {
+			return approvals.get(id) ?? null;
+		},
+		async getApprovalRequestByTokenHash(tokenHash) {
+			return [...approvals.values()].find((row) => row.tokenHash === tokenHash) ?? null;
+		},
+		async listApprovalRequests(ownerUserId, status) {
+			return [...approvals.values()].filter((row) => row.ownerUserId === ownerUserId && (!status || row.status === status));
 		},
 		async updateCredential(id, patch) {
 			const current = credentials.get(id);

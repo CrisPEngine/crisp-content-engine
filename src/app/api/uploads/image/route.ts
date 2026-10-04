@@ -77,9 +77,10 @@ export async function POST(req: Request) {
 		// Upload to Cloudinary
 		const result = await uploadImageFromBuffer(buffer, file.name);
 
+		let assetId: string | undefined;
 		try {
 			const { recordUploadedAsset } = await import('@/lib/media/images');
-			await recordUploadedAsset({
+			const recorded = await recordUploadedAsset({
 				ownerUserId: user.id,
 				url: result.secure_url,
 				providerAssetId: result.public_id,
@@ -88,6 +89,7 @@ export async function POST(req: Request) {
 				mimeType: file.type,
 				fileSize: file.size,
 			});
+			assetId = recorded.id;
 		} catch {
 			// The publisher still receives the Cloudinary URL if asset metadata is unavailable.
 		}
@@ -97,6 +99,7 @@ export async function POST(req: Request) {
 			publicId: result.public_id,
 			width: result.width,
 			height: result.height,
+			assetId,
 		});
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : 'Failed to upload image';

@@ -48,6 +48,12 @@ export function publicAsset(asset: ContentAssetRecord): PublicAsset {
 		altText: asset.altText,
 		caption: asset.caption,
 		title: asset.title,
+		description: asset.description,
+		tags: asset.tags,
+		productFeature: asset.productFeature,
+		libraryType: asset.libraryType,
+		verifiedReference: asset.verifiedReference,
+		referenceAllowed: asset.referenceAllowed,
 		approvalStatus: asset.approvalStatus,
 		url: asset.url,
 	};
@@ -111,11 +117,19 @@ export async function generateAssetFromProposal(input: {
 		altTextDirection: input.decision.altTextDirection ?? undefined,
 		excerpt: input.excerpt,
 	});
+	const referenceIds = input.decision.referenceAssetIds ?? [];
+	const referenceImageUrls: string[] = [];
+	for (const referenceId of referenceIds) {
+		const reference = await store.getAsset(input.ownerUserId, referenceId);
+		const permitted = reference?.verifiedReference && reference.referenceAllowed && reference.url && (!reference.brandId || reference.brandId === input.brandId);
+		if (permitted && reference.url) referenceImageUrls.push(reference.url);
+	}
 	const generated = await provider.generate({
 		concept: input.decision.visualConcept ?? input.decision.reason,
 		prompt: instructions.prompt,
 		aspectRatio: input.decision.aspectRatio ?? '1:1',
 		altTextDirection: input.decision.altTextDirection ?? 'Describe the image.',
+		referenceImageUrls,
 	});
 	const [width, height] = dimensionsFor(input.decision.aspectRatio);
 	const stored = await uploader(generated.bytes, `${input.targetId}.jpg`);
@@ -145,6 +159,7 @@ export async function generateAssetFromProposal(input: {
 			role: input.decision.mediaRole,
 			visualGuidanceStored: instructions.visualGuidanceStored,
 			estimatedCostUsd: generated.estimatedCostUsd,
+			referenceAssetIds: referenceIds,
 		},
 		approvalStatus: 'draft',
 		createdAt: now,
@@ -172,9 +187,9 @@ export async function recordUploadedAsset(input: {
 	mimeType?: string;
 	fileSize?: number;
 	brandId?: string;
-}): Promise<void> {
+}): Promise<ContentAssetRecord> {
 	const now = new Date().toISOString();
-	await getNativeContentStore().saveAsset({
+	return getNativeContentStore().saveAsset({
 		id: crypto.randomUUID(),
 		ownerUserId: input.ownerUserId,
 		brandId: input.brandId,

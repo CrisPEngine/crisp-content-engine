@@ -25,6 +25,8 @@ export type MediaDecision = {
 	textOverlayRecommendation: string;
 	altTextDirection: string | null;
 	existingAssetId: string | null;
+	referenceAssetIds?: string[];
+	mediaChoice?: 'existing' | 'reference' | 'generate' | 'none';
 	generateNow: false;
 };
 
@@ -40,6 +42,19 @@ export type ChannelMediaSpec = {
 	implementation: 'SUPPORTED_BY_PLATFORM' | 'CCE_NATIVE' | 'NOT_IMPLEMENTED';
 	notes: string;
 };
+
+export type LibraryAssetType =
+	| 'PRODUCT_SCREENSHOT'
+	| 'PRODUCT_UI'
+	| 'LOGO'
+	| 'BRAND_MARK'
+	| 'BRAND_REFERENCE'
+	| 'PRODUCT_PHOTO'
+	| 'FOUNDER_PHOTO'
+	| 'MARKETING_EXAMPLE'
+	| 'ARTICLE_IMAGE'
+	| 'SOCIAL_IMAGE'
+	| 'OTHER';
 
 export type ContentAssetRecord = {
 	id: string;
@@ -63,6 +78,13 @@ export type ContentAssetRecord = {
 	generationModel?: string;
 	provenance: Record<string, unknown>;
 	rightsNotes?: string;
+	libraryType?: LibraryAssetType;
+	description?: string;
+	tags?: string[];
+	productFeature?: string;
+	themeIds?: string[];
+	verifiedReference?: boolean;
+	referenceAllowed?: boolean;
 	approvalStatus: 'draft' | 'approved' | 'rejected';
 	createdAt: string;
 	updatedAt: string;
@@ -90,6 +112,12 @@ export type PublicAsset = {
 	altText?: string;
 	caption?: string;
 	title?: string;
+	description?: string;
+	tags?: string[];
+	productFeature?: string;
+	libraryType?: LibraryAssetType;
+	verifiedReference?: boolean;
+	referenceAllowed?: boolean;
 	approvalStatus: ContentAssetRecord['approvalStatus'];
 	url?: string;
 };
@@ -99,6 +127,7 @@ export type ImageGenerationRequest = {
 	prompt: string;
 	aspectRatio: string;
 	altTextDirection: string;
+	referenceImageUrls?: string[];
 };
 
 export type ImageGenerationResult = {
