@@ -16,6 +16,7 @@ import {
 	folianVoice,
 } from '@/lib/intelligence/__tests__/folianFixture';
 import { generateAssetFromProposal, registerImageProviderForTests, setImageUploaderForTests } from '@/lib/media/images';
+import { buildImagePrompt } from '@/lib/media/prompt';
 import { createMemoryNativeContentStore, getNativeContentStore, setNativeContentStoreForTests } from '@/lib/media/store';
 import type { MediaDecision } from '@/lib/media/types';
 
@@ -411,5 +412,76 @@ describe('media planning and long-form articles', () => {
 		await expect(
 			generateAssetFromProposal({ ownerUserId: FOLIAN_USER_ID, credentialId, brandId, targetType: 'content', targetId: 'same-target', decision: decision('third concept'), rateLimit: FOLIAN_GROK_RATE_LIMIT }),
 		).rejects.toMatchObject({ code: 'rate_limit' });
+	});
+
+	it('keeps image instructions inside CCE and refuses to replace an approved asset', async () => {
+		const instructions = buildImagePrompt({
+			brand: { identity: folianIdentity, voice: folianVoice, knowledge: folianKnowledge },
+			channel: 'INSTAGRAM_FEED',
+			topic: 'Why autocomplete fails a novel',
+			concept: 'A single quiet object that stands for a remembered fact',
+			aspectRatio: '4:5',
+			purpose: 'REQUIRED_BY_CHANNEL',
+		});
+		expect(instructions.visualGuidanceStored).toBe(false);
+		expect(instructions.prompt).toMatch(/No verified visual-brand system is stored/);
+		expect(instructions.prompt).toMatch(/robots/);
+		const store = getNativeContentStore();
+		const approvedId = crypto.randomUUID();
+		await store.saveAsset({
+			id: approvedId,
+			ownerUserId: FOLIAN_USER_ID,
+			brandId,
+			assetType: 'image',
+			sourceType: 'upload',
+			storageProvider: 'cloudinary',
+			url: 'https://res.cloudinary.com/test/image/upload/v1/approved.jpg',
+			provenance: {},
+			approvalStatus: 'approved',
+			createdAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString(),
+		});
+		await store.saveLink({
+			id: crypto.randomUUID(),
+			ownerUserId: FOLIAN_USER_ID,
+			assetId: approvedId,
+			targetType: 'content',
+			targetId: 'approved-target',
+			createdAt: new Date().toISOString(),
+		});
+		let called = false;
+		registerImageProviderForTests({
+			id: 'fixture',
+			configured: () => true,
+			async generate() {
+				called = true;
+				return { bytes: Buffer.from('nope'), mimeType: 'image/jpeg', model: 'fixture', promptUsed: 'hidden', estimatedCostUsd: 1 };
+			},
+		});
+		await expect(
+			generateAssetFromProposal({
+				ownerUserId: FOLIAN_USER_ID,
+				credentialId,
+				brandId,
+				targetType: 'content',
+				targetId: 'approved-target',
+				decision: {
+					mediaRequired: true,
+					mediaRecommended: true,
+					mediaRole: 'REQUIRED_BY_CHANNEL',
+					mediaType: 'IMAGE',
+					reason: 'test',
+					preferredSource: 'generate',
+					visualConcept: 'another concept',
+					aspectRatio: '4:5',
+					textOverlayRecommendation: 'none',
+					altTextDirection: 'Describe it.',
+					existingAssetId: null,
+					generateNow: false,
+				},
+				rateLimit: FOLIAN_GROK_RATE_LIMIT,
+			}),
+		).rejects.toMatchObject({ code: 'invalid_input' });
+		expect(called).toBe(false);
 	});
 });

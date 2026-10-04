@@ -20,7 +20,7 @@ export function createMemoryAgentStore(): AgentControlStore {
 	const credentials = new Map<string, AgentCredential>();
 	const idempotency = new Map<string, IdempotencyRecord>();
 	const rates = new Map<string, { count: number; resetAt: number }>();
-	const costs = new Map<string, number>();
+		const costs = new Map<string, { usd: number; imageUsd: number }>();
 	const audit: AuditEntry[] = [];
 	const opportunities = new Map<string, Owned<MarketingOpportunity>>();
 	const briefs = new Map<string, Owned<AgentBriefRecord>>();
@@ -69,12 +69,24 @@ export function createMemoryAgentStore(): AgentControlStore {
 		},
 		async addCost(credentialId, usd) {
 			const key = `${credentialId}:${new Date().toISOString().slice(0, 10)}`;
-			const next = (costs.get(key) ?? 0) + usd;
-			costs.set(key, next);
-			return next;
+			const current = costs.get(key) ?? { usd: 0, imageUsd: 0 };
+			current.usd += usd;
+			costs.set(key, current);
+			return current.usd;
 		},
 		async costToday(credentialId) {
-			return costs.get(`${credentialId}:${new Date().toISOString().slice(0, 10)}`) ?? 0;
+			return costs.get(`${credentialId}:${new Date().toISOString().slice(0, 10)}`)?.usd ?? 0;
+		},
+		async addImageCost(credentialId, usd) {
+			const key = `${credentialId}:${new Date().toISOString().slice(0, 10)}`;
+			const current = costs.get(key) ?? { usd: 0, imageUsd: 0 };
+			current.usd += usd;
+			current.imageUsd += usd;
+			costs.set(key, current);
+			return current.imageUsd;
+		},
+		async imageCostToday(credentialId) {
+			return costs.get(`${credentialId}:${new Date().toISOString().slice(0, 10)}`)?.imageUsd ?? 0;
 		},
 		async writeAudit(entry) {
 			audit.push(entry);

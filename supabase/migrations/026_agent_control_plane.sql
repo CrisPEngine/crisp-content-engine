@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS public.agent_daily_cost (
   credential_id     UUID        NOT NULL REFERENCES public.agent_credentials(id) ON DELETE CASCADE,
   day               DATE        NOT NULL,
   usd               NUMERIC(12, 6) NOT NULL,
+  image_usd         NUMERIC(12, 6) NOT NULL DEFAULT 0,
   PRIMARY KEY (credential_id, day)
 );
 

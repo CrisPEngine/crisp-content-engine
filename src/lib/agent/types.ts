@@ -191,6 +191,8 @@ export type AgentControlStore = {
 	consumeRate(credentialId: string, windowKey: string, limit: number, windowMs: number): Promise<{ allowed: boolean; count: number }>;
 	addCost(credentialId: string, usd: number): Promise<number>;
 	costToday(credentialId: string): Promise<number>;
+	addImageCost(credentialId: string, usd: number): Promise<number>;
+	imageCostToday(credentialId: string): Promise<number>;
 
 	writeAudit(entry: AuditEntry): Promise<void>;
 	listAudit(ownerUserId: string, credentialId?: string): Promise<AuditEntry[]>;

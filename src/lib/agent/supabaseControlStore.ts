@@ -172,14 +172,15 @@ export function createSupabaseAgentStore(): AgentControlStore {
 		async addCost(credentialId, usd) {
 			const day = new Date().toISOString().slice(0, 10);
 			const current = await this.costToday(credentialId);
-			const next = current + usd;
+			const imageUsd = await this.imageCostToday(credentialId);
 			const { error } = await db().from('agent_daily_cost').upsert({
 				credential_id: credentialId,
 				day,
-				usd: next,
+				usd: current + usd,
+				image_usd: imageUsd,
 			});
 			if (error) throw new Error(error.message);
-			return next;
+			return current + usd;
 		},
 		async costToday(credentialId) {
 			const day = new Date().toISOString().slice(0, 10);
@@ -191,6 +192,30 @@ export function createSupabaseAgentStore(): AgentControlStore {
 				.maybeSingle();
 			if (error) throw new Error(error.message);
 			return data ? Number(data.usd) : 0;
+		},
+		async addImageCost(credentialId, usd) {
+			const day = new Date().toISOString().slice(0, 10);
+			const current = await this.costToday(credentialId);
+			const imageUsd = await this.imageCostToday(credentialId);
+			const { error } = await db().from('agent_daily_cost').upsert({
+				credential_id: credentialId,
+				day,
+				usd: current + usd,
+				image_usd: imageUsd + usd,
+			});
+			if (error) throw new Error(error.message);
+			return imageUsd + usd;
+		},
+		async imageCostToday(credentialId) {
+			const day = new Date().toISOString().slice(0, 10);
+			const { data, error } = await db()
+				.from('agent_daily_cost')
+				.select('image_usd')
+				.eq('credential_id', credentialId)
+				.eq('day', day)
+				.maybeSingle();
+			if (error) throw new Error(error.message);
+			return data ? Number(data.image_usd) : 0;
 		},
 		async writeAudit(entry) {
 			const { error } = await db().from('agent_audit_log').insert({

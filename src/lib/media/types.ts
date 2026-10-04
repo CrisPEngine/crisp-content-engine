@@ -93,3 +93,26 @@ export type PublicAsset = {
 	approvalStatus: ContentAssetRecord['approvalStatus'];
 	url?: string;
 };
+
+export type ImageGenerationRequest = {
+	concept: string;
+	prompt: string;
+	aspectRatio: string;
+	altTextDirection: string;
+};
+
+export type ImageGenerationResult = {
+	bytes: Buffer;
+	mimeType: string;
+	model: string;
+	promptUsed: string;
+	estimatedCostUsd: number;
+	width?: number;
+	height?: number;
+};
+
+export type ImageGenerationProvider = {
+	id: string;
+	configured(): boolean;
+	generate(request: ImageGenerationRequest): Promise<ImageGenerationResult>;
+};

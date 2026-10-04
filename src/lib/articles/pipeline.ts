@@ -12,6 +12,7 @@ export function normaliseTargetWords(value: number | undefined): number {
 	if (!value || value < 800) return 1500;
 	if (value >= 4500) return 5000;
 	if (value >= 2500) return 3000;
+	if (value > 1500) return Math.round(value);
 	return 1500;
 }
 
@@ -145,6 +146,16 @@ export async function generateArticle(input: {
 		sourceRequirements: ['Use only stored brand facts.'],
 		optimizationObjective: 'authority',
 	};
+	const coherence = await ai.completeJson<{ coherent?: boolean; findings?: string[] }>(
+		'REVIEW',
+		[
+			{ role: 'system', content: 'Review the article for continuity between sections. Return JSON with coherent (boolean) and findings (string array). Do not rewrite the article. Do not add facts that are not in the draft.' },
+			{ role: 'user', content: body },
+		],
+		'article_coherence',
+		input.ownerUserId,
+	);
+	const coherenceFindings = Array.isArray(coherence.data.findings) ? coherence.data.findings.filter((item) => typeof item === 'string' && item.trim()).slice(0, 8) : [];
 	const review = await completeReview({ draft: body, brain: input.brand, brief });
 	const finalBody = review.improvedDraft || body;
 	const assets = (await getNativeContentStore().listAssets(input.ownerUserId, input.brand.id)).map(publicAsset);
@@ -190,7 +201,11 @@ export async function generateArticle(input: {
 		performanceContentId: '',
 		wordCount: wordCount(finalBody),
 		targetWords,
-		review: { materialPassed: review.materialPassed, note: review.revisionReason ?? 'Reviewed against Brand Brain guardrails.' },
+		review: {
+			materialPassed: review.materialPassed,
+			note: review.revisionReason ?? (coherence.data.coherent === false ? 'Coherence review found section issues.' : 'Reviewed against Brand Brain guardrails.'),
+			coherenceFindings,
+		},
 		versions: [{ body: finalBody, createdAt: now }],
 		distribution: { disclosure: null, sponsorship: 'none', contentCluster: theme?.title ?? null, authorProfileId: null },
 		createdAt: now,

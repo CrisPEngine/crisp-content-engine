@@ -64,7 +64,7 @@ export type ArticleRecord = {
 	performanceContentId: string;
 	wordCount: number;
 	targetWords: number;
-	review: { materialPassed: boolean; note: string } | null;
+	review: { materialPassed: boolean; note: string; coherenceFindings?: string[] } | null;
 	versions: Array<{ body: string; createdAt: string; instruction?: string }>;
 	distribution: {
 		disclosure: string | null;

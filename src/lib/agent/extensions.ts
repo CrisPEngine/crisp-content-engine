@@ -132,6 +132,15 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 			}
 			if (!channel) throw new AgentError('invalid_input', 'A channel or an existing content item is required.', 400);
 			const planned = await mediaPlanFor(ctx, { ...input, channel, topic, contentType: articleId ? 'article' : text(input, 'contentType') });
+			const brain = await brand(ctx, planned.brandId);
+			let excerpt: string | undefined;
+			if (articleId) {
+				const article = await store.getArticle(ctx.credential.ownerUserId, articleId);
+				excerpt = article?.excerpt;
+			} else if (contentId) {
+				const memory = await getIntelligenceStore().getMemory(ctx.credential.ownerUserId, contentId);
+				excerpt = memory?.body?.slice(0, 400);
+			}
 			const generated = await generateAssetFromProposal({
 				ownerUserId: ctx.credential.ownerUserId,
 				credentialId: ctx.credential.id,
@@ -140,10 +149,14 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 				targetId,
 				decision: planned.decision,
 				rateLimit: ctx.credential.rateLimit,
+				brand: brain,
+				channel,
+				topic,
+				excerpt,
 			});
 			if (articleId) {
 				const article = await store.getArticle(ctx.credential.ownerUserId, articleId);
-				if (article && article.brandId === planned.brandId) {
+				if (article && article.brandId === planned.brandId && !article.featuredAssetId) {
 					article.featuredAssetId = generated.asset.id;
 					article.updatedAt = new Date().toISOString();
 					await store.saveArticle(article);
