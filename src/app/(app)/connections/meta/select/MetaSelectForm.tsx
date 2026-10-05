@@ -57,8 +57,8 @@ export function MetaSelectForm({
 
 			router.push('/connections');
 			router.refresh();
-		} catch (err: any) {
-			setError(err?.message || 'Something went wrong');
+		} catch (err: unknown) {
+			setError(err instanceof Error ? err.message : 'Something went wrong');
 			setSaving(false);
 		}
 	};
@@ -79,7 +79,7 @@ export function MetaSelectForm({
 			<div>
 				<h2 className="text-xl font-semibold">Select Facebook Page & Instagram</h2>
 				<p className="text-sm text-text-dim mt-1">
-					Choose which Facebook Page and Instagram account to use for publishing. One of each per workspace.
+					The current publisher still uses one selected Page and one selected Instagram account. Choosing here changes that workspace default. It does not create a separate brand mapping and it does not disconnect another brand.
 				</p>
 			</div>
 

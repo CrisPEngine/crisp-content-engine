@@ -4,9 +4,23 @@ import { getSupabaseService } from '@/lib/supabaseService';
 import { AuthLoadingHandler } from '@/components/AuthLoadingHandler';
 import Link from 'next/link';
 import { isMetaPublishingEnabledClient } from '@/lib/featureFlags';
+import { connectionHealth, type ConnectionHealth } from '@/lib/social/destinations';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+
+function ConnectionBadge({ health }: { health: ConnectionHealth }) {
+	const label = health === 'ACTION_REQUIRED' ? 'Action required' : health.charAt(0) + health.slice(1).toLowerCase();
+	const ready = health === 'CONNECTED';
+	return (
+		<div className={ready
+			? 'text-xs px-2 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300'
+			: 'text-xs px-2 py-1 rounded-full bg-warning/15 border border-warning/40 text-warning'}
+		>
+			{label}
+		</div>
+	);
+}
 
 function LinkedInCard({
 	connected,
@@ -17,7 +31,7 @@ function LinkedInCard({
 	connectionType,
 	connectionId,
 	needsBrandAssignment,
-	expiringSoon,
+	health,
 }: {
 	connected: boolean;
 	accountName?: string | null;
@@ -27,7 +41,7 @@ function LinkedInCard({
 	connectionType?: 'personal' | 'business';
 	connectionId?: string;
 	needsBrandAssignment?: boolean;
-	expiringSoon?: boolean;
+	health?: ConnectionHealth;
 }) {
 	const connectHref = connectionType === 'business' 
 		? '/api/connections/linkedin/authorize?type=business'
@@ -50,9 +64,7 @@ function LinkedInCard({
 					</div>
 				</div>
 				{connected && !needsBrandAssignment && (
-					<div className="text-xs px-2 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300">
-						Connected
-					</div>
+					<ConnectionBadge health={health ?? 'CONNECTED'} />
 				)}
 				{needsBrandAssignment && (
 					<div className="text-xs px-2 py-1 rounded-full bg-warning/15 border border-warning/40 text-warning">
@@ -77,11 +89,11 @@ function LinkedInCard({
 							)}
 						</div>
 					</div>
-					{expiringSoon && (
+					{(health === 'EXPIRED' || health === 'EXPIRING' || health === 'ACTION_REQUIRED') && (
 						<div className="p-3 rounded-xl2 bg-warning/10 border border-warning/30">
-							<p className="text-warning text-sm font-medium mb-1">⚠️ Reconnection required</p>
+							<p className="text-warning text-sm font-medium mb-1">{health === 'EXPIRED' ? 'Expired' : 'Reconnection required'}</p>
 							<p className="text-warning/90 text-sm mb-2">
-								Your LinkedIn connection is expiring soon. To allow publishing to continue, please disconnect and reconnect your account.
+								This LinkedIn token cannot be treated as ready to publish. Reconnect it before scheduling.
 							</p>
 						</div>
 					)}
@@ -137,16 +149,16 @@ function MetaCard({
 	selectedPage,
 	selectedInstagram,
 	tokenExpiresAt,
+	health,
 }: {
 	connected: boolean;
 	selectedPage?: { pageId: string; pageName: string } | null;
 	selectedInstagram?: { igUserId: string; igUsername: string } | null;
 	tokenExpiresAt?: string | null;
+	health?: ConnectionHealth;
 }) {
 	const connectHref = '/api/meta/oauth/start';
-	
-	// Check if token is expiring soon (within 7 days)
-	const expiringSoon = tokenExpiresAt ? (new Date(tokenExpiresAt).getTime() - Date.now()) < (7 * 24 * 60 * 60 * 1000) : false;
+	const healthStatus = health ?? connectionHealth({ expiresAt: tokenExpiresAt });
 
 	return (
 		<div className="card p-6 space-y-4">
@@ -158,11 +170,7 @@ function MetaCard({
 						<p className="text-sm text-text-dim">Publish to Facebook Pages and Instagram Business accounts.</p>
 					</div>
 				</div>
-				{connected && (
-					<div className="text-xs px-2 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300">
-						Connected
-					</div>
-				)}
+				{connected && <ConnectionBadge health={healthStatus} />}
 			</div>
 
 			{connected ? (
@@ -190,16 +198,15 @@ function MetaCard({
 							<div className="text-text-dim text-xs italic">No destinations selected yet.</div>
 						)}
 					</div>
-					{expiringSoon && (
+					{healthStatus !== 'CONNECTED' && (
 						<div className="p-3 rounded-xl2 bg-warning/10 border border-warning/30">
-							<p className="text-warning text-sm font-medium mb-1">⚠️ Reconnection required</p>
-							<p className="text-warning/90 text-sm mb-2">
-								Your Meta connection is expiring soon. To allow publishing to continue, please disconnect and reconnect your account.
-							</p>
+							<p className="text-warning text-sm font-medium mb-1">{healthStatus === 'EXPIRED' ? 'Expired' : 'Reconnection required'}</p>
+							<p className="text-warning/90 text-sm">This Meta authorization cannot be treated as ready to publish until it is reconnected.</p>
 						</div>
 					)}
 					<div className="p-3 rounded-xl2 bg-blue-500/10 border border-blue-500/20 text-sm text-text-dim">
-						CRISP publishes to one Facebook Page and one Instagram account per workspace.{' '}
+						One CCE account can authorize Meta once and publish each brand to its own Page or Instagram account.
+						Changing one brand does not disconnect another. A token that cannot publish is not shown as connected.
 						<a href="/connections/meta/select" className="text-primary hover:underline">Change Page &amp; Instagram</a>
 					</div>
 				</div>
@@ -282,24 +289,17 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 		.eq('connection_type', 'organization')
 		.maybeSingle();
 
-	// Check if tokens are expiring within 2 days
-	const now = new Date();
-	const twoDaysFromNow = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
-	
-	const checkExpiring = (connection: typeof memberConnection) => {
-		if (!connection?.expires_at) return false;
-		const expiresAt = new Date(connection.expires_at);
-		return expiresAt <= twoDaysFromNow && expiresAt > now;
-	};
-
-	const personalExpiring = checkExpiring(memberConnection);
-	const businessExpiring = checkExpiring(organizationConnection);
+	const linkedInHealth = (connection: typeof memberConnection): ConnectionHealth => connectionHealth({
+		expiresAt: connection?.expires_at,
+		reconnectRequired: Boolean(connection?.needs_reauth),
+		disconnected: !connection,
+	});
 
 	const personalConnection = memberConnection || null;
 	const businessConnection = organizationConnection || null;
 
 	// Fetch Meta connection status (if feature flag enabled)
-	let metaStatus: {
+	const metaStatus: {
 		connected: boolean;
 		selectedPage?: { pageId: string; pageName: string } | null;
 		selectedInstagram?: { igUserId: string; igUsername: string } | null;
@@ -357,7 +357,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 		connectionType: 'personal' as const,
 		connectionId: personalConnection?.id ?? undefined,
 		needsBrandAssignment: Boolean(personalConnection && !personalConnection.brand_profile_id),
-		expiringSoon: personalExpiring,
+		health: linkedInHealth(personalConnection),
 	};
 
 	const businessStatus = {
@@ -369,7 +369,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 		connectionType: 'business' as const,
 		connectionId: businessConnection?.id ?? undefined,
 		needsBrandAssignment: Boolean(businessConnection && !businessConnection.brand_profile_id),
-		expiringSoon: businessExpiring,
+		health: linkedInHealth(businessConnection),
 	};
 
 	return (
@@ -404,8 +404,8 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 					<div className="text-sm text-text-dim space-y-2">
 						<p>Your LinkedIn connection has expired. To resume publishing:</p>
 						<ol className="list-decimal ml-5 space-y-1">
-							<li>Click "Disconnect" below</li>
-							<li>Then click "Connect" to reconnect your account</li>
+							<li>Click Disconnect below</li>
+							<li>Then click Connect to reconnect your account</li>
 						</ol>
 						<p className="mt-2">This takes less than a minute and your pending posts will automatically publish once reconnected.</p>
 					</div>
@@ -430,8 +430,8 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 				</div>
 			)}
 
-			<LinkedInCard {...personalStatus} expiringSoon={personalExpiring} />
-			<LinkedInCard {...businessStatus} expiringSoon={businessExpiring} />
+			<LinkedInCard {...personalStatus} />
+			<LinkedInCard {...businessStatus} />
 
 			{isMetaPublishingEnabledClient() && <MetaCard {...metaStatus} />}
 
