@@ -201,22 +201,41 @@ async function publishJob(
 				.eq('ig_user_id', target_id)
 				.maybeSingle();
 
-			if (!igAccount) {
-				throw new Error('Instagram account not found. User may need to reconnect.');
-			}
+			let pageAccessToken: string | null = null;
 
-			const { data: page } = await admin
-				.from('meta_pages')
-				.select('page_access_token_encrypted')
-				.eq('user_id', user_id)
-				.eq('page_id', igAccount.connected_page_id)
+			// Instagram Login (no Facebook Page)
+			const { data: nativeDest } = await admin
+				.from('social_destinations')
+				.select('id, authorization_id, destination_type')
+				.eq('provider_destination_id', target_id)
+				.eq('destination_type', 'instagram_professional')
 				.maybeSingle();
-
-			if (!page || !page.page_access_token_encrypted) {
-				throw new Error('Connected page access token not found. User may need to reconnect.');
+			if (nativeDest?.authorization_id) {
+				const { getAuthorizationSecrets } = await import('@/lib/social/authorizationSecrets');
+				const secrets = await getAuthorizationSecrets(nativeDest.authorization_id);
+				if (secrets?.accessToken) {
+					accessToken = secrets.accessToken;
+				}
 			}
 
-			accessToken = decryptMetaToken(page.page_access_token_encrypted);
+			if (!accessToken) {
+				if (!igAccount) {
+					throw new Error('Instagram account not found. User may need to reconnect.');
+				}
+
+				const { data: page } = await admin
+					.from('meta_pages')
+					.select('page_access_token_encrypted')
+					.eq('user_id', user_id)
+					.eq('page_id', igAccount.connected_page_id)
+					.maybeSingle();
+
+				if (!page || !page.page_access_token_encrypted) {
+					throw new Error('Connected page access token not found. User may need to reconnect.');
+				}
+				pageAccessToken = decryptMetaToken(page.page_access_token_encrypted);
+				accessToken = pageAccessToken;
+			}
 		}
 
 		if (!accessToken) {
@@ -258,38 +277,59 @@ async function publishJob(
 			}
 			remotePostId = result.postId || '';
 		} else if (platform === 'instagram') {
-			if (!imageUrl) {
-				throw new Error('Instagram requires an image');
-			}
+			const { data: nativeDest } = await admin
+				.from('social_destinations')
+				.select('destination_type')
+				.eq('provider_destination_id', target_id)
+				.eq('destination_type', 'instagram_professional')
+				.maybeSingle();
 
-			const result = await publishToInstagram(target_id, accessToken, {
-				imageUrl,
-				caption: text,
-			});
-
-			if (!result.success) {
-				const errorMessage = result.error || 'Instagram publish failed';
-				const attempts = (job.attempts || 0) + 1;
-				if (attempts < MAX_ATTEMPTS) {
-					const delaySeconds = RETRY_DELAYS[attempts - 1] || 60 * 60;
-					const nextAttemptAt = new Date(Date.now() + delaySeconds * 1000).toISOString();
-					await admin
-						.from('publish_jobs')
-						.update(buildUpdatePayload('retrying', errorMessage, attempts, nextAttemptAt, result.metaError))
-						.eq('id', job.id);
-					console.log(`[Meta Worker] Job ${job.id} retry ${attempts}/${MAX_ATTEMPTS} at ${nextAttemptAt}`);
-					return { success: false, retry: true, error: errorMessage, metaError: result.metaError };
-				} else {
-					await admin
-						.from('publish_jobs')
-						.update(buildUpdatePayload('failed', errorMessage, attempts, null, result.metaError))
-						.eq('id', job.id);
-					await updateAirtableFailed(job.airtable_record_id, errorMessage);
-					console.log(`[Meta Worker] Job ${job.id} permanently failed after ${attempts} attempts`);
-					return { success: false, retry: false, error: errorMessage, metaError: result.metaError };
+			if (nativeDest) {
+				const { publishInstagramProfessional } = await import('@/lib/instagram/oauth');
+				const result = await publishInstagramProfessional({
+					igUserId: target_id,
+					accessToken,
+					caption: text,
+					imageUrl: imageUrl || undefined,
+				});
+				if (!result.success) {
+					throw new Error(result.error || 'Instagram publish failed');
 				}
+				remotePostId = result.mediaId || '';
+			} else {
+				if (!imageUrl) {
+					throw new Error('Instagram requires an image');
+				}
+
+				const result = await publishToInstagram(target_id, accessToken, {
+					imageUrl,
+					caption: text,
+				});
+
+				if (!result.success) {
+					const errorMessage = result.error || 'Instagram publish failed';
+					const attempts = (job.attempts || 0) + 1;
+					if (attempts < MAX_ATTEMPTS) {
+						const delaySeconds = RETRY_DELAYS[attempts - 1] || 60 * 60;
+						const nextAttemptAt = new Date(Date.now() + delaySeconds * 1000).toISOString();
+						await admin
+							.from('publish_jobs')
+							.update(buildUpdatePayload('retrying', errorMessage, attempts, nextAttemptAt, result.metaError))
+							.eq('id', job.id);
+						console.log(`[Meta Worker] Job ${job.id} retry ${attempts}/${MAX_ATTEMPTS} at ${nextAttemptAt}`);
+						return { success: false, retry: true, error: errorMessage, metaError: result.metaError };
+					} else {
+						await admin
+							.from('publish_jobs')
+							.update(buildUpdatePayload('failed', errorMessage, attempts, null, result.metaError))
+							.eq('id', job.id);
+						await updateAirtableFailed(job.airtable_record_id, errorMessage);
+						console.log(`[Meta Worker] Job ${job.id} permanently failed after ${attempts} attempts`);
+						return { success: false, retry: false, error: errorMessage, metaError: result.metaError };
+					}
+				}
+				remotePostId = result.postId || '';
 			}
-			remotePostId = result.postId || '';
 		} else {
 			throw new Error(`Unsupported platform: ${platform}`);
 		}

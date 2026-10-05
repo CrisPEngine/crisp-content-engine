@@ -24,6 +24,7 @@ import { createMonitor, executeResearch, monitorProject } from '@/lib/research/s
 import { selectSearchProvider } from '@/lib/research/search';
 import { MONITOR_TYPES, type ResearchProjectType } from '@/lib/research/types';
 import type { AgentCredential, MarketingOpportunity } from './types';
+import { mcpBrandChannelSummary } from '@/lib/social/brandChannels';
 
 export type AgentContext = {
 	credential: AgentCredential;
@@ -537,6 +538,11 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			if (memory.length === 0) issues.push({ path: 'memory', severity: 'warning' as const, message: 'No content memory yet' });
 			const disconnected = channelCatalog().filter((channel) => channel.capabilities.publish === 'NOT_IMPLEMENTED' || channel.capabilities.publish === 'UNKNOWN').map((channel) => channel.id);
 			return { brandId: brain.id, ok: validation.ok, score: validation.score, issues, disconnectedChannels: disconnected };
+		}
+		case 'cce_get_brand_channel_destinations': {
+			const brain = await requireBrand(ctx, brandId);
+			const channels = await mcpBrandChannelSummary(ctx.credential.ownerUserId, brain.id);
+			return { brandId: brain.id, name: brain.identity.name, channels };
 		}
 		case 'cce_get_strategy': {
 			const { brain, strategy, themes } = await brandContext(ctx, brandId);

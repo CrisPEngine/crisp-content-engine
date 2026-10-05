@@ -35,6 +35,13 @@ export const AGENT_ACTIONS: AgentActionDefinition[] = [
 		z.object({ brandId, sections: z.array(z.string()).optional() }).passthrough(),
 	),
 	action('cce_get_brand_health', 'brand:read', 0, 'Missing or stale Brand Brain, strategy, proof, and connection gaps.'),
+	action(
+		'cce_get_brand_channel_destinations',
+		'brand:read',
+		0,
+		'Per-channel connection and publish destination for a brand. No OAuth or tokens.',
+		z.object({ brandId }).passthrough(),
+	),
 	action('cce_get_strategy', 'strategy:read', 0, 'Objectives, audiences, positioning, pillars, channels, CTAs, campaigns, and themes.'),
 	action('cce_get_themes', 'strategy:read', 0, 'Active content themes for the brand.'),
 	action('cce_get_campaigns', 'strategy:read', 0, 'Content and marketing campaigns stored in CCE, not only paid media.'),

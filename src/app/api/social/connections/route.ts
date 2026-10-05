@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { syncNativeSocialForUser, assignBrandDestination } from '@/lib/social/nativeSync';
 import { channelFromPlatform, type PublishChannel } from '@/lib/social/channels';
+import { brandChannelRows, type BrandChannelRow } from '@/lib/social/brandChannels';
 
 export const runtime = 'nodejs';
 
-export async function GET() {
+export async function GET(request: Request) {
 	const supabase = await createClient();
 	const {
 		data: { user },
@@ -13,6 +14,9 @@ export async function GET() {
 	if (!user) {
 		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 	}
+
+	const url = new URL(request.url);
+	const brandIdParam = url.searchParams.get('brandId');
 
 	const summary = await syncNativeSocialForUser(user.id);
 
@@ -54,6 +58,7 @@ export async function GET() {
 			name: (b.identity_json as { name?: string } | null)?.name || 'Brand',
 		})),
 		brandDestinations: brandLinks || [],
+		brandChannels: brandIdParam ? await brandChannelRows(user.id, brandIdParam) : undefined,
 	});
 }
 

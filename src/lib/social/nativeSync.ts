@@ -3,7 +3,6 @@ import { connectionHealth } from '@/lib/social/destinations';
 import { channelFromPlatform, purposeForChannel, type PublishChannel } from '@/lib/social/channels';
 
 type Admin = ReturnType<typeof getSupabaseService>;
-
 const META_PROVIDER = 'meta';
 const LINKEDIN_PROVIDER = 'linkedin';
 
