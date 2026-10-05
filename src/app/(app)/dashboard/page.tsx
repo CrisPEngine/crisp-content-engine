@@ -9,6 +9,7 @@ import { RecommendedNextStep } from '@/components/RecommendedNextStep';
 import { StrategyCard } from '@/components/StrategyCard';
 import { CardSkeleton, UsageCardSkeleton } from '@/components/skeletons/Skeleton';
 import { AuthLoadingHandler } from '@/components/AuthLoadingHandler';
+import { WelcomeOnboarding } from '@/components/WelcomeOnboarding';
 import { NewBrandCallout } from '@/components/NewBrandCallout';
 import { Suspense } from 'react';
 
@@ -233,7 +234,12 @@ export default async function Dashboard({
 			currentStep = 1; // Complete questionnaire
 		}
 		
-		// Get user's plan and brand limit (entitlementsRow already fetched above)
+		const { count: nativeBrandCount } = await supabase
+			.from('brand_brains')
+			.select('id', { count: 'exact', head: true })
+			.eq('user_id', user.id);
+
+		const showWelcomeOnboarding = (nativeBrandCount ?? 0) === 0 && !hasBrandProfiles;
 		let maxBrands = 999; // Default to high number for admins or no subscription
 		let currentBrandCount = brandProfiles.length;
 		if (entitlementsRow?.max_brands != null) {
@@ -245,6 +251,12 @@ export default async function Dashboard({
 
 		return (
 			<main className="p-4 md:p-6 space-y-4 md:space-y-6">
+			<WelcomeOnboarding
+				show={showWelcomeOnboarding}
+				hasNativeBrand={(nativeBrandCount ?? 0) > 0}
+				hasStrategy={hasApprovedStrategies || hasStrategyReady}
+				hasChannels={isLinkedInConnected}
+			/>
 			<OnboardingDebug
 				isLinkedInConnected={isLinkedInConnected}
 				hasBrandProfiles={hasBrandProfiles}
