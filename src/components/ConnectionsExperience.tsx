@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PublishChannel } from '@/lib/social/channels';
 import type { BrandChannelView, AccountAuthorizationView } from '@/lib/social/brandChannels';
 
@@ -30,6 +30,15 @@ type DisconnectImpactState = {
 	warning: string;
 } | null;
 
+export function isCurrentBrandResponse(
+	requestId: number,
+	currentRequestId: number,
+	responseBrandId: string,
+	currentBrandId: string
+): boolean {
+	return requestId === currentRequestId && responseBrandId === currentBrandId;
+}
+
 export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, errorDetails }: Props) {
 	const [brands, setBrands] = useState<BrandRow[]>([]);
 	const [channels, setChannels] = useState<BrandChannelView[]>([]);
@@ -37,27 +46,30 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 	const [destinations, setDestinations] = useState<Array<{ id: string; provider: string; destination_type: string; display_name: string; handle?: string | null }>>([]);
 	const [selectedBrandId, setSelectedBrandId] = useState<string>(initialBrandId || '');
 	const [loading, setLoading] = useState(true);
+	const [brandLoading, setBrandLoading] = useState(false);
 	const [saving, setSaving] = useState<string | null>(null);
 	const [showAdvanced, setShowAdvanced] = useState(false);
 	const [showAccounts, setShowAccounts] = useState(false);
 	const [dismissSuccess, setDismissSuccess] = useState(false);
 	const [disconnectImpact, setDisconnectImpact] = useState<DisconnectImpactState>(null);
 	const [disconnecting, setDisconnecting] = useState(false);
+	const brandRequestId = useRef(0);
+	const brandRequestController = useRef<AbortController | null>(null);
+	const selectedBrandIdRef = useRef(selectedBrandId);
+	selectedBrandIdRef.current = selectedBrandId;
 
-	const load = useCallback(async () => {
+	const loadBase = useCallback(async () => {
 		setLoading(true);
 		try {
-			const brandQuery = selectedBrandId ? `?brandId=${encodeURIComponent(selectedBrandId)}` : '';
-			const res = await fetch(`/api/social/connections${brandQuery}`, { cache: 'no-store' });
+			const res = await fetch('/api/social/connections', { cache: 'no-store' });
 			const data = await res.json();
 			if (!res.ok) throw new Error(data.error || 'Failed to load');
 			const loadedBrands: BrandRow[] = data.brands || [];
 			setBrands(loadedBrands);
 			setDestinations(data.destinations || []);
 			setAccounts(data.accounts || []);
-			if (data.brandChannels) setChannels(data.brandChannels);
 
-			if (!selectedBrandId && loadedBrands.length > 0) {
+			if (!initialBrandId && loadedBrands.length > 0) {
 				const fromStorage = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
 				const pick = initialBrandId || fromStorage || loadedBrands[0].id;
 				setSelectedBrandId(pick);
@@ -65,21 +77,51 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 		} finally {
 			setLoading(false);
 		}
-	}, [selectedBrandId, initialBrandId]);
+	}, [initialBrandId]);
 
 	useEffect(() => {
-		load();
-	}, [load]);
+		loadBase();
+	}, [loadBase]);
 
 	useEffect(() => {
 		if (!selectedBrandId) return;
 		if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, selectedBrandId);
+
+		const requestId = ++brandRequestId.current;
+		const controller = new AbortController();
+		brandRequestController.current?.abort();
+		brandRequestController.current = controller;
+		setChannels([]);
+		setBrandLoading(true);
+
 		(async () => {
-			const res = await fetch(`/api/social/connections?brandId=${encodeURIComponent(selectedBrandId)}`);
-			const data = await res.json();
-			if (res.ok && data.brandChannels) setChannels(data.brandChannels);
-			if (res.ok && data.accounts) setAccounts(data.accounts);
+			try {
+				const res = await fetch(`/api/social/connections?brandId=${encodeURIComponent(selectedBrandId)}`, {
+					cache: 'no-store',
+					signal: controller.signal,
+				});
+				const data = await res.json();
+				if (
+					res.ok &&
+					isCurrentBrandResponse(requestId, brandRequestId.current, selectedBrandId, selectedBrandIdRef.current)
+				) {
+					setChannels(data.brandChannels || []);
+					if (data.destinations) setDestinations(data.destinations);
+					if (data.accounts) setAccounts(data.accounts);
+				}
+			} catch (err) {
+				if (err instanceof DOMException && err.name === 'AbortError') return;
+				if (isCurrentBrandResponse(requestId, brandRequestId.current, selectedBrandId, selectedBrandIdRef.current)) {
+					setChannels([]);
+				}
+			} finally {
+				if (isCurrentBrandResponse(requestId, brandRequestId.current, selectedBrandId, selectedBrandIdRef.current)) {
+					setBrandLoading(false);
+				}
+			}
 		})();
+
+		return () => controller.abort();
 	}, [selectedBrandId]);
 
 	useEffect(() => {
@@ -100,10 +142,10 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 						platform: ch === 'instagram' ? 'Instagram' : 'Threads',
 					}),
 				});
-				load();
+				// The brand-channel effect owns the read and will refresh the current brand safely.
 			})();
 		}
-	}, [oauthSuccess, selectedBrandId, load]);
+	}, [oauthSuccess, selectedBrandId]);
 
 	async function openDisconnect(authorizationId: string) {
 		const res = await fetch(`/api/social/connections/disconnect?authorizationId=${encodeURIComponent(authorizationId)}`);
@@ -129,12 +171,36 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 				throw new Error(data.error || 'Disconnect failed');
 			}
 			setDisconnectImpact(null);
-			await load();
+			setChannels([]);
+			setBrandLoading(true);
+			brandRequestController.current?.abort();
+			brandRequestId.current += 1;
+			const requestId = brandRequestId.current;
+			const controller = new AbortController();
+			brandRequestController.current = controller;
+			const refresh = await fetch(`/api/social/connections?brandId=${encodeURIComponent(selectedBrandId)}`, {
+				cache: 'no-store',
+				signal: controller.signal,
+			});
+			const data = await refresh.json();
+			if (refresh.ok && isCurrentBrandResponse(requestId, brandRequestId.current, selectedBrandId, selectedBrandIdRef.current)) {
+				setChannels(data.brandChannels || []);
+				setBrandLoading(false);
+			}
+			if (!refresh.ok) throw new Error(data.error || 'Could not refresh brand channels');
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Disconnect failed');
 		} finally {
 			setDisconnecting(false);
 		}
+	}
+
+	function handleBrandChange(nextBrandId: string) {
+		brandRequestController.current?.abort();
+		brandRequestId.current += 1;
+		setChannels([]);
+		setBrandLoading(Boolean(nextBrandId));
+		setSelectedBrandId(nextBrandId);
 	}
 
 	const connectedChannelLabel =
@@ -174,11 +240,28 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 				const data = await res.json();
 				throw new Error(data.error || 'Save failed');
 			}
-			await load();
+			brandRequestController.current?.abort();
+			brandRequestId.current += 1;
+			setChannels([]);
+			setBrandLoading(true);
+			const requestId = brandRequestId.current;
+			const controller = new AbortController();
+			brandRequestController.current = controller;
+			const refresh = await fetch(`/api/social/connections?brandId=${encodeURIComponent(selectedBrandId)}`, {
+				cache: 'no-store',
+				signal: controller.signal,
+			});
+			const data = await refresh.json();
+			if (!refresh.ok) throw new Error(data.error || 'Could not refresh brand channels');
+			if (isCurrentBrandResponse(requestId, brandRequestId.current, selectedBrandId, selectedBrandIdRef.current)) {
+				setChannels(data.brandChannels || []);
+				setBrandLoading(false);
+			}
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Could not save destination');
 		} finally {
 			setSaving(null);
+			setBrandLoading(false);
 		}
 	}
 
@@ -256,7 +339,7 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 						<select
 							className="rounded-lg bg-surface border border-edge/60 px-3 py-2.5 text-text min-w-[12rem]"
 							value={selectedBrandId}
-							onChange={(e) => setSelectedBrandId(e.target.value)}
+							onChange={(e) => handleBrandChange(e.target.value)}
 						>
 							{brands.length === 0 ? (
 								<option value="">No brands yet</option>
@@ -271,11 +354,18 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 					</label>
 				</div>
 
-				{selectedBrand && (
+				{selectedBrand && !brandLoading && (
 					<p className="text-sm font-semibold tracking-wide text-text-soft uppercase">{selectedBrand.name}</p>
 				)}
 
-				<ul className="space-y-4">
+				{brandLoading ? (
+					<div className="space-y-4" aria-label="Loading brand channels">
+						{[1, 2, 3, 4].map((item) => (
+							<div key={item} className="h-28 rounded-xl2 border border-edge/60 bg-surface animate-pulse" />
+						))}
+					</div>
+				) : (
+					<ul className="space-y-4">
 					{channels.map((row) => {
 						const options = destinationsForChannel(row.channel);
 						const hasAssignment = row.phase === 'READY' || row.phase === 'ASSIGNED' || row.phase === 'ACTION_REQUIRED';
@@ -350,7 +440,8 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 							</li>
 						);
 					})}
-				</ul>
+					</ul>
+				)}
 
 				<button type="button" className="text-xs text-text-dim underline" onClick={() => setShowAdvanced((v) => !v)}>
 					{showAdvanced ? 'Hide' : 'Show'} advanced details
