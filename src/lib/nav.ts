@@ -11,12 +11,14 @@ export interface NavItem {
 
 export const APP_NAV: NavItem[] = [
 	{ label: 'Dashboard', href: '/dashboard' },
+	{ label: 'AI Connections', href: '/settings/ai-connections' },
 	{
 		label: 'Strategy',
 		items: [
 			{ label: 'View Strategy', href: '/strategy' },
 			{ label: 'Monthly Updates', href: '/strategy/monthly-updates' },
 			{ label: 'Brand Intelligence', href: '/intelligence' },
+			{ label: 'Research', href: '/research' },
 		],
 	},
 	{

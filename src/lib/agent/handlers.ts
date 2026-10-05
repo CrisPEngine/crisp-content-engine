@@ -17,6 +17,11 @@ import { assertScheduleMatchesApproval, createApprovalRequest } from './approval
 import { planMedia } from '@/lib/media/planner';
 import { getNativeContentStore } from '@/lib/media/store';
 import { publicAsset } from '@/lib/media/images';
+import { decideResearch } from '@/lib/research/policy';
+import { packetContext } from '@/lib/research/run';
+import { createMonitor, executeResearch, monitorProject } from '@/lib/research/service';
+import { selectSearchProvider } from '@/lib/research/search';
+import { MONITOR_TYPES, type ResearchProjectType } from '@/lib/research/types';
 import type { AgentCredential, MarketingOpportunity } from './types';
 
 export type AgentContext = {
@@ -233,17 +238,72 @@ function contentTypeFor(channel: string): string {
 	return 'founder_post';
 }
 
+function configuredSearch() {
+	const provider = selectSearchProvider();
+	if (provider.configured) return provider;
+	return { name: provider.name, configured: false, async search() { return []; } };
+}
+
+function publicResearch(record: { id: string; brandId: string; request: string; createdAt: string; packet?: { projectType: string; decision: string; gaps: string[]; usage: unknown; promotedToBrandBrain: false }; sources: unknown[]; claims: unknown[] }) {
+	return {
+		researchId: record.id,
+		brandId: record.brandId,
+		request: record.request,
+		createdAt: record.createdAt,
+		projectType: record.packet?.projectType ?? null,
+		decision: record.packet?.decision ?? null,
+		sourceCount: record.packet ? record.sources.length : record.sources.length,
+		claimCount: record.claims.length,
+		gaps: record.packet?.gaps ?? [],
+		usage: record.packet?.usage ?? null,
+		promotedToBrandBrain: false,
+	};
+}
+
+async function ownedResearch(ctx: AgentContext, brandId: string | undefined, researchId: string | undefined) {
+	if (!researchId) throw new AgentError('invalid_input', 'researchId is required.', 400);
+	const record = await getAgentStore().getResearch(ctx.credential.ownerUserId, researchId);
+	if (!record || !ctx.credential.allowedBrandIds.includes(record.brandId) || (brandId && record.brandId !== brandId)) {
+		throw new AgentError('brand_not_accessible', 'This agent cannot access that research.', 403);
+	}
+	return record;
+}
+
+async function researchForInstruction(ctx: AgentContext, brain: BrandBrain, instruction: string) {
+	const existing = await getAgentStore().listResearch(ctx.credential.ownerUserId, brain.id);
+	const latest = existing.find((item) => item.packet && item.request && instruction.toLowerCase().includes(item.request.toLowerCase().slice(0, 24)));
+	const decision = decideResearch({
+		instruction,
+		hasFreshResearch: Boolean(latest?.packet),
+		existingVerifiedAt: latest?.packet?.sources.find((source) => source.verifiedAt)?.verifiedAt ?? latest?.createdAt,
+	});
+	if (decision.decision === 'NO_RESEARCH_NEEDED' || decision.decision === 'USE_EXISTING_RESEARCH') {
+		return { decision: decision.decision, researchId: latest?.id, context: latest?.packet && decision.decision === 'USE_EXISTING_RESEARCH' ? packetContext(latest.packet) : 'No fresh external research was required.' };
+	}
+	const record = await executeResearch({
+		ownerUserId: ctx.credential.ownerUserId,
+		brandId: brain.id,
+		brandName: brain.identity.name,
+		query: instruction.slice(0, 300),
+		projectType: 'CURRENT_RESEARCH',
+		brandFacts: brain.knowledge.brandFacts,
+		search: configuredSearch(),
+	});
+	return { decision: decision.decision, researchId: record.id, context: record.packet ? packetContext(record.packet) : decision.reason };
+}
+
 async function generateForChannel(ctx: AgentContext, brain: BrandBrain, input: { instruction: string; channel: string; themeId?: string; objective?: string }) {
 	const channel = resolveChannel(input.channel);
 	const pipelineChannel = channel?.pipelineChannel ?? input.channel.toLowerCase();
 	const adaptation = channel?.adaptation ?? 'Write for this channel on its own. Do not reuse another channel’s wording.';
 	const started = Date.now();
+	const research = await researchForInstruction(ctx, brain, input.instruction);
 	const result = await runContentIntelligencePipeline(
 		getIntelligenceStore(),
 		{
 			userId: ctx.credential.ownerUserId,
 			airtableBrandId: brain.airtableBrandId,
-			userIntent: `${input.instruction}\n\nChannel adaptation: ${adaptation}`,
+			userIntent: `${input.instruction}\n\n${research.context}\n\nChannel adaptation: ${adaptation}`,
 			channel: pipelineChannel,
 			contentType: contentTypeFor(pipelineChannel) as never,
 			themeId: input.themeId,
@@ -255,7 +315,7 @@ async function generateForChannel(ctx: AgentContext, brain: BrandBrain, input: {
 		await getAgentStore().addCost(ctx.credential.id, result.estimatedCostUsd);
 	}
 	await emit(ctx, brain.id, 'content.created', { contentId: result.memory.id, channel: pipelineChannel });
-	return generationPayload(result, started);
+	return { ...generationPayload(result, started), researchId: research.researchId, researchDecision: research.decision };
 }
 
 function calendarItems(memory: ContentMemoryRecord[], input: Record<string, unknown>) {
@@ -602,6 +662,84 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			await getAgentStore().saveResearch(ctx.credential.ownerUserId, record);
 			await getAgentStore().saveBrief(ctx.credential.ownerUserId, brief);
 			return { briefId: brief.id, researchId: record.id, promotedToBrandBrain: false };
+		}
+		case 'cce_research_brand':
+		case 'cce_research_topic':
+		case 'cce_research_competitors':
+		case 'cce_research_reviews': {
+			const brain = await requireBrand(ctx, brandId);
+			const projectType: ResearchProjectType = name === 'cce_research_brand' ? 'BRAND_DISCOVERY' : name === 'cce_research_competitors' ? 'COMPETITOR_RESEARCH' : name === 'cce_research_reviews' ? 'REVIEW_RESEARCH' : 'CURRENT_RESEARCH';
+			const query = inputString(input, 'query') ?? (projectType === 'BRAND_DISCOVERY' ? `Research ${brain.identity.name}` : '');
+			if (!query) throw new AgentError('invalid_input', 'query is required.', 400);
+			const record = await executeResearch({
+				ownerUserId: ctx.credential.ownerUserId,
+				brandId: brain.id,
+				brandName: brain.identity.name,
+				website: inputString(input, 'website'),
+				query,
+				projectType,
+				brandFacts: brain.knowledge.brandFacts,
+				search: configuredSearch(),
+			});
+			return publicResearch(record);
+		}
+		case 'cce_get_research_status': {
+			const brain = await requireBrand(ctx, brandId);
+			const records = await getAgentStore().listResearch(ctx.credential.ownerUserId, brain.id);
+			return { research: records.map(publicResearch) };
+		}
+		case 'cce_get_sources':
+		case 'cce_get_findings':
+		case 'cce_get_claim_evidence':
+		case 'cce_get_competitors':
+		case 'cce_get_reviews_summary':
+		case 'cce_get_trends':
+		case 'cce_propose_brand_brain_updates': {
+			const record = await ownedResearch(ctx, brandId, inputString(input, 'researchId'));
+			if (name === 'cce_get_sources') return { sources: record.packet?.sources ?? record.sources };
+			if (name === 'cce_get_findings') return { findings: record.packet?.findings ?? [] };
+			if (name === 'cce_get_competitors') return { competitors: record.packet?.competitors ?? [] };
+			if (name === 'cce_get_reviews_summary') return { summary: record.packet?.reviewSummary ?? 'No review summary is stored.', reviews: record.packet?.reviews ?? [] };
+			if (name === 'cce_get_trends') return { trend: record.packet?.trend ?? { state: 'INSUFFICIENT_EVIDENCE', confidence: 'insufficient', sourceCount: 0, domainCount: 0, reason: 'No trend assessment is stored.' } };
+			if (name === 'cce_propose_brand_brain_updates') return { proposals: record.packet?.proposals ?? [], promotedToBrandBrain: false };
+			const claimId = inputString(input, 'claimId');
+			const claim = record.packet?.claims.find((item) => item.id === claimId);
+			if (!claim) throw new AgentError('invalid_input', 'claimId was not found on that research packet.', 404);
+			return { claim, sources: record.packet?.sources.filter((source) => claim.sourceIds.includes(source.id)) ?? [] };
+		}
+		case 'cce_create_monitor': {
+			const brain = await requireBrand(ctx, brandId);
+			const monitorType = inputString(input, 'monitorType');
+			const query = inputString(input, 'query');
+			if (!monitorType || !(MONITOR_TYPES as readonly string[]).includes(monitorType) || !query) {
+				throw new AgentError('invalid_input', 'monitorType and query are required.', 400);
+			}
+			const cadence = typeof input.cadenceDays === 'number' ? Math.min(30, Math.max(1, input.cadenceDays)) : 7;
+			try {
+				const monitor = await createMonitor(ctx.credential.ownerUserId, { brandId: brain.id, monitorType: monitorType as (typeof MONITOR_TYPES)[number], query, cadenceDays: cadence, status: 'active' });
+				return { monitor, projectType: monitorProject(monitor.monitorType), note: 'The monitor stores a cadence. It does not crawl until a refresh runs.' };
+			} catch (error) {
+				if (error instanceof Error && error.message === 'monitor_limit_reached') throw new AgentError('monitor_limit_reached', 'This brand already has the maximum number of active monitors.', 429);
+				throw error;
+			}
+		}
+		case 'cce_get_monitors': {
+			const brain = await requireBrand(ctx, brandId);
+			return { monitors: await getAgentStore().listMonitors(ctx.credential.ownerUserId, brain.id) };
+		}
+		case 'cce_refresh_research': {
+			const existing = await ownedResearch(ctx, brandId, inputString(input, 'researchId'));
+			const brain = await requireBrand(ctx, existing.brandId);
+			const record = await executeResearch({
+				ownerUserId: ctx.credential.ownerUserId,
+				brandId: brain.id,
+				brandName: brain.identity.name,
+				query: existing.request,
+				projectType: existing.packet?.projectType ?? 'CURRENT_RESEARCH',
+				brandFacts: brain.knowledge.brandFacts,
+				search: configuredSearch(),
+			});
+			return publicResearch(record);
 		}
 		case 'cce_get_drafts': {
 			const { memory } = await brandContext(ctx, brandId);

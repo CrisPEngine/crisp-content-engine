@@ -13,9 +13,10 @@ import type {
 	IdempotencyRecord,
 	MarketingOpportunity,
 	ResearchRecord,
+	ResearchMonitor,
 } from './types';
 
-type RecordKind = 'opportunity' | 'brief' | 'research' | 'interaction' | 'ad_proposal' | 'event' | 'feedback' | 'asset';
+type RecordKind = 'opportunity' | 'brief' | 'research' | 'research_monitor' | 'interaction' | 'ad_proposal' | 'event' | 'feedback' | 'asset' | 'mcp_oauth';
 
 function db() {
 	return getSupabaseService();
@@ -354,6 +355,9 @@ export function createSupabaseAgentStore(): AgentControlStore {
 		getBrief: (ownerUserId, id) => loadRecord<AgentBriefRecord>(ownerUserId, 'brief', id),
 		saveResearch: (ownerUserId, record) => saveRecord(ownerUserId, 'research', record),
 		getResearch: (ownerUserId, id) => loadRecord<ResearchRecord>(ownerUserId, 'research', id),
+		listResearch: (ownerUserId, brandId) => listRecords<ResearchRecord>(ownerUserId, 'research', brandId),
+		saveMonitor: (ownerUserId, monitor) => saveRecord(ownerUserId, 'research_monitor', monitor),
+		listMonitors: (ownerUserId, brandId) => listRecords<ResearchMonitor>(ownerUserId, 'research_monitor', brandId),
 		saveInteraction: (ownerUserId, interaction) => saveRecord(ownerUserId, 'interaction', interaction),
 		listInteractions: (ownerUserId, brandId) => listRecords<CommunityInteraction>(ownerUserId, 'interaction', brandId),
 		getInteraction: (ownerUserId, id) => loadRecord<CommunityInteraction>(ownerUserId, 'interaction', id),

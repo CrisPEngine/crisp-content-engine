@@ -1,4 +1,6 @@
 import type { AgentCapability, RateLimitPolicy } from './policy';
+import type { ResearchPacket } from '@/lib/research/types';
+import type { MonitorType } from '@/lib/research/types';
 
 export type AgentEnvironment = 'production' | 'staging' | 'test';
 
@@ -105,6 +107,20 @@ export type ResearchRecord = {
 	createdAt: string;
 	briefId?: string;
 	note: string;
+	packet?: ResearchPacket;
+};
+
+export type ResearchMonitor = {
+	id: string;
+	brandId: string;
+	monitorType: MonitorType;
+	query: string;
+	cadenceDays: number;
+	status: 'active' | 'paused';
+	lastRunAt?: string;
+	nextRunAt?: string;
+	lastChange?: string;
+	createdAt: string;
 };
 
 export type CommunityInteraction = {
@@ -241,6 +257,9 @@ export type AgentControlStore = {
 
 	saveResearch(ownerUserId: string, record: ResearchRecord): Promise<ResearchRecord>;
 	getResearch(ownerUserId: string, id: string): Promise<ResearchRecord | null>;
+	listResearch(ownerUserId: string, brandId: string): Promise<ResearchRecord[]>;
+	saveMonitor(ownerUserId: string, monitor: ResearchMonitor): Promise<ResearchMonitor>;
+	listMonitors(ownerUserId: string, brandId: string): Promise<ResearchMonitor[]>;
 
 	saveInteraction(ownerUserId: string, interaction: CommunityInteraction): Promise<CommunityInteraction>;
 	listInteractions(ownerUserId: string, brandId: string): Promise<CommunityInteraction[]>;

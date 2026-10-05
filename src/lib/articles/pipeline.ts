@@ -37,7 +37,11 @@ function researchFromBrand(brain: BrandBrain, strategy: BrandStrategy | null) {
 		...(brain.knowledge.proofPoints ?? []),
 		...(strategy?.proofPoints ?? []),
 	].filter(Boolean);
-	const gaps = ['No independent customer evidence is stored.', 'Founder biography and measured proof are incomplete.'];
+	const gaps = [
+		'No independent customer evidence is stored.',
+		'Founder biography and measured proof are incomplete.',
+		'Current or numerical claims need a dated research source before they are stated as fact.',
+	];
 	return {
 		sources: [{ label: 'Brand Brain', kind: 'brand_brain' as const }],
 		claims: claims.map((text) => ({ text, sourceLabel: 'Brand Brain', confidence: 'stored' as const })),

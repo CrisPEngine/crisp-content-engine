@@ -58,7 +58,7 @@ function rateSpec(action: string, policy: RateLimitPolicy): { key: string; limit
 	if (['cce_generate_content', 'cce_generate_from_opportunity', 'cce_request_revision'].includes(action)) {
 		return { key: 'generation', limit: policy.generationsPerDay, windowMs: DAY };
 	}
-	if (['cce_create_opportunity', 'cce_create_research_request'].includes(action)) {
+	if (['cce_create_opportunity', 'cce_create_research_request', 'cce_research_brand', 'cce_research_topic', 'cce_research_competitors', 'cce_research_reviews', 'cce_refresh_research', 'cce_create_monitor'].includes(action)) {
 		return { key: 'research', limit: policy.researchRequestsPerDay, windowMs: DAY };
 	}
 	if (['cce_schedule_content', 'cce_reschedule_content', 'cce_unschedule_content', 'cce_record_external_publish'].includes(action)) {

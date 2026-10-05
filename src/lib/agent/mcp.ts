@@ -17,10 +17,10 @@ function rpcResult(id: JsonRpc['id'], result: unknown): string {
 	return JSON.stringify({ jsonrpc: '2.0', id: id ?? null, result });
 }
 
-function rpcError(id: JsonRpc['id'], code: number, message: string, status: number): Response {
+function rpcError(id: JsonRpc['id'], code: number, message: string, status: number, extraHeaders?: Record<string, string>): Response {
 	return new Response(JSON.stringify({ jsonrpc: '2.0', id: id ?? null, error: { code, message } }), {
 		status,
-		headers: { 'content-type': 'application/json' },
+		headers: { 'content-type': 'application/json', ...extraHeaders },
 	});
 }
 
@@ -30,6 +30,11 @@ function toolResult(body: AgentResponseBody) {
 		structuredContent: body,
 		isError: !body.ok,
 	};
+}
+
+function wwwAuthenticate(request: Request): string {
+	const origin = new URL(request.url).origin;
+	return `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource", scope="cce:brands:read cce:research cce:content:read"`;
 }
 
 export function signAgentWebhook(secret: string, body: string): string {
@@ -87,7 +92,8 @@ export async function handleMcpHttp(request: Request): Promise<Response> {
 			credential = await resolveAgentCredential(request.headers.get('authorization'));
 		} catch (error) {
 			const agentError = agentErrorFromUnknown(error);
-			return rpcError(message.id, -32001, agentError.message, agentError.status);
+			const headers = agentError.status === 401 ? { 'WWW-Authenticate': wwwAuthenticate(request) } : undefined;
+			return rpcError(message.id, -32001, agentError.message, agentError.status, headers);
 		}
 		if (message.method === 'tools/list') {
 			return respond(
@@ -118,7 +124,7 @@ export async function handleMcpHttp(request: Request): Promise<Response> {
 		requestId: request.headers.get('x-request-id') ?? undefined,
 	});
 	if (!result.body.ok && ['unauthenticated', 'revoked_key', 'expired_key'].includes(result.body.error?.code ?? '')) {
-		return rpcError(message.id, -32001, result.body.error?.message ?? 'Unauthorised.', 401);
+		return rpcError(message.id, -32001, result.body.error?.message ?? 'Unauthorised.', 401, { 'WWW-Authenticate': wwwAuthenticate(request) });
 	}
 	return respond(rpcResult(message.id, toolResult(result.body)));
 }
