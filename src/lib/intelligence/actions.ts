@@ -53,6 +53,7 @@ export type IntelligenceActionName = (typeof INTELLIGENCE_ACTION_NAMES)[number];
 const airtableBrandId = z.string().min(1);
 const themeInput = z.object({
 	airtableBrandId,
+	id: z.string().optional(),
 	title: z.string().min(1),
 	description: z.string().optional(),
 	objective: z.string().optional(),
@@ -65,6 +66,7 @@ const themeInput = z.object({
 	keywords: z.array(z.string()).optional(),
 	channels: z.array(z.string()).optional(),
 	desiredFrequency: z.string().optional(),
+	status: z.enum(['active', 'paused', 'archived']).optional(),
 });
 
 let storeOverride: IntelligenceStore | undefined;
@@ -142,6 +144,7 @@ export async function dispatchIntelligenceAction(
 			const brain = await requireBrain(store, userId, parsed.airtableBrandId);
 			const strategy = await store.getStrategyForBrand(userId, brain.id);
 			return store.createTheme(userId, {
+				id: parsed.id,
 				brandBrainId: brain.id,
 				strategyId: strategy?.id,
 				title: parsed.title,
@@ -156,7 +159,7 @@ export async function dispatchIntelligenceAction(
 				keywords: parsed.keywords ?? [],
 				channels: parsed.channels ?? ['linkedin'],
 				desiredFrequency: parsed.desiredFrequency,
-				status: 'active',
+				status: parsed.status ?? 'active',
 			});
 		}
 		case 'generate_theme_plan': {

@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { getIntelligenceStore } from '@/lib/intelligence/actions';
+import { nativeStrategyDocument } from '@/lib/intelligence/strategyView';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
@@ -109,6 +111,14 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 			}
 		} else {
 			strategyJson = rawStrategyJson;
+		}
+		if (!strategyJson || typeof strategyJson !== 'object' || Object.keys(strategyJson).length === 0) {
+			const brain = await getIntelligenceStore().getBrandBrain(user.id, brandProfileId);
+			if (brain) {
+				const native = await getIntelligenceStore().getStrategyForBrand(user.id, brain.id);
+				const themes = await getIntelligenceStore().listThemes(user.id, brain.id);
+				if (native) strategyJson = nativeStrategyDocument(native, themes);
+			}
 		}
 
 		return NextResponse.json({

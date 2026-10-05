@@ -1,6 +1,7 @@
 import { requireSessionUserId } from '@/lib/agent/session';
 import { resolveApprovalRequest } from '@/lib/agent/approvals';
 import { getAgentStore } from '@/lib/agent/controlStore';
+import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { createHash } from 'crypto';
 import { redirect } from 'next/navigation';
 
@@ -27,37 +28,40 @@ export default async function ApprovalPage({ params, searchParams }: { params: P
 	const userId = await requireSessionUserId();
 	if (!userId) {
 		return (
-			<main className="mx-auto max-w-xl p-8">
+			<main className="mx-auto max-w-lg px-4 py-8">
 				<h1 className="text-2xl font-semibold">Sign in to approve</h1>
-				<p className="mt-3">This approval has to be confirmed by the CCE account that owns the brand.</p>
-				<a className="mt-4 inline-block underline" href={`/sign-in?redirect_to=${encodeURIComponent(`/approve/${token}`)}`}>Sign in</a>
+				<p className="mt-3 text-text-soft">This approval has to be confirmed by the CCE account that owns the brand.</p>
+				<a className="mt-6 inline-flex min-h-12 items-center rounded-xl2 bg-primary px-4 text-white" href={`/sign-in?redirect_to=${encodeURIComponent(`/approve/${token}`)}`}>Sign in</a>
 			</main>
 		);
 	}
 	const request = await getAgentStore().getApprovalRequestByTokenHash(createHash('sha256').update(token).digest('hex'));
 	if (!request || request.ownerUserId !== userId) {
 		return (
-			<main className="mx-auto max-w-xl p-8">
+			<main className="mx-auto max-w-lg px-4 py-8">
 				<h1 className="text-2xl font-semibold">Approval unavailable</h1>
 				<p className="mt-3">This link is not valid for the signed-in account.</p>
 			</main>
 		);
 	}
+	const brain = await getIntelligenceStore().getBrandBrainById(userId, request.brandId);
 	const preview = request.preview;
+	const schedule = request.requestedAction === 'approve_and_schedule';
+	const body = String(preview.body ?? preview.excerpt ?? '');
 	return (
-		<main className="mx-auto max-w-xl p-8 space-y-4">
+		<main className="mx-auto max-w-lg px-4 py-6 space-y-4">
+			<p className="text-sm text-text-soft">{brain?.identity.name ?? 'Brand'} · {String(preview.channel ?? 'content')}</p>
 			<h1 className="text-2xl font-semibold">{request.summary}</h1>
-			<p>Status: {query.done ? query.done : request.status}</p>
-			{query.error ? <p>{query.error}</p> : null}
-			<p>Action: {request.requestedAction === 'approve_and_schedule' ? `Approve and schedule ${String(preview.publishAt ?? '')}` : 'Approve this draft. This does not publish it.'}</p>
-			{preview.channel ? <p>Channel: {String(preview.channel)}</p> : null}
-			{preview.body ? <pre className="whitespace-pre-wrap text-sm">{String(preview.body)}</pre> : null}
-			{preview.excerpt ? <pre className="whitespace-pre-wrap text-sm">{String(preview.excerpt)}</pre> : null}
+			<p className="text-sm">{query.done ? `Decision recorded: ${query.done}` : `Status: ${request.status}`}</p>
+			{query.error ? <p className="text-sm">{query.error}</p> : null}
+			{preview.destination ? <p className="text-sm">Destination: {String(preview.destination)}</p> : <p className="text-sm">Destination required before this can be scheduled.</p>}
+			<article className="card whitespace-pre-wrap p-4 text-base leading-relaxed">{body}</article>
+			<p className="text-sm">{schedule ? `Approve and schedule for ${String(preview.publishAt ?? '')}` : 'Approve this draft only. It will not be scheduled or published.'}</p>
 			{request.status === 'PENDING' && !query.done ? (
-				<form action={decide} className="flex gap-3">
+				<form action={decide} className="grid gap-3">
 					<input type="hidden" name="token" value={token} />
-					<button className="rounded bg-primary px-4 py-2 text-white" name="decision" value="approve" type="submit">Approve</button>
-					<button className="rounded border px-4 py-2" name="decision" value="reject" type="submit">Reject</button>
+					<button className="min-h-12 rounded-xl2 bg-primary px-4 text-white" name="decision" value="approve" type="submit">{schedule ? 'Approve and schedule' : 'Approve'}</button>
+					<button className="min-h-12 rounded-xl2 border px-4" name="decision" value="reject" type="submit">Reject</button>
 				</form>
 			) : null}
 		</main>

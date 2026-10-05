@@ -11,25 +11,33 @@ export interface NavItem {
 
 export const APP_NAV: NavItem[] = [
 	{ label: 'Dashboard', href: '/dashboard' },
-	{ label: 'AI Connections', href: '/settings/ai-connections' },
 	{
-		label: 'Strategy',
+		label: 'Intelligence',
 		items: [
-			{ label: 'View Strategy', href: '/strategy' },
-			{ label: 'Monthly Updates', href: '/strategy/monthly-updates' },
-			{ label: 'Brand Intelligence', href: '/intelligence' },
+			{ label: 'Brand Brain', href: '/intelligence' },
+			{ label: 'Strategy', href: '/strategy' },
+			{ label: 'Themes', href: '/intelligence?tab=themes' },
 			{ label: 'Research', href: '/research' },
+			{ label: 'Diagnostics', href: '/intelligence?tab=diagnostics' },
+			{ label: 'Monthly briefs', href: '/strategy/monthly-updates' },
 		],
 	},
 	{
 		label: 'Content',
 		items: [
-			{ label: 'Idea Engine', href: '/content/idea-engine' },
-			{ label: 'Approval Queue', href: '/content/approval' },
+			{ label: 'Create', href: '/content/generate' },
+			{ label: 'Approval', href: '/content/approval' },
 			{ label: 'Scheduled', href: '/content/schedule' },
 			{ label: 'Published', href: '/content/published' },
-			{ label: 'Generate', href: '/content/generate' },
-			{ label: 'Brand assets', href: '/content/brand-assets' },
+			{ label: 'Idea Engine', href: '/content/idea-engine' },
+			{ label: 'Assets', href: '/content/brand-assets' },
+		],
+	},
+	{
+		label: 'Connections',
+		items: [
+			{ label: 'Channels', href: '/connections' },
+			{ label: 'AI Assistants', href: '/settings/ai-connections' },
 		],
 	},
 ];

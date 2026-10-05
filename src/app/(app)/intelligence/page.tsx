@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Loader2, Brain, Map, Layers, Activity } from 'lucide-react';
+import { HumanBrandBrain } from '@/components/HumanBrandBrain';
 
 type BrandProfile = { id: string; name: string };
 type Tab = 'brain' | 'strategy' | 'themes' | 'diagnostics';
@@ -23,7 +24,7 @@ type DiagnosticInvocation = {
 	created_at: string;
 };
 type IntelligencePayload = {
-	brain?: { identity?: unknown; voice?: unknown; guardrails?: unknown };
+	brain?: { identity?: unknown; voice?: unknown; guardrails?: unknown; knowledge?: unknown };
 	strategy?: {
 		objectives?: unknown;
 		keyMessages?: unknown;
@@ -31,7 +32,7 @@ type IntelligencePayload = {
 		positioning?: unknown;
 		audiences?: unknown;
 	};
-	themes?: Array<{ id: string; title: string; objective?: string }>;
+	themes?: Array<{ id: string; title: string; objective?: string; description?: string; status?: string; channels?: string[]; targetAudience?: string }>;
 };
 
 export default function IntelligencePage() {
@@ -64,8 +65,14 @@ function IntelligencePageInner() {
 	const [identity, setIdentity] = useState('{\n  "name": "",\n  "positioning": "",\n  "purpose": ""\n}');
 	const [voice, setVoice] = useState('{\n  "tone": "",\n  "formality": ""\n}');
 	const [guardrails, setGuardrails] = useState('{\n  "phrasesToAvoid": [],\n  "promotionalIntensity": "low"\n}');
+	const [knowledge, setKnowledge] = useState('{\n  "brandFacts": [],\n  "proofPoints": []\n}');
 	const [strategyJson, setStrategyJson] = useState('{\n  "objectives": [],\n  "keyMessages": [],\n  "contentPillars": []\n}');
 	const [diagnostics, setDiagnostics] = useState<{ roles: DiagnosticRole[]; recentInvocations: DiagnosticInvocation[] } | null>(null);
+
+	useEffect(() => {
+		const requested = searchParams.get('tab');
+		if (requested === 'brain' || requested === 'strategy' || requested === 'themes' || requested === 'diagnostics') setTab(requested);
+	}, [searchParams]);
 
 	useEffect(() => {
 		if (tab !== 'diagnostics') return;
@@ -119,6 +126,7 @@ function IntelligencePageInner() {
 			setIdentity(JSON.stringify(data.brain.identity ?? {}, null, 2));
 			setVoice(JSON.stringify(data.brain.voice ?? {}, null, 2));
 			setGuardrails(JSON.stringify(data.brain.guardrails ?? {}, null, 2));
+			setKnowledge(JSON.stringify(data.brain.knowledge ?? {}, null, 2));
 		}
 		if (data.strategy) {
 			setStrategyJson(
@@ -148,6 +156,33 @@ function IntelligencePageInner() {
 		loadIntelligence(brandId).catch((err) => setError(err.message));
 	}, [brandId, loadIntelligence]);
 
+	function strategyObject(): Record<string, unknown> {
+		try {
+			const parsed = JSON.parse(strategyJson);
+			return parsed && typeof parsed === 'object' ? parsed : {};
+		} catch {
+			return {};
+		}
+	}
+
+	function strategyLines(key: string): string {
+		const value = strategyObject()[key];
+		return Array.isArray(value) ? value.map(String).join('\n') : '';
+	}
+
+	function strategyText(key: string): string {
+		const value = strategyObject()[key];
+		return typeof value === 'string' ? value : '';
+	}
+
+	function updateStrategyList(key: string, value: string) {
+		setStrategyJson(JSON.stringify({ ...strategyObject(), [key]: value.split('\n').map((line) => line.trim()).filter(Boolean) }, null, 2));
+	}
+
+	function updateStrategyField(key: string, value: string) {
+		setStrategyJson(JSON.stringify({ ...strategyObject(), [key]: value }, null, 2));
+	}
+
 	async function saveBrain() {
 		setSaving(true);
 		setError(null);
@@ -161,6 +196,7 @@ function IntelligencePageInner() {
 					identity: JSON.parse(identity),
 					voice: JSON.parse(voice),
 					guardrails: JSON.parse(guardrails),
+					knowledge: JSON.parse(knowledge),
 				}),
 			});
 			const data = await res.json();
@@ -249,7 +285,7 @@ function IntelligencePageInner() {
 			<div>
 				<h1 className="text-3xl font-semibold">Brand Intelligence</h1>
 				<p className="text-sm text-text-dim mt-2">
-					Native Brand Brain, strategy, and themes. A saved brand can use native intelligence immediately. Set nativeIntelligenceEnabled to false in guardrails to turn it off for this brand only. Airtable and Make stay available.
+					Brand Brain, strategy, and themes for this brand. Research stays a proposal until you confirm it.
 				</p>
 			</div>
 
@@ -296,12 +332,16 @@ function IntelligencePageInner() {
 
 			{tab === 'brain' && (
 				<div className="space-y-4">
-					<label className="block text-sm text-text-soft">Identity JSON</label>
-					<textarea className="w-full min-h-40 rounded-xl2 border border-edge/60 bg-surface/30 p-3 font-mono text-xs" value={identity} onChange={(e) => setIdentity(e.target.value)} />
-					<label className="block text-sm text-text-soft">Voice JSON</label>
-					<textarea className="w-full min-h-32 rounded-xl2 border border-edge/60 bg-surface/30 p-3 font-mono text-xs" value={voice} onChange={(e) => setVoice(e.target.value)} />
-					<label className="block text-sm text-text-soft">Guardrails JSON</label>
-					<textarea className="w-full min-h-32 rounded-xl2 border border-edge/60 bg-surface/30 p-3 font-mono text-xs" value={guardrails} onChange={(e) => setGuardrails(e.target.value)} />
+					<HumanBrandBrain
+						identityJson={identity}
+						voiceJson={voice}
+						guardrailsJson={guardrails}
+						knowledgeJson={knowledge}
+						onIdentity={setIdentity}
+						onVoice={setVoice}
+						onGuardrails={setGuardrails}
+						onKnowledge={setKnowledge}
+					/>
 					<button onClick={saveBrain} disabled={saving || !brandId} className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 text-sm">
 						{saving ? 'Saving…' : 'Save Brand Brain'}
 					</button>
@@ -310,9 +350,24 @@ function IntelligencePageInner() {
 
 			{tab === 'strategy' && (
 				<div className="space-y-4">
-					<textarea className="w-full min-h-64 rounded-xl2 border border-edge/60 bg-surface/30 p-3 font-mono text-xs" value={strategyJson} onChange={(e) => setStrategyJson(e.target.value)} />
+					<label className="block text-sm text-text-soft">Objectives, one per line</label>
+					<textarea
+						className="w-full min-h-32 rounded-xl2 border border-edge/60 bg-surface/30 p-3 text-sm"
+						value={strategyLines('objectives')}
+						onChange={(event) => updateStrategyList('objectives', event.target.value)}
+					/>
+					<label className="block text-sm text-text-soft">Positioning</label>
+					<input className="w-full rounded-xl2 border border-edge/60 bg-surface/30 px-3 py-2 text-sm" value={strategyText('positioning')} onChange={(event) => updateStrategyField('positioning', event.target.value)} />
+					<label className="block text-sm text-text-soft">Key messages, one per line</label>
+					<textarea className="w-full min-h-24 rounded-xl2 border border-edge/60 bg-surface/30 p-3 text-sm" value={strategyLines('keyMessages')} onChange={(event) => updateStrategyList('keyMessages', event.target.value)} />
+					<label className="block text-sm text-text-soft">Content pillars, one per line</label>
+					<textarea className="w-full min-h-24 rounded-xl2 border border-edge/60 bg-surface/30 p-3 text-sm" value={strategyLines('contentPillars')} onChange={(event) => updateStrategyList('contentPillars', event.target.value)} />
+					<details>
+						<summary className="cursor-pointer text-sm">Advanced — raw JSON</summary>
+						<textarea className="mt-2 w-full min-h-64 rounded-xl2 border border-edge/60 bg-surface/30 p-3 font-mono text-xs" value={strategyJson} onChange={(e) => setStrategyJson(e.target.value)} />
+					</details>
 					<button onClick={saveStrategy} disabled={saving || !brandId} className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 text-sm">
-						{saving ? 'Saving…' : 'Save native strategy'}
+						{saving ? 'Saving…' : 'Save strategy'}
 					</button>
 				</div>
 			)}
@@ -329,9 +384,23 @@ function IntelligencePageInner() {
 					</div>
 					<div className="space-y-2">
 						{(payload?.themes || []).map((theme) => (
-							<div key={theme.id} className="card p-4">
+							<div key={theme.id} className="card p-4 space-y-1">
 								<div className="font-medium">{theme.title}</div>
-								<div className="text-sm text-text-dim">{theme.objective}</div>
+								<div className="text-sm text-text-dim">{theme.description || theme.objective}</div>
+								<div className="text-xs text-text-soft">{theme.status || 'active'}{theme.targetAudience ? ` · ${theme.targetAudience}` : ''}{theme.channels?.length ? ` · ${theme.channels.join(', ')}` : ''}</div>
+								<button
+									type="button"
+									className="text-sm underline"
+									onClick={() => {
+										void fetch('/api/intelligence/actions', {
+											method: 'POST',
+											headers: { 'Content-Type': 'application/json' },
+											body: JSON.stringify({ action: 'create_theme', input: { airtableBrandId: brandId, id: theme.id, title: theme.title, objective: theme.objective, description: theme.description, channels: theme.channels, status: theme.status === 'paused' ? 'active' : 'paused' } }),
+										}).then(() => loadIntelligence(brandId));
+									}}
+								>
+									{theme.status === 'paused' ? 'Resume' : 'Pause'}
+								</button>
 							</div>
 						))}
 					</div>
@@ -340,6 +409,7 @@ function IntelligencePageInner() {
 
 			{tab === 'diagnostics' && (
 				<div className="space-y-4">
+					<p className="text-sm text-text-soft">Native intelligence is on for an active brand. A single brand can be turned off from Advanced raw guardrails with nativeIntelligenceEnabled set to false.</p>
 					<div className="card p-4 overflow-x-auto">
 						<table className="w-full text-sm">
 							<thead>
