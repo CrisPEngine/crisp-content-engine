@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { syncNativeSocialForUser, assignBrandDestination } from '@/lib/social/nativeSync';
 import { channelFromPlatform, type PublishChannel } from '@/lib/social/channels';
-import { brandChannelRows, type BrandChannelRow } from '@/lib/social/brandChannels';
+import { brandChannelRows } from '@/lib/social/brandChannels';
+import { listAccountAuthorizations } from '@/lib/social/brandChannels';
+import { brandNameFromIdentity } from '@/lib/social/brandBrainName';
 
 export const runtime = 'nodejs';
 
@@ -18,7 +20,7 @@ export async function GET(request: Request) {
 	const url = new URL(request.url);
 	const brandIdParam = url.searchParams.get('brandId');
 
-	const summary = await syncNativeSocialForUser(user.id);
+	await syncNativeSocialForUser(user.id);
 
 	const { data: authorizations } = await supabase
 		.from('social_authorizations')
@@ -37,28 +39,27 @@ export async function GET(request: Request) {
 					.in('authorization_id', authIds)
 			: { data: [] as never[] };
 
-	const { data: brands } = await supabase
-		.from('brand_brains')
-		.select('id, airtable_brand_id, identity_json')
-		.eq('user_id', user.id);
+	const { data: brands } = await supabase.from('brand_brains').select('id, airtable_brand_id, identity').eq('user_id', user.id);
 
 	const { data: brandLinks } = await supabase
 		.from('brand_destinations')
 		.select('brand_id, destination_id, purpose, enabled')
 		.in('brand_id', (brands || []).map((b) => b.id));
 
+	const accounts = await listAccountAuthorizations(user.id);
+
 	return NextResponse.json({
 		ok: true,
-		sync: summary,
 		authorizations: authorizations || [],
 		destinations: destinations || [],
 		brands: (brands || []).map((b) => ({
 			id: b.id,
 			airtableBrandId: b.airtable_brand_id,
-			name: (b.identity_json as { name?: string } | null)?.name || 'Brand',
+			name: brandNameFromIdentity(b.identity),
 		})),
 		brandDestinations: brandLinks || [],
 		brandChannels: brandIdParam ? await brandChannelRows(user.id, brandIdParam) : undefined,
+		accounts,
 	});
 }
 

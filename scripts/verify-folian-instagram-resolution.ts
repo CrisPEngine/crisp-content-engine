@@ -5,7 +5,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { resolvePublishDestination } from '@/lib/social/resolveDestination';
 
-const FOLIAN_BRAIN = process.env.FOLIAN_BRAND_ID || '03cba45a-0000-0000-0000-000000000001';
+const FOLIAN_BRAIN = process.env.FOLIAN_BRAND_ID || '03cba45a-6faf-4b6c-a20b-2c2496318b58';
 
 async function main() {
 	const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -13,7 +13,7 @@ async function main() {
 	if (!url || !key) process.exit(1);
 
 	const admin = createClient(url, key, { auth: { persistSession: false } });
-	const { data: brand } = await admin.from('brand_brains').select('user_id, airtable_brand_id, identity_json').eq('id', FOLIAN_BRAIN).maybeSingle();
+	const { data: brand } = await admin.from('brand_brains').select('user_id, airtable_brand_id, identity').eq('id', FOLIAN_BRAIN).maybeSingle();
 	if (!brand) {
 		console.log(JSON.stringify({ ok: false, error: 'Folian brand brain not found', brandId: FOLIAN_BRAIN }));
 		process.exit(0);
@@ -29,7 +29,7 @@ async function main() {
 		JSON.stringify(
 			{
 				ok: Boolean(resolved),
-				brand: (brand.identity_json as { name?: string })?.name,
+				brand: (brand.identity as { name?: string })?.name,
 				resolved: resolved
 					? {
 							source: resolved.source,

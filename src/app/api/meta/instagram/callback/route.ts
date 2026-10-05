@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import { handleInstagramOAuthCallback } from '@/lib/instagram/callbackHandler';
 
 export const runtime = 'nodejs';

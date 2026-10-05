@@ -244,8 +244,22 @@ export async function syncNativeSocialForUser(userId: string): Promise<{ authori
 	return { authorizations, destinations, brandLinks };
 }
 
-/** When legacy Meta is_selected is workspace-global, only auto-map to a brand with an assigned LinkedIn org connection. */
+/** When legacy Meta is_selected is workspace-global, map to the brand on the LinkedIn organization connection when present. */
 async function resolveBrandBrainForSelectedMeta(admin: Admin, userId: string): Promise<string | null> {
+	const { data: orgConnection } = await admin
+		.from('social_connections')
+		.select('brand_profile_id')
+		.eq('user_id', userId)
+		.eq('provider', 'linkedin')
+		.eq('connection_type', 'organization')
+		.not('brand_profile_id', 'is', null)
+		.maybeSingle();
+
+	if (orgConnection?.brand_profile_id) {
+		const brainId = await resolveBrandBrainId(admin, userId, orgConnection.brand_profile_id);
+		if (brainId) return brainId;
+	}
+
 	const { data: assigned } = await admin
 		.from('social_connections')
 		.select('brand_profile_id')

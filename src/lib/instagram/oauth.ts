@@ -104,7 +104,7 @@ export async function fetchInstagramProfessionalProfile(accessToken: string): Pr
 	username?: string;
 	name?: string;
 }> {
-	const url = `${GRAPH_IG}/me?fields=id,username,name&access_token=${encodeURIComponent(accessToken)}`;
+	const url = `${GRAPH_IG}/me?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(accessToken)}`;
 	const res = await fetch(url);
 	if (!res.ok) {
 		throw new Error(`Instagram profile fetch failed: ${await res.text()}`);

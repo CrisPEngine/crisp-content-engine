@@ -132,12 +132,18 @@ async function resolveLegacyDestination(
 			brand: input.airtableBrandId,
 			connectionId: connection.connectionId,
 		});
+		const { data: row } = await admin
+			.from('social_connections')
+			.select('account_name, organization_name')
+			.eq('id', connection.connectionId)
+			.maybeSingle();
+		const displayName = row?.organization_name || row?.account_name || 'LinkedIn';
 		return {
 			source: 'legacy',
 			channel,
 			provider: 'linkedin',
 			providerDestinationId: connection.organizationUrn || connection.personUrn || connection.connectionId,
-			displayName: 'LinkedIn',
+			displayName,
 			linkedInConnectionId: connection.connectionId,
 		};
 	}
