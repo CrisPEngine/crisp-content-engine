@@ -9,6 +9,7 @@ import type { ChannelDefinition, ChannelId } from './types';
 import { LinkedInChannel } from './linkedin';
 import { XChannel } from './x';
 import { InstagramChannel, FacebookChannel } from './meta';
+import { ThreadsChannel } from './threads';
 import { BlogChannel } from './blog';
 
 /**
@@ -19,6 +20,7 @@ export const CHANNELS: Record<ChannelId, ChannelDefinition> = {
 	x: XChannel,
 	instagram: InstagramChannel,
 	facebook: FacebookChannel,
+	threads: ThreadsChannel,
 	blog: BlogChannel,
 };
 
@@ -99,6 +101,10 @@ export function canScheduleOrPublish(platform: string, postType: string, charCou
 			allowed: false,
 			reason: 'Blog posts are export-only. Copy and publish to your blog manually.',
 		};
+	}
+
+	if (platform === 'Threads') {
+		return { allowed: true };
 	}
 
 	return { allowed: true };

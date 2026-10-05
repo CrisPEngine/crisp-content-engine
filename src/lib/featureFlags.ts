@@ -21,6 +21,17 @@ export const isMetaPublishingEnabledClient = (): boolean => {
 	return process.env.NEXT_PUBLIC_META_PUBLISHING_ENABLED !== 'false';
 };
 
+/** Threads publishing — enabled when app id is configured unless explicitly disabled. */
+export const isThreadsPublishingEnabled = (): boolean => {
+	if (process.env.THREADS_PUBLISHING_ENABLED === 'false') return false;
+	return Boolean(process.env.THREADS_APP_ID?.trim());
+};
+
+export const isThreadsPublishingEnabledClient = (): boolean => {
+	if (process.env.NEXT_PUBLIC_THREADS_PUBLISHING_ENABLED === 'false') return false;
+	return Boolean(process.env.NEXT_PUBLIC_THREADS_APP_ID?.trim() || process.env.THREADS_APP_ID?.trim());
+};
+
 /**
  * Operator console / MCP groundwork
  *

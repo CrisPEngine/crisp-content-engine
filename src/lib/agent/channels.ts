@@ -105,8 +105,12 @@ export const CHANNEL_REGISTRY: ChannelDefinition[] = [
 		family: 'threads',
 		pipelineChannel: 'threads',
 		adaptation: 'Conversational discussion. Not an Instagram caption and not a LinkedIn post.',
-		capabilities: socialGap(),
-		notes: 'Threads is a separate channel. A Meta token is not treated as Threads access. OAuth scopes are not assumed.',
+		capabilities: socialGap({
+			publish: 'SUPPORTED_BY_PLATFORM',
+			schedule: 'SUPPORTED_BY_PLATFORM',
+			replies: 'NOT_IMPLEMENTED',
+		}),
+		notes: 'Threads uses native OAuth (threads_basic, threads_content_publish). Reply automation is not enabled; architecture allows future reply APIs.',
 	},
 	{
 		id: 'INSTAGRAM_FEED',

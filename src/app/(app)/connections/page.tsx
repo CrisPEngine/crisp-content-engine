@@ -46,9 +46,9 @@ export default async function ConnectionsPage({
 	}
 
 	const oauthSuccess =
-		params.connected === 'instagram' && params.account
+		params.account && (params.connected === 'instagram' || params.connected === 'threads')
 			? {
-					channel: 'instagram',
+					channel: params.connected,
 					account: params.account,
 					destinationId: params.destination_id,
 					assigned: params.assigned === '1',

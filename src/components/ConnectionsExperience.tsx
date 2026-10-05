@@ -23,6 +23,13 @@ type Props = {
 	errorDetails?: string | null;
 };
 
+type DisconnectImpactState = {
+	authorizationId: string;
+	accountLabel: string;
+	lines: { brandName: string; channel: string; destinationLabel: string }[];
+	warning: string;
+} | null;
+
 export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, errorDetails }: Props) {
 	const [brands, setBrands] = useState<BrandRow[]>([]);
 	const [channels, setChannels] = useState<BrandChannelView[]>([]);
@@ -34,6 +41,8 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 	const [showAdvanced, setShowAdvanced] = useState(false);
 	const [showAccounts, setShowAccounts] = useState(false);
 	const [dismissSuccess, setDismissSuccess] = useState(false);
+	const [disconnectImpact, setDisconnectImpact] = useState<DisconnectImpactState>(null);
+	const [disconnecting, setDisconnecting] = useState(false);
 
 	const load = useCallback(async () => {
 		setLoading(true);
@@ -74,7 +83,13 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 	}, [selectedBrandId]);
 
 	useEffect(() => {
-		if (oauthSuccess?.destinationId && selectedBrandId && oauthSuccess.assigned === false && oauthSuccess.channel === 'instagram') {
+		const ch = oauthSuccess?.channel;
+		if (
+			oauthSuccess?.destinationId &&
+			selectedBrandId &&
+			oauthSuccess.assigned === false &&
+			(ch === 'instagram' || ch === 'threads')
+		) {
 			(async () => {
 				await fetch('/api/social/connections', {
 					method: 'POST',
@@ -82,13 +97,48 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 					body: JSON.stringify({
 						brandId: selectedBrandId,
 						destinationId: oauthSuccess.destinationId,
-						platform: 'Instagram',
+						platform: ch === 'instagram' ? 'Instagram' : 'Threads',
 					}),
 				});
 				load();
 			})();
 		}
 	}, [oauthSuccess, selectedBrandId, load]);
+
+	async function openDisconnect(authorizationId: string) {
+		const res = await fetch(`/api/social/connections/disconnect?authorizationId=${encodeURIComponent(authorizationId)}`);
+		const data = await res.json();
+		if (!res.ok) {
+			alert(data.error || 'Could not load disconnect details');
+			return;
+		}
+		setDisconnectImpact(data.impact);
+	}
+
+	async function confirmDisconnect() {
+		if (!disconnectImpact) return;
+		setDisconnecting(true);
+		try {
+			const res = await fetch('/api/social/connections/disconnect', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ authorizationId: disconnectImpact.authorizationId }),
+			});
+			if (!res.ok) {
+				const data = await res.json();
+				throw new Error(data.error || 'Disconnect failed');
+			}
+			setDisconnectImpact(null);
+			await load();
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Disconnect failed');
+		} finally {
+			setDisconnecting(false);
+		}
+	}
+
+	const connectedChannelLabel =
+		oauthSuccess?.channel === 'threads' ? 'Threads' : oauthSuccess?.channel === 'instagram' ? 'Instagram' : 'Account';
 
 	const selectedBrand = useMemo(() => brands.find((b) => b.id === selectedBrandId), [brands, selectedBrandId]);
 
@@ -149,7 +199,7 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 			{oauthSuccess?.account && !dismissSuccess && (
 				<div className="card p-4 border-emerald-500/40 bg-emerald-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
 					<div>
-						<p className="font-medium text-emerald-300">Instagram connected</p>
+						<p className="font-medium text-emerald-300">{connectedChannelLabel} connected</p>
 						<p className="text-sm text-text-dim mt-1">
 							{oauthSuccess.account.startsWith('@') ? oauthSuccess.account : `@${oauthSuccess.account}`} has been connected
 							{selectedBrand ? ` to ${selectedBrand.name}` : ''}.
@@ -158,6 +208,40 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 					<button type="button" className="text-sm px-3 py-1.5 rounded-lg border border-emerald-500/40" onClick={() => setDismissSuccess(true)}>
 						Done
 					</button>
+				</div>
+			)}
+
+			{disconnectImpact && (
+				<div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60">
+					<div className="card p-6 max-w-md w-full space-y-4 border-danger/30">
+						<h3 className="text-lg font-semibold">Disconnect {disconnectImpact.accountLabel}?</h3>
+						{disconnectImpact.lines.length > 0 ? (
+							<div className="text-sm text-text-dim space-y-2">
+								<p>This authorization currently provides:</p>
+								<ul className="list-disc ml-5 space-y-1">
+									{disconnectImpact.lines.map((line, i) => (
+										<li key={i}>
+											<span className="text-text">{line.brandName}</span> · {line.channel} → {line.destinationLabel}
+										</li>
+									))}
+								</ul>
+							</div>
+						) : null}
+						<p className="text-sm text-warning">{disconnectImpact.warning}</p>
+						<div className="flex gap-2 justify-end">
+							<button type="button" className="px-3 py-2 rounded-lg border border-edge/60 text-sm" onClick={() => setDisconnectImpact(null)}>
+								Cancel
+							</button>
+							<button
+								type="button"
+								className="px-3 py-2 rounded-lg border border-danger/40 bg-danger/10 text-sm text-danger"
+								disabled={disconnecting}
+								onClick={confirmDisconnect}
+							>
+								{disconnecting ? 'Disconnecting…' : 'Disconnect account'}
+							</button>
+						</div>
+					</div>
 				</div>
 			)}
 
@@ -253,12 +337,7 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 											Connect {row.label}
 										</a>
 									)}
-									{(row.phase === 'AUTHORIZED_UNASSIGNED' || hasAssignment) && row.addAccountHref && row.channel === 'instagram' && (
-										<a href={row.addAccountHref} className="px-3 py-1.5 rounded-lg border border-edge/60 text-sm text-text-dim">
-											Add another {row.label} account
-										</a>
-									)}
-									{hasAssignment && row.addAccountHref && row.channel !== 'instagram' && (
+									{(row.phase === 'AUTHORIZED_UNASSIGNED' || hasAssignment) && row.addAccountHref && (
 										<a href={row.addAccountHref} className="px-3 py-1.5 rounded-lg border border-edge/60 text-sm text-text-dim">
 											Add another {row.label} account
 										</a>
@@ -302,6 +381,15 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 								{acct.usedByBrands.length > 0 && (
 									<p className="text-xs text-text-dim">Used by: {acct.usedByBrands.join(', ')}</p>
 								)}
+								<div className="pt-2">
+									<button
+										type="button"
+										className="text-xs px-3 py-1.5 rounded-lg border border-danger/30 text-danger hover:bg-danger/10"
+										onClick={() => openDisconnect(acct.id)}
+									>
+										Disconnect account
+									</button>
+								</div>
 								{showAdvanced && acct.advancedAccountId && (
 									<p className="text-xs font-mono text-text-dim/70">Account ID: {acct.advancedAccountId}</p>
 								)}

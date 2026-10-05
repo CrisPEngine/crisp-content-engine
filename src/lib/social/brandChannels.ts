@@ -78,6 +78,9 @@ function authLabelForDestination(dest: { provider: string; destination_type: str
 	if (dest.provider === SOCIAL_PROVIDERS.INSTAGRAM && dest.destination_type === DESTINATION_TYPES.INSTAGRAM_PROFESSIONAL) {
 		return 'Instagram Login';
 	}
+	if (dest.provider === SOCIAL_PROVIDERS.THREADS && dest.destination_type === DESTINATION_TYPES.THREADS_PROFILE) {
+		return 'Threads Login';
+	}
 	if (dest.provider === SOCIAL_PROVIDERS.META_LEGACY || dest.provider === SOCIAL_PROVIDERS.FACEBOOK) {
 		return 'Facebook authorization';
 	}
@@ -121,6 +124,7 @@ export async function brandChannelRows(userId: string, brandId: string): Promise
 		})();
 		const addAccountHref = (() => {
 			if (channel === 'instagram') return `/api/connections/instagram/authorize?add_account=1&brand_id=${encodeURIComponent(brandId)}`;
+			if (channel === 'threads') return `/api/connections/threads/authorize?add_account=1&brand_id=${encodeURIComponent(brandId)}`;
 			if (channel === 'facebook') return `/api/meta/oauth/start`;
 			if (channel === 'linkedin') return `/api/connections/linkedin/authorize?type=business`;
 			return connectHref;
@@ -134,9 +138,12 @@ export async function brandChannelRows(userId: string, brandId: string): Promise
 				reconnectRequired: linked.status === 'ACTION_REQUIRED',
 			});
 			const hasPublishScope =
-				channel !== 'instagram' ||
-				(auth?.scopes || []).includes('instagram_business_content_publish') ||
-				linked.destination_type !== DESTINATION_TYPES.INSTAGRAM_PROFESSIONAL;
+				channel === 'instagram'
+					? (auth?.scopes || []).includes('instagram_business_content_publish') ||
+						linked.destination_type !== DESTINATION_TYPES.INSTAGRAM_PROFESSIONAL
+					: channel === 'threads'
+						? (auth?.scopes || []).includes('threads_content_publish')
+						: true;
 			let phase: ConnectionPhase = 'ASSIGNED';
 			if (health !== 'CONNECTED' || linked.status !== 'CONNECTED') phase = 'ACTION_REQUIRED';
 			else if (hasPublishScope) phase = 'READY';
@@ -223,7 +230,9 @@ export async function listAccountAuthorizations(userId: string): Promise<Account
 		const primary =
 			auth.provider === SOCIAL_PROVIDERS.INSTAGRAM
 				? formatInstagramHandle(dests[0]?.handle, dests[0]?.display_name)
-				: auth.provider === SOCIAL_PROVIDERS.META_LEGACY || auth.provider === SOCIAL_PROVIDERS.FACEBOOK
+				: auth.provider === SOCIAL_PROVIDERS.THREADS
+					? formatInstagramHandle(dests[0]?.handle, dests[0]?.display_name)
+					: auth.provider === SOCIAL_PROVIDERS.META_LEGACY || auth.provider === SOCIAL_PROVIDERS.FACEBOOK
 					? 'Facebook Login'
 					: auth.provider === SOCIAL_PROVIDERS.LINKEDIN
 						? dests[0]?.display_name || 'LinkedIn'
@@ -232,7 +241,9 @@ export async function listAccountAuthorizations(userId: string): Promise<Account
 		const providerLabel =
 			auth.provider === SOCIAL_PROVIDERS.INSTAGRAM
 				? 'Instagram Login'
-				: auth.provider === SOCIAL_PROVIDERS.META_LEGACY || auth.provider === SOCIAL_PROVIDERS.FACEBOOK
+				: auth.provider === SOCIAL_PROVIDERS.THREADS
+					? 'Threads Login'
+					: auth.provider === SOCIAL_PROVIDERS.META_LEGACY || auth.provider === SOCIAL_PROVIDERS.FACEBOOK
 					? 'Meta / Facebook'
 					: auth.provider === SOCIAL_PROVIDERS.LINKEDIN
 						? 'LinkedIn'
@@ -263,7 +274,7 @@ export async function mcpBrandChannelSummary(userId: string, brandId: string) {
 	const rows = await brandChannelRows(userId, brandId);
 	return rows.map((row) => ({
 		channel: row.label,
-		status: row.uiStatus,
+		status: row.phase === 'READY' ? 'READY_TO_PUBLISH' : row.uiStatus,
 		destination: row.destinationLabel ?? null,
 		canPublish: row.phase === 'READY',
 	}));

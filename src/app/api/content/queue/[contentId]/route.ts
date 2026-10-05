@@ -6,181 +6,10 @@ import { isMetaPublishingEnabled } from '@/lib/featureFlags';
 import { resolvePlan } from '@/lib/planResolver';
 import { getChannelUsage, incrementChannelUsage } from '@/lib/enforceCaps';
 import { CAPS } from '@/config/pricing';
-import { resolvePublishDestination } from '@/lib/social/resolveDestination';
+import { createMetaPublishJob, createThreadsPublishJob } from '@/lib/publish/createPublishJob';
+import { isThreadsPublishingEnabled } from '@/lib/featureFlags';
 
 export const runtime = 'nodejs';
-
-/**
- * Create Meta publish job with queue guard
- * Enforces 60s minimum spacing between posts per destination
- */
-const createMetaPublishJob = async (
-	userId: string,
-	contentId: string,
-	record: any,
-	platform: 'facebook' | 'instagram'
-) => {
-	const admin = getSupabaseService();
-
-	// Get brand profile ID
-	const brandProfileId = Array.isArray(record.fields?.brand_profile_id)
-		? record.fields.brand_profile_id[0]
-		: record.fields?.brand_profile_id;
-
-	if (!brandProfileId) {
-		throw new Error('Missing brand_profile_id');
-	}
-
-	// Get content_item_key (idempotency key from generation)
-	const contentItemKey = record.fields?.content_item_key || contentId;
-
-	// Idempotency is enforced by the DB unique index on (platform, target_id, content_item_key).
-	// No pre-check needed; we handle the constraint violation below on insert.
-
-	// Get selected destination via native brand mapping (legacy fallback inside resolver)
-	let targetId: string | null = null;
-
-	const resolved = await resolvePublishDestination({
-		userId,
-		airtableBrandId: brandProfileId,
-		platform: platform === 'facebook' ? 'Facebook' : 'Instagram',
-	});
-
-	if (!resolved) {
-		throw new Error(
-			`No ${platform} destination for this brand. Assign a channel in Connections.`
-		);
-	}
-
-	targetId = resolved.providerDestinationId;
-
-	if (platform === 'facebook') {
-		const admin = getSupabaseService();
-		const { data: page } = await admin
-			.from('meta_pages')
-			.select('page_access_token_encrypted')
-			.eq('user_id', userId)
-			.eq('page_id', targetId)
-			.maybeSingle();
-
-		if (!page?.page_access_token_encrypted) {
-			throw new Error('Facebook Page token is missing. Please reconnect your Meta account.');
-		}
-	} else if (platform === 'instagram') {
-		const admin = getSupabaseService();
-		const { data: igAccount } = await admin
-			.from('meta_instagram_accounts')
-			.select('connected_page_id')
-			.eq('user_id', userId)
-			.eq('ig_user_id', targetId)
-			.maybeSingle();
-
-		if (!igAccount) {
-			throw new Error('Instagram account not found. Connect Meta and assign a destination.');
-		}
-
-		const { data: page } = await admin
-			.from('meta_pages')
-			.select('page_access_token_encrypted')
-			.eq('user_id', userId)
-			.eq('page_id', igAccount.connected_page_id)
-			.maybeSingle();
-
-		if (!page?.page_access_token_encrypted) {
-			throw new Error('Connected Facebook Page token is missing. Please reconnect Meta.');
-		}
-	}
-
-	if (resolved.source === 'legacy') {
-		console.info('[Meta Job Creation] Used legacy destination fallback', {
-			userId,
-			brandProfileId,
-			platform,
-			targetId,
-		});
-	}
-
-	if (!targetId) {
-		throw new Error(`No destination selected for ${platform}`);
-	}
-
-	// Materialize payload (source of truth, never re-read Airtable)
-	const hook = record.fields?.hook || record.fields?.title || record.fields?.post_title || '';
-	const postContent = record.fields?.post_content || '';
-	const hashtags = record.fields?.hashtags || '';
-	// Build full post text: hook (opener) → body → hashtags
-	const bodyParts: string[] = [];
-	if (hook) bodyParts.push(hook);
-	if (postContent) bodyParts.push(postContent);
-	const baseText = bodyParts.join('\n\n');
-	const fullText = hashtags ? `${baseText}\n\n${hashtags}` : baseText;
-	const imageUrl = record.fields?.image_reference_url || null;
-
-	const payload = {
-		text: fullText,
-		imageUrl,
-		contentItemKey,
-		platform,
-		targetId,
-		createdAt: new Date().toISOString(),
-	};
-
-	// Determine scheduled time with queue guard
-	const rawScheduledTime = record.fields?.scheduled_time;
-	let scheduledTime = rawScheduledTime ? new Date(rawScheduledTime) : new Date();
-
-	// Scheduling strategy: Cron handles all timing, publishes immediately when due
-	// No minimum delay needed (previously enforced 10min for FB scheduled_publish_time)
-	// Ensure scheduled time is not in the past
-	const now = new Date();
-	if (scheduledTime < now) {
-		scheduledTime = now;
-	}
-
-	// Queue guard: enforce 60s spacing per destination
-	const { data: recentJobs } = await admin
-		.from('publish_jobs')
-		.select('scheduled_time')
-		.eq('platform', platform)
-		.eq('target_id', targetId)
-		.order('scheduled_time', { ascending: false })
-		.limit(1);
-
-	if (recentJobs && recentJobs.length > 0) {
-		const lastScheduledTime = new Date(recentJobs[0].scheduled_time);
-		const sixtySecondsAfterLast = new Date(lastScheduledTime.getTime() + 60 * 1000);
-
-		if (scheduledTime < sixtySecondsAfterLast) {
-			scheduledTime = sixtySecondsAfterLast;
-		}
-	}
-
-	// Create job (unique constraint prevents duplicates)
-	const { error: insertError } = await admin
-		.from('publish_jobs')
-		.insert({
-			user_id: userId,
-			brand_profile_id: brandProfileId,
-			content_item_key: contentItemKey,
-			platform,
-			target_id: targetId,
-			status: 'queued',
-			scheduled_time: scheduledTime.toISOString(),
-			payload_json: payload,
-			airtable_record_id: contentId,
-		});
-
-	if (insertError) {
-		// Check if it's a duplicate (unique constraint violation)
-		if (insertError.code === '23505') {
-			console.log(`[Meta Job Creation] Duplicate job prevented for ${contentItemKey} (idempotency working)`);
-			return; // Silently succeed (idempotent)
-		}
-		throw new Error(`Failed to create publish job: ${insertError.message}`);
-	}
-
-	console.log(`[Meta Job Creation] Created job for ${platform} (${contentItemKey}) scheduled at ${scheduledTime.toISOString()}`);
-};
 
 const fetchRecordForUser = async (
 	contentId: string,
@@ -651,8 +480,6 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 					);
 				} catch (metaError: any) {
 					console.error('[Meta Job Creation] Error:', metaError);
-					// Don't fail the approval, but write the error to Airtable
-					// so the UI can surface it (e.g. "Approved but not queued")
 					try {
 						await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${contentId}`, {
 							method: 'PATCH',
@@ -668,6 +495,33 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 						});
 					} catch (airtableErr) {
 						console.error('[Meta Job Creation] Failed to write error to Airtable:', airtableErr);
+					}
+				}
+			}
+		}
+
+		if (action === 'approve' && isThreadsPublishingEnabled()) {
+			const platform = record.fields?.platform || '';
+			if (platform === 'Threads') {
+				try {
+					await createThreadsPublishJob(user.id, contentId, record);
+				} catch (threadsError: any) {
+					console.error('[Threads Job Creation] Error:', threadsError);
+					try {
+						await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${contentId}`, {
+							method: 'PATCH',
+							headers: {
+								Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+								'Content-Type': 'application/json',
+							},
+							body: JSON.stringify({
+								fields: {
+									publish_error: `Threads job creation failed: ${threadsError.message || 'Unknown error'}`,
+								},
+							}),
+						});
+					} catch (airtableErr) {
+						console.error('[Threads Job Creation] Failed to write error to Airtable:', airtableErr);
 					}
 				}
 			}
