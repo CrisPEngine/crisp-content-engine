@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { encryptToken } from '@/lib/encryption';
 import { retryFailedPostsAfterReconnection } from '@/lib/retryFailedPosts';
+import { syncNativeSocialForUser } from '@/lib/social/nativeSync';
 
 export const runtime = 'nodejs';
 
@@ -412,6 +413,12 @@ export async function GET(request: Request) {
 				});
 			} else {
 				console.log(`[LinkedIn Callback] Not a reconnection (wasReconnection=${wasReconnection}), skipping retry`);
+			}
+
+			try {
+				await syncNativeSocialForUser(user.id);
+			} catch (syncErr) {
+				console.warn('[LinkedIn Callback] Native sync failed:', syncErr);
 			}
 
 			// Redirect to brand assignment page

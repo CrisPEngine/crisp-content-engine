@@ -6,6 +6,7 @@ import { isMetaPublishingEnabled } from '@/lib/featureFlags';
 import { resolvePlan } from '@/lib/planResolver';
 import { getChannelUsage, incrementChannelUsage } from '@/lib/enforceCaps';
 import { CAPS } from '@/config/pricing';
+import { resolvePublishDestination } from '@/lib/social/resolveDestination';
 
 export const runtime = 'nodejs';
 
@@ -36,40 +37,67 @@ const createMetaPublishJob = async (
 	// Idempotency is enforced by the DB unique index on (platform, target_id, content_item_key).
 	// No pre-check needed; we handle the constraint violation below on insert.
 
-	// Get selected destination and verify token exists
+	// Get selected destination via native brand mapping (legacy fallback inside resolver)
 	let targetId: string | null = null;
 
+	const resolved = await resolvePublishDestination({
+		userId,
+		airtableBrandId: brandProfileId,
+		platform: platform === 'facebook' ? 'Facebook' : 'Instagram',
+	});
+
+	if (!resolved) {
+		throw new Error(
+			`No ${platform} destination for this brand. Assign a channel in Connections.`
+		);
+	}
+
+	targetId = resolved.providerDestinationId;
+
 	if (platform === 'facebook') {
-		const { data: selectedPage } = await admin
+		const admin = getSupabaseService();
+		const { data: page } = await admin
 			.from('meta_pages')
-			.select('page_id, page_access_token_encrypted')
+			.select('page_access_token_encrypted')
 			.eq('user_id', userId)
-			.eq('is_selected', true)
+			.eq('page_id', targetId)
 			.maybeSingle();
 
-		if (!selectedPage) {
-			throw new Error('No Facebook Page selected. Connect and select a page first.');
-		}
-
-		// Verify page token exists (nullable for resilience, but required for publishing)
-		if (!selectedPage.page_access_token_encrypted) {
+		if (!page?.page_access_token_encrypted) {
 			throw new Error('Facebook Page token is missing. Please reconnect your Meta account.');
 		}
-
-		targetId = selectedPage.page_id;
 	} else if (platform === 'instagram') {
-		const { data: selectedIg } = await admin
+		const admin = getSupabaseService();
+		const { data: igAccount } = await admin
 			.from('meta_instagram_accounts')
-			.select('ig_user_id')
+			.select('connected_page_id')
 			.eq('user_id', userId)
-			.eq('is_selected', true)
+			.eq('ig_user_id', targetId)
 			.maybeSingle();
 
-		if (!selectedIg) {
-			throw new Error('No Instagram account selected. Connect and select an Instagram account first.');
+		if (!igAccount) {
+			throw new Error('Instagram account not found. Connect Meta and assign a destination.');
 		}
 
-		targetId = selectedIg.ig_user_id;
+		const { data: page } = await admin
+			.from('meta_pages')
+			.select('page_access_token_encrypted')
+			.eq('user_id', userId)
+			.eq('page_id', igAccount.connected_page_id)
+			.maybeSingle();
+
+		if (!page?.page_access_token_encrypted) {
+			throw new Error('Connected Facebook Page token is missing. Please reconnect Meta.');
+		}
+	}
+
+	if (resolved.source === 'legacy') {
+		console.info('[Meta Job Creation] Used legacy destination fallback', {
+			userId,
+			brandProfileId,
+			platform,
+			targetId,
+		});
 	}
 
 	if (!targetId) {

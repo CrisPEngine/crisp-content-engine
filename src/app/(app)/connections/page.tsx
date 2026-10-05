@@ -5,6 +5,7 @@ import { AuthLoadingHandler } from '@/components/AuthLoadingHandler';
 import Link from 'next/link';
 import { isMetaPublishingEnabledClient } from '@/lib/featureFlags';
 import { connectionHealth, type ConnectionHealth } from '@/lib/social/destinations';
+import { BrandDestinationsPanel, AuthorizationAccountsPanel } from '@/components/BrandDestinationsPanel';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -216,16 +217,24 @@ function MetaCard({
 				</p>
 			)}
 
-			<div className="flex gap-3">
+			<div className="flex flex-wrap gap-3">
 				{connected ? (
-					<form action="/api/meta/disconnect" method="post">
-						<button
-							type="submit"
-							className="px-4 py-2 rounded-xl2 border border-danger/40 bg-danger/10 hover:bg-danger/20 text-sm"
+					<>
+						<a
+							href={connectHref}
+							className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm"
 						>
-							Disconnect
-						</button>
-					</form>
+							Add Meta account
+						</a>
+						<form action="/api/meta/disconnect" method="post">
+							<button
+								type="submit"
+								className="px-4 py-2 rounded-xl2 border border-danger/40 bg-danger/10 hover:bg-danger/20 text-sm"
+							>
+								Disconnect primary
+							</button>
+						</form>
+					</>
 				) : (
 					<a
 						href={connectHref}
@@ -429,6 +438,9 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 					</div>
 				</div>
 			)}
+
+			<BrandDestinationsPanel />
+			<AuthorizationAccountsPanel />
 
 			<LinkedInCard {...personalStatus} />
 			<LinkedInCard {...businessStatus} />

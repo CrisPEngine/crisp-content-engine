@@ -19,6 +19,7 @@ import {
 	getPageInstagramAccount,
 	encryptMetaToken,
 } from '@/lib/meta/graph';
+import { syncNativeSocialForUser } from '@/lib/social/nativeSync';
 
 export const runtime = 'nodejs';
 
@@ -130,11 +131,43 @@ export async function GET(request: Request) {
 		// Step 5: Store connection and pages in Supabase
 		const admin = getSupabaseService();
 
-		// Upsert meta_connections
-		const { data: connection, error: connError } = await admin
+		// Upsert meta_connections (multiple Facebook identities per user after migration 030)
+		const { data: existingConn } = await admin
 			.from('meta_connections')
-			.upsert(
-				{
+			.select('id')
+			.eq('user_id', user.id)
+			.eq('facebook_user_id', facebookUserId)
+			.maybeSingle();
+
+		let connectionId: string;
+		if (existingConn?.id) {
+			const { data: updated, error: updateError } = await admin
+				.from('meta_connections')
+				.update({
+					access_token_encrypted: encryptMetaToken(accessToken),
+					token_expires_at: expiresAt.toISOString(),
+					scopes_granted: {
+						scopes: [
+							'pages_show_list',
+							'pages_read_engagement',
+							'pages_manage_posts',
+							'instagram_basic',
+							'instagram_content_publish',
+						],
+					},
+					updated_at: new Date().toISOString(),
+				})
+				.eq('id', existingConn.id)
+				.select('id')
+				.single();
+			if (updateError || !updated) {
+				throw new Error(`Failed to update connection: ${updateError?.message || 'unknown'}`);
+			}
+			connectionId = updated.id;
+		} else {
+			const { data: inserted, error: insertError } = await admin
+				.from('meta_connections')
+				.insert({
 					user_id: user.id,
 					facebook_user_id: facebookUserId,
 					access_token_encrypted: encryptMetaToken(accessToken),
@@ -148,36 +181,33 @@ export async function GET(request: Request) {
 							'instagram_content_publish',
 						],
 					},
-					updated_at: new Date().toISOString(),
-				},
-				{
-					onConflict: 'user_id',
-				}
-			)
-			.select('id')
-			.single();
-
-		if (connError) {
-			console.error('[Meta OAuth] Failed to save connection:', connError);
-			throw new Error(`Failed to save connection: ${connError.message}`);
+				})
+				.select('id')
+				.single();
+			if (insertError || !inserted) {
+				throw new Error(`Failed to save connection: ${insertError?.message || 'unknown'}`);
+			}
+			connectionId = inserted.id;
 		}
 
-		// Step 6: Clear stale data, then store fresh pages and Instagram accounts
-		// On reconnect, user may have lost access to pages or gained new ones.
-		// Delete everything and re-insert from the current Graph API response.
-		await admin
-			.from('meta_instagram_accounts')
-			.delete()
-			.eq('user_id', user.id);
+		// Clear stale destinations for this authorization only (do not disconnect other Meta accounts)
+		await admin.from('meta_instagram_accounts').delete().eq('meta_connection_id', connectionId);
+		await admin.from('meta_pages').delete().eq('meta_connection_id', connectionId);
 
-		await admin
-			.from('meta_pages')
-			.delete()
+		// Legacy rows without meta_connection_id: attach only when this is the sole Meta auth
+		const { count: metaAuthCount } = await admin
+			.from('meta_connections')
+			.select('id', { count: 'exact', head: true })
 			.eq('user_id', user.id);
+		if ((metaAuthCount || 0) <= 1) {
+			await admin.from('meta_instagram_accounts').delete().eq('user_id', user.id).is('meta_connection_id', null);
+			await admin.from('meta_pages').delete().eq('user_id', user.id).is('meta_connection_id', null);
+		}
 
 		for (const page of pages) {
-			const pageData: any = {
+			const pageData: Record<string, unknown> = {
 				user_id: user.id,
+				meta_connection_id: connectionId,
 				page_id: page.id,
 				page_name: page.name,
 			};
@@ -205,6 +235,7 @@ export async function GET(request: Request) {
 				if (igAccount) {
 					await admin.from('meta_instagram_accounts').insert({
 						user_id: user.id,
+						meta_connection_id: connectionId,
 						ig_user_id: igAccount.id,
 						ig_username: igAccount.username,
 						connected_page_id: page.id,
@@ -216,10 +247,15 @@ export async function GET(request: Request) {
 			}
 		}
 
+		try {
+			await syncNativeSocialForUser(user.id);
+		} catch (syncErr) {
+			console.warn('[Meta OAuth] Native destination sync failed (legacy paths remain):', syncErr);
+		}
+
 		// Step 7: Redirect to selection page so user can choose which Page and Instagram to use
-		// (No auto-select; user must select on /connections/meta/select)
 		return NextResponse.redirect(
-			`${redirectBase}/connections/meta/select`
+			`${redirectBase}/connections/meta/select?meta_connection_id=${encodeURIComponent(connectionId)}`
 		);
 	} catch (err: any) {
 		console.error('[Meta OAuth] Callback error:', err);
