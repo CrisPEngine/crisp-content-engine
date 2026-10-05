@@ -115,13 +115,12 @@ export async function handleMcpHttp(request: Request): Promise<Response> {
 	const params = message.params ?? {};
 	const name = typeof params.name === 'string' ? params.name : '';
 	const args = params.arguments && typeof params.arguments === 'object' ? (params.arguments as Record<string, unknown>) : {};
-	const idempotencyKey = typeof args.idempotencyKey === 'string' ? args.idempotencyKey : request.headers.get('idempotency-key') ?? undefined;
 	const result = await executeFromAuthorization({
 		authorization: request.headers.get('authorization'),
 		action: name,
 		payload: args,
-		idempotencyKey,
 		requestId: request.headers.get('x-request-id') ?? undefined,
+		headers: request.headers,
 	});
 	if (!result.body.ok && ['unauthenticated', 'revoked_key', 'expired_key'].includes(result.body.error?.code ?? '')) {
 		return rpcError(message.id, -32001, result.body.error?.message ?? 'Unauthorised.', 401, { 'WWW-Authenticate': wwwAuthenticate(request) });

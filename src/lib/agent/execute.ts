@@ -1,9 +1,9 @@
-import { createHash } from 'crypto';
 import { credentialForInvocation } from './access';
 import { resolveAgentCredential } from './credentials';
 import { getAgentStore } from './controlStore';
 import { AgentError, agentErrorFromUnknown } from './errors';
 import { dispatchAgentHandler, type AgentContext } from './handlers';
+import { agentRequestHash, resolveMutatingIdempotencyKey } from './idempotency';
 import type { RateLimitPolicy } from './policy';
 import { getAgentAction } from './registry';
 import type { AgentCredential } from './types';
@@ -21,19 +21,6 @@ export type AgentResponseBody = {
 
 const SECRET = /token|secret|authorization|password|cookie|keyhash|apikey/i;
 
-function stable(value: unknown): unknown {
-	if (Array.isArray(value)) return value.map(stable);
-	if (value && typeof value === 'object') {
-		return Object.fromEntries(
-			Object.entries(value as Record<string, unknown>)
-				.filter(([key]) => key !== 'idempotencyKey')
-				.sort(([a], [b]) => a.localeCompare(b))
-				.map(([key, item]) => [key, stable(item)]),
-		);
-	}
-	return value;
-}
-
 function summarise(value: unknown, depth = 0): unknown {
 	if (depth > 4) return undefined;
 	if (typeof value === 'string') return value.length > 400 ? `${value.slice(0, 400)}…` : value;
@@ -48,10 +35,6 @@ function summarise(value: unknown, depth = 0): unknown {
 		return out;
 	}
 	return undefined;
-}
-
-function requestHash(action: string, payload: unknown): string {
-	return createHash('sha256').update(JSON.stringify({ action, payload: stable(payload) })).digest('hex');
 }
 
 function rateSpec(action: string, policy: RateLimitPolicy): { key: string; limit: number; windowMs: number } | null {
@@ -103,6 +86,7 @@ export async function executeAgentAction(input: {
 	payload: unknown;
 	idempotencyKey?: string | null;
 	requestId?: string;
+	headers?: { get(name: string): string | null };
 }): Promise<{ status: number; body: AgentResponseBody }> {
 	const started = Date.now();
 	const requestId = input.requestId || crypto.randomUUID();
@@ -112,6 +96,7 @@ export async function executeAgentAction(input: {
 	let status = 500;
 	let body: AgentResponseBody = { ok: false, action: input.action, requestId };
 	let approvalId: string | undefined;
+	let resolvedIdempotencyKey: string | null = null;
 	try {
 		if (!definition) throw new AgentError('unknown_action', `Unknown agent action ${input.action}.`, 404);
 		if (!input.credential.capabilities.includes(definition.capability)) {
@@ -122,19 +107,24 @@ export async function executeAgentAction(input: {
 		if (!parsed.success) {
 			throw new AgentError('invalid_input', parsed.error.issues[0]?.message ?? 'Invalid input.', 400);
 		}
-		const idempotencyKey = input.idempotencyKey?.trim() || null;
-		if (definition.level > 0 && !idempotencyKey) {
-			throw new AgentError('idempotency_key_required', 'Mutating agent actions require an idempotency key.', 400);
-		}
-		if (idempotencyKey) {
-			const existing = await getAgentStore().readIdempotency(input.credential.id, idempotencyKey);
-			const hash = requestHash(input.action, parsed.data);
+		resolvedIdempotencyKey = resolveMutatingIdempotencyKey({
+			credentialId: input.credential.id,
+			action: input.action,
+			parsedPayload: parsed.data,
+			level: definition.level,
+			direct: input.idempotencyKey,
+			rawPayload: payload,
+			headers: input.headers,
+		});
+		if (resolvedIdempotencyKey) {
+			const existing = await getAgentStore().readIdempotency(input.credential.id, resolvedIdempotencyKey);
+			const hash = agentRequestHash(input.action, parsed.data);
 			if (existing) {
 				if (existing.requestHash !== hash) {
 					throw new AgentError('idempotency_conflict', 'Idempotency key was reused with a different request.', 409);
 				}
 				const stored = existing.response as { status: number; body: AgentResponseBody };
-				await audit(input, definition.capability, definition.level, requestId, brandId, stored.status, stored.body, started, undefined, undefined);
+				await audit({ ...input, idempotencyKey: resolvedIdempotencyKey }, definition.capability, definition.level, requestId, brandId, stored.status, stored.body, started, undefined, undefined);
 				return stored;
 			}
 		}
@@ -151,16 +141,16 @@ export async function executeAgentAction(input: {
 		approvalId = result && typeof result === 'object' ? ((result as { approvalId?: string }).approvalId) : undefined;
 		status = 200;
 		body = { ok: true, action: input.action, requestId, result };
-		if (idempotencyKey) {
+		if (resolvedIdempotencyKey) {
 			await getAgentStore().writeIdempotency({
 				credentialId: input.credential.id,
-				idempotencyKey,
-				requestHash: requestHash(input.action, parsed.data),
+				idempotencyKey: resolvedIdempotencyKey,
+				requestHash: agentRequestHash(input.action, parsed.data),
 				response: { status, body },
 				createdAt: new Date().toISOString(),
 			});
 		}
-		await audit(input, definition.capability, definition.level, requestId, brandId, status, body, started, affectedObject(result), approvalId);
+		await audit({ ...input, idempotencyKey: resolvedIdempotencyKey }, definition.capability, definition.level, requestId, brandId, status, body, started, affectedObject(result), approvalId);
 		return { status, body };
 	} catch (error) {
 		const agentError = agentErrorFromUnknown(error);
@@ -171,7 +161,7 @@ export async function executeAgentAction(input: {
 			requestId,
 			error: { code: agentError.code, message: agentError.message, retryable: agentError.retryable, details: agentError.details },
 		};
-		await audit(input, definition?.capability, definition?.level, requestId, brandId, status, body, started, undefined, undefined, agentError.code);
+		await audit({ ...input, idempotencyKey: resolvedIdempotencyKey }, definition?.capability, definition?.level, requestId, brandId, status, body, started, undefined, undefined, agentError.code);
 		return { status, body };
 	}
 }
@@ -220,6 +210,7 @@ export async function executeFromAuthorization(input: {
 	payload: unknown;
 	idempotencyKey?: string | null;
 	requestId?: string;
+	headers?: { get(name: string): string | null };
 }): Promise<{ status: number; body: AgentResponseBody }> {
 	try {
 		const credential = await resolveAgentCredential(input.authorization);

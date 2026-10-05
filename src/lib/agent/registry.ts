@@ -12,6 +12,15 @@ export type AgentActionDefinition = {
 	schema: z.ZodType;
 };
 
+function schemaForLevel(level: ConsequenceLevel, schema: z.ZodType): z.ZodType {
+	if (level <= 0) return schema;
+	const idempotency = { idempotencyKey: z.string().optional() };
+	if (schema instanceof z.ZodObject) {
+		return schema.extend(idempotency);
+	}
+	return z.intersection(schema, z.object(idempotency));
+}
+
 function action(
 	name: string,
 	capability: AgentCapability,
@@ -19,7 +28,7 @@ function action(
 	description: string,
 	schema: z.ZodType = loose,
 ): AgentActionDefinition {
-	return { name, capability, level, description, schema };
+	return { name, capability, level, description, schema: schemaForLevel(level, schema) };
 }
 
 export const AGENT_ACTIONS: AgentActionDefinition[] = [

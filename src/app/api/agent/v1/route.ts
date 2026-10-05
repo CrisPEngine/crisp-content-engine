@@ -5,9 +5,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
-	let body: { action?: string; input?: unknown; idempotencyKey?: string };
+	let body: { action?: string; input?: unknown; idempotencyKey?: string; idempotency_key?: string };
 	try {
-		body = (await request.json()) as { action?: string; input?: unknown; idempotencyKey?: string };
+		body = (await request.json()) as { action?: string; input?: unknown; idempotencyKey?: string; idempotency_key?: string };
 	} catch {
 		return NextResponse.json({ ok: false, error: { code: 'invalid_input', message: 'JSON body required.', retryable: false } }, { status: 400 });
 	}
@@ -18,8 +18,9 @@ export async function POST(request: Request) {
 		authorization: request.headers.get('authorization'),
 		action: body.action,
 		payload: body.input ?? {},
-		idempotencyKey: body.idempotencyKey ?? request.headers.get('idempotency-key') ?? undefined,
+		idempotencyKey: body.idempotencyKey ?? body.idempotency_key ?? undefined,
 		requestId: request.headers.get('x-request-id') ?? undefined,
+		headers: request.headers,
 	});
 	return NextResponse.json(result.body, { status: result.status });
 }
