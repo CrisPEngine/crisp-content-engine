@@ -233,7 +233,8 @@ describe('agent control plane', () => {
 		expect((versions.body.result as { versions: unknown[] }).versions.length).toBeGreaterThanOrEqual(2);
 
 		const submitted = await call(secret, 'cce_submit_for_approval', { contentId }, 'submit-1');
-		expect(submitted.body.result).toMatchObject({ status: 'awaiting_approval', approver: 'human', published: false });
+		expect(submitted.body.result).toMatchObject({ status: 'NEEDS_APPROVAL', approver: 'human', published: false, scheduled: false });
+		expect((submitted.body.result as { approvalUrl: string }).approvalUrl).toContain('/approve/');
 		const approved = await call(secret, 'cce_approve_content', { contentId }, 'approve-1');
 		expect(approved.body.error?.code).toBe('capability_not_enabled');
 		const afterDecision = await call(secret, 'cce_get_content', { contentId });

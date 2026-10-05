@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, X, Eye, Calendar, Loader2, Edit2, Save, Clock, Upload, Image as ImageIcon, Copy } from 'lucide-react';
 import { Skeleton, ContentItemSkeleton } from '@/components/skeletons/Skeleton';
+import { mergeApprovalItems } from '@/lib/content/workflow';
 
 // Check if Meta publishing is enabled (client-side)
 const isMetaPublishingEnabled = () => {
@@ -31,6 +32,12 @@ type ContentItem = {
 	image_generation_source?: string;
 	image_reference_url?: string;
 	image_cloudinary_id?: string;
+	source?: 'airtable' | 'native';
+	workflowStatus?: string;
+	proposedSchedule?: string | null;
+	destination?: string | null;
+	evidence?: boolean;
+	airtableContentId?: string | null;
 	// Multi-channel fields
 	post_type?: string;
 	thread_group_id?: string | null;
@@ -245,7 +252,14 @@ export default function ContentApprovalPage() {
 				throw new Error(data?.error || 'Failed to load content queue');
 			}
 			const data = await res.json();
-			const items = Array.isArray(data.items) ? data.items : [];
+			const airtable = (Array.isArray(data.items) ? data.items : []).map((item: ContentItem) => ({ ...item, source: 'airtable' as const }));
+			const nativeUrl = new URL('/api/content/native-queue', window.location.origin);
+			nativeUrl.searchParams.set('platform', selectedTab);
+			if (selectedBrandId && selectedBrandId !== 'all') nativeUrl.searchParams.set('brand_profile_id', selectedBrandId);
+			const nativeRes = await fetch(nativeUrl.pathname + nativeUrl.search, { cache: 'no-store', credentials: 'include' });
+			const nativeData = nativeRes.ok ? await nativeRes.json() : { items: [] };
+			const native = (Array.isArray(nativeData.items) ? nativeData.items : []) as ContentItem[];
+			const items = mergeApprovalItems(airtable, native);
 			setContentItems(items);
 			
 			// If no items and we just approved a strategy, show loading state
@@ -269,6 +283,18 @@ export default function ContentApprovalPage() {
 		setApproving(id);
 		setError(null);
 		try {
+			const current = contentItems.find((item) => item.id === id);
+			if (current?.source === 'native') {
+				const res = await fetch('/api/content/native-queue', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					credentials: 'include',
+					body: JSON.stringify({ contentId: id, decision: 'approve' }),
+				});
+				if (!res.ok) throw new Error('Failed to approve content');
+				setContentItems((items) => items.map((item) => (item.id === id ? { ...item, status: 'APPROVED_UNSCHEDULED', workflowStatus: 'APPROVED_UNSCHEDULED' } : item)));
+				return;
+			}
 			const res = await fetch(`/api/content/queue/${id}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
@@ -303,6 +329,18 @@ export default function ContentApprovalPage() {
 		setRejecting(id);
 		setError(null);
 		try {
+			const current = contentItems.find((item) => item.id === id);
+			if (current?.source === 'native') {
+				const res = await fetch('/api/content/native-queue', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					credentials: 'include',
+					body: JSON.stringify({ contentId: id, decision: 'reject' }),
+				});
+				if (!res.ok) throw new Error('Failed to reject content');
+				setContentItems((items) => items.map((item) => (item.id === id ? { ...item, status: 'REJECTED', workflowStatus: 'REJECTED' } : item)));
+				return;
+			}
 			// Delete the content item instead of just updating status
 			const res = await fetch(`/api/content/queue/${id}`, {
 				method: 'DELETE',
@@ -981,6 +1019,30 @@ export default function ContentApprovalPage() {
 													{item.character_count}/280
 												</span>
 											)}
+											{item.workflowStatus ? (
+												<span className="px-2.5 py-1 rounded-full text-xs font-medium bg-surface/50 border border-edge/60 text-text-soft">
+													{item.workflowStatus}
+												</span>
+											) : null}
+											{item.evidence ? (
+												<span className="px-2.5 py-1 rounded-full text-xs font-medium bg-surface/50 border border-edge/60 text-text-soft">
+													Evidence attached
+												</span>
+											) : null}
+											{item.proposedSchedule ? (
+												<span className="px-2.5 py-1 rounded-full text-xs font-medium bg-surface/50 border border-edge/60 text-text-soft">
+													Proposed {item.proposedSchedule}
+												</span>
+											) : null}
+											{item.destination ? (
+												<span className="px-2.5 py-1 rounded-full text-xs font-medium bg-surface/50 border border-edge/60 text-text-soft">
+													{item.destination}
+												</span>
+											) : item.source === 'native' ? (
+												<span className="px-2.5 py-1 rounded-full text-xs font-medium bg-warning/15 border border-warning/30 text-warning">
+													Destination required
+												</span>
+											) : null}
 											{item.status === 'Needs Copy' && (
 												<span className="px-2.5 py-1 rounded-full text-xs font-medium bg-warning/15 border border-warning/30 text-warning">
 													Needs editing

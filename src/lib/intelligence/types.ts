@@ -39,6 +39,7 @@ export type PublicationStatus =
 	| 'scheduled'
 	| 'published'
 	| 'failed'
+	| 'rejected'
 	| 'archived';
 
 export type ConfidenceLevel = 'insufficient' | 'low' | 'moderate' | 'high';
@@ -65,6 +66,7 @@ export type WorkflowJobType =
 
 export type BrandIdentity = {
 	name: string;
+	website?: string;
 	description?: string;
 	purpose?: string;
 	mission?: string;

@@ -18,6 +18,7 @@ import { planMedia } from '@/lib/media/planner';
 import { getNativeContentStore } from '@/lib/media/store';
 import { publicAsset } from '@/lib/media/images';
 import { decideResearch } from '@/lib/research/policy';
+import { selectRelevantResearch } from '@/lib/research/retrieve';
 import { packetContext } from '@/lib/research/run';
 import { createMonitor, executeResearch, monitorProject } from '@/lib/research/service';
 import { selectSearchProvider } from '@/lib/research/search';
@@ -269,16 +270,24 @@ async function ownedResearch(ctx: AgentContext, brandId: string | undefined, res
 	return record;
 }
 
-async function researchForInstruction(ctx: AgentContext, brain: BrandBrain, instruction: string) {
+async function researchForInstruction(ctx: AgentContext, brain: BrandBrain, instruction: string, attachedIds: string[] = []) {
 	const existing = await getAgentStore().listResearch(ctx.credential.ownerUserId, brain.id);
-	const latest = existing.find((item) => item.packet && item.request && instruction.toLowerCase().includes(item.request.toLowerCase().slice(0, 24)));
+	const relevant = selectRelevantResearch(existing, instruction, attachedIds);
+	const latest = relevant[0];
 	const decision = decideResearch({
 		instruction,
-		hasFreshResearch: Boolean(latest?.packet),
+		hasFreshResearch: relevant.length > 0,
 		existingVerifiedAt: latest?.packet?.sources.find((source) => source.verifiedAt)?.verifiedAt ?? latest?.createdAt,
 	});
-	if (decision.decision === 'NO_RESEARCH_NEEDED' || decision.decision === 'USE_EXISTING_RESEARCH') {
-		return { decision: decision.decision, researchId: latest?.id, context: latest?.packet && decision.decision === 'USE_EXISTING_RESEARCH' ? packetContext(latest.packet) : 'No fresh external research was required.' };
+	if (relevant.length > 0 && (decision.decision === 'NO_RESEARCH_NEEDED' || decision.decision === 'USE_EXISTING_RESEARCH')) {
+		return {
+			decision: 'USE_EXISTING_RESEARCH' as const,
+			researchId: latest?.id,
+			context: relevant.map((record) => (record.packet ? packetContext(record.packet) : record.claims.map((claim) => claim.text).join('\n'))).join('\n\n'),
+		};
+	}
+	if (decision.decision === 'NO_RESEARCH_NEEDED') {
+		return { decision: decision.decision, researchId: undefined, context: 'No fresh external research was required.' };
 	}
 	const record = await executeResearch({
 		ownerUserId: ctx.credential.ownerUserId,
@@ -289,15 +298,16 @@ async function researchForInstruction(ctx: AgentContext, brain: BrandBrain, inst
 		brandFacts: brain.knowledge.brandFacts,
 		search: configuredSearch(),
 	});
-	return { decision: decision.decision, researchId: record.id, context: record.packet ? packetContext(record.packet) : decision.reason };
+	const context = [record.packet ? packetContext(record.packet) : '', ...relevant.map((item) => item.packet ? packetContext(item.packet) : item.request)].filter(Boolean).join('\n\n');
+	return { decision: decision.decision, researchId: record.id, context };
 }
 
-async function generateForChannel(ctx: AgentContext, brain: BrandBrain, input: { instruction: string; channel: string; themeId?: string; objective?: string }) {
+async function generateForChannel(ctx: AgentContext, brain: BrandBrain, input: { instruction: string; channel: string; themeId?: string; objective?: string; researchIds?: string[] }) {
 	const channel = resolveChannel(input.channel);
 	const pipelineChannel = channel?.pipelineChannel ?? input.channel.toLowerCase();
 	const adaptation = channel?.adaptation ?? 'Write for this channel on its own. Do not reuse another channel’s wording.';
 	const started = Date.now();
-	const research = await researchForInstruction(ctx, brain, input.instruction);
+	const research = await researchForInstruction(ctx, brain, input.instruction, input.researchIds ?? []);
 	const result = await runContentIntelligencePipeline(
 		getIntelligenceStore(),
 		{
@@ -785,7 +795,7 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			if (!instruction) throw new AgentError('invalid_input', 'A brief or instruction is required.', 400);
 			const outputs = [];
 			for (const channel of channels) {
-				const output = await generateForChannel(ctx, brain, { instruction, channel, themeId: brief?.themeId ?? inputString(input, 'themeId'), objective: brief?.objective });
+				const output = await generateForChannel(ctx, brain, { instruction, channel, themeId: brief?.themeId ?? inputString(input, 'themeId'), objective: brief?.objective, researchIds: brief?.researchIds });
 				outputs.push({
 					...output,
 					mediaPlan: planMedia({ channel, topic: output.topic ?? instruction, objective: brief?.objective, contentType: output.channel === 'blog' ? 'article' : 'founder_post' }),
@@ -909,12 +919,23 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			if (!contentId) throw new AgentError('invalid_input', 'contentId is required.', 400);
 			const memory = await requireContent(ctx, contentId);
 			if (memory.publicationStatus === 'published') throw new AgentError('content_already_published', 'This content is already published.', 409);
+			const publishAt = inputString(input, 'publishAt');
+			const requestedAction = inputString(input, 'requestedAction') === 'approve_and_schedule' ? 'approve_and_schedule' : 'approve_content';
 			const next = await getIntelligenceStore().saveMemory(ctx.credential.ownerUserId, {
 				...memory,
 				publicationStatus: 'review',
-				metadata: { ...(memory.metadata ?? {}), submittedForApprovalAt: new Date().toISOString(), submittedBy: ctx.credential.id, approver: 'human' },
+				publicationDate: memory.publicationDate,
+				metadata: { ...(memory.metadata ?? {}), submittedForApprovalAt: new Date().toISOString(), submittedBy: ctx.credential.id, approver: 'human', proposedSchedule: publishAt ?? null },
 			});
 			await emit(ctx, memory.brandBrainId, 'content.ready_for_approval', { contentId: memory.id });
+			const created = await createApprovalRequest({
+				credential: ctx.credential,
+				brandId: memory.brandBrainId,
+				targetType: 'content',
+				targetId: next.id,
+				requestedAction,
+				publishAt,
+			});
 			let queue: string = 'not_requested';
 			if (process.env.AGENT_SUBMIT_TO_QUEUE === 'true') {
 				const bridge = await import('@/lib/intelligence/queueBridge');
@@ -923,7 +944,21 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 					queue = queued.status;
 				} else queue = 'held';
 			}
-			return { contentId: next.id, status: 'awaiting_approval', approver: 'human', published: false, queue };
+			return {
+				approvalRequestId: created.request.id,
+				status: 'NEEDS_APPROVAL',
+				awaitingApproval: true,
+				approver: 'human',
+				brandId: memory.brandBrainId,
+				target: { type: 'content', id: next.id },
+				summary: created.request.summary,
+				approvalUrl: created.approvalUrl,
+				expiresAt: created.request.expiresAt,
+				proposedSchedule: publishAt ?? null,
+				published: false,
+				scheduled: false,
+				queue,
+			};
 		}
 		case 'cce_approve_content':
 		case 'cce_reject_content': {

@@ -130,6 +130,13 @@ export async function resolveApprovalRequest(input: { token: string; userId: str
 		current.authorizationMethod = 'cce_authenticated_page';
 		current.executionStatus = 'not_executed';
 		await store.saveApprovalRequest(current);
+		if (current.targetType === 'content') {
+			const intelligence = getIntelligenceStore();
+			const memory = await intelligence.getMemory(current.ownerUserId, current.targetId);
+			if (memory) {
+				await intelligence.saveMemory(current.ownerUserId, { ...memory, publicationStatus: 'rejected' });
+			}
+		}
 		return current;
 	}
 	await applyHumanApproval(current, input.userId);
