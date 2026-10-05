@@ -1,4 +1,4 @@
-import { isNativeIntelligenceEnabledForBrand } from '@/lib/featureFlags';
+import { nativeIntelligenceBlock } from '@/lib/featureFlags';
 import { resolveModelForRole, MODEL_ROLES } from '@/lib/ai/roles';
 import { computeBaseline } from '@/lib/intelligence/baselines';
 import { getIntelligenceAi, getIntelligenceStore } from '@/lib/intelligence/actions';
@@ -191,8 +191,12 @@ function evaluateOpportunity(opportunity: MarketingOpportunity, strategy: BrandS
 }
 
 function assertNative(brain: BrandBrain): void {
-	if (!isNativeIntelligenceEnabledForBrand(brain.id)) {
-		throw new AgentError('native_intelligence_brand_not_enabled', 'Native intelligence is not enabled for this brand.', 403);
+	const block = nativeIntelligenceBlock({ nativeIntelligenceEnabled: brain.guardrails.nativeIntelligenceEnabled });
+	if (block === 'native_intelligence_globally_disabled') {
+		throw new AgentError(block, 'Native intelligence is turned off for every brand.', 403);
+	}
+	if (block === 'native_intelligence_brand_disabled') {
+		throw new AgentError(block, 'Native intelligence is turned off for this brand.', 403);
 	}
 }
 
@@ -214,6 +218,7 @@ function generationPayload(result: GenerationResult, started: number) {
 		body: result.reviewedDraft,
 		status: result.memory.publicationStatus,
 		reviewPassed: result.review.materialPassed,
+		contextGaps: result.contextGaps,
 		modelRole: result.modelRole,
 		model: writing?.model ?? null,
 		estimatedCostUsd: result.estimatedCostUsd,

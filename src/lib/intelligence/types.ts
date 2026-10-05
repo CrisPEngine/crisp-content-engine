@@ -114,6 +114,8 @@ export type BrandGuardrails = {
 	unwantedAiBehaviours?: string[];
 	ctaRestrictions?: string[];
 	promotionalIntensity?: string;
+	/** Absent or true means native generation is available. False disables this brand only. */
+	nativeIntelligenceEnabled?: boolean;
 };
 
 export type BrandFaq = { question: string; answer: string };
@@ -496,6 +498,7 @@ export type GenerationResult = {
 	requestIds: string[];
 	usage: IntelligenceUsage[];
 	estimatedCostUsd: number | null;
+	contextGaps: string[];
 	memoriesConsidered: Array<{ id: string; hook?: string; topic?: string; reason: string }>;
 };
 

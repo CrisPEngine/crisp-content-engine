@@ -66,13 +66,15 @@ export const isIdeaEngineNativeEnabled = (): boolean => {
 };
 
 /**
- * Brand-scoped native intelligence pilot.
- * Off unless NATIVE_INTELLIGENCE_ENABLED=true and the canonical brand_brains.id
- * is listed in NATIVE_INTELLIGENCE_BRAND_ALLOWLIST. An empty list enables nobody.
- * Airtable BrandProfiles ids are not eligibility keys. Callers resolve the
- * compatibility record to the brand brain, then check that canonical id here.
- * Make generation stays available for every brand that is not on the list.
+ * Global emergency stop for native generation.
+ * Absent or any value other than the string "false" means native intelligence is on.
+ * NATIVE_INTELLIGENCE_BRAND_ALLOWLIST is ignored. Eligibility is the native brand record.
  */
+export function isNativeIntelligenceGloballyEnabled(): boolean {
+	return process.env.NATIVE_INTELLIGENCE_ENABLED !== 'false';
+}
+
+/** @deprecated Ignored. Kept so old environments can still be read for diagnostics. */
 export function nativeIntelligenceBrandAllowlist(): string[] {
 	return (process.env.NATIVE_INTELLIGENCE_BRAND_ALLOWLIST || '')
 		.split(',')
@@ -80,8 +82,10 @@ export function nativeIntelligenceBrandAllowlist(): string[] {
 		.filter(Boolean);
 }
 
-export function isNativeIntelligenceEnabledForBrand(canonicalBrandId: string | null | undefined): boolean {
-	if (process.env.NATIVE_INTELLIGENCE_ENABLED !== 'true') return false;
-	if (!canonicalBrandId) return false;
-	return nativeIntelligenceBrandAllowlist().includes(canonicalBrandId);
+export type NativeIntelligenceBlock = 'native_intelligence_globally_disabled' | 'native_intelligence_brand_disabled';
+
+export function nativeIntelligenceBlock(brand: { nativeIntelligenceEnabled?: boolean } | null | undefined): NativeIntelligenceBlock | null {
+	if (!isNativeIntelligenceGloballyEnabled()) return 'native_intelligence_globally_disabled';
+	if (brand?.nativeIntelligenceEnabled === false) return 'native_intelligence_brand_disabled';
+	return null;
 }

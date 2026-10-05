@@ -249,7 +249,7 @@ function IntelligencePageInner() {
 			<div>
 				<h1 className="text-3xl font-semibold">Brand Intelligence</h1>
 				<p className="text-sm text-text-dim mt-2">
-					Native Brand Brain, strategy, and themes. Airtable and Make remain the live generation/CMS path.
+					Native Brand Brain, strategy, and themes. A saved brand can use native intelligence immediately. Set nativeIntelligenceEnabled to false in guardrails to turn it off for this brand only. Airtable and Make stay available.
 				</p>
 			</div>
 

@@ -187,9 +187,13 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 			const brain = await brand(ctx, text(input, 'brandId'));
 			const strategy = await getIntelligenceStore().getStrategyForBrand(ctx.credential.ownerUserId, brain.id);
 			const themes = await getIntelligenceStore().listThemes(ctx.credential.ownerUserId, brain.id);
-			const { isNativeIntelligenceEnabledForBrand } = await import('@/lib/featureFlags');
-			if (!isNativeIntelligenceEnabledForBrand(brain.id)) {
-				throw new AgentError('native_intelligence_brand_not_enabled', 'Native intelligence is not enabled for this brand.', 403);
+			const { nativeIntelligenceBlock } = await import('@/lib/featureFlags');
+			const block = nativeIntelligenceBlock({ nativeIntelligenceEnabled: brain.guardrails.nativeIntelligenceEnabled });
+			if (block === 'native_intelligence_globally_disabled') {
+				throw new AgentError(block, 'Native intelligence is turned off for every brand.', 403);
+			}
+			if (block === 'native_intelligence_brand_disabled') {
+				throw new AgentError(block, 'Native intelligence is turned off for this brand.', 403);
 			}
 			const article = await generateArticle({
 				ownerUserId: ctx.credential.ownerUserId,

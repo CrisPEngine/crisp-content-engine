@@ -161,7 +161,9 @@ Errors are `{ ok: false, error: { code, message, retryable } }`.
 | `ai_provider_unavailable` | Provider timeout or outage. Retryable |
 | `invalid_url` | External URL is not public https |
 | `analytics_unavailable` | No ad account is connected. Returned in the result, not always as a transport error |
-| `native_intelligence_brand_not_enabled` | Generation is off for that canonical brand |
+| `native_intelligence_globally_disabled` | `NATIVE_INTELLIGENCE_ENABLED=false` |
+| `native_intelligence_brand_disabled` | This brand's guardrails set `nativeIntelligenceEnabled` to false |
+| `brand_context_incomplete` | Not an error. Generation returns `contextGaps` for missing strategy, themes, memory, or facts |
 | `agent_store_unavailable` | Migration 026 is not applied |
 | `image_provider_unavailable` | Media was planned, and no image provider is configured |
 | `unknown_action` | Action is not in the registry |

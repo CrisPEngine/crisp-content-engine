@@ -15,7 +15,7 @@ import { attachExperimentVariant, collectExperimentResults } from './experimentO
 import type { IntelligenceStore } from './store';
 import type { OptimizationObjective } from './types';
 import { deriveRates } from './performance';
-import { isNativeIntelligenceEnabledForBrand } from '@/lib/featureFlags';
+import { nativeIntelligenceBlock } from '@/lib/featureFlags';
 
 export const INTELLIGENCE_ACTION_NAMES = [
 	'get_brand',
@@ -93,12 +93,22 @@ async function requireBrain(store: IntelligenceStore, userId: string, brandId: s
 }
 
 async function assertNativeIntelligence(store: IntelligenceStore, userId: string, compatibilityBrandId: string) {
+	const block = nativeIntelligenceBlock(null);
+	if (block === 'native_intelligence_globally_disabled') {
+		const error = new Error('Native intelligence is turned off for every brand.');
+		(error as Error & { status: number; code: string }).status = 403;
+		(error as Error & { code: string }).code = block;
+		throw error;
+	}
 	const brain = await store.getBrandBrain(userId, compatibilityBrandId);
-	if (brain && isNativeIntelligenceEnabledForBrand(brain.id)) return;
-	const error = new Error('Native intelligence is not enabled for this brand. Make generation is unchanged.');
-	(error as Error & { status: number; code: string }).status = 403;
-	(error as Error & { code: string }).code = 'native_intelligence_brand_not_enabled';
-	throw error;
+	if (!brain) throw new Error('Brand brain not found');
+	const brandBlock = nativeIntelligenceBlock({ nativeIntelligenceEnabled: brain.guardrails.nativeIntelligenceEnabled });
+	if (brandBlock) {
+		const error = new Error('Native intelligence is turned off for this brand.');
+		(error as Error & { status: number; code: string }).status = 403;
+		(error as Error & { code: string }).code = brandBlock;
+		throw error;
+	}
 }
 
 export async function dispatchIntelligenceAction(

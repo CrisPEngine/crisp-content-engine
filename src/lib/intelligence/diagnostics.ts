@@ -3,7 +3,7 @@
  */
 
 import { MODEL_ROLES, resolveModelForRole } from '@/lib/ai/roles';
-import { nativeIntelligenceBrandAllowlist } from '@/lib/featureFlags';
+import { isNativeIntelligenceGloballyEnabled, nativeIntelligenceBrandAllowlist } from '@/lib/featureFlags';
 
 export type DiagnosticCheck = {
 	id: string;
@@ -61,12 +61,12 @@ export function runConfigDiagnostics(): DiagnosticCheck[] {
 			detail: 'Make content generation webhook still configured',
 		},
 		{
-			id: 'native_intelligence_pilot',
-			ok: process.env.NATIVE_INTELLIGENCE_ENABLED !== 'true' || nativeIntelligenceBrandAllowlist().length > 0,
+			id: 'native_intelligence',
+			ok: isNativeIntelligenceGloballyEnabled(),
 			severity: 'info',
-			detail: process.env.NATIVE_INTELLIGENCE_ENABLED === 'true'
-				? `Native intelligence canonical brand allowlist: ${nativeIntelligenceBrandAllowlist().join(', ') || 'empty, so no brand is enabled'}`
-				: 'Native intelligence pilot is off. Make generation is unchanged.',
+			detail: isNativeIntelligenceGloballyEnabled()
+				? `Native intelligence is on for every native brand.${nativeIntelligenceBrandAllowlist().length ? ' NATIVE_INTELLIGENCE_BRAND_ALLOWLIST is ignored.' : ''}`
+				: 'Native intelligence is globally disabled. Make generation is unchanged.',
 		},
 		{
 			id: 'linkedin_oauth',

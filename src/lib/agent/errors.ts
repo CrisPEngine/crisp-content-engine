@@ -23,12 +23,9 @@ export class AgentError extends Error {
 export function agentErrorFromUnknown(error: unknown): AgentError {
 	if (error instanceof AgentError) return error;
 	const coded = error as { code?: string; status?: number; message?: string };
-	if (coded?.code === 'native_intelligence_brand_not_enabled') {
-		return new AgentError(
-			'native_intelligence_brand_not_enabled',
-			'Native intelligence is not enabled for this brand.',
-			403,
-		);
+	if (coded?.code === 'native_intelligence_globally_disabled' || coded?.code === 'native_intelligence_brand_disabled' || coded?.code === 'native_intelligence_brand_not_enabled') {
+		const code = coded.code === 'native_intelligence_brand_not_enabled' ? 'native_intelligence_brand_disabled' : coded.code;
+		return new AgentError(code, coded.message || 'Native intelligence is not available.', coded.status ?? 403);
 	}
 	const message = error instanceof Error ? error.message : 'Agent action failed';
 	if (/relation|schema cache|does not exist/i.test(message)) {

@@ -319,6 +319,13 @@ export async function runContentIntelligencePipeline(
 		scorePayload: score,
 	});
 
+	const contextGaps = [
+		!strategy ? 'strategy' : '',
+		themes.filter((row) => row.status === 'active').length === 0 ? 'themes' : '',
+		memoryRows.length === 0 ? 'content_memory' : '',
+		!(brain.knowledge.brandFacts && brain.knowledge.brandFacts.length > 0) ? 'brand_facts' : '',
+	].filter(Boolean);
+
 	return {
 		brief: { ...storedBrief, memoryId: savedMemory.id },
 		draftId: draftRow.id,
@@ -331,6 +338,7 @@ export async function runContentIntelligencePipeline(
 		requestIds: [],
 		usage,
 		estimatedCostUsd: sumCost(usage),
+		contextGaps,
 		memoriesConsidered: [
 			...memory.related.map((row) => ({
 				id: row.id,
