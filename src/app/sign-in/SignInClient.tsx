@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useSupabase } from '@/components/SupabaseProvider';
+import { safeRedirectPath } from '@/lib/auth/safeRedirect';
 
 // Meta (Facebook) auth removed: publishing uses a separate Meta app; avoid mixing auth with app approvals.
 type OAuthProvider = 'google' | 'linkedin_oidc';
@@ -21,11 +22,13 @@ export default function SignInClient() {
   const [authView, setAuthView] = useState<AuthView>('sign_in');
   const [recoveryVerified, setRecoveryVerified] = useState(false);
 
+  const [checkingSession, setCheckingSession] = useState(true);
+
   const redirectTo = searchParams.get('redirect_to');
   const isSignUp = searchParams.get('signup') === 'true';
   const type = searchParams.get('type');
   const tokenHash = searchParams.get('token_hash');
-  const safeRedirectTo = redirectTo && redirectTo.startsWith('/') ? redirectTo : null;
+  const safeRedirectTo = safeRedirectPath(redirectTo, '/dashboard');
   const authCallbackUrl =
     typeof window !== 'undefined'
       ? `${window.location.origin}/auth/callback${safeRedirectTo ? `?redirect_to=${encodeURIComponent(safeRedirectTo)}` : ''}`
@@ -77,20 +80,39 @@ export default function SignInClient() {
   useEffect(() => {
     if (!supabase) return;
     // Don't redirect when user is in recovery flow and needs to set password
-    if (authView === 'update_password' && recoveryVerified) return;
+    if (authView === 'update_password' && recoveryVerified) {
+      setCheckingSession(false);
+      return;
+    }
 
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session && authView !== 'update_password') {
-        if (safeRedirectTo === '/connections') {
-          router.replace('/connections?reauth=true');
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session && authView !== 'update_password') {
+          if (safeRedirectTo === '/connections') {
+            router.replace('/connections?reauth=true');
+            return;
+          }
+          router.replace(safeRedirectTo);
           return;
         }
-        router.replace(safeRedirectTo || '/dashboard');
+      } finally {
+        setCheckingSession(false);
       }
     };
     checkSession();
   }, [supabase, router, safeRedirectTo, authView, recoveryVerified]);
+
+  if (checkingSession && !loading) {
+    return (
+      <main className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-sky-300 border-t-transparent" />
+          <p className="text-sm text-neutral-300">Signing you in…</p>
+        </div>
+      </main>
+    );
+  }
 
   async function handleOAuth(provider: OAuthProvider) {
     if (!supabase) return;
