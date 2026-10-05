@@ -4,11 +4,11 @@ Native research extends the existing agent research record. A packet stores the 
 
 ## Provider
 
-The search interface is `SearchProvider`. The first implementation is the Brave Search API (`https://api.search.brave.com/res/v1/web/search`).
+The search interface is `SearchProvider`. The default implementation is the [Tavily Search API](https://docs.tavily.com/documentation/api-reference/endpoint/search) (`POST https://api.tavily.com/search`).
 
-Brave is the initial provider because it has an independent web index, returns source URLs, covers news, and has a flat public price of about $5 per 1,000 requests. CCE still fetches owned pages itself, so search is only used for third-party discovery.
+Tavily is the initial provider on the free Researcher plan. CCE uses **Basic Search** by default and **Advanced Search** only when the research necessity classifier returns `FULL_RESEARCH` or `REFRESH_EXISTING_RESEARCH`. Owned-site pages are still fetched directly; search is only used for third-party discovery.
 
-Set `BRAVE_SEARCH_API_KEY` and leave `RESEARCH_SEARCH_PROVIDER=brave` (the default). If the key is absent, owned-site research still runs and the packet records that external search was not configured. No synthetic sources are created.
+Set `TAVILY_API_KEY` and leave `RESEARCH_SEARCH_PROVIDER=tavily` (the default). To use Brave instead, set `RESEARCH_SEARCH_PROVIDER=brave` and `BRAVE_SEARCH_API_KEY`. If no provider key is configured, owned-site research still runs and the packet records that external search was not configured. No synthetic sources are created.
 
 `RESEARCH_ENABLED=false` disables research runs. Monitors are stored with a cadence and a per-brand cap. They do not crawl on their own.
 

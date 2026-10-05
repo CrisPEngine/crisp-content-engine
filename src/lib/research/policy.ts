@@ -152,6 +152,14 @@ export function decideResearch(input: {
 	return { decision: 'FULL_RESEARCH', reason: 'The request asks for research or depends on current external evidence.' };
 }
 
+import type { SearchDepth } from './search';
+
+/** Maps the research necessity classifier onto Tavily (or compatible) search depth. */
+export function searchDepthForDecision(decision: 'NO_RESEARCH_NEEDED' | 'USE_EXISTING_RESEARCH' | 'REFRESH_EXISTING_RESEARCH' | 'QUICK_VERIFY' | 'FULL_RESEARCH'): SearchDepth {
+	if (decision === 'FULL_RESEARCH' || decision === 'REFRESH_EXISTING_RESEARCH') return 'advanced';
+	return 'basic';
+}
+
 export const RESEARCH_LIMITS = {
 	maxSearchesPerRun: 4,
 	maxPagesPerRun: 8,

@@ -1,6 +1,6 @@
 import { getAgentStore } from '@/lib/agent/controlStore';
 import type { ResearchMonitor, ResearchRecord } from '@/lib/agent/types';
-import { RESEARCH_LIMITS } from './policy';
+import { RESEARCH_LIMITS, decideResearch, searchDepthForDecision } from './policy';
 import { runResearch, type PageFetcher } from './run';
 import type { SearchProvider } from './search';
 import type { MonitorType, ResearchProjectType } from './types';
@@ -15,7 +15,10 @@ export async function executeResearch(input: {
 	brandFacts?: string[];
 	fetchPage?: PageFetcher;
 	search?: SearchProvider;
+	researchDecision?: 'NO_RESEARCH_NEEDED' | 'USE_EXISTING_RESEARCH' | 'REFRESH_EXISTING_RESEARCH' | 'QUICK_VERIFY' | 'FULL_RESEARCH';
 }): Promise<ResearchRecord> {
+	const decision = input.researchDecision ?? decideResearch({ instruction: input.query }).decision;
+	const searchDepth = searchDepthForDecision(decision);
 	const packet = await runResearch({
 		brandName: input.brandName,
 		website: input.website,
@@ -25,6 +28,7 @@ export async function executeResearch(input: {
 		ownedDomain: input.website ? new URL(input.website).hostname.replace(/^www\./, '') : undefined,
 		fetchPage: input.fetchPage,
 		search: input.search,
+		searchDepth,
 	});
 	const saved = await getAgentStore().saveResearch(input.ownerUserId, {
 		id: crypto.randomUUID(),

@@ -297,6 +297,7 @@ async function researchForInstruction(ctx: AgentContext, brain: BrandBrain, inst
 		projectType: 'CURRENT_RESEARCH',
 		brandFacts: brain.knowledge.brandFacts,
 		search: configuredSearch(),
+		researchDecision: decision.decision,
 	});
 	const context = [record.packet ? packetContext(record.packet) : '', ...relevant.map((item) => item.packet ? packetContext(item.packet) : item.request)].filter(Boolean).join('\n\n');
 	return { decision: decision.decision, researchId: record.id, context };
@@ -748,6 +749,7 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 				projectType: existing.packet?.projectType ?? 'CURRENT_RESEARCH',
 				brandFacts: brain.knowledge.brandFacts,
 				search: configuredSearch(),
+				researchDecision: 'REFRESH_EXISTING_RESEARCH',
 			});
 			return publicResearch(record);
 		}

@@ -1,7 +1,7 @@
 import { RESEARCH_LIMITS, assertPublicHttpUrl, classifySource, contentFingerprint, freshUntil, knowledgeClassFor, sourceDomain, staleness, withinBudget } from './policy';
 import { extractVisibleText, pageTypeFromUrl, prioritisePages, robotsAllows, sentences, sitemapUrls, summariseReviews, assessTrend } from './parse';
 import { findContradictions, proposeBrandUpdate } from './governance';
-import type { SearchHit, SearchProvider } from './search';
+import type { SearchHit, SearchProvider, SearchDepth } from './search';
 import type { ResearchClaim, ResearchFinding, ResearchPacket, ResearchProjectType, ResearchSource } from './types';
 
 export type FetchedPage = {
@@ -170,6 +170,7 @@ export async function runResearch(input: {
 	ownedDomain?: string;
 	fetchPage?: PageFetcher;
 	search?: SearchProvider;
+	searchDepth?: SearchDepth;
 	now?: number;
 }): Promise<ResearchPacket> {
 	const started = input.now ?? Date.now();
@@ -197,7 +198,8 @@ export async function runResearch(input: {
 		} else if (withinBudget(searches + 1, pagesFetched)) {
 			searches += 1;
 			try {
-				const hits = await search.search(`${input.brandName} ${input.query}`.trim(), 6);
+				const depth: SearchDepth = input.searchDepth ?? 'basic';
+				const hits = await search.search(`${input.brandName} ${input.query}`.trim(), 6, { depth });
 				for (const hit of hits) {
 					if (sources.length >= RESEARCH_LIMITS.maxSourcesStored) break;
 					if (sources.some((source) => source.url === hit.url)) continue;
