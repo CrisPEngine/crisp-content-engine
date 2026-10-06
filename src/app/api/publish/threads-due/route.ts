@@ -3,10 +3,15 @@ import { getSupabaseService } from '@/lib/supabaseService';
 import { isThreadsPublishingEnabled } from '@/lib/featureFlags';
 import { publishThreadsPost } from '@/lib/threads/oauth';
 import { getAuthorizationSecrets } from '@/lib/social/authorizationSecrets';
+import { applyThreadsJobOutcomeToAgentContent } from '@/lib/publish/agentThreadsJob';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/**
+ * Threads publish worker (publish_jobs). Scheduled via cron-job.org (not Vercel Cron).
+ * Security: Authorization: Bearer {CRON_SECRET}
+ */
 export async function GET(request: Request) {
 	try {
 		if (!isThreadsPublishingEnabled()) {
@@ -103,6 +108,14 @@ export async function GET(request: Request) {
 					})
 					.eq('id', job.id);
 
+				await applyThreadsJobOutcomeToAgentContent({
+					user_id: job.user_id,
+					content_item_key: job.content_item_key,
+					payload_json: job.payload_json,
+					status: 'published',
+					remote_post_id: result.postId || null,
+				});
+
 				results.published++;
 			} catch (err: unknown) {
 				const message = err instanceof Error ? err.message : 'Unknown error';
@@ -131,6 +144,13 @@ export async function GET(request: Request) {
 							updated_at: new Date().toISOString(),
 						})
 						.eq('id', job.id);
+					await applyThreadsJobOutcomeToAgentContent({
+						user_id: job.user_id,
+						content_item_key: job.content_item_key,
+						payload_json: job.payload_json,
+						status: 'failed',
+						error_message: message,
+					});
 					results.failed++;
 				}
 			}
@@ -141,4 +161,8 @@ export async function GET(request: Request) {
 		const message = error instanceof Error ? error.message : 'Server error';
 		return NextResponse.json({ error: message }, { status: 500 });
 	}
+}
+
+export async function POST(request: Request) {
+	return GET(request);
 }

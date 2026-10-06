@@ -14,6 +14,7 @@ import { AgentError } from './errors';
 import { CAPABILITY_GROUP } from './policy';
 import { dispatchContentExtensions } from './extensions';
 import { assertScheduleMatchesApproval, createApprovalRequest } from './approvals';
+import { cancelAgentThreadsPublishJob, isAgentThreadsMemory, syncAgentThreadsPublishJob } from '@/lib/publish/agentThreadsJob';
 import { planMedia } from '@/lib/media/planner';
 import { getNativeContentStore } from '@/lib/media/store';
 import { publicAsset } from '@/lib/media/images';
@@ -1006,13 +1007,31 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			}
 			if (name !== 'cce_unschedule_content') await assertScheduleMatchesApproval(memory);
 			const publishAt = name === 'cce_unschedule_content' ? undefined : inputString(input, 'publishAt');
-			const next = await getIntelligenceStore().saveMemory(ctx.credential.ownerUserId, {
+			const pendingMemory = {
 				...memory,
 				publicationStatus: name === 'cce_unschedule_content' ? 'approved' : 'scheduled',
 				publicationDate: publishAt,
-			});
+			};
+			let publisherArmed = false;
+			let note: string | undefined;
+			if (name === 'cce_unschedule_content' && isAgentThreadsMemory(memory)) {
+				await cancelAgentThreadsPublishJob(ctx.credential.ownerUserId, memory.id);
+			} else if (name !== 'cce_unschedule_content' && isAgentThreadsMemory(memory)) {
+				const queued = await syncAgentThreadsPublishJob({
+					userId: ctx.credential.ownerUserId,
+					memory: pendingMemory,
+					publishAt,
+				});
+				publisherArmed = queued.armed;
+				if (!publisherArmed && queued.skipped === 'threads_disabled') {
+					note = 'Threads publishing is disabled; content is scheduled in CCE only until THREADS_APP_ID is configured.';
+				}
+			} else if (name !== 'cce_unschedule_content') {
+				note = 'The external publisher is not armed by this call.';
+			}
+			const next = await getIntelligenceStore().saveMemory(ctx.credential.ownerUserId, pendingMemory);
 			await emit(ctx, memory.brandBrainId, name === 'cce_unschedule_content' ? 'content.unscheduled' : 'content.scheduled', { contentId, publishAt });
-			return { content: publicContent(next), publisherArmed: false, note: 'The external publisher is not armed by this call.' };
+			return { content: publicContent(next), publisherArmed, ...(note ? { note } : {}) };
 		}
 		case 'cce_get_content_performance': {
 			const contentId = inputString(input, 'contentId');

@@ -67,14 +67,23 @@ Optional client flag:
 
 | `NEXT_PUBLIC_THREADS_PUBLISHING_ENABLED` | Set `false` to hide client hints |
 
-## Cron worker
+## Cron worker (cron-job.org)
 
-Add a cron job (same pattern as Meta):
+CCE uses **cron-job.org** for all scheduled jobs (Vercel Hobby does not support frequent crons). Create a job on [cron-job.org](https://cron-job.org):
 
-`GET https://app.crispdigital.io/api/publish/threads-due`  
-Header: `Authorization: Bearer {CRON_SECRET}`
+| Setting | Value |
+|---------|--------|
+| **URL** | `https://app.crispdigital.io/api/publish/threads-due` |
+| **Schedule** | Every 5 minutes (`*/5 * * * *`) |
+| **HTTP method** | GET or POST |
+| **Request header** | `Authorization: Bearer {CRON_SECRET}` (same value as the Vercel env var) |
 
-Recommended: every 5 minutes.
+Manual test:
+
+```bash
+curl -s -H "Authorization: Bearer YOUR_CRON_SECRET" \
+  "https://app.crispdigital.io/api/publish/threads-due"
+```
 
 ## Acceptance OAuth (Folian)
 
