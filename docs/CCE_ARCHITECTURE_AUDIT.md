@@ -259,7 +259,7 @@ UI calendar reads ContentQueue `scheduled_time`. `POST /api/content/schedule` is
 
 ### Scheduled jobs
 
-No Vercel `crons` in `vercel.json`. External cron hits: LinkedIn due, Meta due, strategy reminder, approval reminder, strategy auto-continue, content auto-publish, trial reminders.
+No Vercel `crons` in `vercel.json`. External cron hits: LinkedIn due, Meta due, Threads due, strategy reminder, approval reminder, strategy auto-continue, content auto-publish, trial reminders.
 
 ---
 

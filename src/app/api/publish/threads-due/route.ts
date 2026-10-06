@@ -8,6 +8,10 @@ import { applyThreadsJobOutcomeToAgentContent } from '@/lib/publish/agentThreads
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/**
+ * Threads publish worker (publish_jobs). Scheduled via cron-job.org (not Vercel Cron).
+ * Security: Authorization: Bearer {CRON_SECRET}
+ */
 export async function GET(request: Request) {
 	try {
 		if (!isThreadsPublishingEnabled()) {
@@ -157,4 +161,8 @@ export async function GET(request: Request) {
 		const message = error instanceof Error ? error.message : 'Server error';
 		return NextResponse.json({ error: message }, { status: 500 });
 	}
+}
+
+export async function POST(request: Request) {
+	return GET(request);
 }

@@ -67,16 +67,23 @@ Optional client flag:
 
 | `NEXT_PUBLIC_THREADS_PUBLISHING_ENABLED` | Set `false` to hide client hints |
 
-## Cron worker
+## Cron worker (cron-job.org)
 
-`vercel.json` includes a Vercel Cron entry for `GET /api/publish/threads-due` every five minutes. Vercel sends `Authorization: Bearer {CRON_SECRET}` automatically when `CRON_SECRET` is set on the project.
+CCE uses **cron-job.org** for all scheduled jobs (Vercel Hobby does not support frequent crons). Create a job on [cron-job.org](https://cron-job.org):
 
-On **Hobby**, Vercel Cron is limited to **once per day**; use an external scheduler (cron-job.org, EasyCron, etc.) for five-minute runs:
+| Setting | Value |
+|---------|--------|
+| **URL** | `https://app.crispdigital.io/api/publish/threads-due` |
+| **Schedule** | Every 5 minutes (`*/5 * * * *`) |
+| **HTTP method** | GET or POST |
+| **Request header** | `Authorization: Bearer {CRON_SECRET}` (same value as the Vercel env var) |
 
-`GET https://app.crispdigital.io/api/publish/threads-due`  
-Header: `Authorization: Bearer {CRON_SECRET}`
+Manual test:
 
-Recommended: every 5 minutes.
+```bash
+curl -s -H "Authorization: Bearer YOUR_CRON_SECRET" \
+  "https://app.crispdigital.io/api/publish/threads-due"
+```
 
 ## Acceptance OAuth (Folian)
 
