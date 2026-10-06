@@ -4,6 +4,7 @@ import { isThreadsPublishingEnabled } from '@/lib/featureFlags';
 import { publishThreadsPost } from '@/lib/threads/oauth';
 import { getAuthorizationSecrets } from '@/lib/social/authorizationSecrets';
 import { applyThreadsJobOutcomeToAgentContent } from '@/lib/publish/agentThreadsJob';
+import { duePublishJobsQuery } from '@/lib/publish/dueJobsQuery';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,15 +31,10 @@ export async function GET(request: Request) {
 		const admin = getSupabaseService();
 		const now = new Date().toISOString();
 
-		const { data: dueJobs, error: fetchError } = await admin
-			.from('publish_jobs')
-			.select('*')
-			.eq('platform', 'threads')
-			.in('status', ['queued', 'retrying'])
-			.lte('scheduled_time', now)
-			.or(`next_attempt_at.is.null,next_attempt_at.lte.${now}`)
-			.order('scheduled_time', { ascending: true })
-			.limit(50);
+		const { data: dueJobs, error: fetchError } = await duePublishJobsQuery(admin, {
+			platforms: ['threads'],
+			now,
+		});
 
 		if (fetchError) {
 			return NextResponse.json({ error: 'Failed to fetch jobs' }, { status: 500 });

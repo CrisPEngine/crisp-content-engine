@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { isMetaPublishingEnabled } from '@/lib/featureFlags';
 import { publishToFacebookPage, publishToInstagram, decryptMetaToken, type MetaGraphErrorDetail } from '@/lib/meta/graph';
+import { duePublishJobsQuery, META_PUBLISH_PLATFORMS } from '@/lib/publish/dueJobsQuery';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,8 +21,8 @@ export const dynamic = 'force-dynamic';
  * - 60-second spacing is enforced at job-creation time.
  * 
  * Flow:
- * 1. Fetch due jobs (status IN ('queued','retrying'), scheduled_time <= now,
- *    next_attempt_at IS NULL OR next_attempt_at <= now)
+ * 1. Fetch due jobs (platform IN facebook/instagram only; status IN queued/retrying;
+ *    scheduled_time <= now; next_attempt_at IS NULL OR next_attempt_at <= now)
  * 2. For each job:
  *    - Optimistic lock: UPDATE ... WHERE status IN ('queued','retrying')
  *    - If lock fails (0 rows), skip (another worker got it)
@@ -55,14 +56,10 @@ export async function GET(request: Request) {
 
 		// Fetch due jobs: queued OR retrying, scheduled_time <= now,
 		// and next_attempt_at is null or in the past
-		const { data: dueJobs, error: fetchError } = await admin
-			.from('publish_jobs')
-			.select('*')
-			.in('status', ['queued', 'retrying'])
-			.lte('scheduled_time', now)
-			.or(`next_attempt_at.is.null,next_attempt_at.lte.${now}`)
-			.order('scheduled_time', { ascending: true })
-			.limit(50);
+		const { data: dueJobs, error: fetchError } = await duePublishJobsQuery(admin, {
+			platforms: META_PUBLISH_PLATFORMS,
+			now,
+		});
 
 		if (fetchError) {
 			console.error('[Meta Worker] Error fetching jobs:', fetchError);
