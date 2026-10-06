@@ -4,6 +4,8 @@ import { getAgentStore } from '@/lib/agent/controlStore';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { createHash } from 'crypto';
 import { redirect } from 'next/navigation';
+import { ApprovalDecisionForm } from './ApprovalDecisionForm';
+import { ApprovalStatusBanner } from './ApprovalStatusBanner';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,17 +54,16 @@ export default async function ApprovalPage({ params, searchParams }: { params: P
 		<main className="mx-auto max-w-lg px-4 py-6 space-y-4">
 			<p className="text-sm text-text-soft">{brain?.identity.name ?? 'Brand'} · {String(preview.channel ?? 'content')}</p>
 			<h1 className="text-2xl font-semibold">{request.summary}</h1>
-			<p className="text-sm">{query.done ? `Decision recorded: ${query.done}` : `Status: ${request.status}`}</p>
-			{query.error ? <p className="text-sm">{query.error}</p> : null}
+			{query.done || query.error ? (
+				<ApprovalStatusBanner done={query.done} error={query.error} schedule={schedule} />
+			) : (
+				<p className="text-sm text-text-soft">Status: {request.status}</p>
+			)}
 			{preview.destination ? <p className="text-sm">Destination: {String(preview.destination)}</p> : <p className="text-sm">Destination required before this can be scheduled.</p>}
 			<article className="card whitespace-pre-wrap p-4 text-base leading-relaxed">{body}</article>
 			<p className="text-sm">{schedule ? `Approve and schedule for ${String(preview.publishAt ?? '')}` : 'Approve this draft only. It will not be scheduled or published.'}</p>
 			{request.status === 'PENDING' && !query.done ? (
-				<form action={decide} className="grid gap-3">
-					<input type="hidden" name="token" value={token} />
-					<button className="min-h-12 rounded-xl2 bg-primary px-4 text-white" name="decision" value="approve" type="submit">{schedule ? 'Approve and schedule' : 'Approve'}</button>
-					<button className="min-h-12 rounded-xl2 border px-4" name="decision" value="reject" type="submit">Reject</button>
-				</form>
+				<ApprovalDecisionForm action={decide} token={token} schedule={schedule} />
 			) : null}
 		</main>
 	);
