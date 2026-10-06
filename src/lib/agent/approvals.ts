@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'crypto';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { getNativeContentStore } from '@/lib/media/store';
 import type { ContentMemoryRecord } from '@/lib/intelligence/types';
+import { syncAgentThreadsPublishJob, isAgentThreadsMemory } from '@/lib/publish/agentThreadsJob';
 import { getAgentStore } from './controlStore';
 import { AgentError } from './errors';
 import type { AgentCredential, ApprovalRequest } from './types';
@@ -168,7 +169,7 @@ async function applyHumanApproval(request: ApprovalRequest, userId: string): Pro
 		const memory = await intelligence.getMemory(request.ownerUserId, request.targetId);
 		if (!memory) throw new AgentError('not_found', 'The content for this approval no longer exists.', 404);
 		const schedule = request.requestedAction === 'approve_and_schedule';
-		await intelligence.saveMemory(request.ownerUserId, {
+		const updatedMemory = {
 			...memory,
 			publicationStatus: schedule ? 'scheduled' : 'approved',
 			publicationDate: schedule ? publishAt : memory.publicationDate,
@@ -181,7 +182,15 @@ async function applyHumanApproval(request: ApprovalRequest, userId: string): Pro
 				authorizationMethod: 'cce_authenticated_page',
 				requestingCredentialId: request.credentialId,
 			},
-		});
+		};
+		if (schedule && isAgentThreadsMemory(memory)) {
+			await syncAgentThreadsPublishJob({
+				userId: request.ownerUserId,
+				memory: updatedMemory,
+				publishAt,
+			});
+		}
+		await intelligence.saveMemory(request.ownerUserId, updatedMemory);
 		return;
 	}
 	const articles = getNativeContentStore();

@@ -69,7 +69,9 @@ Optional client flag:
 
 ## Cron worker
 
-Add a cron job (same pattern as Meta):
+`vercel.json` includes a Vercel Cron entry for `GET /api/publish/threads-due` every five minutes. Vercel sends `Authorization: Bearer {CRON_SECRET}` automatically when `CRON_SECRET` is set on the project.
+
+On **Hobby**, Vercel Cron is limited to **once per day**; use an external scheduler (cron-job.org, EasyCron, etc.) for five-minute runs:
 
 `GET https://app.crispdigital.io/api/publish/threads-due`  
 Header: `Authorization: Bearer {CRON_SECRET}`
