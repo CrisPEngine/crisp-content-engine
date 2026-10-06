@@ -21,7 +21,8 @@ export function LoadingButton({
 	disabled,
 	...props
 }: LoadingButtonProps) {
-	const baseClasses = 'inline-flex items-center justify-center gap-2 rounded-xl2 font-medium transition-all active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed';
+	const baseClasses =
+		'inline-flex touch-manipulation select-none items-center justify-center gap-2 rounded-xl2 font-medium transition-[transform,background-color,border-color,opacity] duration-150 motion-reduce:transition-none motion-reduce:active:scale-100 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed';
 	
 	const variantClasses = {
 		primary: 'border border-primary/40 bg-primary/10 text-text hover:bg-primary/20',
