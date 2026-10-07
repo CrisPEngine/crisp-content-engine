@@ -73,17 +73,19 @@ function ActionFieldset({
 export function ApprovalDecisionForm({
 	action,
 	token,
+	tokenFieldName = 'token',
 	schedule,
 }: {
 	action: DecideAction;
 	token: string;
+	tokenFieldName?: string;
 	schedule: boolean;
 }) {
 	const [activeDecision, setActiveDecision] = useState<ApprovalDecision | null>(null);
 
 	return (
 		<form action={action} className="grid gap-3" aria-label="Approval decision">
-			<input type="hidden" name="token" value={token} />
+			<input type="hidden" name={tokenFieldName} value={token} />
 			<ActionFieldset
 				schedule={schedule}
 				activeDecision={activeDecision}

@@ -1,36 +1,35 @@
 import { requireSessionUserId } from '@/lib/agent/session';
-import { resolveApprovalRequest } from '@/lib/agent/approvals';
+import { resolveApprovalRequestById } from '@/lib/agent/approvals';
 import { getAgentStore } from '@/lib/agent/controlStore';
-import { createHash } from 'crypto';
 import { redirect } from 'next/navigation';
 import { loadApprovalPageModel } from '@/lib/agent/approvalPageModel';
-import { ApprovalPageShell } from '../ApprovalPageShell';
+import { ApprovalPageShell } from '@/app/approve/ApprovalPageShell';
 
 export const dynamic = 'force-dynamic';
 
 async function decide(formData: FormData) {
 	'use server';
-	const token = String(formData.get('token') ?? '');
+	const requestId = String(formData.get('requestId') ?? '');
 	const decision = formData.get('decision') === 'reject' ? 'reject' : 'approve';
 	const userId = await requireSessionUserId();
-	if (!userId) redirect(`/sign-in?redirect_to=${encodeURIComponent(`/approve/${token}`)}`);
+	if (!userId) redirect(`/sign-in?redirect_to=${encodeURIComponent(`/approvals/${requestId}`)}`);
 	try {
-		await resolveApprovalRequest({ token, userId, decision });
+		await resolveApprovalRequestById({ requestId, userId, decision });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : 'Could not resolve the approval.';
-		redirect(`/approve/${token}?error=${encodeURIComponent(message)}`);
+		redirect(`/approvals/${requestId}?error=${encodeURIComponent(message)}`);
 	}
-	redirect(`/approve/${token}?done=${decision}`);
+	redirect(`/approvals/${requestId}?done=${decision}`);
 }
 
-export default async function ApprovalPage({
+export default async function ApprovalByIdPage({
 	params,
 	searchParams,
 }: {
-	params: Promise<{ token: string }>;
+	params: Promise<{ requestId: string }>;
 	searchParams: Promise<{ done?: string; error?: string }>;
 }) {
-	const { token } = await params;
+	const { requestId } = await params;
 	const query = await searchParams;
 	const userId = await requireSessionUserId();
 	if (!userId) {
@@ -40,19 +39,19 @@ export default async function ApprovalPage({
 				<p className="mt-3 text-text-soft">This approval has to be confirmed by the CCE account that owns the brand.</p>
 				<a
 					className="mt-6 inline-flex min-h-12 items-center rounded-xl2 bg-primary px-4 text-white"
-					href={`/sign-in?redirect_to=${encodeURIComponent(`/approve/${token}`)}`}
+					href={`/sign-in?redirect_to=${encodeURIComponent(`/approvals/${requestId}`)}`}
 				>
 					Sign in
 				</a>
 			</main>
 		);
 	}
-	const request = await getAgentStore().getApprovalRequestByTokenHash(createHash('sha256').update(token).digest('hex'));
+	const request = await getAgentStore().getApprovalRequest(requestId);
 	if (!request || request.ownerUserId !== userId) {
 		return (
 			<main className="mx-auto max-w-lg px-4 py-8">
 				<h1 className="text-2xl font-semibold">Approval unavailable</h1>
-				<p className="mt-3">This link is not valid for the signed-in account.</p>
+				<p className="mt-3">This request is not available for the signed-in account.</p>
 			</main>
 		);
 	}
@@ -62,7 +61,7 @@ export default async function ApprovalPage({
 			model={model}
 			query={query}
 			decide={decide}
-			tokenField={{ name: 'token', value: token }}
+			tokenField={{ name: 'requestId', value: requestId }}
 		/>
 	);
 }

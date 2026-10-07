@@ -3,6 +3,7 @@ import { getSupabaseService } from '@/lib/supabaseService';
 import { isMetaPublishingEnabled } from '@/lib/featureFlags';
 import { publishToFacebookPage, publishToInstagram, decryptMetaToken, type MetaGraphErrorDetail } from '@/lib/meta/graph';
 import { duePublishJobsQuery, META_PUBLISH_PLATFORMS } from '@/lib/publish/dueJobsQuery';
+import { applyMetaJobOutcomeToAgentContent } from '@/lib/publish/agentMetaJob';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -267,6 +268,13 @@ async function publishJob(
 						.from('publish_jobs')
 						.update(buildUpdatePayload('failed', errorMessage, attempts, null, result.metaError))
 						.eq('id', job.id);
+					await applyMetaJobOutcomeToAgentContent({
+						user_id: job.user_id,
+						content_item_key: job.content_item_key,
+						payload_json: job.payload_json,
+						status: 'failed',
+						error_message: errorMessage,
+					});
 					await updateAirtableFailed(job.airtable_record_id, errorMessage);
 					console.log(`[Meta Worker] Job ${job.id} permanently failed after ${attempts} attempts`);
 					return { success: false, retry: false, error: errorMessage, metaError: result.metaError };
@@ -320,6 +328,13 @@ async function publishJob(
 							.from('publish_jobs')
 							.update(buildUpdatePayload('failed', errorMessage, attempts, null, result.metaError))
 							.eq('id', job.id);
+						await applyMetaJobOutcomeToAgentContent({
+							user_id: job.user_id,
+							content_item_key: job.content_item_key,
+							payload_json: job.payload_json,
+							status: 'failed',
+							error_message: errorMessage,
+						});
 						await updateAirtableFailed(job.airtable_record_id, errorMessage);
 						console.log(`[Meta Worker] Job ${job.id} permanently failed after ${attempts} attempts`);
 						return { success: false, retry: false, error: errorMessage, metaError: result.metaError };
@@ -342,6 +357,13 @@ async function publishJob(
 			})
 			.eq('id', job.id);
 
+		await applyMetaJobOutcomeToAgentContent({
+			user_id: job.user_id,
+			content_item_key: job.content_item_key,
+			payload_json: job.payload_json,
+			status: 'published',
+			remote_post_id: remotePostId,
+		});
 		await updateAirtablePublished(job.airtable_record_id, remotePostId, platform);
 		console.log(`[Meta Worker] Job ${job.id} published: ${remotePostId}`);
 		return { success: true, retry: false };
@@ -365,6 +387,13 @@ async function publishJob(
 				.from('publish_jobs')
 				.update(buildUpdatePayload('failed', errorMessage, attempts, null))
 				.eq('id', job.id);
+			await applyMetaJobOutcomeToAgentContent({
+				user_id: job.user_id,
+				content_item_key: job.content_item_key,
+				payload_json: job.payload_json,
+				status: 'failed',
+				error_message: errorMessage,
+			});
 			await updateAirtableFailed(job.airtable_record_id, errorMessage);
 			console.log(`[Meta Worker] Job ${job.id} permanently failed after ${attempts} attempts`);
 			return { success: false, retry: false, error: errorMessage };
