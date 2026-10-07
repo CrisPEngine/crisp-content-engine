@@ -4,7 +4,9 @@ import { getAgentStore } from '@/lib/agent/controlStore';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { createHash } from 'crypto';
 import { redirect } from 'next/navigation';
+import { resolveApprovalPublishImagePreview } from '@/lib/publish/approvalPublishImage';
 import { ApprovalDecisionForm } from './ApprovalDecisionForm';
+import { ApprovalPublishImagePreview } from './ApprovalPublishImagePreview';
 import { ApprovalStatusBanner } from './ApprovalStatusBanner';
 
 export const dynamic = 'force-dynamic';
@@ -46,10 +48,30 @@ export default async function ApprovalPage({ params, searchParams }: { params: P
 			</main>
 		);
 	}
-	const brain = await getIntelligenceStore().getBrandBrainById(userId, request.brandId);
+	const intelligence = getIntelligenceStore();
+	const brain = await intelligence.getBrandBrainById(userId, request.brandId);
 	const preview = request.preview;
 	const schedule = request.requestedAction === 'approve_and_schedule';
 	const body = String(preview.body ?? preview.excerpt ?? '');
+	let publishImagePreview = null;
+	if (request.targetType === 'content') {
+		const memory = await intelligence.getMemory(request.ownerUserId, request.targetId);
+		if (memory) {
+			publishImagePreview = await resolveApprovalPublishImagePreview({
+				ownerUserId: request.ownerUserId,
+				targetType: 'content',
+				targetId: request.targetId,
+				channel: memory.channel,
+				metadata: memory.metadata,
+			});
+		}
+	} else {
+		publishImagePreview = await resolveApprovalPublishImagePreview({
+			ownerUserId: request.ownerUserId,
+			targetType: 'article',
+			targetId: request.targetId,
+		});
+	}
 	return (
 		<main className="mx-auto max-w-lg px-4 py-6 space-y-4">
 			<p className="text-sm text-text-soft">{brain?.identity.name ?? 'Brand'} · {String(preview.channel ?? 'content')}</p>
@@ -61,6 +83,7 @@ export default async function ApprovalPage({ params, searchParams }: { params: P
 			)}
 			{preview.destination ? <p className="text-sm">Destination: {String(preview.destination)}</p> : <p className="text-sm">Destination required before this can be scheduled.</p>}
 			<article className="card whitespace-pre-wrap p-4 text-base leading-relaxed">{body}</article>
+			{publishImagePreview ? <ApprovalPublishImagePreview preview={publishImagePreview} /> : null}
 			<p className="text-sm">{schedule ? `Approve and schedule for ${String(preview.publishAt ?? '')}` : 'Approve this draft only. It will not be scheduled or published.'}</p>
 			{request.status === 'PENDING' && !query.done ? (
 				<ApprovalDecisionForm action={decide} token={token} schedule={schedule} />
