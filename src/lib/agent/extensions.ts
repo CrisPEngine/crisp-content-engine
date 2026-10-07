@@ -153,6 +153,7 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 				channel,
 				topic,
 				excerpt,
+				explicitRequest: true,
 			});
 			if (articleId) {
 				const article = await store.getArticle(ctx.credential.ownerUserId, articleId);

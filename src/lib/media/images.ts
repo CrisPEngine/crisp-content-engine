@@ -3,6 +3,8 @@ import { AgentError } from '@/lib/agent/errors';
 import { getAgentStore } from '@/lib/agent/controlStore';
 import type { RateLimitPolicy } from '@/lib/agent/policy';
 import type { BrandBrain } from '@/lib/intelligence/types';
+import { resolveAssetAltText } from './altText';
+import { channelSupportsExplicitImage, decisionForExplicitImageRequest } from './explicitImage';
 import { openaiImageProvider } from './openaiImage';
 import { buildImagePrompt } from './prompt';
 import { getNativeContentStore } from './store';
@@ -71,13 +73,19 @@ export async function generateAssetFromProposal(input: {
 	channel?: string;
 	topic?: string;
 	excerpt?: string;
+	explicitRequest?: boolean;
 }): Promise<{ asset: PublicAsset; reused: boolean; estimatedCostUsd: number }> {
-	if (!input.decision.mediaRecommended && !input.decision.mediaRequired) {
-		throw new AgentError('invalid_input', 'The media plan does not recommend an image for this piece.', 400);
+	let decision = input.decision;
+	if (!decision.mediaRecommended && !decision.mediaRequired) {
+		if (input.explicitRequest && input.channel && channelSupportsExplicitImage(input.channel)) {
+			decision = decisionForExplicitImageRequest({ channel: input.channel, topic: input.topic, decision });
+		} else {
+			throw new AgentError('invalid_input', 'The media plan does not recommend an image for this piece.', 400);
+		}
 	}
 	const store = getNativeContentStore();
-	if (input.decision.preferredSource === 'existing' && input.decision.existingAssetId) {
-		const existing = await store.getAsset(input.ownerUserId, input.decision.existingAssetId);
+	if (decision.preferredSource === 'existing' && decision.existingAssetId) {
+		const existing = await store.getAsset(input.ownerUserId, decision.existingAssetId);
 		if (existing) return { asset: publicAsset(existing), reused: true, estimatedCostUsd: 0 };
 	}
 	const links = await store.listLinks(input.ownerUserId, input.targetType, input.targetId);
@@ -88,8 +96,8 @@ export async function generateAssetFromProposal(input: {
 		}
 	}
 	const prior = (await store.listAssets(input.ownerUserId, input.brandId)).filter((asset) => asset.provenance.targetId === input.targetId && asset.sourceType === 'generated');
-	const sameProposal = prior.find((asset) => asset.provenance.concept === input.decision.visualConcept);
-	if (sameProposal && !input.decision.generateNow) {
+	const sameProposal = prior.find((asset) => asset.provenance.concept === decision.visualConcept);
+	if (sameProposal && !decision.generateNow) {
 		return { asset: publicAsset(sameProposal), reused: true, estimatedCostUsd: 0 };
 	}
 	if (prior.length >= MAX_ATTEMPTS_PER_TARGET) {
@@ -107,17 +115,23 @@ export async function generateAssetFromProposal(input: {
 		const spent = await getAgentStore().costToday(input.credentialId);
 		if (spent >= totalCap) throw new AgentError('ai_billing', 'Daily agent generation budget is exhausted.', 402);
 	}
+	const altTextDirection = resolveAssetAltText({
+		altTextDirection: decision.altTextDirection,
+		topic: input.topic,
+		concept: decision.visualConcept,
+		title: decision.visualConcept,
+	});
 	const instructions = buildImagePrompt({
 		brand: input.brand,
 		channel: input.channel ?? input.targetType,
 		topic: input.topic,
-		concept: input.decision.visualConcept ?? input.decision.reason,
-		aspectRatio: input.decision.aspectRatio ?? '1:1',
-		purpose: input.decision.mediaRole,
-		altTextDirection: input.decision.altTextDirection ?? undefined,
+		concept: decision.visualConcept ?? decision.reason,
+		aspectRatio: decision.aspectRatio ?? '1:1',
+		purpose: decision.mediaRole,
+		altTextDirection,
 		excerpt: input.excerpt,
 	});
-	const referenceIds = input.decision.referenceAssetIds ?? [];
+	const referenceIds = decision.referenceAssetIds ?? [];
 	const referenceImageUrls: string[] = [];
 	for (const referenceId of referenceIds) {
 		const reference = await store.getAsset(input.ownerUserId, referenceId);
@@ -125,13 +139,13 @@ export async function generateAssetFromProposal(input: {
 		if (permitted && reference.url) referenceImageUrls.push(reference.url);
 	}
 	const generated = await provider.generate({
-		concept: input.decision.visualConcept ?? input.decision.reason,
+		concept: decision.visualConcept ?? decision.reason,
 		prompt: instructions.prompt,
-		aspectRatio: input.decision.aspectRatio ?? '1:1',
-		altTextDirection: input.decision.altTextDirection ?? 'Describe the image.',
+		aspectRatio: decision.aspectRatio ?? '1:1',
+		altTextDirection,
 		referenceImageUrls,
 	});
-	const [width, height] = dimensionsFor(input.decision.aspectRatio);
+	const [width, height] = dimensionsFor(decision.aspectRatio);
 	const stored = await uploader(generated.bytes, `${input.targetId}.jpg`);
 	const now = new Date().toISOString();
 	const asset = await store.saveAsset({
@@ -146,17 +160,17 @@ export async function generateAssetFromProposal(input: {
 		mimeType: generated.mimeType,
 		width: stored.width || generated.width || width,
 		height: stored.height || generated.height || height,
-		aspectRatio: input.decision.aspectRatio ?? undefined,
-		altText: input.decision.altTextDirection ?? undefined,
-		title: input.decision.visualConcept ?? 'Generated image',
+		aspectRatio: decision.aspectRatio ?? undefined,
+		altText: altTextDirection,
+		title: decision.visualConcept ?? 'Generated image',
 		generationPrompt: generated.promptUsed,
 		generationProvider: provider.id,
 		generationModel: generated.model,
 		provenance: {
 			targetType: input.targetType,
 			targetId: input.targetId,
-			concept: input.decision.visualConcept,
-			role: input.decision.mediaRole,
+			concept: decision.visualConcept,
+			role: decision.mediaRole,
 			visualGuidanceStored: instructions.visualGuidanceStored,
 			estimatedCostUsd: generated.estimatedCostUsd,
 			referenceAssetIds: referenceIds,
@@ -171,7 +185,7 @@ export async function generateAssetFromProposal(input: {
 		assetId: asset.id,
 		targetType: input.targetType === 'brief' ? 'brief' : input.targetType,
 		targetId: input.targetId,
-		role: input.decision.mediaRole,
+		role: decision.mediaRole,
 		createdAt: now,
 	});
 	if (generated.estimatedCostUsd > 0) await getAgentStore().addImageCost(input.credentialId, generated.estimatedCostUsd);

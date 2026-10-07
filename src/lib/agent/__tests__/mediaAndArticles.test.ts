@@ -192,7 +192,15 @@ describe('media planning and long-form articles', () => {
 			generateNow: false,
 		});
 		expect(linkedinOutput.mediaPlan.reason).toMatch(/text-only/i);
-		const refused = await call(secret, 'cce_generate_image', { contentId: linkedinOutput.contentId }, 'li-image');
+
+		const xPost = await call(
+			secret,
+			'cce_generate_content',
+			{ channel: 'X', instruction: 'Create a short Folian post about why autocomplete fails a novel.' },
+			'x-1',
+		);
+		const xOutput = (xPost.body.result as { outputs: Array<{ contentId: string; mediaPlan: MediaDecision }> }).outputs[0];
+		const refused = await call(secret, 'cce_generate_image', { contentId: xOutput.contentId }, 'x-image');
 		expect(refused.body.error?.code).toBe('invalid_input');
 
 		const instagram = await call(
@@ -253,6 +261,52 @@ describe('media planning and long-form articles', () => {
 		expect(JSON.stringify(listed.body)).not.toContain('crisp/test-secret-id');
 		const found = await call(secret, 'cce_find_assets', { query: 'autocomplete' });
 		expect((found.body.result as { assets: Array<{ id: string }> }).assets.some((item) => item.id === asset.id)).toBe(true);
+
+		const linkedinImage = await call(secret, 'cce_generate_image', { contentId: linkedinOutput.contentId }, 'li-image');
+		expect(linkedinImage.body.ok).toBe(true);
+	});
+
+	it('generates an optional Threads image when the agent explicitly calls cce_generate_image', async () => {
+		const threads = await call(
+			secret,
+			'cce_generate_content',
+			{ channel: 'threads', instruction: 'Create a Folian Threads post about canon and continuity.' },
+			'threads-1',
+		);
+		expect(threads.body.ok).toBe(true);
+		const threadsOutput = (threads.body.result as { outputs: Array<{ contentId: string; mediaPlan: MediaDecision; body: string }> }).outputs[0];
+		expect(threadsOutput.mediaPlan).toMatchObject({
+			mediaRequired: false,
+			mediaRecommended: false,
+			mediaRole: 'NONE',
+		});
+		expect(threadsOutput.mediaPlan.reason).toMatch(/text-only/i);
+
+		registerImageProviderForTests({
+			id: 'fixture',
+			configured: () => true,
+			async generate() {
+				return {
+					bytes: Buffer.from('fixture-image'),
+					mimeType: 'image/jpeg',
+					model: 'fixture-image-1',
+					promptUsed: 'threads prompt',
+					estimatedCostUsd: 0.04,
+				};
+			},
+		});
+		setImageUploaderForTests(async () => ({
+			secure_url: 'https://res.cloudinary.com/test/image/upload/v1/folian-threads.jpg',
+			public_id: 'crisp/threads-secret-id',
+			width: 1080,
+			height: 1080,
+		}));
+		const image = await call(secret, 'cce_generate_image', { contentId: threadsOutput.contentId }, 'threads-image');
+		expect(image.body.ok).toBe(true);
+		const asset = (image.body.result as { asset: { url?: string; altText?: string } }).asset;
+		expect(asset.url).toContain('folian-threads.jpg');
+		expect(asset.altText).toBeTruthy();
+		expect(asset.altText).not.toBe('State what the visual shows.');
 	});
 
 	it('creates a multi-section article, a hero plan, and an approval gate', async () => {

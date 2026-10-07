@@ -47,6 +47,43 @@ describe('resolveApprovalPublishImagePreview', () => {
 		});
 	});
 
+	it('replaces placeholder alt text on approval preview', async () => {
+		const store = getNativeContentStore();
+		const now = new Date().toISOString();
+		await store.saveAsset({
+			id: 'asset-placeholder',
+			ownerUserId: 'user-1',
+			assetType: 'image',
+			sourceType: 'generated',
+			storageProvider: 'cloudinary',
+			url: 'https://res.cloudinary.com/demo/placeholder-alt.jpg',
+			altText: 'State what the visual shows.',
+			title: 'Canon continuity diagram',
+			provenance: { concept: 'Canon continuity diagram' },
+			approvalStatus: 'draft',
+			createdAt: now,
+			updatedAt: now,
+		});
+		await store.saveLink({
+			id: 'link-placeholder',
+			ownerUserId: 'user-1',
+			assetId: 'asset-placeholder',
+			targetType: 'content',
+			targetId: 'mem-placeholder',
+			createdAt: now,
+		});
+
+		const preview = await resolveApprovalPublishImagePreview({
+			ownerUserId: 'user-1',
+			targetType: 'content',
+			targetId: 'mem-placeholder',
+			channel: 'threads',
+		});
+
+		expect(preview?.altText).toBe('Canon continuity diagram');
+		expect(preview?.altText).not.toBe('State what the visual shows.');
+	});
+
 	it('falls back to metadata image url for Threads when no linked asset', async () => {
 		const preview = await resolveApprovalPublishImagePreview({
 			ownerUserId: 'user-1',
