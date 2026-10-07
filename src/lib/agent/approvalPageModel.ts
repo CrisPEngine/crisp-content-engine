@@ -3,11 +3,7 @@ import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { resolveApprovalPublishImagePreview } from '@/lib/publish/approvalPublishImage';
 import { resolveApprovalDestinationView } from './approvalDestination';
 import { pendingApprovalCounts } from './approvalInbox';
-import {
-	agentMetaPlatformFromChannel,
-	isAgentMetaMemory,
-	repairAgentMetaPublishJobIfMissing,
-} from '@/lib/publish/agentMetaJob';
+import { isAgentMetaMemory, repairAgentMetaPublishJobIfMissing } from '@/lib/publish/agentMetaJob';
 import type { ApprovalRequest } from './types';
 
 export type ApprovalPageModel = {
