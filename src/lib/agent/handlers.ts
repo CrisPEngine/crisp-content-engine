@@ -15,6 +15,12 @@ import { CAPABILITY_GROUP } from './policy';
 import { dispatchContentExtensions } from './extensions';
 import { assertScheduleMatchesApproval, createApprovalRequest } from './approvals';
 import { cancelAgentThreadsPublishJob, isAgentThreadsMemory, syncAgentThreadsPublishJob } from '@/lib/publish/agentThreadsJob';
+import {
+	agentMetaPlatformFromChannel,
+	cancelAgentMetaPublishJob,
+	isAgentMetaMemory,
+	syncAgentMetaPublishJob,
+} from '@/lib/publish/agentMetaJob';
 import { planMedia } from '@/lib/media/planner';
 import { getNativeContentStore } from '@/lib/media/store';
 import { publicAsset } from '@/lib/media/images';
@@ -1016,6 +1022,9 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			let note: string | undefined;
 			if (name === 'cce_unschedule_content' && isAgentThreadsMemory(memory)) {
 				await cancelAgentThreadsPublishJob(ctx.credential.ownerUserId, memory.id);
+			} else if (name === 'cce_unschedule_content' && isAgentMetaMemory(memory)) {
+				const platform = agentMetaPlatformFromChannel(memory.channel);
+				if (platform) await cancelAgentMetaPublishJob(ctx.credential.ownerUserId, memory.id, platform);
 			} else if (name !== 'cce_unschedule_content' && isAgentThreadsMemory(memory)) {
 				const queued = await syncAgentThreadsPublishJob({
 					userId: ctx.credential.ownerUserId,
@@ -1025,6 +1034,16 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 				publisherArmed = queued.armed;
 				if (!publisherArmed && queued.skipped === 'threads_disabled') {
 					note = 'Threads publishing is disabled; content is scheduled in CCE only until THREADS_APP_ID is configured.';
+				}
+			} else if (name !== 'cce_unschedule_content' && isAgentMetaMemory(memory)) {
+				const queued = await syncAgentMetaPublishJob({
+					userId: ctx.credential.ownerUserId,
+					memory: pendingMemory,
+					publishAt,
+				});
+				publisherArmed = queued.armed;
+				if (!publisherArmed && queued.skipped === 'meta_disabled') {
+					note = 'Meta publishing is disabled; content is scheduled in CCE only until META_PUBLISHING_ENABLED is on.';
 				}
 			} else if (name !== 'cce_unschedule_content') {
 				note = 'The external publisher is not armed by this call.';

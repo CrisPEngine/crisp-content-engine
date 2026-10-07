@@ -3,6 +3,7 @@ import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { getNativeContentStore } from '@/lib/media/store';
 import type { ContentMemoryRecord } from '@/lib/intelligence/types';
 import { syncAgentThreadsPublishJob, isAgentThreadsMemory } from '@/lib/publish/agentThreadsJob';
+import { isAgentMetaMemory, syncAgentMetaPublishJob } from '@/lib/publish/agentMetaJob';
 import { getAgentStore } from './controlStore';
 import { AgentError } from './errors';
 import type { AgentCredential, ApprovalRequest } from './types';
@@ -102,6 +103,27 @@ export async function resolveApprovalRequest(input: { token: string; userId: str
 	const store = getAgentStore();
 	const current = await store.getApprovalRequestByTokenHash(hashToken(input.token));
 	if (!current) throw new AgentError('not_found', 'This approval link is not valid.', 404);
+	return resolveApprovalRequestRecord({ request: current, userId: input.userId, decision: input.decision });
+}
+
+export async function resolveApprovalRequestById(input: {
+	requestId: string;
+	userId: string;
+	decision: 'approve' | 'reject';
+}): Promise<ApprovalRequest> {
+	const store = getAgentStore();
+	const current = await store.getApprovalRequest(input.requestId);
+	if (!current) throw new AgentError('not_found', 'This approval request was not found.', 404);
+	return resolveApprovalRequestRecord({ request: current, userId: input.userId, decision: input.decision });
+}
+
+async function resolveApprovalRequestRecord(input: {
+	request: ApprovalRequest;
+	userId: string;
+	decision: 'approve' | 'reject';
+}): Promise<ApprovalRequest> {
+	const store = getAgentStore();
+	const current = input.request;
 	if (current.ownerUserId !== input.userId) {
 		throw new AgentError('approval_not_authorized', 'This approval belongs to a different CCE account.', 403);
 	}
@@ -185,6 +207,13 @@ async function applyHumanApproval(request: ApprovalRequest, userId: string): Pro
 		};
 		if (schedule && isAgentThreadsMemory(memory)) {
 			await syncAgentThreadsPublishJob({
+				userId: request.ownerUserId,
+				memory: updatedMemory,
+				publishAt,
+			});
+		}
+		if (schedule && isAgentMetaMemory(memory)) {
+			await syncAgentMetaPublishJob({
 				userId: request.ownerUserId,
 				memory: updatedMemory,
 				publishAt,
