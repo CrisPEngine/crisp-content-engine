@@ -7,14 +7,41 @@ import type { ContentMemoryRecord } from '@/lib/intelligence/types';
 import { resolvePublishDestination } from '@/lib/social/resolveDestination';
 import { getAuthorizationSecrets } from '@/lib/social/authorizationSecrets';
 import { AgentError } from '@/lib/agent/errors';
+import { getNativeContentStore } from '@/lib/media/store';
 
 export function isAgentThreadsMemory(memory: Pick<ContentMemoryRecord, 'channel'>): boolean {
 	return String(memory.channel).toLowerCase() === 'threads';
 }
 
-export function buildAgentThreadsPayload(memory: ContentMemoryRecord, targetId: string, destinationId?: string) {
+function isPublicHttpsUrl(url: string): boolean {
+	try {
+		return new URL(url).protocol === 'https:';
+	} catch {
+		return false;
+	}
+}
+
+export async function resolveAgentThreadsAttachedImageUrl(ownerUserId: string, contentId: string): Promise<string | null> {
+	const store = getNativeContentStore();
+	const links = await store.listLinks(ownerUserId, 'content', contentId);
+	for (const link of links) {
+		const asset = await store.getAsset(ownerUserId, link.assetId);
+		if (asset?.assetType !== 'image') continue;
+		const url = asset.url?.trim();
+		if (url && isPublicHttpsUrl(url)) return url;
+	}
+	return null;
+}
+
+export function buildAgentThreadsPayload(
+	memory: ContentMemoryRecord,
+	targetId: string,
+	destinationId?: string,
+	attachedImageUrl?: string | null,
+) {
 	const metadata = memory.metadata ?? {};
 	const imageUrl =
+		(typeof attachedImageUrl === 'string' && attachedImageUrl && isPublicHttpsUrl(attachedImageUrl) ? attachedImageUrl : null) ||
 		(typeof metadata.imageReferenceUrl === 'string' && metadata.imageReferenceUrl) ||
 		(typeof metadata.image_reference_url === 'string' && metadata.image_reference_url) ||
 		null;
@@ -119,7 +146,8 @@ export async function syncAgentThreadsPublishJob(input: {
 	const targetId = resolved.providerDestinationId;
 	const contentItemKey = input.memory.id;
 	let scheduledTime = await applyPublishSpacing(admin, 'threads', targetId, normalizeScheduledTime(input.publishAt));
-	const payload = buildAgentThreadsPayload(input.memory, targetId, resolved.destinationId);
+	const attachedImageUrl = await resolveAgentThreadsAttachedImageUrl(input.userId, input.memory.id);
+	const payload = buildAgentThreadsPayload(input.memory, targetId, resolved.destinationId, attachedImageUrl);
 
 	const { data: existing } = await admin
 		.from('publish_jobs')
