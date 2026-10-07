@@ -76,6 +76,11 @@ export async function enforceOperatorRateLimit(options: {
 	actor: OperatorActor;
 	sourceIp?: string | null;
 }) {
+	// Admin UI sessions are already gated by profiles.is_admin; they bypass operator buckets.
+	if (options.actor.type === 'admin_session') {
+		return { remaining: undefined, resetAt: undefined };
+	}
+
 	const policy = getRateLimitPolicy(options.action);
 	const key = actorRateLimitKey(options.actor, options.sourceIp);
 

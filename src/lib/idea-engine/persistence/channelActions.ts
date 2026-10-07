@@ -2,7 +2,7 @@ import 'server-only';
 
 import { getSupabaseService } from '@/lib/supabaseService';
 import { computeSingleChannelActionCount } from '@/lib/ideaEngineQuota';
-import { getChannelUsage } from '@/lib/enforceCaps';
+import { getChannelUsage, getMonthlyChannelQuotaRemaining } from '@/lib/enforceCaps';
 import { resolvePlan } from '@/lib/planResolver';
 import { CAPS } from '@/config/pricing';
 import { IdeaEngineError } from '../errors';
@@ -42,12 +42,7 @@ export async function computeChannelActionCounts(
 	const plan = resolved.plan === 'free' ? 'starter' : resolved.plan;
 	const planCaps = CAPS[plan as keyof typeof CAPS] || CAPS.starter;
 	const usage = await getChannelUsage(userId);
-	const quotaRemaining = {
-		linkedin: Math.max(0, planCaps.linkedinPostsMonthly - usage.linkedin),
-		x: Math.max(0, planCaps.xPostsMonthly - usage.x),
-		blog: Math.max(0, planCaps.blogArticlesMonthly - usage.blog),
-		meta_pool: Math.max(0, planCaps.metaPoolMonthly - usage.meta_pool),
-	};
+	const quotaRemaining = await getMonthlyChannelQuotaRemaining(userId, planCaps, usage);
 	const { requestedCounts, droppedChannels } = computeSingleChannelActionCount(
 		channel,
 		plan,

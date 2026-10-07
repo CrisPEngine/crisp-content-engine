@@ -1,3 +1,4 @@
+import { bypassesUsageLimits } from '@/lib/auth/platformAdmin';
 import { uploadImageFromBuffer, type CloudinaryUploadResult } from '@/lib/cloudinary';
 import { AgentError } from '@/lib/agent/errors';
 import { getAgentStore } from '@/lib/agent/controlStore';
@@ -92,7 +93,8 @@ export async function generateAssetFromProposal(input: {
 	if (sameProposal && !input.decision.generateNow) {
 		return { asset: publicAsset(sameProposal), reused: true, estimatedCostUsd: 0 };
 	}
-	if (prior.length >= MAX_ATTEMPTS_PER_TARGET) {
+	const unlimitedUsage = await bypassesUsageLimits(input.ownerUserId);
+	if (!unlimitedUsage && prior.length >= MAX_ATTEMPTS_PER_TARGET) {
 		throw new AgentError('rate_limit', 'This content already has the maximum generated images. Further regeneration is blocked.', 429);
 	}
 	const provider = resolveProvider();
@@ -101,9 +103,9 @@ export async function generateAssetFromProposal(input: {
 	}
 	const imageSpent = await getAgentStore().imageCostToday(input.credentialId);
 	const cap = input.rateLimit.imageCostUsdPerDay;
-	if (cap != null && imageSpent >= cap) throw new AgentError('ai_billing', 'Daily image-generation budget is exhausted.', 402);
+	if (!unlimitedUsage && cap != null && imageSpent >= cap) throw new AgentError('ai_billing', 'Daily image-generation budget is exhausted.', 402);
 	const totalCap = input.rateLimit.dailyCostUsd;
-	if (totalCap != null) {
+	if (!unlimitedUsage && totalCap != null) {
 		const spent = await getAgentStore().costToday(input.credentialId);
 		if (spent >= totalCap) throw new AgentError('ai_billing', 'Daily agent generation budget is exhausted.', 402);
 	}
