@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { UNLIMITED_USAGE_CAP, bypassesUsageLimits } from '@/lib/auth/platformAdmin';
 import { getChannelUsage } from '@/lib/enforceCaps';
 import { resolvePlan } from '@/lib/planResolver';
 import { CAPS } from '@/config/pricing';
@@ -43,42 +44,45 @@ export async function GET(request: Request) {
 		const plan = resolved.plan === 'free' ? 'starter' : resolved.plan;
 		const planCaps = CAPS[plan as keyof typeof CAPS] || CAPS.starter;
 		const usage = await getChannelUsage(user.id);
+		const unlimited = await bypassesUsageLimits(user.id);
 
 		const isStarter = plan === 'starter';
+		const channelLimit = (cap: number) => (unlimited ? UNLIMITED_USAGE_CAP : cap);
+		const channelRemaining = (cap: number, used: number) => (unlimited ? UNLIMITED_USAGE_CAP : Math.max(0, cap - used));
 
 		return NextResponse.json({
 			plan,
+			platform_admin: unlimited,
 			channels: {
 				linkedin: {
-					limit: planCaps.linkedinPostsMonthly,
+					limit: channelLimit(planCaps.linkedinPostsMonthly),
 					used: usage.linkedin,
-					remaining: Math.max(0, planCaps.linkedinPostsMonthly - usage.linkedin),
+					remaining: channelRemaining(planCaps.linkedinPostsMonthly, usage.linkedin),
 					autopublish: planCaps.autopublishLinkedIn,
 					// Quota consumed at: generation (Starter export) or approval (paid autopublish)
 					counted_at: planCaps.autopublishLinkedIn ? 'approval' : 'generation',
 				},
 				x: {
-					limit: planCaps.xPostsMonthly,
+					limit: channelLimit(planCaps.xPostsMonthly),
 					used: usage.x,
-					remaining: Math.max(0, planCaps.xPostsMonthly - usage.x),
+					remaining: channelRemaining(planCaps.xPostsMonthly, usage.x),
 					autopublish: false,
 					counted_at: 'generation',
 				},
 				blog: {
-					limit: isStarter ? planCaps.blogOutlinesMonthly : planCaps.blogArticlesMonthly,
+					limit: channelLimit(isStarter ? planCaps.blogOutlinesMonthly : planCaps.blogArticlesMonthly),
 					used: isStarter ? usage.blog_outlines : usage.blog,
-					remaining: Math.max(
-						0,
-						(isStarter ? planCaps.blogOutlinesMonthly : planCaps.blogArticlesMonthly) -
-							(isStarter ? usage.blog_outlines : usage.blog)
+					remaining: channelRemaining(
+						isStarter ? planCaps.blogOutlinesMonthly : planCaps.blogArticlesMonthly,
+						isStarter ? usage.blog_outlines : usage.blog,
 					),
 					type: isStarter ? 'outline' : 'article',
 					counted_at: 'generation',
 				},
 				meta_pool: {
-					limit: planCaps.metaPoolMonthly,
+					limit: channelLimit(planCaps.metaPoolMonthly),
 					used: usage.meta_pool,
-					remaining: Math.max(0, planCaps.metaPoolMonthly - usage.meta_pool),
+					remaining: channelRemaining(planCaps.metaPoolMonthly, usage.meta_pool),
 					note: 'Shared across Facebook and Instagram',
 					autopublish: planCaps.autopublishMeta,
 					counted_at: planCaps.autopublishMeta ? 'approval' : 'generation',

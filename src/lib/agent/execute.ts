@@ -1,3 +1,4 @@
+import { bypassesUsageLimits } from '@/lib/auth/platformAdmin';
 import { credentialForInvocation } from './access';
 import { resolveAgentCredential } from './credentials';
 import { getAgentStore } from './controlStore';
@@ -59,16 +60,16 @@ function rateSpec(action: string, policy: RateLimitPolicy): { key: string; limit
 	return null;
 }
 
-async function enforceRequestRate(credential: AgentCredential): Promise<void> {
+async function enforceRequestRate(credential: AgentCredential, unlimited: boolean): Promise<void> {
 	const request = await getAgentStore().consumeRate(credential.id, 'requests', credential.rateLimit.requestsPerHour, HOUR);
-	if (!request.allowed) throw new AgentError('rate_limit', 'Hourly request limit reached.', 429, undefined, true);
+	if (!unlimited && !request.allowed) throw new AgentError('rate_limit', 'Hourly request limit reached.', 429, undefined, true);
 }
 
-async function enforceActionRate(credential: AgentCredential, action: string): Promise<void> {
+async function enforceActionRate(credential: AgentCredential, action: string, unlimited: boolean): Promise<void> {
 	const extra = rateSpec(action, credential.rateLimit);
 	if (!extra) return;
 	const consumed = await getAgentStore().consumeRate(credential.id, extra.key, extra.limit, extra.windowMs);
-	if (!consumed.allowed) throw new AgentError('rate_limit', 'Action rate limit reached.', 429, { bucket: extra.key }, true);
+	if (!unlimited && !consumed.allowed) throw new AgentError('rate_limit', 'Action rate limit reached.', 429, { bucket: extra.key }, true);
 }
 
 function affectedObject(result: unknown): string | undefined {
@@ -102,7 +103,8 @@ export async function executeAgentAction(input: {
 		if (!input.credential.capabilities.includes(definition.capability)) {
 			throw new AgentError('capability_not_enabled', `This agent cannot ${input.action}.`, 403, { capability: definition.capability, consequence: definition.level });
 		}
-		await enforceRequestRate(input.credential);
+		const unlimitedUsage = await bypassesUsageLimits(input.credential.ownerUserId);
+		await enforceRequestRate(input.credential, unlimitedUsage);
 		const parsed = definition.schema.safeParse(payload);
 		if (!parsed.success) {
 			throw new AgentError('invalid_input', parsed.error.issues[0]?.message ?? 'Invalid input.', 400);
@@ -128,7 +130,7 @@ export async function executeAgentAction(input: {
 				return stored;
 			}
 		}
-		await enforceActionRate(input.credential, input.action);
+		await enforceActionRate(input.credential, input.action, unlimitedUsage);
 		const credential = await credentialForInvocation(input.credential);
 		const ctx: AgentContext = { credential, requestId };
 		const result = await dispatchAgentHandler(input.action, ctx, parsed.data as Record<string, unknown>);

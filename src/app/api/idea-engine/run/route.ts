@@ -13,7 +13,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { z } from 'zod';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { resolvePlan } from '@/lib/planResolver';
-import { getChannelUsage, getIdeaEngineRunsUsed, incrementIdeaEngineRunsUsed } from '@/lib/enforceCaps';
+import { getChannelUsage, getIdeaEngineRunsUsed, getMonthlyChannelQuotaRemaining, incrementIdeaEngineRunsUsed } from '@/lib/enforceCaps';
 import { CAPS } from '@/config/pricing';
 import { computeIdeaEngineRequestedCounts } from '@/lib/ideaEngineQuota';
 import { isIdeaEngineNativeEnabled } from '@/lib/featureFlags';
@@ -173,13 +173,7 @@ export async function POST(request: Request) {
 		// Channels are dropped gracefully if their quota is 0 or plan default is 0.
 		// Only fail if ALL selected channels resolve to zero.
 		const usage = await getChannelUsage(user.id);
-
-		const quotaRemaining = {
-			linkedin:   Math.max(0, planCaps.linkedinPostsMonthly - usage.linkedin),
-			x:          Math.max(0, planCaps.xPostsMonthly - usage.x),
-			blog:       Math.max(0, planCaps.blogArticlesMonthly - usage.blog),
-			meta_pool:  Math.max(0, planCaps.metaPoolMonthly - usage.meta_pool),
-		};
+		const quotaRemaining = await getMonthlyChannelQuotaRemaining(user.id, planCaps, usage);
 
 		const { requestedCounts, droppedChannels, activeChannels } = computeIdeaEngineRequestedCounts(
 			selected_channels,

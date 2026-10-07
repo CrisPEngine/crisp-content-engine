@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { isPlatformSuperAdmin } from '@/lib/auth/platformAdmin';
 import { createClient } from '@/lib/supabase/server';
 import type { IntelligenceActionName } from './actions';
 
@@ -9,6 +10,8 @@ export type IntelligenceActor = {
 	actorId: string;
 	userId: string;
 	scopes: string[];
+	/** When true, in-process rate buckets are tracked but not enforced (profiles.is_admin). */
+	platformAdmin?: boolean;
 };
 
 export class IntelligenceAuthError extends Error {
@@ -87,12 +90,14 @@ export async function resolveIntelligenceActor(request: Request): Promise<Intell
 			if (headerUser && headerUser !== mapped) {
 				throw new IntelligenceAuthError('Telegram user map mismatch', 403, 'telegram_user_mismatch');
 			}
-			return { type: 'telegram', actorId: telegramUser || mapped, userId: mapped, scopes: ['telegram'] };
+			const platformAdmin = await isPlatformSuperAdmin(mapped);
+			return { type: 'telegram', actorId: telegramUser || mapped, userId: mapped, scopes: ['telegram'], platformAdmin };
 		}
 		if (!headerUser) {
 			throw new IntelligenceAuthError('Telegram user is not mapped to a CCE user', 403, 'telegram_user_unmapped');
 		}
-		return { type: 'telegram', actorId: telegramUser || headerUser, userId: headerUser, scopes: ['telegram'] };
+		const platformAdmin = await isPlatformSuperAdmin(headerUser);
+		return { type: 'telegram', actorId: telegramUser || headerUser, userId: headerUser, scopes: ['telegram'], platformAdmin };
 	}
 
 	if (channel === 'mcp') {
@@ -104,7 +109,8 @@ export async function resolveIntelligenceActor(request: Request): Promise<Intell
 		if (!userId) {
 			throw new IntelligenceAuthError('MCP calls must include x-cce-user-id', 400, 'mcp_user_required');
 		}
-		return { type: 'mcp', actorId: 'mcp', userId, scopes: ['mcp'] };
+		const platformAdmin = await isPlatformSuperAdmin(userId);
+		return { type: 'mcp', actorId: 'mcp', userId, scopes: ['mcp'], platformAdmin };
 	}
 
 	const supabase = await createClient();
@@ -115,7 +121,8 @@ export async function resolveIntelligenceActor(request: Request): Promise<Intell
 	if (error || !user) {
 		throw new IntelligenceAuthError('Unauthorized', 401, 'session_required');
 	}
-	return { type: 'web', actorId: user.id, userId: user.id, scopes: ['session'] };
+	const platformAdmin = await isPlatformSuperAdmin(user.id);
+	return { type: 'web', actorId: user.id, userId: user.id, scopes: ['session'], platformAdmin };
 }
 
 export function assertActionAllowed(actor: IntelligenceActor, action: IntelligenceActionName): void {
@@ -144,7 +151,7 @@ export function enforceIntelligenceRateLimit(actor: IntelligenceActor, action: s
 		return;
 	}
 	existing.count += 1;
-	if (existing.count > limit) {
+	if (!actor.platformAdmin && existing.count > limit) {
 		throw new IntelligenceAuthError('Rate limit exceeded', 429, 'intelligence_rate_limited');
 	}
 }

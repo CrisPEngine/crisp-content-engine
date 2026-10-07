@@ -1,3 +1,4 @@
+import { bypassesUsageLimits } from '@/lib/auth/platformAdmin';
 import { nativeIntelligenceBlock } from '@/lib/featureFlags';
 import { resolveModelForRole, MODEL_ROLES } from '@/lib/ai/roles';
 import { computeBaseline } from '@/lib/intelligence/baselines';
@@ -212,7 +213,9 @@ async function assertBudget(ctx: AgentContext): Promise<void> {
 	const cap = ctx.credential.rateLimit.dailyCostUsd;
 	if (cap == null) return;
 	const spent = await getAgentStore().costToday(ctx.credential.id);
-	if (spent >= cap) throw new AgentError('ai_billing', 'Daily agent generation budget is exhausted.', 402);
+	if (spent >= cap && !(await bypassesUsageLimits(ctx.credential.ownerUserId))) {
+		throw new AgentError('ai_billing', 'Daily agent generation budget is exhausted.', 402);
+	}
 }
 
 function generationPayload(result: GenerationResult, started: number) {

@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { CAPS } from '@/config/pricing';
-import { getChannelUsage } from '@/lib/enforceCaps';
+import { getChannelUsage, getMonthlyChannelQuotaRemaining } from '@/lib/enforceCaps';
 import { resolvePlan } from '@/lib/planResolver';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { computeIdeaEngineRequestedCounts } from '@/lib/ideaEngineQuota';
@@ -53,13 +53,7 @@ export async function loadRunContextFromDb(runId: string): Promise<{
 	const plan = resolved.plan === 'free' ? 'starter' : resolved.plan;
 	const planCaps = CAPS[plan as keyof typeof CAPS] || CAPS.starter;
 	const usage = await getChannelUsage(run.user_id);
-
-	const quotaRemaining = {
-		linkedin: Math.max(0, planCaps.linkedinPostsMonthly - usage.linkedin),
-		x: Math.max(0, planCaps.xPostsMonthly - usage.x),
-		blog: Math.max(0, planCaps.blogArticlesMonthly - usage.blog),
-		meta_pool: Math.max(0, planCaps.metaPoolMonthly - usage.meta_pool),
-	};
+	const quotaRemaining = await getMonthlyChannelQuotaRemaining(run.user_id, planCaps, usage);
 
 	const { requestedCounts, activeChannels } = computeIdeaEngineRequestedCounts(
 		run.selected_channels,

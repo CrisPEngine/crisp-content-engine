@@ -1,4 +1,5 @@
 import dayjs from 'dayjs';
+import { UNLIMITED_USAGE_CAP, bypassesUsageLimits } from '@/lib/auth/platformAdmin';
 import { getSupabaseService } from './supabaseService';
 
 export type CapsCheck = {
@@ -18,6 +19,44 @@ export type ChannelUsage = {
 	meta_pool: number; // shared FB+IG pool (tracked at approval time)
 	blog_outlines: number; // Starter-only outline counter
 };
+
+export type MonthlyChannelQuotaRemaining = {
+	linkedin: number;
+	x: number;
+	blog: number;
+	meta_pool: number;
+};
+
+type PlanChannelCaps = {
+	linkedinPostsMonthly: number;
+	xPostsMonthly: number;
+	blogArticlesMonthly: number;
+	metaPoolMonthly: number;
+	blogOutlinesMonthly?: number;
+};
+
+/** Remaining monthly quota per channel (Idea Engine + content flows). Super admins get unlimited headroom. */
+export async function getMonthlyChannelQuotaRemaining(
+	userId: string,
+	planCaps: PlanChannelCaps,
+	usage?: ChannelUsage,
+): Promise<MonthlyChannelQuotaRemaining> {
+	if (await bypassesUsageLimits(userId)) {
+		return {
+			linkedin: UNLIMITED_USAGE_CAP,
+			x: UNLIMITED_USAGE_CAP,
+			blog: UNLIMITED_USAGE_CAP,
+			meta_pool: UNLIMITED_USAGE_CAP,
+		};
+	}
+	const channelUsage = usage ?? (await getChannelUsage(userId));
+	return {
+		linkedin: Math.max(0, planCaps.linkedinPostsMonthly - channelUsage.linkedin),
+		x: Math.max(0, planCaps.xPostsMonthly - channelUsage.x),
+		blog: Math.max(0, planCaps.blogArticlesMonthly - channelUsage.blog),
+		meta_pool: Math.max(0, planCaps.metaPoolMonthly - channelUsage.meta_pool),
+	};
+}
 
 export async function getMonthUsage(userId: string) {
 	const supabase = getSupabaseService();
@@ -340,6 +379,13 @@ export async function getEntitlements(userId: string) {
 }
 
 export async function enforceCaps(userId: string): Promise<CapsCheck> {
+	if (await bypassesUsageLimits(userId)) {
+		return {
+			ok: true,
+			caps: { posts_per_month: UNLIMITED_USAGE_CAP },
+			usage: { posts: 0 },
+		};
+	}
 	const ents = await getEntitlements(userId);
 	if (!ents) return { ok: false, reason: 'No entitlements for user.' };
 	const used = await getMonthUsage(userId);

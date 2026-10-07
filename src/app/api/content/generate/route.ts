@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { bypassesUsageLimits } from '@/lib/auth/platformAdmin';
 import { enforceCaps, getEntitlements, getMonthUsage, getChannelUsage } from '@/lib/enforceCaps';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { X_ALGO_DIGEST } from '@/lib/channels/x-algo-digest';
@@ -117,7 +118,7 @@ export async function POST(req: Request) {
 
 		// Per-channel limit enforcement for ALL plans
 		// Uses authoritative per-channel caps from CAPS config
-		{
+		if (!(await bypassesUsageLimits(user.id))) {
 			const channelUsage = await getChannelUsage(user.id);
 			const limits = planCaps.perChannelLimits || {};
 

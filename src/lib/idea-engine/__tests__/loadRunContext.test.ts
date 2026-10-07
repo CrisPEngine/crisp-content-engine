@@ -29,14 +29,18 @@ vi.mock('@/lib/planResolver', () => ({
 	resolvePlan: vi.fn().mockResolvedValue({ plan: 'growth' }),
 }));
 
-vi.mock('@/lib/enforceCaps', () => ({
-	getChannelUsage: vi.fn().mockResolvedValue({
-		linkedin: 0,
-		x: 0,
-		blog: 0,
-		meta_pool: 0,
-	}),
-}));
+vi.mock('@/lib/enforceCaps', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('@/lib/enforceCaps')>();
+	return {
+		...actual,
+		getChannelUsage: vi.fn().mockResolvedValue({
+			linkedin: 0,
+			x: 0,
+			blog: 0,
+			meta_pool: 0,
+		}),
+	};
+});
 
 vi.mock('../data/loadBrandProfile', () => ({
 	loadBrandProfile: vi.fn().mockResolvedValue({ client_name: 'Test Brand', timezone: 'UTC' }),
