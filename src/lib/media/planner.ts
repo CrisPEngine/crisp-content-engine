@@ -105,7 +105,7 @@ export function planMedia(input: {
 			visualConcept: conceptFor(topic, spec.aspectRatios[0] ?? '1:1'),
 			aspectRatio: spec.aspectRatios[0] ?? null,
 			textOverlayRecommendation: 'Label only what the reader cannot infer.',
-			altTextDirection: 'State what the visual shows.',
+			altTextDirection: `Describe the concrete visual for ${topic || 'this post'}, not a slogan.`,
 			existingAssetId: existing?.id ?? null,
 			generateNow: false,
 		};

@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { ContentMemoryRecord } from '@/lib/intelligence/types';
+import { resolveAssetAltText } from '@/lib/media/altText';
 import { getNativeContentStore } from '@/lib/media/store';
 import { buildAgentThreadsPayload, resolveAgentThreadsAttachedImageUrl } from '@/lib/publish/agentThreadsJob';
 
@@ -30,7 +31,14 @@ async function resolveFirstLinkedImageAsset(
 		if (asset?.assetType !== 'image') continue;
 		const url = asset.url?.trim();
 		if (url && isPublicHttpsUrl(url)) {
-			return { url, altText: asset.altText ?? asset.title ?? undefined };
+			return {
+				url,
+				altText: resolveAssetAltText({
+					altText: asset.altText,
+					title: asset.title,
+					concept: typeof asset.provenance?.concept === 'string' ? asset.provenance.concept : null,
+				}),
+			};
 		}
 	}
 	return null;

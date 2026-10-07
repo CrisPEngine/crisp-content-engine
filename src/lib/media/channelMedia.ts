@@ -38,18 +38,12 @@ export const CHANNEL_MEDIA: Record<string, ChannelMediaSpec> = {
 		implementation: 'NOT_IMPLEMENTED',
 		notes: 'X can be text-only. No X media adapter is connected.',
 	},
-	THREADS: {
-		textOnlySupported: true,
-		mediaRequired: false,
-		supportedTypes: ['IMAGE', 'CAROUSEL'],
-		maxImages: 10,
-		aspectRatios: ['1:1', '4:5'],
-		video: 'NOT_IMPLEMENTED',
-		carousel: 'NOT_IMPLEMENTED',
-		altText: false,
-		implementation: 'NOT_IMPLEMENTED',
-		notes: 'Threads is not Instagram. Text-only is valid. No Threads adapter is connected.',
-	},
+	THREADS: imagePost(
+		'Text-only posts are supported. The Threads publisher can attach one public image URL. Carousel, video, and alt text are not implemented on this path.',
+		false,
+		['1:1', '4:5'],
+		1,
+	),
 	INSTAGRAM_FEED: {
 		textOnlySupported: false,
 		mediaRequired: true,
@@ -138,6 +132,7 @@ export function mediaSpecFor(channel: string | undefined): ChannelMediaSpec {
 	if (legacy === 'linkedin') return CHANNEL_MEDIA.LINKEDIN_PERSONAL;
 	if (legacy === 'instagram') return CHANNEL_MEDIA.INSTAGRAM_FEED;
 	if (legacy === 'facebook') return CHANNEL_MEDIA.FACEBOOK_PAGE;
+	if (legacy === 'threads') return CHANNEL_MEDIA.THREADS;
 	if (legacy === 'blog' || legacy === 'article') return CHANNEL_MEDIA.BLOG;
 	return CHANNEL_MEDIA.CUSTOM;
 }

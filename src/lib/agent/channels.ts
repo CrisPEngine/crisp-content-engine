@@ -108,6 +108,7 @@ export const CHANNEL_REGISTRY: ChannelDefinition[] = [
 		capabilities: socialGap({
 			publish: 'SUPPORTED_BY_PLATFORM',
 			schedule: 'SUPPORTED_BY_PLATFORM',
+			media: 'SUPPORTED_BY_PLATFORM',
 			replies: 'NOT_IMPLEMENTED',
 		}),
 		notes: 'Threads uses native OAuth (threads_basic, threads_content_publish). Reply automation is not enabled; architecture allows future reply APIs.',
