@@ -11,9 +11,17 @@ export type ApprovalPageModel = {
 	brandName: string;
 	body: string;
 	schedule: boolean;
+	threadsReply: boolean;
+	replyContext: {
+		originalAuthorHandle: string | null;
+		originalPostExcerpt: string | null;
+		targetUrl: string | null;
+	};
 	publishImagePreview: Awaited<ReturnType<typeof resolveApprovalPublishImagePreview>>;
 	destination: Awaited<ReturnType<typeof resolveApprovalDestinationView>>;
 	inbox: ReturnType<typeof pendingApprovalCounts>;
+	publishError: string | null;
+	publishedPermalink: string | null;
 };
 
 export async function loadApprovalPageModel(input: {
@@ -25,7 +33,18 @@ export async function loadApprovalPageModel(input: {
 	const brain = await intelligence.getBrandBrainById(userId, request.brandId);
 	const preview = request.preview;
 	const schedule = request.requestedAction === 'approve_and_schedule';
+	const threadsReply = request.targetType === 'reply' || request.requestedAction === 'approve_and_post_reply';
 	const body = String(preview.body ?? preview.excerpt ?? '');
+	const replyContext = {
+		originalAuthorHandle:
+			typeof preview.originalAuthorHandle === 'string' ? preview.originalAuthorHandle : null,
+		originalPostExcerpt:
+			typeof preview.originalPostExcerpt === 'string' ? preview.originalPostExcerpt : null,
+		targetUrl: typeof preview.targetUrl === 'string' ? preview.targetUrl : null,
+	};
+	const publishError = typeof preview.publishError === 'string' ? preview.publishError : null;
+	const publishedPermalink =
+		typeof preview.publishedPermalink === 'string' ? preview.publishedPermalink : null;
 
 	let memory = null;
 	let publishImagePreview = null;
@@ -86,8 +105,12 @@ export async function loadApprovalPageModel(input: {
 		brandName: brain?.identity.name ?? 'Brand',
 		body,
 		schedule,
+		threadsReply,
+		replyContext,
 		publishImagePreview,
 		destination,
 		inbox,
+		publishError,
+		publishedPermalink,
 	};
 }

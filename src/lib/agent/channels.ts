@@ -109,9 +109,10 @@ export const CHANNEL_REGISTRY: ChannelDefinition[] = [
 			publish: 'SUPPORTED_BY_PLATFORM',
 			schedule: 'SUPPORTED_BY_PLATFORM',
 			media: 'SUPPORTED_BY_PLATFORM',
-			replies: 'NOT_IMPLEMENTED',
+			replies: 'CONNECTED_AND_AUTHORIZED',
 		}),
-		notes: 'Threads uses native OAuth (threads_basic, threads_content_publish). Reply automation is not enabled; architecture allows future reply APIs.',
+		notes:
+			'Threads uses native OAuth (threads_basic, threads_content_publish, threads_manage_replies, threads_keyword_search). Outbound replies require human approval on the CCE approval page before CCE posts via the official API.',
 	},
 	{
 		id: 'INSTAGRAM_FEED',

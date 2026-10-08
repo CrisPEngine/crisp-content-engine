@@ -6,7 +6,10 @@ import { syncAgentThreadsPublishJob, isAgentThreadsMemory } from '@/lib/publish/
 import { isAgentMetaMemory, syncAgentMetaPublishJob } from '@/lib/publish/agentMetaJob';
 import { getAgentStore } from './controlStore';
 import { AgentError } from './errors';
-import type { AgentCredential, ApprovalRequest } from './types';
+import type { AgentCredential, ApprovalRequest, CommunityInteraction } from './types';
+import { fingerprintReplyDraft } from '@/lib/threads/replyFingerprint';
+import { assertThreadsReplyAllowed } from '@/lib/threads/replyLimits';
+import { publishApprovedThreadsReply } from '@/lib/threads/publishReply';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -99,6 +102,71 @@ export async function createApprovalRequest(input: {
 	return { request, approvalUrl: `${appBase()}/approve/${token}` };
 }
 
+export async function createReplyApprovalRequest(input: {
+	credential: AgentCredential;
+	brandId: string;
+	interaction: CommunityInteraction;
+}): Promise<{ request: ApprovalRequest; approvalUrl: string }> {
+	const interaction = input.interaction;
+	if (!interaction.draftReply?.trim()) {
+		throw new AgentError('invalid_input', 'Draft a reply before requesting approval.', 400);
+	}
+	if (!interaction.resolvedMediaId && !interaction.externalPostId) {
+		throw new AgentError('invalid_input', 'Threads target media id could not be resolved.', 400);
+	}
+	await assertThreadsReplyAllowed({ ownerUserId: input.credential.ownerUserId, interaction });
+
+	const contentHash = fingerprintReplyDraft(interaction);
+	const author = interaction.originalAuthorHandle ?? interaction.authorLabel ?? 'unknown';
+	const excerpt = (interaction.originalPostExcerpt ?? interaction.text ?? '').slice(0, 280);
+	const summary = `Threads reply to @${author.replace(/^@/, '')}`;
+	const preview = {
+		channel: 'threads',
+		kind: 'reply',
+		originalAuthorHandle: interaction.originalAuthorHandle ?? interaction.authorLabel ?? null,
+		originalPostExcerpt: excerpt || null,
+		targetUrl: interaction.targetUrl ?? null,
+		resolvedMediaId: interaction.resolvedMediaId ?? interaction.externalPostId ?? null,
+		body: interaction.draftReply.slice(0, 1200),
+		mediaIdResolution: interaction.mediaIdResolution ?? null,
+	};
+	const parameters = {
+		requestedAction: 'approve_and_post_reply' as const,
+		publishAt: null,
+		targetType: 'reply' as const,
+		targetId: interaction.id,
+	};
+	const token = randomBytes(32).toString('base64url');
+	const now = new Date();
+	const request: ApprovalRequest = {
+		id: crypto.randomUUID(),
+		ownerUserId: input.credential.ownerUserId,
+		brandId: input.brandId,
+		credentialId: input.credential.id,
+		action: 'approve_and_post_reply',
+		targetType: 'reply',
+		targetId: interaction.id,
+		summary,
+		preview,
+		consequenceLevel: 3,
+		requestedAction: 'approve_and_post_reply',
+		parameters,
+		parameterHash: createHash('sha256').update(JSON.stringify(parameters)).digest('hex'),
+		contentHash,
+		status: 'PENDING',
+		tokenHash: hashToken(token),
+		createdAt: now.toISOString(),
+		expiresAt: new Date(now.getTime() + DAY_MS).toISOString(),
+		executionStatus: 'pending',
+	};
+	await getAgentStore().saveApprovalRequest(request);
+	interaction.approvalRequestId = request.id;
+	interaction.replyContentHash = contentHash;
+	interaction.responseStatus = 'awaiting_approval';
+	await getAgentStore().saveInteraction(input.credential.ownerUserId, interaction);
+	return { request, approvalUrl: `${appBase()}/approve/${token}` };
+}
+
 export async function resolveApprovalRequest(input: { token: string; userId: string; decision: 'approve' | 'reject' }): Promise<ApprovalRequest> {
 	const store = getAgentStore();
 	const current = await store.getApprovalRequestByTokenHash(hashToken(input.token));
@@ -160,9 +228,39 @@ async function resolveApprovalRequestRecord(input: {
 				await intelligence.saveMemory(current.ownerUserId, { ...memory, publicationStatus: 'rejected' });
 			}
 		}
+		if (current.targetType === 'reply') {
+			const interaction = await store.getInteraction(current.ownerUserId, current.targetId);
+			if (interaction) {
+				interaction.responseStatus = 'ignored';
+				await store.saveInteraction(current.ownerUserId, interaction);
+			}
+		}
 		return current;
 	}
-	await applyHumanApproval(current, input.userId);
+	try {
+		await applyHumanApproval(current, input.userId);
+	} catch (err) {
+		if (current.targetType === 'reply') {
+			const interaction = await store.getInteraction(current.ownerUserId, current.targetId);
+			if (interaction) {
+				interaction.responseStatus = 'failed';
+				interaction.publishError = err instanceof Error ? err.message : 'Reply publish failed';
+				await store.saveInteraction(current.ownerUserId, interaction);
+			}
+			current.status = 'APPROVED';
+			current.resolvedAt = now;
+			current.resolvedBy = input.userId;
+			current.authorizationMethod = 'cce_authenticated_page';
+			current.executionStatus = 'failed';
+			current.preview = {
+				...current.preview,
+				publishError: err instanceof Error ? err.message : 'Reply publish failed',
+			};
+			await store.saveApprovalRequest(current);
+			throw err;
+		}
+		throw err;
+	}
 	current.status = 'APPROVED';
 	current.resolvedAt = now;
 	current.resolvedBy = input.userId;
@@ -173,6 +271,11 @@ async function resolveApprovalRequestRecord(input: {
 }
 
 async function currentFingerprint(request: ApprovalRequest): Promise<string> {
+	if (request.targetType === 'reply') {
+		const interaction = await getAgentStore().getInteraction(request.ownerUserId, request.targetId);
+		if (!interaction) return '';
+		return fingerprintReplyDraft(interaction);
+	}
 	if (request.targetType === 'article') {
 		const article = await getNativeContentStore().getArticle(request.ownerUserId, request.targetId);
 		if (!article) return '';
@@ -186,6 +289,34 @@ async function currentFingerprint(request: ApprovalRequest): Promise<string> {
 async function applyHumanApproval(request: ApprovalRequest, userId: string): Promise<void> {
 	const approvedAt = new Date().toISOString();
 	const publishAt = typeof request.parameters.publishAt === 'string' ? request.parameters.publishAt : undefined;
+	if (request.targetType === 'reply') {
+		const store = getAgentStore();
+		const interaction = await store.getInteraction(request.ownerUserId, request.targetId);
+		if (!interaction) throw new AgentError('not_found', 'The reply draft for this approval no longer exists.', 404);
+		await assertThreadsReplyAllowed({ ownerUserId: request.ownerUserId, interaction });
+		const outcome = await publishApprovedThreadsReply({
+			ownerUserId: request.ownerUserId,
+			brandId: request.brandId,
+			interaction,
+		});
+		if (!outcome.success) {
+			throw new AgentError('threads_reply_publish_failed', outcome.error ?? 'Threads reply publish failed.', 502);
+		}
+		interaction.responseStatus = 'published';
+		interaction.publishedReplyId = outcome.replyPostId;
+		interaction.publishedPermalink = outcome.permalink;
+		interaction.publishedAt = approvedAt;
+		interaction.publishError = undefined;
+		interaction.replyContentHash = request.contentHash;
+		await store.saveInteraction(request.ownerUserId, interaction);
+		request.preview = {
+			...request.preview,
+			publishedReplyId: outcome.replyPostId ?? null,
+			publishedPermalink: outcome.permalink ?? null,
+			publishError: null,
+		};
+		return;
+	}
 	if (request.targetType === 'content') {
 		const intelligence = getIntelligenceStore();
 		const memory = await intelligence.getMemory(request.ownerUserId, request.targetId);

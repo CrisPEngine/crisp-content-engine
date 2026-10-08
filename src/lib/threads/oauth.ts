@@ -3,6 +3,8 @@
  * https://developers.facebook.com/docs/threads/get-started
  */
 
+import { threadsOAuthScopeString } from './scopes';
+
 const GRAPH_THREADS = 'https://graph.threads.net';
 
 function threadsAppId(): string {
@@ -23,7 +25,7 @@ export function threadsRedirectUri(): string {
 export function threadsAuthorizeUrl(state: string): string {
 	const clientId = threadsAppId();
 	if (!clientId) throw new Error('Threads app id not configured');
-	const scopes = ['threads_basic', 'threads_content_publish'].join(',');
+	const scopes = threadsOAuthScopeString();
 	const url = new URL('https://threads.net/oauth/authorize');
 	url.searchParams.set('client_id', clientId);
 	url.searchParams.set('redirect_uri', threadsRedirectUri());
@@ -109,14 +111,19 @@ export type ThreadsPublishInput = {
 	text: string;
 	imageUrl?: string;
 	videoUrl?: string;
+	/** When set, creates a reply container (requires threads_manage_replies). */
+	replyToId?: string;
 };
 
 export async function publishThreadsPost(input: ThreadsPublishInput): Promise<{ success: boolean; postId?: string; error?: string }> {
-	const { threadsUserId, accessToken, text, imageUrl, videoUrl } = input;
+	const { threadsUserId, accessToken, text, imageUrl, videoUrl, replyToId } = input;
 	const containerBody: Record<string, string> = {
 		access_token: accessToken,
 		text,
 	};
+	if (replyToId) {
+		containerBody.reply_to_id = replyToId;
+	}
 	if (videoUrl) {
 		containerBody.media_type = 'VIDEO';
 		containerBody.video_url = videoUrl;

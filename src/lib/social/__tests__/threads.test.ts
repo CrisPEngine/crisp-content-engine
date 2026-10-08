@@ -34,7 +34,9 @@ describe('Threads authorize URL', () => {
 		const url = new URL(threadsAuthorizeUrl('state123'));
 		expect(url.hostname).toBe('threads.net');
 		expect(url.searchParams.get('client_id')).toBe('test-threads-app-id');
-		expect(url.searchParams.get('scope')).toBe('threads_basic,threads_content_publish');
+		expect(url.searchParams.get('scope')).toBe(
+			'threads_basic,threads_content_publish,threads_manage_replies,threads_keyword_search,threads_read_replies',
+		);
 		expect(url.searchParams.get('redirect_uri')).toBe(threadsRedirectUri());
 		expect(threadsRedirectUri()).toBe('https://app.crispdigital.io/api/connections/threads/callback');
 	});

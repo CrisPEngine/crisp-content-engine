@@ -7,6 +7,7 @@ import {
 	approvalPendingLabel,
 	approvalSubmitLabel,
 	type ApprovalDecision,
+	type ApprovalUiMode,
 } from './approvalFeedback';
 
 const pressableButton =
@@ -15,11 +16,11 @@ const pressableButton =
 type DecideAction = (formData: FormData) => void | Promise<void>;
 
 function ActionFieldset({
-	schedule,
+	mode,
 	activeDecision,
 	onSelect,
 }: {
-	schedule: boolean;
+	mode: ApprovalUiMode;
 	activeDecision: ApprovalDecision | null;
 	onSelect: (decision: ApprovalDecision) => void;
 }) {
@@ -31,7 +32,7 @@ function ActionFieldset({
 			aria-busy={pending}
 			className="grid min-w-0 gap-3 border-0 p-0 m-0"
 		>
-			<FormStatusAnnouncer activeDecision={activeDecision} schedule={schedule} pending={pending} />
+			<FormStatusAnnouncer activeDecision={activeDecision} mode={mode} pending={pending} />
 			<button
 				type="submit"
 				name="decision"
@@ -43,10 +44,10 @@ function ActionFieldset({
 				{pending && activeDecision === 'approve' ? (
 					<>
 						<Loader2 className="h-4 w-4 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden />
-						<span>{approvalPendingLabel('approve', schedule)}</span>
+						<span>{approvalPendingLabel('approve', mode)}</span>
 					</>
 				) : (
-					<span>{approvalSubmitLabel('approve', schedule)}</span>
+					<span>{approvalSubmitLabel('approve', mode)}</span>
 				)}
 			</button>
 			<button
@@ -60,10 +61,10 @@ function ActionFieldset({
 				{pending && activeDecision === 'reject' ? (
 					<>
 						<Loader2 className="h-4 w-4 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden />
-						<span>{approvalPendingLabel('reject', schedule)}</span>
+						<span>{approvalPendingLabel('reject', mode)}</span>
 					</>
 				) : (
-					<span>{approvalSubmitLabel('reject', schedule)}</span>
+					<span>{approvalSubmitLabel('reject', mode)}</span>
 				)}
 			</button>
 		</fieldset>
@@ -74,40 +75,36 @@ export function ApprovalDecisionForm({
 	action,
 	token,
 	tokenFieldName = 'token',
-	schedule,
+	mode,
 }: {
 	action: DecideAction;
 	token: string;
 	tokenFieldName?: string;
-	schedule: boolean;
+	mode: ApprovalUiMode;
 }) {
 	const [activeDecision, setActiveDecision] = useState<ApprovalDecision | null>(null);
 
 	return (
 		<form action={action} className="grid gap-3" aria-label="Approval decision">
 			<input type="hidden" name={tokenFieldName} value={token} />
-			<ActionFieldset
-				schedule={schedule}
-				activeDecision={activeDecision}
-				onSelect={setActiveDecision}
-			/>
+			<ActionFieldset mode={mode} activeDecision={activeDecision} onSelect={setActiveDecision} />
 		</form>
 	);
 }
 
 function FormStatusAnnouncer({
 	activeDecision,
-	schedule,
+	mode,
 	pending,
 }: {
 	activeDecision: ApprovalDecision | null;
-	schedule: boolean;
+	mode: ApprovalUiMode;
 	pending: boolean;
 }) {
 	if (!pending || !activeDecision) return null;
 	return (
 		<p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-			{approvalPendingLabel(activeDecision, schedule)}
+			{approvalPendingLabel(activeDecision, mode)}
 		</p>
 	);
 }

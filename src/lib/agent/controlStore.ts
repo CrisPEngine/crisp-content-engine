@@ -163,6 +163,9 @@ export function createMemoryAgentStore(): AgentControlStore {
 				.filter((row) => row.ownerUserId === ownerUserId && row.value.brandId === brandId)
 				.map((row) => row.value);
 		},
+		async listAllInteractions(ownerUserId) {
+			return [...interactions.values()].filter((row) => row.ownerUserId === ownerUserId).map((row) => row.value);
+		},
 		async getInteraction(ownerUserId, id) {
 			const row = interactions.get(id);
 			return row && row.ownerUserId === ownerUserId ? row.value : null;

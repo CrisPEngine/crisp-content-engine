@@ -81,13 +81,14 @@ export async function GET(request: Request) {
 					throw new Error('Threads token missing');
 				}
 
-				const { text, imageUrl, videoUrl } = payload_json || {};
+				const { text, imageUrl, videoUrl, replyToId } = payload_json || {};
 				const result = await publishThreadsPost({
 					threadsUserId: target_id,
 					accessToken: secrets.accessToken,
 					text: text || '',
 					imageUrl: imageUrl || undefined,
 					videoUrl: videoUrl || undefined,
+					replyToId: typeof replyToId === 'string' ? replyToId : undefined,
 				});
 
 				if (!result.success) {

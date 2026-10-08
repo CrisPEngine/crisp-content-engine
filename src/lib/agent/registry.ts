@@ -238,15 +238,44 @@ export const AGENT_ACTIONS: AgentActionDefinition[] = [
 		z.object({ brandId, hypothesis: z.string().optional() }).passthrough(),
 	),
 	action('cce_analyse_experiment', 'experiments:read', 0, 'Analyse an experiment without claiming certainty the sample cannot support.', z.object({ brandId, experimentId: z.string().min(1) }).passthrough()),
-	action('cce_get_engagement_inbox', 'community:read', 0, 'Community interactions known to CCE.'),
+	action(
+		'cce_get_engagement_inbox',
+		'community:read',
+		0,
+		'Community interactions known to CCE, including Threads reply draft/approval/publish status.',
+	),
 	action(
 		'cce_draft_reply',
 		'community:draft_reply',
 		1,
-		'Draft a reply. Does not send it.',
-		z.object({ brandId, interactionId: z.string().optional(), text: z.string().min(1), platform: z.string().optional(), externalPostId: z.string().optional() }).passthrough(),
+		'Draft a Threads reply to another account’s public post. Resolves targetUrl to a media id when possible. Never publishes.',
+		z
+			.object({
+				brandId,
+				interactionId: z.string().optional(),
+				text: z.string().min(1),
+				platform: z.string().optional(),
+				targetUrl: z.string().url().optional(),
+				externalPostId: z.string().optional(),
+				originalPostExcerpt: z.string().optional(),
+				originalAuthorHandle: z.string().optional(),
+			})
+			.passthrough(),
 	),
-	action('cce_request_reply_approval', 'community:draft_reply', 2, 'Ask a human to approve a reply draft. Does not send it.', z.object({ brandId, interactionId: z.string().min(1) }).passthrough()),
+	action(
+		'cce_request_reply_approval',
+		'community:draft_reply',
+		2,
+		'Create a human approval request for an exact Threads reply. CCE posts only after the owner approves on the approval page.',
+		z.object({ brandId, interactionId: z.string().min(1) }).passthrough(),
+	),
+	action(
+		'cce_diagnose_threads_reply_access',
+		'community:read',
+		0,
+		'Diagnostic: Threads destination, reply OAuth scopes, keyword_search sample, and optional targetUrl resolution. Does not publish.',
+		z.object({ brandId, targetUrl: z.string().url().optional() }).passthrough(),
+	),
 	action(
 		'cce_record_external_publish',
 		'external:record',

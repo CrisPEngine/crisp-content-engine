@@ -7,24 +7,31 @@ import {
 export function ApprovalStatusBanner({
 	done,
 	error,
-	schedule,
+	mode,
+	publishError,
 }: {
 	done?: string;
 	error?: string;
-	schedule: boolean;
+	mode: import('./approvalFeedback').ApprovalUiMode;
+	publishError?: string | null;
 }) {
 	if (done) {
+		const isError = Boolean(error ?? publishError);
 		return (
 			<div
-				className="card flex items-start gap-3 border border-accent/40 bg-accent/10 p-4 text-text"
+				className={`card flex items-start gap-3 p-4 text-text ${isError ? 'border border-danger/40 bg-danger/10' : 'border border-accent/40 bg-accent/10'}`}
 				role="status"
 				aria-live="polite"
 				aria-atomic="true"
 			>
-				<CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-accent" aria-hidden />
+				<CheckCircle2 className={`mt-0.5 h-5 w-5 shrink-0 ${isError ? 'text-danger' : 'text-accent'}`} aria-hidden />
 				<div>
-					<p className="font-medium">{approvalSuccessHeadline(done, schedule)}</p>
-					<p className="mt-1 text-sm text-text-soft">{approvalSuccessDetail(done)}</p>
+					<p className="font-medium">
+						{isError ? 'Approval recorded — post failed' : approvalSuccessHeadline(done, mode)}
+					</p>
+					<p className="mt-1 text-sm text-text-soft">
+						{approvalSuccessDetail(done, mode, error ?? publishError)}
+					</p>
 				</div>
 			</div>
 		);
