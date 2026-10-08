@@ -14,7 +14,11 @@ import { getAgentStore } from './controlStore';
 import { AgentError } from './errors';
 import { CAPABILITY_GROUP } from './policy';
 import { dispatchContentExtensions } from './extensions';
-import { assertScheduleMatchesApproval, createApprovalRequest } from './approvals';
+import { assertScheduleMatchesApproval, createApprovalRequest, createReplyApprovalRequest } from './approvals';
+import { resolveThreadsTargetPost, ThreadsPostResolutionError } from '@/lib/threads/resolvePostUrl';
+import { threadsAccessForBrand } from '@/lib/threads/accessForBrand';
+import { fingerprintReplyDraft } from '@/lib/threads/replyFingerprint';
+import { diagnoseThreadsReplyAccess } from '@/lib/threads/diagnoseReplyAccess';
 import { cancelAgentThreadsPublishJob, isAgentThreadsMemory, syncAgentThreadsPublishJob } from '@/lib/publish/agentThreadsJob';
 import {
 	agentMetaPlatformFromChannel,
@@ -1161,25 +1165,80 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 		}
 		case 'cce_get_engagement_inbox': {
 			const brain = await requireBrand(ctx, brandId);
-			return { interactions: await getAgentStore().listInteractions(ctx.credential.ownerUserId, brain.id) };
+			const interactions = await getAgentStore().listInteractions(ctx.credential.ownerUserId, brain.id);
+			return {
+				interactions: interactions.map((row) => ({
+					...row,
+					replyStatus: row.responseStatus,
+					approvalRequestId: row.approvalRequestId ?? null,
+					publishedPermalink: row.publishedPermalink ?? null,
+					publishError: row.publishError ?? null,
+				})),
+			};
 		}
 		case 'cce_draft_reply': {
 			const brain = await requireBrand(ctx, brandId);
 			const existingId = inputString(input, 'interactionId');
 			const existing = existingId ? await getAgentStore().getInteraction(ctx.credential.ownerUserId, existingId) : null;
+			const targetUrl = inputString(input, 'targetUrl') ?? existing?.targetUrl;
+			const externalPostId = inputString(input, 'externalPostId') ?? existing?.externalPostId;
+			const platform = (inputString(input, 'platform') ?? existing?.platform ?? 'threads').toLowerCase();
+			const draftReply = inputString(input, 'text');
+			if (!draftReply) throw new AgentError('invalid_input', 'text is required.', 400);
+
+			let resolvedMediaId = existing?.resolvedMediaId;
+			let mediaIdResolution = existing?.mediaIdResolution;
+			if (platform === 'threads' && (targetUrl || externalPostId)) {
+				const { accessToken } = await threadsAccessForBrand(ctx.credential.ownerUserId, brain.id);
+				try {
+					const resolved = await resolveThreadsTargetPost({
+						targetUrl,
+						externalPostId,
+						accessToken,
+						searchHint: inputString(input, 'originalPostExcerpt') ?? existing?.originalPostExcerpt ?? existing?.text,
+					});
+					resolvedMediaId = resolved.mediaId;
+					mediaIdResolution = resolved.method;
+				} catch (err) {
+					if (err instanceof ThreadsPostResolutionError) {
+						throw new AgentError(err.code === 'invalid_url' ? 'invalid_input' : 'threads_target_unresolved', err.message, err.code === 'invalid_url' ? 400 : 422);
+					}
+					throw err;
+				}
+			}
+
 			const interaction = await getAgentStore().saveInteraction(ctx.credential.ownerUserId, {
 				id: existing?.id ?? crypto.randomUUID(),
 				brandId: brain.id,
-				platform: inputString(input, 'platform') ?? existing?.platform ?? 'unknown',
-				externalPostId: inputString(input, 'externalPostId') ?? existing?.externalPostId,
+				platform,
+				externalPostId: externalPostId ?? resolvedMediaId,
 				externalInteractionId: existing?.externalInteractionId,
+				targetUrl,
+				resolvedMediaId,
+				mediaIdResolution,
+				originalAuthorHandle: inputString(input, 'originalAuthorHandle') ?? existing?.originalAuthorHandle,
+				originalPostExcerpt: inputString(input, 'originalPostExcerpt') ?? existing?.originalPostExcerpt,
 				type: existing?.type ?? 'reply_draft',
-				text: existing?.text,
+				text: inputString(input, 'originalPostExcerpt') ?? existing?.text,
+				authorLabel: inputString(input, 'originalAuthorHandle') ?? existing?.authorLabel,
 				responseStatus: 'drafted',
-				draftReply: inputString(input, 'text'),
+				draftReply,
+				replyContentHash: fingerprintReplyDraft({
+					draftReply,
+					resolvedMediaId,
+					externalPostId: externalPostId ?? resolvedMediaId,
+					targetUrl,
+				}),
 				createdAt: existing?.createdAt ?? new Date().toISOString(),
 			});
-			return { interactionId: interaction.id, status: 'drafted', published: false };
+			return {
+				interactionId: interaction.id,
+				status: 'drafted',
+				published: false,
+				resolvedMediaId: interaction.resolvedMediaId ?? null,
+				mediaIdResolution: interaction.mediaIdResolution ?? null,
+				targetUrl: interaction.targetUrl ?? null,
+			};
 		}
 		case 'cce_request_reply_approval': {
 			const interactionId = inputString(input, 'interactionId');
@@ -1189,10 +1248,32 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 				throw new AgentError('brand_not_accessible', 'This agent cannot access that interaction.', 403);
 			}
 			if (!interaction.draftReply) throw new AgentError('invalid_input', 'Draft a reply before requesting approval.', 400);
-			interaction.responseStatus = 'awaiting_approval';
-			await getAgentStore().saveInteraction(ctx.credential.ownerUserId, interaction);
-			await emit(ctx, interaction.brandId, 'community.reply_needed', { interactionId });
-			return { interactionId, status: 'awaiting_approval', approver: 'human', published: false };
+			const created = await createReplyApprovalRequest({
+				credential: ctx.credential,
+				brandId: interaction.brandId,
+				interaction,
+			});
+			await emit(ctx, interaction.brandId, 'community.reply_needed', { interactionId, approvalId: created.request.id });
+			return {
+				interactionId,
+				status: 'awaiting_approval',
+				approver: 'human',
+				published: false,
+				approvalId: created.request.id,
+				approvalUrl: created.approvalUrl,
+			};
+		}
+		case 'cce_diagnose_threads_reply_access': {
+			const brain = await requireBrand(ctx, brandId);
+			const { accessToken, scopes } = await threadsAccessForBrand(ctx.credential.ownerUserId, brain.id);
+			const diagnostic = await diagnoseThreadsReplyAccess({
+				userId: ctx.credential.ownerUserId,
+				airtableBrandId: brain.airtableBrandId,
+				targetUrl: inputString(input, 'targetUrl'),
+				authorizationScopes: scopes,
+				accessToken,
+			});
+			return diagnostic;
 		}
 		case 'cce_record_external_publish': {
 			const contentId = inputString(input, 'contentId') ?? inputString(input, 'articleId');

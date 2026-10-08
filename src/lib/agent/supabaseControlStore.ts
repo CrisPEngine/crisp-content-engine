@@ -109,12 +109,18 @@ function approvalFromRow(row: Record<string, unknown>): ApprovalRequest {
 		brandId: String(row.brand_id),
 		credentialId: String(row.credential_id),
 		action: String(row.action),
-		targetType: row.target_type === 'article' ? 'article' : 'content',
+		targetType:
+			row.target_type === 'article' ? 'article' : row.target_type === 'reply' ? 'reply' : 'content',
 		targetId: String(row.target_id),
 		summary: String(row.summary),
 		preview: (row.preview as Record<string, unknown>) ?? {},
 		consequenceLevel: Number(row.consequence_level),
-		requestedAction: row.requested_action === 'approve_and_schedule' ? 'approve_and_schedule' : 'approve_content',
+		requestedAction:
+			row.requested_action === 'approve_and_schedule'
+				? 'approve_and_schedule'
+				: row.requested_action === 'approve_and_post_reply'
+					? 'approve_and_post_reply'
+					: 'approve_content',
 		parameters: (row.parameters as Record<string, unknown>) ?? {},
 		parameterHash: String(row.parameter_hash),
 		contentHash: String(row.content_hash),
@@ -360,6 +366,7 @@ export function createSupabaseAgentStore(): AgentControlStore {
 		listMonitors: (ownerUserId, brandId) => listRecords<ResearchMonitor>(ownerUserId, 'research_monitor', brandId),
 		saveInteraction: (ownerUserId, interaction) => saveRecord(ownerUserId, 'interaction', interaction),
 		listInteractions: (ownerUserId, brandId) => listRecords<CommunityInteraction>(ownerUserId, 'interaction', brandId),
+		listAllInteractions: (ownerUserId) => listRecords<CommunityInteraction>(ownerUserId, 'interaction'),
 		getInteraction: (ownerUserId, id) => loadRecord<CommunityInteraction>(ownerUserId, 'interaction', id),
 		saveAdProposal: (ownerUserId, proposal) => saveRecord(ownerUserId, 'ad_proposal', proposal),
 		listAdProposals: (ownerUserId, brandId) => listRecords<AdChangeProposal>(ownerUserId, 'ad_proposal', brandId),

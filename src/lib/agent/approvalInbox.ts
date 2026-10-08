@@ -56,8 +56,12 @@ export function formatApprovalInboxMeta(request: ApprovalRequest): {
 		(typeof request.parameters.publishAt === 'string' && request.parameters.publishAt) ||
 		(typeof preview.publishAt === 'string' ? preview.publishAt : null);
 	const expiresMs = Date.parse(request.expiresAt) - Date.now();
+	const channel =
+		request.targetType === 'reply'
+			? 'Threads reply'
+			: String(preview.channel ?? request.targetType);
 	return {
-		channel: String(preview.channel ?? request.targetType),
+		channel,
 		publishAt,
 		expiresInHours: Math.max(0, Math.round(expiresMs / DAY_MS)),
 	};

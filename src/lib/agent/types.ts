@@ -14,12 +14,12 @@ export type ApprovalRequest = {
 	brandId: string;
 	credentialId: string;
 	action: string;
-	targetType: 'content' | 'article';
+	targetType: 'content' | 'article' | 'reply';
 	targetId: string;
 	summary: string;
 	preview: Record<string, unknown>;
 	consequenceLevel: number;
-	requestedAction: 'approve_content' | 'approve_and_schedule';
+	requestedAction: 'approve_content' | 'approve_and_schedule' | 'approve_and_post_reply';
 	parameters: Record<string, unknown>;
 	parameterHash: string;
 	contentHash: string;
@@ -129,15 +129,26 @@ export type CommunityInteraction = {
 	platform: string;
 	externalPostId?: string;
 	externalInteractionId?: string;
+	targetUrl?: string;
+	resolvedMediaId?: string;
+	mediaIdResolution?: 'provided_id' | 'official_profile' | 'official_keyword' | 'shortcode_fallback';
+	originalAuthorHandle?: string;
+	originalPostExcerpt?: string;
 	type: string;
 	authorLabel?: string;
 	text?: string;
 	occurredAt?: string;
 	sentiment?: string;
 	opportunityRelevance?: string;
-	responseStatus: 'open' | 'drafted' | 'awaiting_approval' | 'published' | 'ignored' | 'resolved';
+	responseStatus: 'open' | 'drafted' | 'awaiting_approval' | 'published' | 'ignored' | 'resolved' | 'failed';
 	contentId?: string;
 	draftReply?: string;
+	approvalRequestId?: string;
+	replyContentHash?: string;
+	publishedReplyId?: string;
+	publishedPermalink?: string;
+	publishError?: string;
+	publishedAt?: string;
 	createdAt: string;
 };
 
@@ -263,6 +274,7 @@ export type AgentControlStore = {
 
 	saveInteraction(ownerUserId: string, interaction: CommunityInteraction): Promise<CommunityInteraction>;
 	listInteractions(ownerUserId: string, brandId: string): Promise<CommunityInteraction[]>;
+	listAllInteractions(ownerUserId: string): Promise<CommunityInteraction[]>;
 	getInteraction(ownerUserId: string, id: string): Promise<CommunityInteraction | null>;
 
 	saveAdProposal(ownerUserId: string, proposal: AdChangeProposal): Promise<AdChangeProposal>;

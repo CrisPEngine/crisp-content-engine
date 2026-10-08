@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { oauthRedirectBase, readAndClearOAuthStateCookie } from '@/lib/social/oauthState';
 import { exchangeThreadsCode, exchangeThreadsLongLived, fetchThreadsProfile } from '@/lib/threads/oauth';
+import { THREADS_OAUTH_SCOPES } from '@/lib/threads/scopes';
 import { persistOAuthAuthorization } from '@/lib/social/upsertNative';
 import { SOCIAL_PROVIDERS, DESTINATION_TYPES } from '@/lib/social/providers';
 import { formatInstagramHandle } from '@/lib/social/brandBrainName';
@@ -52,7 +53,7 @@ export async function handleThreadsOAuthCallback(request: Request) {
 			ownerUserId: user.id,
 			provider: SOCIAL_PROVIDERS.THREADS,
 			providerAccountId: String(threadsUserId),
-			scopes: ['threads_basic', 'threads_content_publish'],
+			scopes: [...THREADS_OAUTH_SCOPES],
 			expiresAt,
 			accessToken: long.access_token,
 			destination: {
