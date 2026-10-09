@@ -12,6 +12,9 @@ import { completeReview } from './review';
 import { scoreDraft } from './scoring';
 import type { IntelligenceStore } from './store';
 import type { ContentBrief, ContentTheme, GenerationIntent, GenerationResult, IntelligenceUsage } from './types';
+import { CHANNELS } from '@/lib/channels/registry';
+import type { ChannelId } from '@/lib/channels/types';
+import { validateMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 
 export type IntelligenceCompletion<T> = {
 	data: T;
@@ -71,7 +74,15 @@ function sumCost(calls: IntelligenceUsage[]): number | null {
 	return Math.round(known.reduce((sum, value) => sum + value, 0) * 1_000_000) / 1_000_000;
 }
 
-function writerMessages(contextPrompt: string, brief: ContentBrief, userIntent: string): LlmMessage[] {
+function channelDraftLimitLine(channel: string): string | null {
+	const channelId = channel.toLowerCase() as ChannelId;
+	const max = CHANNELS[channelId]?.constraints.maxCharsPerPost;
+	if (!max) return null;
+	return `The full draft (including hashtags and line breaks) must be ${max} characters or fewer. Count carefully before returning JSON.`;
+}
+
+function writerMessages(contextPrompt: string, brief: ContentBrief, userIntent: string, channel: string): LlmMessage[] {
+	const limitLine = channelDraftLimitLine(channel);
 	return [
 		{
 			role: 'system',
@@ -80,6 +91,7 @@ function writerMessages(contextPrompt: string, brief: ContentBrief, userIntent: 
 				'Brand voice outranks generic anti-AI style checklists. Do not become formulaically casual.',
 				'Return JSON: { "draft": string, "hook": string, "argument": string, "cta": string, "topic": string }',
 				'Avoid repeating related previous hooks or arguments unless the brief says theme continuation is allowed.',
+				...(limitLine ? [limitLine] : []),
 			].join('\n'),
 		},
 		{
@@ -235,7 +247,7 @@ export async function runContentIntelligencePipeline(
 
 	const generatedCompletion = await ai.completeJson<{ draft?: string; hook?: string; argument?: string; cta?: string; topic?: string }>(
 		'WRITING',
-		writerMessages(prompt, briefPayload, intent.userIntent),
+		writerMessages(prompt, briefPayload, intent.userIntent, intent.channel),
 		'intelligence_draft',
 		intent.userId,
 	);
@@ -247,8 +259,36 @@ export async function runContentIntelligencePipeline(
 		throw new Error('Writing model returned an empty draft');
 	}
 
+	let draftForReview = aiDraft;
+	const channelConstraint = validateMemoryChannelConstraints({
+		channel: intent.channel,
+		contentType: intent.contentType || 'founder_post',
+		body: draftForReview,
+		hook: generated.hook || '',
+	});
+	if (!channelConstraint.ok) {
+		const reason = channelConstraint.errors.map((error) => error.message).join(' ');
+		const shortened = await ai.completeJson<{ revisedDraft?: string }>(
+			'REVIEW',
+			[
+				{
+					role: 'system',
+					content: [
+						'Shorten the draft to satisfy the channel limit. Preserve meaning and voice.',
+						'Return json: { "revisedDraft": string }',
+					].join('\n'),
+				},
+				{ role: 'user', content: `${reason}\n\nDraft:\n${draftForReview}` },
+			],
+			'intelligence_channel_limit',
+			intent.userId,
+		);
+		usage.push(usageFrom('REVIEW', 'intelligence_channel_limit', shortened));
+		draftForReview = (shortened.data.revisedDraft || draftForReview).trim();
+	}
+
 	const review = await completeReview({
-		draft: aiDraft,
+		draft: draftForReview,
 		brain,
 		brief: briefPayload,
 		revise: async (current, reason) => {

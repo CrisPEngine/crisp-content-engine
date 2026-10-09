@@ -85,6 +85,24 @@ describe('Threads agent scheduling', () => {
 		);
 	});
 
+	it('blocks approval when Threads copy exceeds 500 characters', async () => {
+		const store = (await import('@/lib/intelligence/actions')).getIntelligenceStore();
+		const draft = await store.saveMemory(FOLIAN_USER_ID, {
+			brandBrainId: folianId,
+			channel: 'threads',
+			body: 't'.repeat(668),
+			publicationStatus: 'draft',
+		});
+		const submitted = await call(
+			folianSecret,
+			'cce_submit_for_approval',
+			{ brandId: folianId, contentId: draft.id },
+			'threads-too-long-submit',
+		);
+		expect(submitted.body.error?.code).toBe('content_channel_constraint');
+		expect(submitted.body.error?.message).toMatch(/500 characters or fewer/);
+	});
+
 	it('reports publisherArmed after schedule_content for Threads', async () => {
 		const store = (await import('@/lib/intelligence/actions')).getIntelligenceStore();
 		const draft = await store.saveMemory(FOLIAN_USER_ID, {

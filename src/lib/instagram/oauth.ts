@@ -112,12 +112,76 @@ export async function fetchInstagramProfessionalProfile(accessToken: string): Pr
 	return res.json();
 }
 
+export type InstagramProfessionalPublishMetaError = {
+	responseStatus: number;
+	graphCode?: number;
+	graphSubcode?: number;
+	graphMessage?: string;
+};
+
+function parseInstagramGraphError(responseStatus: number, bodyText: string): InstagramProfessionalPublishMetaError {
+	let graphCode: number | undefined;
+	let graphSubcode: number | undefined;
+	let graphMessage: string | undefined;
+	try {
+		const parsed = JSON.parse(bodyText);
+		const err = parsed?.error;
+		if (err) {
+			graphCode = typeof err.code === 'number' ? err.code : undefined;
+			graphSubcode = typeof err.error_subcode === 'number' ? err.error_subcode : undefined;
+			graphMessage = typeof err.message === 'string' ? err.message : undefined;
+		}
+	} catch {
+		// body may not be JSON
+	}
+	return { responseStatus, graphCode, graphSubcode, graphMessage };
+}
+
+async function waitForInstagramContainerReady(
+	creationId: string,
+	accessToken: string,
+): Promise<{ ok: true } | { ok: false; error: string; metaError?: InstagramProfessionalPublishMetaError }> {
+	const MAX_POLLS = 8;
+	const POLL_INTERVAL_MS = 3000;
+
+	for (let poll = 0; poll < MAX_POLLS; poll++) {
+		await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+
+		const statusRes = await fetch(
+			`${GRAPH_IG}/${creationId}?fields=status_code&access_token=${encodeURIComponent(accessToken)}`,
+		);
+
+		if (!statusRes.ok) {
+			const body = await statusRes.text();
+			return { ok: false, error: body, metaError: parseInstagramGraphError(statusRes.status, body) };
+		}
+
+		const statusData = await statusRes.json();
+		const statusCode: string = statusData.status_code || '';
+
+		if (statusCode === 'FINISHED') {
+			return { ok: true };
+		}
+		if (statusCode === 'ERROR' || statusCode === 'EXPIRED') {
+			return {
+				ok: false,
+				error: `Instagram container ${statusCode.toLowerCase()} — cannot publish. Re-queue the post to try again.`,
+			};
+		}
+	}
+
+	return {
+		ok: false,
+		error: 'Instagram container did not become ready in time (timed out after polling). Will retry.',
+	};
+}
+
 export async function publishInstagramProfessional(input: {
 	igUserId: string;
 	accessToken: string;
 	caption: string;
 	imageUrl?: string;
-}): Promise<{ success: boolean; mediaId?: string; error?: string }> {
+}): Promise<{ success: boolean; mediaId?: string; error?: string; metaError?: InstagramProfessionalPublishMetaError }> {
 	const { igUserId, accessToken, caption, imageUrl } = input;
 	const containerUrl = `${GRAPH_IG}/${igUserId}/media`;
 	const containerBody: Record<string, string> = {
@@ -136,11 +200,19 @@ export async function publishInstagramProfessional(input: {
 		body: new URLSearchParams(containerBody),
 	});
 	if (!containerRes.ok) {
-		return { success: false, error: await containerRes.text() };
+		const body = await containerRes.text();
+		return { success: false, error: body, metaError: parseInstagramGraphError(containerRes.status, body) };
 	}
 	const container = await containerRes.json();
 	const creationId = container.id as string | undefined;
 	if (!creationId) return { success: false, error: 'No container id' };
+
+	if (imageUrl) {
+		const ready = await waitForInstagramContainerReady(creationId, accessToken);
+		if (!ready.ok) {
+			return { success: false, error: ready.error, metaError: ready.metaError };
+		}
+	}
 
 	const publishRes = await fetch(`${GRAPH_IG}/${igUserId}/media_publish`, {
 		method: 'POST',
@@ -148,7 +220,8 @@ export async function publishInstagramProfessional(input: {
 		body: new URLSearchParams({ creation_id: creationId, access_token: accessToken }),
 	});
 	if (!publishRes.ok) {
-		return { success: false, error: await publishRes.text() };
+		const body = await publishRes.text();
+		return { success: false, error: body, metaError: parseInstagramGraphError(publishRes.status, body) };
 	}
 	const published = await publishRes.json();
 	return { success: true, mediaId: published.id };

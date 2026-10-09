@@ -7,6 +7,7 @@ import type { ContentMemoryRecord } from '@/lib/intelligence/types';
 import { resolvePublishDestination } from '@/lib/social/resolveDestination';
 import { getAuthorizationSecrets } from '@/lib/social/authorizationSecrets';
 import { AgentError } from '@/lib/agent/errors';
+import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 import { getNativeContentStore } from '@/lib/media/store';
 
 export function isAgentThreadsMemory(memory: Pick<ContentMemoryRecord, 'channel'>): boolean {
@@ -117,6 +118,7 @@ export async function syncAgentThreadsPublishJob(input: {
 	if (!isThreadsPublishingEnabled()) {
 		return { armed: false, skipped: 'threads_disabled' };
 	}
+	assertMemoryChannelConstraints(input.memory);
 
 	const store = getIntelligenceStore();
 	const brain = await store.getBrandBrainById(input.userId, input.memory.brandBrainId);
