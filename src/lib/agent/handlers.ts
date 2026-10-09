@@ -428,8 +428,8 @@ async function getMarketingBrief(ctx: AgentContext, input: Record<string, unknow
 	const experiments = await getIntelligenceStore().listExperiments(ctx.credential.ownerUserId, brain.id);
 	const inbox = await getAgentStore().listInteractions(ctx.credential.ownerUserId, brain.id);
 	const gaps = gapReport(memory, themes);
-	const awaiting = memory.filter((item) => item.publicationStatus === 'review').map(publicContent);
-	const scheduled = memory.filter((item) => item.publicationStatus === 'scheduled').map(publicContent);
+	const awaiting = memory.filter((item) => item.publicationStatus === 'review').map((item) => publicContent(item));
+	const scheduled = memory.filter((item) => item.publicationStatus === 'scheduled').map((item) => publicContent(item));
 	const failed = await Promise.all(
 		memory.filter((item) => item.publicationStatus === 'failed').map((item) => publicContentForOwner(ctx.credential.ownerUserId, item)),
 	);
@@ -795,7 +795,7 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 		}
 		case 'cce_get_drafts': {
 			const { memory } = await brandContext(ctx, brandId);
-			return { drafts: memory.filter((item) => ['draft', 'review', 'idea'].includes(String(item.publicationStatus))).map(publicContent) };
+			return { drafts: memory.filter((item) => ['draft', 'review', 'idea'].includes(String(item.publicationStatus))).map((item) => publicContent(item)) };
 		}
 		case 'cce_get_content': {
 			const contentId = inputString(input, 'contentId');
@@ -955,7 +955,7 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 		}
 		case 'cce_get_pending_approvals': {
 			const { memory } = await brandContext(ctx, brandId);
-			return { approvals: memory.filter((item) => item.publicationStatus === 'review').map(publicContent), approver: 'human' };
+			return { approvals: memory.filter((item) => item.publicationStatus === 'review').map((item) => publicContent(item)), approver: 'human' };
 		}
 		case 'cce_submit_for_approval': {
 			const contentId = inputString(input, 'contentId');
