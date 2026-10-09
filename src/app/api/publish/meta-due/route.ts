@@ -298,7 +298,40 @@ async function publishJob(
 					imageUrl: imageUrl || undefined,
 				});
 				if (!result.success) {
-					throw new Error(result.error || 'Instagram publish failed');
+					const errorMessage = result.error || 'Instagram publish failed';
+					const metaError = result.metaError
+						? {
+								responseStatus: result.metaError.responseStatus,
+								graphCode: result.metaError.graphCode,
+								graphSubcode: result.metaError.graphSubcode,
+								graphMessage: result.metaError.graphMessage,
+							}
+						: undefined;
+					const attempts = (job.attempts || 0) + 1;
+					if (attempts < MAX_ATTEMPTS) {
+						const delaySeconds = RETRY_DELAYS[attempts - 1] || 60 * 60;
+						const nextAttemptAt = new Date(Date.now() + delaySeconds * 1000).toISOString();
+						await admin
+							.from('publish_jobs')
+							.update(buildUpdatePayload('retrying', errorMessage, attempts, nextAttemptAt, metaError))
+							.eq('id', job.id);
+						console.log(`[Meta Worker] Job ${job.id} retry ${attempts}/${MAX_ATTEMPTS} at ${nextAttemptAt}`);
+						return { success: false, retry: true, error: errorMessage, metaError };
+					}
+					await admin
+						.from('publish_jobs')
+						.update(buildUpdatePayload('failed', errorMessage, attempts, null, metaError))
+						.eq('id', job.id);
+					await applyMetaJobOutcomeToAgentContent({
+						user_id: job.user_id,
+						content_item_key: job.content_item_key,
+						payload_json: job.payload_json,
+						status: 'failed',
+						error_message: errorMessage,
+					});
+					await updateAirtableFailed(job.airtable_record_id, errorMessage);
+					console.log(`[Meta Worker] Job ${job.id} permanently failed after ${attempts} attempts`);
+					return { success: false, retry: false, error: errorMessage, metaError };
 				}
 				remotePostId = result.mediaId || '';
 			} else {

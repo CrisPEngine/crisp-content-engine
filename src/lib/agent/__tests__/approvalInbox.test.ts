@@ -21,7 +21,7 @@ function request(partial: Partial<ApprovalRequest> & Pick<ApprovalRequest, 'id'>
 		status: partial.status ?? 'PENDING',
 		tokenHash: `hash-${partial.id}`,
 		createdAt: partial.createdAt ?? '2026-10-07T08:00:00.000Z',
-		expiresAt: partial.expiresAt ?? '2026-10-08T08:00:00.000Z',
+		expiresAt: partial.expiresAt ?? '2027-12-31T23:59:59.000Z',
 		executionStatus: 'pending',
 	};
 }

@@ -10,6 +10,8 @@ import { completeReview } from '@/lib/intelligence/review';
 import { validateBrandBrain, validateFolianBrand } from '@/lib/intelligence/folian/validate';
 import type { BrandBrain, BrandStrategy, ContentBrief, ContentMemoryRecord, ContentTheme, GenerationResult } from '@/lib/intelligence/types';
 import { channelCatalog, resolveChannel } from './channels';
+import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
+import { loadContentPublishDiagnostics } from '@/lib/publish/contentPublishDiagnostics';
 import { getAgentStore } from './controlStore';
 import { AgentError } from './errors';
 import { CAPABILITY_GROUP } from './policy';
@@ -94,7 +96,7 @@ function assertHttpsUrl(url: string): void {
 	}
 }
 
-function publicContent(memory: ContentMemoryRecord) {
+function publicContent(memory: ContentMemoryRecord, publish?: Awaited<ReturnType<typeof loadContentPublishDiagnostics>>) {
 	return {
 		id: memory.id,
 		brandId: memory.brandBrainId,
@@ -112,7 +114,16 @@ function publicContent(memory: ContentMemoryRecord) {
 		externalPostId: memory.externalPostId,
 		externalUrl: memory.externalUrl,
 		createdAt: memory.createdAt,
+		...(publish ? { publish } : {}),
 	};
+}
+
+async function publicContentForOwner(ownerUserId: string, memory: ContentMemoryRecord) {
+	const publish =
+		memory.publicationStatus === 'failed' || memory.metadata?.lastPublishError
+			? await loadContentPublishDiagnostics(ownerUserId, memory)
+			: null;
+	return publicContent(memory, publish ?? undefined);
 }
 
 function publicStrategy(strategy: BrandStrategy | null) {
@@ -419,7 +430,9 @@ async function getMarketingBrief(ctx: AgentContext, input: Record<string, unknow
 	const gaps = gapReport(memory, themes);
 	const awaiting = memory.filter((item) => item.publicationStatus === 'review').map(publicContent);
 	const scheduled = memory.filter((item) => item.publicationStatus === 'scheduled').map(publicContent);
-	const failed = memory.filter((item) => item.publicationStatus === 'failed').map(publicContent);
+	const failed = await Promise.all(
+		memory.filter((item) => item.publicationStatus === 'failed').map((item) => publicContentForOwner(ctx.credential.ownerUserId, item)),
+	);
 	const performance = performanceSummary(snapshots);
 	return {
 		brandId: brain.id,
@@ -588,7 +601,14 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 		}
 		case 'cce_get_calendar': {
 			const { memory } = await brandContext(ctx, brandId);
-			const items = calendarItems(memory, input).map(publicContent);
+			const filtered = calendarItems(memory, input);
+			const items = await Promise.all(
+				filtered.map((item) =>
+					item.publicationStatus === 'failed'
+						? publicContentForOwner(ctx.credential.ownerUserId, item)
+						: Promise.resolve(publicContent(item)),
+				),
+			);
 			const byStatus = (status: string) => items.filter((item) => item.status === status);
 			return { scheduled: byStatus('scheduled'), drafted: byStatus('draft'), awaitingApproval: byStatus('review'), published: byStatus('published'), failed: byStatus('failed'), planned: byStatus('idea'), items };
 		}
@@ -780,7 +800,8 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 		case 'cce_get_content': {
 			const contentId = inputString(input, 'contentId');
 			if (!contentId) throw new AgentError('invalid_input', 'contentId is required.', 400);
-			return { content: publicContent(await requireContent(ctx, contentId)) };
+			const memory = await requireContent(ctx, contentId);
+			return { content: await publicContentForOwner(ctx.credential.ownerUserId, memory) };
 		}
 		case 'cce_create_brief': {
 			const { brain, strategy, themes } = await brandContext(ctx, brandId);
@@ -941,6 +962,7 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			if (!contentId) throw new AgentError('invalid_input', 'contentId is required.', 400);
 			const memory = await requireContent(ctx, contentId);
 			if (memory.publicationStatus === 'published') throw new AgentError('content_already_published', 'This content is already published.', 409);
+			assertMemoryChannelConstraints(memory);
 			const publishAt = inputString(input, 'publishAt');
 			const requestedAction = inputString(input, 'requestedAction') === 'approve_and_schedule' ? 'approve_and_schedule' : 'approve_content';
 			const next = await getIntelligenceStore().saveMemory(ctx.credential.ownerUserId, {
@@ -1018,7 +1040,10 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			if (name !== 'cce_unschedule_content' && !['approved', 'scheduled'].includes(String(memory.publicationStatus))) {
 				throw new AgentError('content_not_approved', 'Only approved content can be scheduled.', 409);
 			}
-			if (name !== 'cce_unschedule_content') await assertScheduleMatchesApproval(memory);
+			if (name !== 'cce_unschedule_content') {
+				await assertScheduleMatchesApproval(memory);
+				assertMemoryChannelConstraints(memory);
+			}
 			const publishAt = name === 'cce_unschedule_content' ? undefined : inputString(input, 'publishAt');
 			const pendingMemory = {
 				...memory,

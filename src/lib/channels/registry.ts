@@ -104,6 +104,12 @@ export function canScheduleOrPublish(platform: string, postType: string, charCou
 	}
 
 	if (platform === 'Threads') {
+		if (charCount && charCount > 500) {
+			return {
+				allowed: false,
+				reason: `Threads post is ${charCount} characters (max 500). Shorten the copy before scheduling.`,
+			};
+		}
 		return { allowed: true };
 	}
 

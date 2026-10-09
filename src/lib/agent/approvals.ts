@@ -10,6 +10,7 @@ import type { AgentCredential, ApprovalRequest, CommunityInteraction } from './t
 import { fingerprintReplyDraft } from '@/lib/threads/replyFingerprint';
 import { assertThreadsReplyAllowed } from '@/lib/threads/replyLimits';
 import { publishApprovedThreadsReply } from '@/lib/threads/publishReply';
+import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -58,6 +59,7 @@ export async function createApprovalRequest(input: {
 		const memory = await store.getMemory(input.credential.ownerUserId, input.targetId);
 		if (!memory || memory.brandBrainId !== input.brandId) throw new AgentError('brand_not_accessible', 'This agent cannot access that content.', 403);
 		if (memory.publicationStatus === 'published') throw new AgentError('content_already_published', 'Published content cannot be approved again.', 409);
+		assertMemoryChannelConstraints(memory);
 		contentHash = fingerprintContent(memory);
 		summary = memory.topic || memory.hook || 'Content approval';
 		preview = {
@@ -322,6 +324,7 @@ async function applyHumanApproval(request: ApprovalRequest, userId: string): Pro
 		const memory = await intelligence.getMemory(request.ownerUserId, request.targetId);
 		if (!memory) throw new AgentError('not_found', 'The content for this approval no longer exists.', 404);
 		const schedule = request.requestedAction === 'approve_and_schedule';
+		assertMemoryChannelConstraints(memory);
 		const updatedMemory = {
 			...memory,
 			publicationStatus: schedule ? 'scheduled' : 'approved',

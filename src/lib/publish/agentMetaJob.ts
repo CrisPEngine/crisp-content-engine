@@ -8,6 +8,7 @@ import { resolvePublishDestination } from '@/lib/social/resolveDestination';
 import { DESTINATION_TYPES } from '@/lib/social/providers';
 import { getAuthorizationSecrets } from '@/lib/social/authorizationSecrets';
 import { AgentError } from '@/lib/agent/errors';
+import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 import { resolveAgentThreadsAttachedImageUrl } from '@/lib/publish/agentThreadsJob';
 
 export type AgentMetaPlatform = 'facebook' | 'instagram';
@@ -180,6 +181,7 @@ export async function syncAgentMetaPublishJob(input: {
 	if (!isMetaPublishingEnabled()) {
 		return { armed: false, skipped: 'meta_disabled', platform };
 	}
+	assertMemoryChannelConstraints(input.memory);
 
 	const store = getIntelligenceStore();
 	const brain = await store.getBrandBrainById(input.userId, input.memory.brandBrainId);
