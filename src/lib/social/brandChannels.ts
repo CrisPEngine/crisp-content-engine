@@ -5,6 +5,7 @@ import { connectionHealth } from '@/lib/social/destinations';
 import { brandNameFromIdentity, formatInstagramHandle } from '@/lib/social/brandBrainName';
 import type { ConnectionPhase } from '@/lib/social/connectionStatus';
 import { uiLabelForPhase } from '@/lib/social/connectionStatus';
+import { CHANNEL_REGISTRY } from '@/lib/agent/channels';
 
 export type BrandChannelView = {
 	channel: PublishChannel;
@@ -270,12 +271,26 @@ export async function listAccountAuthorizations(userId: string): Promise<Account
 	});
 }
 
+export function draftOnlyChannelsForMcp() {
+	return CHANNEL_REGISTRY.filter((def) => def.publishMode === 'draft_only').map((def) => ({
+		channel: def.label,
+		status: 'DRAFT_ONLY',
+		destination: null,
+		canPublish: false,
+		publishMode: 'draft_only' as const,
+		manualPublish: def.manualPublish ?? true,
+	}));
+}
+
 export async function mcpBrandChannelSummary(userId: string, brandId: string) {
 	const rows = await brandChannelRows(userId, brandId);
-	return rows.map((row) => ({
+	const oauthChannels = rows.map((row) => ({
 		channel: row.label,
 		status: row.phase === 'READY' ? 'READY_TO_PUBLISH' : row.uiStatus,
 		destination: row.destinationLabel ?? null,
 		canPublish: row.phase === 'READY',
+		publishMode: 'platform' as const,
+		manualPublish: false,
 	}));
+	return [...oauthChannels, ...draftOnlyChannelsForMcp()];
 }

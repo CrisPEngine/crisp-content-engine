@@ -4,7 +4,7 @@
  * Defines the structure for multi-channel content generation, validation, and publishing.
  */
 
-export type ChannelId = 'linkedin' | 'x' | 'instagram' | 'facebook' | 'threads' | 'blog';
+export type ChannelId = 'linkedin' | 'x' | 'instagram' | 'facebook' | 'threads' | 'blog' | 'reddit';
 export type PostType = 'single' | 'thread' | 'caption';
 
 export type ValidationError = {
@@ -31,6 +31,11 @@ export type ContentDraft = {
 	visual_brief?: string;
 	thread_group_id?: string;
 	thread_index?: number;
+	reddit?: {
+		subreddit?: string;
+		linkUrl?: string;
+		flairText?: string;
+	};
 };
 
 /**

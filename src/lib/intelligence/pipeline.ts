@@ -15,6 +15,8 @@ import type { ContentBrief, ContentTheme, GenerationIntent, GenerationResult, In
 import { CHANNELS } from '@/lib/channels/registry';
 import type { ChannelId } from '@/lib/channels/types';
 import { validateMemoryChannelConstraints } from '@/lib/channels/validateMemory';
+import { isRedditPipelineChannel } from '@/lib/channels/reddit';
+import { redditDraftFromGenerated, redditWriterMessages, type RedditGeneratedDraft } from './redditGeneration';
 
 export type IntelligenceCompletion<T> = {
 	data: T;
@@ -245,26 +247,38 @@ export async function runContentIntelligencePipeline(
 		channel: intent.channel,
 	});
 
-	const generatedCompletion = await ai.completeJson<{ draft?: string; hook?: string; argument?: string; cta?: string; topic?: string }>(
-		'WRITING',
-		writerMessages(prompt, briefPayload, intent.userIntent, intent.channel),
-		'intelligence_draft',
-		intent.userId,
-	);
-	usage.push(usageFrom('WRITING', 'intelligence_draft', generatedCompletion));
+	const redditChannel = isRedditPipelineChannel(intent.channel);
+	const generatedCompletion = redditChannel
+		? await ai.completeJson<RedditGeneratedDraft>(
+				'WRITING',
+				redditWriterMessages(prompt, briefPayload, intent.userIntent),
+				'intelligence_draft_reddit',
+				intent.userId,
+			)
+		: await ai.completeJson<{ draft?: string; hook?: string; argument?: string; cta?: string; topic?: string }>(
+				'WRITING',
+				writerMessages(prompt, briefPayload, intent.userIntent, intent.channel),
+				'intelligence_draft',
+				intent.userId,
+			);
+	usage.push(usageFrom('WRITING', redditChannel ? 'intelligence_draft_reddit' : 'intelligence_draft', generatedCompletion));
 	const generated = generatedCompletion.data;
 
-	const aiDraft = (generated.draft || '').trim();
-	if (!aiDraft) {
+	const redditParsed = redditChannel ? redditDraftFromGenerated(generated as RedditGeneratedDraft) : null;
+	const aiDraft = redditParsed ? redditParsed.body : ((generated as { draft?: string }).draft || '').trim();
+	if (!aiDraft && !redditParsed?.metadata.reddit.linkUrl) {
 		throw new Error('Writing model returned an empty draft');
 	}
 
-	let draftForReview = aiDraft;
+	let draftForReview =
+		aiDraft ||
+		(redditParsed?.metadata.reddit.linkUrl ? `[Link post] ${redditParsed.metadata.reddit.linkUrl}` : '');
 	const channelConstraint = validateMemoryChannelConstraints({
 		channel: intent.channel,
-		contentType: intent.contentType || 'founder_post',
+		contentType: intent.contentType || (redditChannel ? 'reddit_post' : 'founder_post'),
 		body: draftForReview,
-		hook: generated.hook || '',
+		hook: redditParsed?.title ?? (generated as { hook?: string }).hook ?? '',
+		metadata: redditParsed ? { reddit: redditParsed.metadata.reddit } : undefined,
 	});
 	if (!channelConstraint.ok) {
 		const reason = channelConstraint.errors.map((error) => error.message).join(' ');
@@ -335,17 +349,18 @@ export async function runContentIntelligencePipeline(
 		strategyId: strategy?.id,
 		briefId: storedBrief.id,
 		channel: intent.channel,
-		contentType: intent.contentType || 'founder_post',
+		contentType: intent.contentType || (redditChannel ? 'reddit_post' : 'founder_post'),
 		contentPillar: briefPayload.contentPillar,
-		topic: briefPayload.topic,
+		topic: redditParsed?.topic ?? briefPayload.topic,
 		angle: briefPayload.angle,
-		hook: generated.hook || review.improvedDraft.split('\n')[0],
-		argument: generated.argument || briefPayload.centralArgument,
-		cta: generated.cta || briefPayload.cta,
+		hook: redditParsed?.title ?? (generated as { hook?: string }).hook ?? review.improvedDraft.split('\n')[0],
+		argument: (generated as { argument?: string }).argument || briefPayload.centralArgument,
+		cta: (generated as { cta?: string }).cta || briefPayload.cta,
 		format: intent.contentType,
 		body: review.improvedDraft,
 		publicationStatus: 'draft',
 		sourceIdea: intent.userIntent,
+		...(redditParsed ? { metadata: redditParsed.metadata } : {}),
 	});
 
 	const draftRow = await store.saveDraft({

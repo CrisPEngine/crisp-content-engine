@@ -26,6 +26,17 @@ describe('validateMemoryChannelConstraints', () => {
 		expect(result.ok).toBe(true);
 	});
 
+	it('blocks Reddit titles over 300 characters via memory metadata', () => {
+		const result = validateMemoryChannelConstraints({
+			channel: 'reddit',
+			contentType: 'reddit_post',
+			body: 'Discussion body',
+			hook: 'x'.repeat(301),
+			metadata: { reddit: { subreddit: 'saas' } },
+		});
+		expect(result.ok).toBe(false);
+	});
+
 	it('throws AgentError with a clear message when asserting', () => {
 		expect(() =>
 			assertMemoryChannelConstraints({

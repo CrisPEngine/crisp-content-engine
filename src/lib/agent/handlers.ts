@@ -11,6 +11,8 @@ import { validateBrandBrain, validateFolianBrand } from '@/lib/intelligence/foli
 import type { BrandBrain, BrandStrategy, ContentBrief, ContentMemoryRecord, ContentTheme, GenerationResult } from '@/lib/intelligence/types';
 import { channelCatalog, resolveChannel } from './channels';
 import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
+import { assertRedditManualPublishOnly } from '@/lib/channels/redditPolicy';
+import { isRedditPipelineChannel, redditFieldsFromMemory } from '@/lib/channels/reddit';
 import { loadContentPublishDiagnostics } from '@/lib/publish/contentPublishDiagnostics';
 import { getAgentStore } from './controlStore';
 import { AgentError } from './errors';
@@ -114,6 +116,10 @@ function publicContent(memory: ContentMemoryRecord, publish?: Awaited<ReturnType
 		externalPostId: memory.externalPostId,
 		externalUrl: memory.externalUrl,
 		createdAt: memory.createdAt,
+		metadata: memory.metadata,
+		...(isRedditPipelineChannel(String(memory.channel))
+			? { reddit: redditFieldsFromMemory(memory) }
+			: {}),
 		...(publish ? { publish } : {}),
 	};
 }
@@ -260,6 +266,7 @@ function generationPayload(result: GenerationResult, started: number) {
 
 function contentTypeFor(channel: string): string {
 	if (channel === 'blog') return 'article';
+	if (channel === 'reddit') return 'reddit_post';
 	if (channel === 'x' || channel === 'threads') return 'thread';
 	if (channel === 'newsletter') return 'newsletter';
 	return 'founder_post';
@@ -965,6 +972,7 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			assertMemoryChannelConstraints(memory);
 			const publishAt = inputString(input, 'publishAt');
 			const requestedAction = inputString(input, 'requestedAction') === 'approve_and_schedule' ? 'approve_and_schedule' : 'approve_content';
+			assertRedditManualPublishOnly({ channel: String(memory.channel), requestedAction, publishAt });
 			const next = await getIntelligenceStore().saveMemory(ctx.credential.ownerUserId, {
 				...memory,
 				publicationStatus: 'review',
@@ -1043,6 +1051,14 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			if (name !== 'cce_unschedule_content') {
 				await assertScheduleMatchesApproval(memory);
 				assertMemoryChannelConstraints(memory);
+				if (isRedditPipelineChannel(String(memory.channel))) {
+					throw new AgentError(
+						'content_channel_constraint',
+						'Reddit is draft-only and cannot be scheduled. Approve for manual posting instead.',
+						400,
+						{ channel: 'reddit', publishMode: 'draft_only', manualPublish: true },
+					);
+				}
 			}
 			const publishAt = name === 'cce_unschedule_content' ? undefined : inputString(input, 'publishAt');
 			const pendingMemory = {
