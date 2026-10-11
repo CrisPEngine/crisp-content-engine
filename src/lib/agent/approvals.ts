@@ -11,6 +11,8 @@ import { fingerprintReplyDraft } from '@/lib/threads/replyFingerprint';
 import { assertThreadsReplyAllowed } from '@/lib/threads/replyLimits';
 import { publishApprovedThreadsReply } from '@/lib/threads/publishReply';
 import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
+import { assertRedditManualPublishOnly } from '@/lib/channels/redditPolicy';
+import { isRedditPipelineChannel, redditFieldsFromMemory } from '@/lib/channels/reddit';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -60,14 +62,32 @@ export async function createApprovalRequest(input: {
 		if (!memory || memory.brandBrainId !== input.brandId) throw new AgentError('brand_not_accessible', 'This agent cannot access that content.', 403);
 		if (memory.publicationStatus === 'published') throw new AgentError('content_already_published', 'Published content cannot be approved again.', 409);
 		assertMemoryChannelConstraints(memory);
+		assertRedditManualPublishOnly({
+			channel: String(memory.channel),
+			requestedAction: input.requestedAction,
+			publishAt: input.publishAt,
+		});
 		contentHash = fingerprintContent(memory);
 		summary = memory.topic || memory.hook || 'Content approval';
+		const reddit = redditFieldsFromMemory(memory);
 		preview = {
 			channel: memory.channel,
 			topic: memory.topic ?? null,
+			title: memory.hook ?? null,
 			body: (memory.body ?? '').slice(0, 1200),
 			status: memory.publicationStatus,
 			publishAt: input.publishAt ?? null,
+			...(reddit
+				? {
+						reddit: {
+							subreddit: reddit.subreddit,
+							title: reddit.title,
+							body: reddit.body,
+							linkUrl: reddit.linkUrl ?? null,
+							flairText: reddit.flairText ?? null,
+						},
+					}
+				: {}),
 		};
 	} else {
 		const article = await articles.getArticle(input.credential.ownerUserId, input.targetId);
@@ -325,6 +345,12 @@ async function applyHumanApproval(request: ApprovalRequest, userId: string): Pro
 		if (!memory) throw new AgentError('not_found', 'The content for this approval no longer exists.', 404);
 		const schedule = request.requestedAction === 'approve_and_schedule';
 		assertMemoryChannelConstraints(memory);
+		assertRedditManualPublishOnly({
+			channel: String(memory.channel),
+			requestedAction: request.requestedAction,
+			publishAt,
+		});
+		const redditManual = isRedditPipelineChannel(String(memory.channel));
 		const updatedMemory = {
 			...memory,
 			publicationStatus: schedule ? 'scheduled' : 'approved',
@@ -337,6 +363,13 @@ async function applyHumanApproval(request: ApprovalRequest, userId: string): Pro
 				approvedAt,
 				authorizationMethod: 'cce_authenticated_page',
 				requestingCredentialId: request.credentialId,
+				...(redditManual
+					? {
+							manualPostReady: true,
+							publishMode: 'draft_only',
+							manualPublish: true,
+						}
+					: {}),
 			},
 		};
 		if (schedule && isAgentThreadsMemory(memory)) {

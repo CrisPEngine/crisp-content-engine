@@ -98,6 +98,18 @@ export const CHANNEL_MEDIA: Record<string, ChannelMediaSpec> = {
 		implementation: 'CCE_NATIVE',
 		notes: 'A long-form article does not require a hero image. Planning can recommend one purposeful image. CMS adapters are not all implemented.',
 	},
+	REDDIT: {
+		textOnlySupported: true,
+		mediaRequired: false,
+		supportedTypes: [],
+		maxImages: 0,
+		aspectRatios: [],
+		video: 'NOT_IMPLEMENTED',
+		carousel: 'NOT_IMPLEMENTED',
+		altText: false,
+		implementation: 'NOT_IMPLEMENTED',
+		notes: 'Draft-only. Text/markdown self-posts and optional link URLs; images are not generated or uploaded by CCE.',
+	},
 	NEWSLETTER: {
 		textOnlySupported: true,
 		mediaRequired: false,
@@ -134,5 +146,6 @@ export function mediaSpecFor(channel: string | undefined): ChannelMediaSpec {
 	if (legacy === 'facebook') return CHANNEL_MEDIA.FACEBOOK_PAGE;
 	if (legacy === 'threads') return CHANNEL_MEDIA.THREADS;
 	if (legacy === 'blog' || legacy === 'article') return CHANNEL_MEDIA.BLOG;
+	if (legacy === 'reddit') return CHANNEL_MEDIA.REDDIT;
 	return CHANNEL_MEDIA.CUSTOM;
 }

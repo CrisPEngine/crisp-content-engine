@@ -189,3 +189,86 @@ export function validateBlogPost(draft: ContentDraft): ValidationResult {
 	// Could add word count checks, structure validation, etc. in future
 	return { ok: true };
 }
+
+const SUBREDDIT_NAME = /^[A-Za-z0-9_]{2,21}$/;
+
+/**
+ * Validate Reddit self-post draft (title in hook, body markdown in post_content).
+ */
+export function validateRedditPost(draft: ContentDraft): ValidationResult {
+	const errors: ValidationError[] = [];
+	const title = (draft.hook || '').trim();
+	const body = (draft.post_content || '').trim();
+	const subreddit = (draft.reddit?.subreddit || '').trim().replace(/^r\//i, '');
+
+	if (!subreddit) {
+		errors.push({
+			code: 'REDDIT_SUBREDDIT_REQUIRED',
+			message: 'Target subreddit is required (without the r/ prefix).',
+			severity: 'block',
+		});
+	} else if (!SUBREDDIT_NAME.test(subreddit)) {
+		errors.push({
+			code: 'REDDIT_SUBREDDIT_INVALID',
+			message: 'Subreddit name must be 2–21 characters: letters, numbers, or underscores.',
+			severity: 'block',
+		});
+	}
+
+	if (!title) {
+		errors.push({
+			code: 'REDDIT_TITLE_REQUIRED',
+			message: 'Reddit post title is required.',
+			severity: 'block',
+		});
+	} else if (title.length > 300) {
+		errors.push({
+			code: 'REDDIT_TITLE_TOO_LONG',
+			message: `Reddit title is ${title.length} characters (max 300).`,
+			severity: 'block',
+			canAutoRewrite: true,
+		});
+	}
+
+	if (!body && !draft.reddit?.linkUrl?.trim()) {
+		errors.push({
+			code: 'REDDIT_BODY_OR_LINK_REQUIRED',
+			message: 'Provide markdown body text or a link post URL.',
+			severity: 'block',
+		});
+	}
+
+	const linkUrl = draft.reddit?.linkUrl?.trim();
+	if (linkUrl) {
+		try {
+			const parsed = new URL(linkUrl);
+			if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+				errors.push({
+					code: 'REDDIT_LINK_INVALID',
+					message: 'Link post URL must be http or https.',
+					severity: 'block',
+				});
+			}
+		} catch {
+			errors.push({
+				code: 'REDDIT_LINK_INVALID',
+				message: 'Link post URL is not a valid URL.',
+				severity: 'block',
+			});
+		}
+	}
+
+	if (errors.some((error) => error.severity === 'block')) {
+		return { ok: false, errors };
+	}
+
+	if (body.length > 40_000) {
+		errors.push({
+			code: 'REDDIT_BODY_TOO_LONG',
+			message: `Reddit body is ${body.length} characters (max 40,000).`,
+			severity: 'warn',
+		});
+	}
+
+	return { ok: true };
+}

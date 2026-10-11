@@ -11,6 +11,7 @@ export const CHANNEL_IDS = [
 	'FACEBOOK_PAGE',
 	'BLOG',
 	'NEWSLETTER',
+	'REDDIT',
 	'CUSTOM',
 ] as const;
 
@@ -37,6 +38,8 @@ export type ChannelCapability =
 	| 'analytics'
 	| 'paid_media';
 
+export type ChannelPublishMode = 'platform' | 'draft_only';
+
 export type ChannelDefinition = {
 	id: ChannelId;
 	label: string;
@@ -45,6 +48,10 @@ export type ChannelDefinition = {
 	adaptation: string;
 	capabilities: Record<ChannelCapability, CapabilityState>;
 	notes: string;
+	/** When draft_only, CCE never queues API publish jobs for this channel. */
+	publishMode?: ChannelPublishMode;
+	/** Owner posts outside CCE; use cce_record_external_publish after posting. */
+	manualPublish?: boolean;
 };
 
 const socialGap = (overrides: Partial<Record<ChannelCapability, CapabilityState>> = {}): Record<ChannelCapability, CapabilityState> => ({
@@ -163,6 +170,23 @@ export const CHANNEL_REGISTRY: ChannelDefinition[] = [
 		notes: 'ArticlePublisher can target a webhook destination. Framer, Webflow, WordPress, Payload, and a Folian CMS adapter are not implemented. The action contract does not need to change when they are added.',
 	},
 	{
+		id: 'REDDIT',
+		label: 'Reddit',
+		family: 'reddit',
+		pipelineChannel: 'reddit',
+		adaptation:
+			'Community-first Reddit post: lead with value in the title, markdown self-post body, low self-promotion (~10% norm), no marketing tone. When mentioning the founder’s own product, disclose that clearly and respect subreddit rules.',
+		capabilities: socialGap({
+			schedule: 'NOT_IMPLEMENTED',
+			publish: 'NOT_IMPLEMENTED',
+			media: 'NOT_IMPLEMENTED',
+		}),
+		publishMode: 'draft_only',
+		manualPublish: true,
+		notes:
+			'Draft-only until Reddit API access is approved. Humans post via reddit.com submit; then call cce_record_external_publish with the post URL. No OAuth or publish jobs.',
+	},
+	{
 		id: 'NEWSLETTER',
 		label: 'Newsletter',
 		family: 'newsletter',
@@ -203,6 +227,8 @@ export function channelCatalog() {
 		family: channel.family,
 		adaptation: channel.adaptation,
 		capabilities: channel.capabilities,
+		publishMode: channel.publishMode ?? 'platform',
+		manualPublish: channel.manualPublish ?? false,
 		notes: channel.notes,
 		media: mediaSpecFor(channel.id),
 	}));

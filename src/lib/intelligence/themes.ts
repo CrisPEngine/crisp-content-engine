@@ -8,6 +8,11 @@ const CHANNEL_ADAPTATIONS: Array<{ channel: ThemePlanPiece['channel']; contentTy
 	{ channel: 'x', contentType: 'short_post', how: 'Single sharp observation or line of argument; no thread padding.' },
 	{ channel: 'x', contentType: 'thread', how: 'Sequence the argument; each post must stand alone while advancing the theme.' },
 	{ channel: 'newsletter', contentType: 'newsletter', how: 'Direct-to-audience synthesis plus a next-step that is not a social CTA clone.' },
+	{
+		channel: 'reddit',
+		contentType: 'reddit_post',
+		how: 'Community value first: specific title, markdown discussion body, minimal self-promotion; disclose founder/product ties honestly.',
+	},
 	{ channel: 'linkedin', contentType: 'follow_up', how: 'Respond to an implied objection or unanswered question from the core idea.' },
 ];
 

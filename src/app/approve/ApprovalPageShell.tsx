@@ -5,6 +5,7 @@ import { ApprovalDestinationLine } from './[token]/ApprovalDestinationLine';
 import { ApprovalInboxNav, ApprovalReviewNextButton } from './[token]/ApprovalInboxNav';
 import type { ApprovalPageModel } from '@/lib/agent/approvalPageModel';
 import type { ApprovalUiMode } from './[token]/approvalFeedback';
+import { ApprovalRedditPreview } from './[token]/ApprovalRedditPreview';
 
 type DecideAction = (formData: FormData) => void | Promise<void>;
 
@@ -31,6 +32,7 @@ export function ApprovalPageShell({
 		inbox,
 		publishError,
 		publishedPermalink,
+		redditPost,
 	} = model;
 	const uiMode: ApprovalUiMode = threadsReply ? 'threads_reply' : schedule ? 'schedule' : 'content';
 	const approvedScheduleSuccess = query.done === 'approve' && schedule;
@@ -78,10 +80,13 @@ export function ApprovalPageShell({
 			{!threadsReply ? (
 				<ApprovalDestinationLine destination={destination} hideWhenScheduledSuccess={hideDestinationWarning} />
 			) : null}
-			<article className="card whitespace-pre-wrap p-4 text-base leading-relaxed">
-				{threadsReply ? <p className="mb-2 text-sm font-medium text-text-soft">Your reply</p> : null}
-				{body}
-			</article>
+			{redditPost ? <ApprovalRedditPreview reddit={redditPost} /> : null}
+			{!redditPost ? (
+				<article className="card whitespace-pre-wrap p-4 text-base leading-relaxed">
+					{threadsReply ? <p className="mb-2 text-sm font-medium text-text-soft">Your reply</p> : null}
+					{body}
+				</article>
+			) : null}
 			{publishedPermalink ? (
 				<p className="text-sm">
 					<a className="text-primary underline" href={publishedPermalink} target="_blank" rel="noreferrer">
@@ -93,9 +98,11 @@ export function ApprovalPageShell({
 			<p className="text-sm">
 				{threadsReply
 					? 'Approve to post this exact reply via the Threads API. Agents cannot post without your approval.'
-					: schedule
-						? `Approve and schedule for ${String(request.preview.publishAt ?? '')}`
-						: 'Approve this draft only. It will not be scheduled or published.'}
+					: redditPost
+						? 'Approve to mark this ready for manual Reddit posting. CCE will not publish or schedule.'
+						: schedule
+							? `Approve and schedule for ${String(request.preview.publishAt ?? '')}`
+							: 'Approve this draft only. It will not be scheduled or published.'}
 			</p>
 			{request.status === 'PENDING' && !query.done ? (
 				<ApprovalDecisionForm

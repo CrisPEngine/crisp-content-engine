@@ -7,6 +7,7 @@ import {
 } from '@/lib/publish/agentMetaJob';
 import { agentThreadsJobIsArmed, isAgentThreadsMemory } from '@/lib/publish/agentThreadsJob';
 import type { ContentMemoryRecord } from '@/lib/intelligence/types';
+import { isRedditPipelineChannel } from '@/lib/channels/reddit';
 
 export type ApprovalDestinationView = {
 	ready: boolean;
@@ -32,6 +33,17 @@ export async function resolveApprovalDestinationView(input: {
 }): Promise<ApprovalDestinationView> {
 	const channel = input.channel ?? input.memory?.channel ?? '';
 	const platform = platformLabel(String(channel));
+	if (isRedditPipelineChannel(String(channel))) {
+		return {
+			ready: true,
+			label: 'Reddit (manual)',
+			handle: null,
+			message: input.schedule
+				? 'Reddit cannot be scheduled in CCE. Approve this draft, post on reddit.com, then record the post URL.'
+				: 'After approval, copy the title and body and submit on Reddit manually. CCE will not publish for you.',
+			publishQueued: false,
+		};
+	}
 	const publishChannel = channelFromPlatform(String(channel));
 
 	if (!publishChannel) {

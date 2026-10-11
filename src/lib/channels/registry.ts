@@ -11,6 +11,7 @@ import { XChannel } from './x';
 import { InstagramChannel, FacebookChannel } from './meta';
 import { ThreadsChannel } from './threads';
 import { BlogChannel } from './blog';
+import { RedditChannel } from './reddit';
 
 /**
  * All channel definitions indexed by ID
@@ -22,6 +23,7 @@ export const CHANNELS: Record<ChannelId, ChannelDefinition> = {
 	facebook: FacebookChannel,
 	threads: ThreadsChannel,
 	blog: BlogChannel,
+	reddit: RedditChannel,
 };
 
 /**
@@ -100,6 +102,13 @@ export function canScheduleOrPublish(platform: string, postType: string, charCou
 		return {
 			allowed: false,
 			reason: 'Blog posts are export-only. Copy and publish to your blog manually.',
+		};
+	}
+
+	if (platform === 'Reddit' || platform.toLowerCase() === 'reddit') {
+		return {
+			allowed: false,
+			reason: 'Reddit is draft-only in CCE. Approve, then post manually on Reddit and record the URL.',
 		};
 	}
 

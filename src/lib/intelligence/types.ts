@@ -2,6 +2,7 @@ export type Channel =
 	| 'linkedin'
 	| 'x'
 	| 'blog'
+	| 'reddit'
 	| 'newsletter'
 	| 'instagram'
 	| 'facebook'
@@ -15,6 +16,7 @@ export type ContentType =
 	| 'newsletter'
 	| 'short_post'
 	| 'follow_up'
+	| 'reddit_post'
 	| 'other';
 
 export type FunnelStage = 'awareness' | 'consideration' | 'decision' | 'retention' | 'advocacy';

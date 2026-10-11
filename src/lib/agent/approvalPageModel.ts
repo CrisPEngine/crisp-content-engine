@@ -5,6 +5,7 @@ import { resolveApprovalDestinationView } from './approvalDestination';
 import { pendingApprovalCounts } from './approvalInbox';
 import { isAgentMetaMemory, repairAgentMetaPublishJobIfMissing } from '@/lib/publish/agentMetaJob';
 import type { ApprovalRequest } from './types';
+import { isRedditPipelineChannel, redditFieldsFromMemory, type RedditPostFields } from '@/lib/channels/reddit';
 
 export type ApprovalPageModel = {
 	request: ApprovalRequest;
@@ -22,6 +23,7 @@ export type ApprovalPageModel = {
 	inbox: ReturnType<typeof pendingApprovalCounts>;
 	publishError: string | null;
 	publishedPermalink: string | null;
+	redditPost: RedditPostFields | null;
 };
 
 export async function loadApprovalPageModel(input: {
@@ -99,6 +101,8 @@ export async function loadApprovalPageModel(input: {
 
 	const allPending = await getAgentStore().listApprovalRequests(userId, 'PENDING');
 	const inbox = pendingApprovalCounts(allPending, request.id);
+	const redditPost =
+		memory && isRedditPipelineChannel(String(memory.channel)) ? redditFieldsFromMemory(memory) : null;
 
 	return {
 		request,
@@ -112,5 +116,6 @@ export async function loadApprovalPageModel(input: {
 		inbox,
 		publishError,
 		publishedPermalink,
+		redditPost,
 	};
 }
