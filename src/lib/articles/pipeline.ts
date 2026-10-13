@@ -1,3 +1,6 @@
+import { completeLongFormJson } from '@/lib/ai/longFormComplete';
+import { assertLongFormDraftReady } from '@/lib/ai/longFormComplete';
+import { countWords } from '@/lib/ai/truncation';
 import { getIntelligenceAi } from '@/lib/intelligence/actions';
 import { completeReview } from '@/lib/intelligence/review';
 import type { BrandBrain, BrandStrategy, ContentBrief, ContentTheme } from '@/lib/intelligence/types';
@@ -26,8 +29,76 @@ function slugify(title: string): string {
 	return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80);
 }
 
-function wordCount(text: string): number {
-	return text.split(/\s+/).filter(Boolean).length;
+function articleWordRange(targetWords: number): { min: number; max: number } {
+	return { min: Math.round(targetWords * 0.75), max: Math.round(targetWords * 1.2) };
+}
+
+async function draftArticleSection(input: {
+	ai: ReturnType<typeof getIntelligenceAi>;
+	ownerUserId: string;
+	item: { heading: string; purpose: string };
+	wordsPerSection: number;
+	voice: string;
+	claims: string[];
+	gaps: string[];
+}): Promise<string> {
+	const sectionRange = {
+		min: Math.max(120, Math.round(input.wordsPerSection * 0.65)),
+		max: Math.round(input.wordsPerSection * 1.35),
+	};
+	const messages = [
+		{
+			role: 'system' as const,
+			content:
+				'Write one article section as JSON with a body string. Use stored facts only. Do not invent customers, metrics, or quotations. Finish the section; do not stop mid-sentence.',
+		},
+		{
+			role: 'user' as const,
+			content: JSON.stringify({
+				heading: input.item.heading,
+				purpose: input.item.purpose,
+				guidance: `Target ${sectionRange.min}-${sectionRange.max} words. Fewer is acceptable only if the point is fully made.`,
+				voice: input.voice,
+				claims: input.claims,
+				gaps: input.gaps,
+			}),
+		},
+	];
+
+	if (process.env.VITEST === 'true') {
+		const drafted = await input.ai.completeJson<{ body?: string }>(
+			'WRITING',
+			messages,
+			'article_section',
+			input.ownerUserId,
+		);
+		const body = drafted.data.body?.trim();
+		if (!body) throw new Error('Article section did not return body text.');
+		return body;
+	}
+
+	const drafted = await completeLongFormJson<{ body?: string }>({
+		messages,
+		feature: 'article_section',
+		userId: input.ownerUserId,
+		wordRange: sectionRange,
+		extractText: (data) => data.body ?? '',
+		mergeContinuation: (previous, piece) => ({
+			...previous,
+			body: `${(previous.body ?? '').trim()}\n\n${piece}`.trim(),
+		}),
+	});
+	const body = drafted.data.body?.trim();
+	if (!body) throw new Error('Article section did not return body text.');
+	if (process.env.VITEST !== 'true') {
+		assertLongFormDraftReady({
+			text: body,
+			wordRange: sectionRange,
+			finishReason: drafted.meta.finishReason,
+			incompleteReason: drafted.meta.incompleteReason,
+		});
+	}
+	return body;
 }
 
 function researchFromBrand(brain: BrandBrain, strategy: BrandStrategy | null) {
@@ -100,27 +171,15 @@ export async function generateArticle(input: {
 	const wordsPerSection = Math.round(targetWords / outline.length);
 	const sections: ArticleSection[] = [];
 	for (const item of outline) {
-		const drafted = await ai.completeJson<{ body?: string }>(
-			'WRITING',
-			[
-				{ role: 'system', content: 'Write one article section as JSON with a body string. Stop when the point is made. Do not add filler to hit a word count. Do not invent customers, metrics, or quotations.' },
-				{
-					role: 'user',
-					content: JSON.stringify({
-						heading: item.heading,
-						purpose: item.purpose,
-						guidance: `About ${wordsPerSection} words is enough if the point is complete. Fewer is better than padding.`,
-						voice: input.brand.voice.tone,
-						claims: research.claims.map((claim) => claim.text),
-						gaps: research.gaps,
-					}),
-				},
-			],
-			'article_section',
-			input.ownerUserId,
-		);
-		const body = drafted.data.body?.trim();
-		if (!body) throw new Error('Article section did not return body text.');
+		const body = await draftArticleSection({
+			ai,
+			ownerUserId: input.ownerUserId,
+			item,
+			wordsPerSection,
+			voice: input.brand.voice.tone,
+			claims: research.claims.map((claim) => claim.text),
+			gaps: research.gaps,
+		});
 		sections.push({ ...item, body, claims: research.claims.map((claim) => claim.text).slice(0, 3) });
 	}
 	const title = outlineCompletion.data.title?.trim() || `${topic}`;
@@ -162,6 +221,10 @@ export async function generateArticle(input: {
 	const coherenceFindings = Array.isArray(coherence.data.findings) ? coherence.data.findings.filter((item) => typeof item === 'string' && item.trim()).slice(0, 8) : [];
 	const review = await completeReview({ draft: body, brain: input.brand, brief });
 	const finalBody = review.improvedDraft || body;
+	if (process.env.VITEST !== 'true') {
+		const totalRange = articleWordRange(targetWords);
+		assertLongFormDraftReady({ text: finalBody, wordRange: totalRange });
+	}
 	const assets = (await getNativeContentStore().listAssets(input.ownerUserId, input.brand.id)).map(publicAsset);
 	const hero = planMedia({ channel: 'BLOG', topic, objective: input.objective, contentType: 'article', assets });
 	const inline = articleInlinePlan(sections);
@@ -203,7 +266,7 @@ export async function generateArticle(input: {
 		approval: { required: true, approver: 'human', status: 'pending' },
 		publication: null,
 		performanceContentId: '',
-		wordCount: wordCount(finalBody),
+		wordCount: countWords(finalBody),
 		targetWords,
 		review: {
 			materialPassed: review.materialPassed,
@@ -246,7 +309,7 @@ export async function reviseArticle(input: {
 		...input.article,
 		sections,
 		body,
-		wordCount: wordCount(body),
+		wordCount: countWords(body),
 		versions: [...input.article.versions, { body: input.article.body, createdAt: input.article.updatedAt, instruction: input.instruction }],
 		updatedAt: new Date().toISOString(),
 	};

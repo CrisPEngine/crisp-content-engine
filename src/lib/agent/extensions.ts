@@ -1,6 +1,11 @@
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { AgentError } from './errors';
 import type { AgentContext } from './handlers';
+import {
+	dispatchArticleGenerationWorker,
+	enqueueArticleGenerationJob,
+	publicArticleGenerationJob,
+} from '@/lib/articles/generationJob';
 import { generateArticle, reviseArticle } from '@/lib/articles/pipeline';
 import { mediaSpecFor } from '@/lib/media/channelMedia';
 import { generateAssetFromProposal, imageProviderStatus, publicAsset } from '@/lib/media/images';
@@ -68,7 +73,27 @@ async function mediaPlanFor(ctx: AgentContext, input: Record<string, unknown>): 
 }
 
 export async function dispatchContentExtensions(name: string, ctx: AgentContext, input: Record<string, unknown>): Promise<unknown | undefined> {
-	if (!name.startsWith('cce_') || !['cce_get_assets', 'cce_get_asset', 'cce_find_assets', 'cce_detach_asset', 'cce_propose_media', 'cce_get_media_plan', 'cce_generate_image', 'cce_create_article_brief', 'cce_generate_article', 'cce_get_article', 'cce_get_article_status', 'cce_request_article_revision', 'cce_submit_article_for_approval', 'cce_get_article_media_plan', 'cce_publish_article'].includes(name)) {
+	if (
+		!name.startsWith('cce_') ||
+		![
+			'cce_get_assets',
+			'cce_get_asset',
+			'cce_find_assets',
+			'cce_detach_asset',
+			'cce_propose_media',
+			'cce_get_media_plan',
+			'cce_generate_image',
+			'cce_create_article_brief',
+			'cce_generate_article',
+			'cce_get_article_generation_job',
+			'cce_get_article',
+			'cce_get_article_status',
+			'cce_request_article_revision',
+			'cce_submit_article_for_approval',
+			'cce_get_article_media_plan',
+			'cce_publish_article',
+		].includes(name)
+	) {
 		return undefined;
 	}
 	const store = getNativeContentStore();
@@ -186,8 +211,6 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 		}
 		case 'cce_generate_article': {
 			const brain = await brand(ctx, text(input, 'brandId'));
-			const strategy = await getIntelligenceStore().getStrategyForBrand(ctx.credential.ownerUserId, brain.id);
-			const themes = await getIntelligenceStore().listThemes(ctx.credential.ownerUserId, brain.id);
 			const { nativeIntelligenceBlock } = await import('@/lib/featureFlags');
 			const block = nativeIntelligenceBlock({ nativeIntelligenceEnabled: brain.guardrails.nativeIntelligenceEnabled });
 			if (block === 'native_intelligence_globally_disabled') {
@@ -196,17 +219,60 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 			if (block === 'native_intelligence_brand_disabled') {
 				throw new AgentError(block, 'Native intelligence is turned off for this brand.', 403);
 			}
-			const article = await generateArticle({
+			const sync = input.sync === true || input.wait === true;
+			if (sync) {
+				const strategy = await getIntelligenceStore().getStrategyForBrand(ctx.credential.ownerUserId, brain.id);
+				const themes = await getIntelligenceStore().listThemes(ctx.credential.ownerUserId, brain.id);
+				const article = await generateArticle({
+					ownerUserId: ctx.credential.ownerUserId,
+					brand: brain,
+					strategy,
+					themes,
+					objective: text(input, 'objective'),
+					topic: text(input, 'topic'),
+					targetWords: typeof input.targetWords === 'number' ? input.targetWords : undefined,
+					instruction: text(input, 'instruction'),
+				});
+				return { article: publicArticle(article), published: false, async: false };
+			}
+			const job = await enqueueArticleGenerationJob({
 				ownerUserId: ctx.credential.ownerUserId,
-				brand: brain,
-				strategy,
-				themes,
-				objective: text(input, 'objective'),
-				topic: text(input, 'topic'),
-				targetWords: typeof input.targetWords === 'number' ? input.targetWords : undefined,
-				instruction: text(input, 'instruction'),
+				brandBrainId: brain.id,
+				payload: {
+					brandId: brain.id,
+					objective: text(input, 'objective'),
+					topic: text(input, 'topic'),
+					targetWords: typeof input.targetWords === 'number' ? input.targetWords : undefined,
+					instruction: text(input, 'instruction'),
+					credentialId: ctx.credential.id,
+				},
 			});
-			return { article: publicArticle(article), published: false };
+			await dispatchArticleGenerationWorker(job.id);
+			return {
+				async: true,
+				jobId: job.id,
+				status: job.status,
+				articleId: null,
+				pollWith: 'cce_get_article_generation_job',
+				published: false,
+			};
+		}
+		case 'cce_get_article_generation_job': {
+			const jobId = text(input, 'jobId');
+			if (!jobId) throw new AgentError('invalid_input', 'jobId is required.', 400);
+			const job = await getIntelligenceStore().getJobById(jobId);
+			if (!job || job.userId !== ctx.credential.ownerUserId) {
+				throw new AgentError('not_found', 'Article generation job not found.', 404);
+			}
+			if (job.brandBrainId && !ctx.credential.allowedBrandIds.includes(job.brandBrainId)) {
+				throw new AgentError('brand_not_accessible', 'This agent cannot access that job.', 403);
+			}
+			const snapshot = publicArticleGenerationJob(job);
+			if (job.status === 'completed' && typeof snapshot.articleId === 'string') {
+				const article = await store.getArticle(ctx.credential.ownerUserId, snapshot.articleId);
+				return { ...snapshot, article: article ? publicArticle(article) : null };
+			}
+			return snapshot;
 		}
 		case 'cce_get_article':
 		case 'cce_get_article_status':

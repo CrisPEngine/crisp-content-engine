@@ -1,11 +1,21 @@
 import { getAgentStore } from './controlStore';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
+import { getNativeContentStore } from '@/lib/media/store';
 import { resolveApprovalPublishImagePreview } from '@/lib/publish/approvalPublishImage';
 import { resolveApprovalDestinationView } from './approvalDestination';
 import { pendingApprovalCounts } from './approvalInbox';
 import { isAgentMetaMemory, repairAgentMetaPublishJobIfMissing } from '@/lib/publish/agentMetaJob';
 import type { ApprovalRequest } from './types';
 import { isRedditPipelineChannel, redditFieldsFromMemory, type RedditPostFields } from '@/lib/channels/reddit';
+
+export function resolveApprovalDisplayBody(input: {
+	previewBody?: unknown;
+	previewExcerpt?: unknown;
+	sourceBody?: string | null;
+}): string {
+	if (input.sourceBody) return input.sourceBody;
+	return String(input.previewBody ?? input.previewExcerpt ?? '');
+}
 
 export type ApprovalPageModel = {
 	request: ApprovalRequest;
@@ -36,7 +46,7 @@ export async function loadApprovalPageModel(input: {
 	const preview = request.preview;
 	const schedule = request.requestedAction === 'approve_and_schedule';
 	const threadsReply = request.targetType === 'reply' || request.requestedAction === 'approve_and_post_reply';
-	const body = String(preview.body ?? preview.excerpt ?? '');
+	let body = resolveApprovalDisplayBody({ previewBody: preview.body, previewExcerpt: preview.excerpt });
 	const replyContext = {
 		originalAuthorHandle:
 			typeof preview.originalAuthorHandle === 'string' ? preview.originalAuthorHandle : null,
@@ -52,6 +62,7 @@ export async function loadApprovalPageModel(input: {
 	let publishImagePreview = null;
 	if (request.targetType === 'content') {
 		memory = await intelligence.getMemory(request.ownerUserId, request.targetId);
+		body = resolveApprovalDisplayBody({ previewBody: preview.body, previewExcerpt: preview.excerpt, sourceBody: memory?.body });
 		if (memory?.publicationStatus === 'scheduled' && isAgentMetaMemory(memory)) {
 			const publishAt =
 				(typeof request.parameters.publishAt === 'string' && request.parameters.publishAt) ||
@@ -78,6 +89,8 @@ export async function loadApprovalPageModel(input: {
 			});
 		}
 	} else {
+		const article = await getNativeContentStore().getArticle(request.ownerUserId, request.targetId);
+		body = resolveApprovalDisplayBody({ previewBody: preview.body, previewExcerpt: preview.excerpt, sourceBody: article?.body });
 		publishImagePreview = await resolveApprovalPublishImagePreview({
 			ownerUserId: request.ownerUserId,
 			targetType: 'article',

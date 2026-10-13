@@ -334,6 +334,18 @@ export function createMemoryIntelligenceStore(): IntelligenceStore {
 			return queued;
 		},
 
+		async getJobById(id) {
+			return jobs.get(id) ?? null;
+		},
+
+		async claimJobById(id) {
+			const row = jobs.get(id);
+			if (!row || (row.status !== 'queued' && row.status !== 'retrying')) return null;
+			row.status = 'processing';
+			row.startedAt = nowIso();
+			return row;
+		},
+
 		async updateJob(id, patch) {
 			const row = jobs.get(id);
 			if (!row) return null;

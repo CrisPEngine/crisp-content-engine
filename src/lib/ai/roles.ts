@@ -19,6 +19,7 @@ export const MODEL_ROLES = [
 	'EXTRACTION',
 	'CLASSIFICATION',
 	'WRITING',
+	'LONG_FORM_WRITING',
 	'STRATEGY',
 	'RESEARCH',
 	'REVIEW',
@@ -81,6 +82,15 @@ const ROLE_DEFAULTS: Record<ModelRole, Omit<ModelRoleConfig, 'role' | 'provider'
 		maxTokens: 4096,
 		timeoutMs: 90_000,
 		description: 'Channel-native drafts',
+	},
+	LONG_FORM_WRITING: {
+		preferred: SOL,
+		fallbacks: [LUNA, ASTRA],
+		reasoningEffort: 'low',
+		temperature: 0.65,
+		maxTokens: 16_384,
+		timeoutMs: 180_000,
+		description: 'Long-form LinkedIn posts and article section drafting',
 	},
 	STRATEGY: {
 		preferred: SOL,

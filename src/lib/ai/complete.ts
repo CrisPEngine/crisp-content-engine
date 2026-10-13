@@ -89,7 +89,9 @@ export function mayFallback(classification: LlmFailureClass): boolean {
 export async function completeWithRole<T>(
 	role: ModelRole,
 	options: CompleteWithRoleOptions,
-): Promise<StructuredJsonResult<T> & { requestId: string; role: ModelRole; fallbackUsed: boolean }> {
+): Promise<
+	StructuredJsonResult<T> & { requestId: string; role: ModelRole; fallbackUsed: boolean }
+> {
 	const config = getRoleConfig(role);
 	const candidates = resolveModelCandidates(role);
 	const requestId = options.requestId || crypto.randomUUID();

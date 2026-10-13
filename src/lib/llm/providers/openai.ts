@@ -8,7 +8,7 @@ type OpenAIErrorBody = { message?: string; type?: string; code?: string };
 
 type OpenAIChatResponse = {
 	model?: string;
-	choices?: Array<{ message?: { content?: string } }>;
+	choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
 	usage?: { prompt_tokens?: number; completion_tokens?: number };
 	error?: OpenAIErrorBody;
 };
@@ -134,9 +134,11 @@ export const openaiProvider: LlmProvider = {
 			});
 		}
 
+		const finishReason = profile.api === 'responses' ? payload.status : payload.choices?.[0]?.finish_reason;
+		const incompleteReason = payload.incomplete_details?.reason ?? null;
 		const content = profile.api === 'responses' ? responseText(payload) : payload.choices?.[0]?.message?.content;
 		if (!content) {
-			const reason = payload.incomplete_details?.reason;
+			const reason = incompleteReason ?? finishReason;
 			throw new LlmError(reason ? `OpenAI returned empty content (${reason})` : 'OpenAI returned empty content', {
 				code: 'llm_empty_response',
 				provider: 'openai',
@@ -157,6 +159,8 @@ export const openaiProvider: LlmProvider = {
 			data: parsed,
 			provider: 'openai',
 			model: payload.model || request.model,
+			finishReason: finishReason ?? null,
+			incompleteReason,
 			rawUsage: {
 				promptTokens: payload.usage?.prompt_tokens ?? payload.usage?.input_tokens,
 				completionTokens: payload.usage?.completion_tokens ?? payload.usage?.output_tokens,
