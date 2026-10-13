@@ -176,7 +176,7 @@ export async function generateArticle(input: {
 			ownerUserId: input.ownerUserId,
 			item,
 			wordsPerSection,
-			voice: input.brand.voice.tone,
+			voice: input.brand.voice.tone ?? '',
 			claims: research.claims.map((claim) => claim.text),
 			gaps: research.gaps,
 		});
