@@ -3,6 +3,8 @@ import { executeFromAuthorization } from '@/lib/agent/execute';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+/** Matches MCP: headroom for long-form content generation when not using async article jobs. */
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
 	let body: { action?: string; input?: unknown; idempotencyKey?: string; idempotency_key?: string };
