@@ -21,6 +21,8 @@ describe('AI model roles', () => {
 		expect(getRoleConfig('CLASSIFICATION').preferred).toBe('gpt-6-luna');
 		expect(getRoleConfig('SIDECAR').preferred).toBe('gpt-6-luna');
 		expect(getRoleConfig('WRITING').preferred).toBe('gpt-6.1-sol');
+		expect(getRoleConfig('LONG_FORM_WRITING').preferred).toBe('gpt-6.1-sol');
+		expect(getRoleConfig('LONG_FORM_WRITING').maxTokens).toBeGreaterThanOrEqual(16_384);
 		expect(getRoleConfig('STRATEGY').preferred).toBe('gpt-6.1-sol');
 		expect(getRoleConfig('RESEARCH').preferred).toBe('gpt-6.1-sol');
 		expect(getRoleConfig('REVIEW').preferred).toBe('gpt-6.1-sol');

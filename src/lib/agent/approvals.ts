@@ -74,7 +74,7 @@ export async function createApprovalRequest(input: {
 			channel: memory.channel,
 			topic: memory.topic ?? null,
 			title: memory.hook ?? null,
-			body: (memory.body ?? '').slice(0, 1200),
+			body: memory.body ?? '',
 			status: memory.publicationStatus,
 			publishAt: input.publishAt ?? null,
 			...(reddit
@@ -94,7 +94,13 @@ export async function createApprovalRequest(input: {
 		if (!article || article.brandId !== input.brandId) throw new AgentError('brand_not_accessible', 'This agent cannot access that article.', 403);
 		contentHash = fingerprintArticle(article);
 		summary = article.title;
-		preview = { title: article.title, excerpt: article.excerpt ?? article.body.slice(0, 1200), status: article.status, publishAt: input.publishAt ?? null };
+		preview = {
+			title: article.title,
+			excerpt: article.excerpt ?? article.body.slice(0, 280),
+			body: article.body,
+			status: article.status,
+			publishAt: input.publishAt ?? null,
+		};
 	}
 	const parameters = { requestedAction: input.requestedAction, publishAt: input.publishAt ?? null, targetType: input.targetType, targetId: input.targetId };
 	const token = randomBytes(32).toString('base64url');

@@ -94,6 +94,8 @@ export type IntelligenceStore = {
 
 	enqueueJob(userId: string, job: Omit<WorkflowJob, 'id' | 'userId' | 'createdAt' | 'retryCount'> & { retryCount?: number }): Promise<WorkflowJob>;
 	claimNextJob(): Promise<WorkflowJob | null>;
+	getJobById(id: string): Promise<WorkflowJob | null>;
+	claimJobById(id: string): Promise<WorkflowJob | null>;
 	updateJob(id: string, patch: Partial<WorkflowJob>): Promise<WorkflowJob | null>;
 	listJobs(userId: string, brandBrainId?: string): Promise<WorkflowJob[]>;
 };

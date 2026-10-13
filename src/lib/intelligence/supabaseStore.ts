@@ -983,6 +983,24 @@ export function createSupabaseIntelligenceStore(): IntelligenceStore {
 			return claimed ? mapJob(claimed) : null;
 		},
 
+		async getJobById(id) {
+			const { data, error } = await db().from('workflow_jobs').select('*').eq('id', id).maybeSingle();
+			if (error) throw new Error(error.message);
+			return data ? mapJob(data) : null;
+		},
+
+		async claimJobById(id) {
+			const { data, error } = await db()
+				.from('workflow_jobs')
+				.update({ status: 'processing', started_at: nowIso() })
+				.eq('id', id)
+				.in('status', ['queued', 'retrying'])
+				.select()
+				.maybeSingle();
+			if (error) throw new Error(error.message);
+			return data ? mapJob(data) : null;
+		},
+
 		async updateJob(id, patch) {
 			const { data, error } = await db()
 				.from('workflow_jobs')

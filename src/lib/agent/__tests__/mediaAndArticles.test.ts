@@ -316,7 +316,12 @@ describe('media planning and long-form articles', () => {
 		expect((brief.body.result as { mediaPlan: MediaDecision }).mediaPlan.mediaRequired).toBe(false);
 		expect((brief.body.result as { mediaPlan: MediaDecision }).mediaPlan.generateNow).toBe(false);
 
-		const generated = await call(secret, 'cce_generate_article', { instruction: 'Write from stored strategy and name the gaps.' }, 'article-1');
+		const generated = await call(
+			secret,
+			'cce_generate_article',
+			{ instruction: 'Write from stored strategy and name the gaps.', sync: true },
+			'article-sync-1',
+		);
 		expect(generated.body.ok).toBe(true);
 		const article = (generated.body.result as {
 			published: boolean;
@@ -427,7 +432,15 @@ describe('media planning and long-form articles', () => {
 		}));
 		const tools = (await listed.json()) as { result: { tools: Array<{ name: string }> } };
 		const names = tools.result.tools.map((tool) => tool.name);
-		expect(names).toEqual(expect.arrayContaining(['cce_generate_article', 'cce_get_article_media_plan', 'cce_generate_image', 'cce_get_assets']));
+		expect(names).toEqual(
+			expect.arrayContaining([
+				'cce_generate_article',
+				'cce_get_article_generation_job',
+				'cce_get_article_media_plan',
+				'cce_generate_image',
+				'cce_get_assets',
+			]),
+		);
 		expect(names).not.toContain('cce_publish_article');
 		expect(brandId).toBeTruthy();
 		expect(credentialId).toBeTruthy();

@@ -368,7 +368,24 @@ export const AGENT_ACTIONS: AgentActionDefinition[] = [
 		z.object({ brandId, contentId: z.string().optional(), articleId: z.string().optional(), briefId: z.string().optional(), channel: z.string().optional(), topic: z.string().optional() }).passthrough(),
 	),
 	action('cce_create_article_brief', 'content:create', 1, 'Create a long-form article brief from strategy. Does not publish.', z.object({ brandId, topic: z.string().optional(), objective: z.string().optional(), instruction: z.string().optional() }).passthrough()),
-	action('cce_generate_article', 'content:create', 1, 'Research, outline, draft by section, review, and store an article. Does not publish.', z.object({ brandId, topic: z.string().optional(), objective: z.string().optional(), instruction: z.string().optional(), targetWords: z.number().optional() }).passthrough()),
+	action(
+		'cce_generate_article',
+		'content:create',
+		1,
+		'Queue long-form article generation (returns jobId; poll with cce_get_article_generation_job). Pass sync:true to run inline. Does not publish.',
+		z
+			.object({
+				brandId,
+				topic: z.string().optional(),
+				objective: z.string().optional(),
+				instruction: z.string().optional(),
+				targetWords: z.number().optional(),
+				sync: z.boolean().optional(),
+				wait: z.boolean().optional(),
+			})
+			.passthrough(),
+	),
+	action('cce_get_article_generation_job', 'content:read', 0, 'Poll an async article generation job started by cce_generate_article.', z.object({ brandId, jobId: z.string().min(1) }).passthrough()),
 	action('cce_get_article', 'content:read', 0, 'Read a stored article.', z.object({ brandId, articleId: z.string().min(1) }).passthrough()),
 	action('cce_get_article_status', 'content:read', 0, 'Article status, approval, and publication.', z.object({ brandId, articleId: z.string().min(1) }).passthrough()),
 	action('cce_request_article_revision', 'content:revise', 1, 'Revise an article and keep the previous version.', z.object({ brandId, articleId: z.string().min(1), instruction: z.string().min(1), sectionId: z.string().optional() }).passthrough()),

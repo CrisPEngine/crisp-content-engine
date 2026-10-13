@@ -39,6 +39,8 @@ export type StructuredJsonResult<T> = {
 	data: T;
 	provider: LlmProviderId;
 	model: string;
+	finishReason?: string | null;
+	incompleteReason?: string | null;
 	rawUsage?: {
 		promptTokens?: number;
 		completionTokens?: number;

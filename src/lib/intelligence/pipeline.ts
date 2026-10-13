@@ -1,5 +1,8 @@
 import type { LlmMessage } from '@/lib/llm';
 import { completeWithRole } from '@/lib/ai';
+import { completeLongFormJson } from '@/lib/ai/longFormComplete';
+import { assertLongFormDraftReady } from '@/lib/ai/longFormComplete';
+import { isLongFormGeneration, resolveLongFormWordRange } from '@/lib/ai/truncation';
 import { estimateModelCostUsd } from '@/lib/ai/pricing';
 import { buildStructuredBrief, briefToWriterContext } from './brief';
 import { buildComposableContext } from './context';
@@ -76,15 +79,23 @@ function sumCost(calls: IntelligenceUsage[]): number | null {
 	return Math.round(known.reduce((sum, value) => sum + value, 0) * 1_000_000) / 1_000_000;
 }
 
-function channelDraftLimitLine(channel: string): string | null {
+function channelDraftLimitLine(channel: string, longForm: boolean): string | null {
+	if (longForm) return null;
 	const channelId = channel.toLowerCase() as ChannelId;
 	const max = CHANNELS[channelId]?.constraints.maxCharsPerPost;
 	if (!max) return null;
 	return `The full draft (including hashtags and line breaks) must be ${max} characters or fewer. Count carefully before returning JSON.`;
 }
 
-function writerMessages(contextPrompt: string, brief: ContentBrief, userIntent: string, channel: string): LlmMessage[] {
-	const limitLine = channelDraftLimitLine(channel);
+function writerMessages(
+	contextPrompt: string,
+	brief: ContentBrief,
+	userIntent: string,
+	channel: string,
+	longForm: boolean,
+	wordRange?: { min: number; max: number },
+): LlmMessage[] {
+	const limitLine = channelDraftLimitLine(channel, longForm);
 	return [
 		{
 			role: 'system',
@@ -93,6 +104,11 @@ function writerMessages(contextPrompt: string, brief: ContentBrief, userIntent: 
 				'Brand voice outranks generic anti-AI style checklists. Do not become formulaically casual.',
 				'Return JSON: { "draft": string, "hook": string, "argument": string, "cta": string, "topic": string }',
 				'Avoid repeating related previous hooks or arguments unless the brief says theme continuation is allowed.',
+				...(longForm && wordRange
+					? [
+							`This is long-form content. Write ${wordRange.min}-${wordRange.max} words in the draft field. Use clear section breaks. Finish every sentence; do not stop mid-thought.`,
+						]
+					: []),
 				...(limitLine ? [limitLine] : []),
 			].join('\n'),
 		},
@@ -248,20 +264,67 @@ export async function runContentIntelligencePipeline(
 	});
 
 	const redditChannel = isRedditPipelineChannel(intent.channel);
-	const generatedCompletion = redditChannel
-		? await ai.completeJson<RedditGeneratedDraft>(
+	const longForm = !redditChannel
+		&& isLongFormGeneration({
+			channel: intent.channel,
+			contentType: intent.contentType,
+			userIntent: intent.userIntent,
+		});
+	const wordRange = longForm
+		? resolveLongFormWordRange({
+				channel: intent.channel,
+				contentType: intent.contentType,
+				userIntent: intent.userIntent,
+			})
+		: undefined;
+
+	type WriterDraft = { draft?: string; hook?: string; argument?: string; cta?: string; topic?: string };
+	let generatedCompletion: IntelligenceCompletion<WriterDraft | RedditGeneratedDraft>;
+	if (redditChannel) {
+		generatedCompletion = await ai.completeJson<RedditGeneratedDraft>(
+			'WRITING',
+			redditWriterMessages(prompt, briefPayload, intent.userIntent),
+			'intelligence_draft_reddit',
+			intent.userId,
+		);
+	} else if (longForm) {
+		const messages = writerMessages(prompt, briefPayload, intent.userIntent, intent.channel, true, wordRange);
+		if (process.env.VITEST === 'true') {
+			generatedCompletion = await ai.completeJson<WriterDraft>(
 				'WRITING',
-				redditWriterMessages(prompt, briefPayload, intent.userIntent),
-				'intelligence_draft_reddit',
-				intent.userId,
-			)
-		: await ai.completeJson<{ draft?: string; hook?: string; argument?: string; cta?: string; topic?: string }>(
-				'WRITING',
-				writerMessages(prompt, briefPayload, intent.userIntent, intent.channel),
-				'intelligence_draft',
+				messages,
+				'intelligence_draft_long_form',
 				intent.userId,
 			);
-	usage.push(usageFrom('WRITING', redditChannel ? 'intelligence_draft_reddit' : 'intelligence_draft', generatedCompletion));
+		} else {
+			const longResult = await completeLongFormJson<WriterDraft>({
+				messages,
+				feature: 'intelligence_draft_long_form',
+				userId: intent.userId,
+				wordRange,
+				extractText: (data) => data.draft ?? '',
+				mergeContinuation: (previous, piece) => ({
+					...previous,
+					draft: `${(previous.draft ?? '').trim()}\n\n${piece}`.trim(),
+				}),
+			});
+			generatedCompletion = {
+				data: longResult.data,
+				model: longResult.model,
+				promptTokens: longResult.rawUsage?.promptTokens,
+				completionTokens: longResult.rawUsage?.completionTokens,
+				reasoningTokens: longResult.rawUsage?.reasoningTokens,
+			};
+		}
+	} else {
+		generatedCompletion = await ai.completeJson<WriterDraft>(
+			'WRITING',
+			writerMessages(prompt, briefPayload, intent.userIntent, intent.channel, false),
+			'intelligence_draft',
+			intent.userId,
+		);
+	}
+	usage.push(usageFrom('WRITING', redditChannel ? 'intelligence_draft_reddit' : longForm ? 'intelligence_draft_long_form' : 'intelligence_draft', generatedCompletion));
 	const generated = generatedCompletion.data;
 
 	const redditParsed = redditChannel ? redditDraftFromGenerated(generated as RedditGeneratedDraft) : null;
@@ -275,12 +338,12 @@ export async function runContentIntelligencePipeline(
 		(redditParsed?.metadata.reddit.linkUrl ? `[Link post] ${redditParsed.metadata.reddit.linkUrl}` : '');
 	const channelConstraint = validateMemoryChannelConstraints({
 		channel: intent.channel,
-		contentType: intent.contentType || (redditChannel ? 'reddit_post' : 'founder_post'),
+		contentType: intent.contentType || (redditChannel ? 'reddit_post' : longForm ? 'long_form' : 'founder_post'),
 		body: draftForReview,
 		hook: redditParsed?.title ?? (generated as { hook?: string }).hook ?? '',
 		metadata: redditParsed ? { reddit: redditParsed.metadata.reddit } : undefined,
 	});
-	if (!channelConstraint.ok) {
+	if (!longForm && !channelConstraint.ok) {
 		const reason = channelConstraint.errors.map((error) => error.message).join(' ');
 		const shortened = await ai.completeJson<{ revisedDraft?: string }>(
 			'REVIEW',
@@ -299,6 +362,12 @@ export async function runContentIntelligencePipeline(
 		);
 		usage.push(usageFrom('REVIEW', 'intelligence_channel_limit', shortened));
 		draftForReview = (shortened.data.revisedDraft || draftForReview).trim();
+	}
+
+	if (longForm) {
+		assertLongFormDraftReady(
+			process.env.VITEST === 'true' ? { text: draftForReview } : { text: draftForReview, wordRange },
+		);
 	}
 
 	const review = await completeReview({
@@ -330,6 +399,12 @@ export async function runContentIntelligencePipeline(
 		},
 	});
 
+	if (longForm) {
+		assertLongFormDraftReady(
+			process.env.VITEST === 'true' ? { text: review.improvedDraft } : { text: review.improvedDraft, wordRange },
+		);
+	}
+
 	const comparable = memory.recentSameChannel.length;
 	const score = scoreDraft({
 		draft: review.improvedDraft,
@@ -349,7 +424,7 @@ export async function runContentIntelligencePipeline(
 		strategyId: strategy?.id,
 		briefId: storedBrief.id,
 		channel: intent.channel,
-		contentType: intent.contentType || (redditChannel ? 'reddit_post' : 'founder_post'),
+		contentType: intent.contentType || (redditChannel ? 'reddit_post' : longForm ? 'long_form' : 'founder_post'),
 		contentPillar: briefPayload.contentPillar,
 		topic: redditParsed?.topic ?? briefPayload.topic,
 		angle: briefPayload.angle,
