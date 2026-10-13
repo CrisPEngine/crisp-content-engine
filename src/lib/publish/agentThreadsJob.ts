@@ -126,9 +126,10 @@ export async function syncAgentThreadsPublishJob(input: {
 		throw new AgentError('not_found', 'Brand brain not found for this content.', 404);
 	}
 
+	const brandKey = brain.airtableBrandId?.trim() || brain.id;
 	const resolved = await resolvePublishDestination({
 		userId: input.userId,
-		airtableBrandId: brain.airtableBrandId,
+		airtableBrandId: brandKey,
 		platform: 'Threads',
 	});
 	if (!resolved) {
@@ -165,7 +166,7 @@ export async function syncAgentThreadsPublishJob(input: {
 
 	const row = {
 		user_id: input.userId,
-		brand_profile_id: brain.airtableBrandId,
+		brand_profile_id: brandKey,
 		content_item_key: contentItemKey,
 		platform: 'threads',
 		target_id: targetId,

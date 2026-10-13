@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, X, Eye, Calendar, Loader2, Edit2, Save, Clock, Upload, Image as ImageIcon, Copy } from 'lucide-react';
 import { Skeleton, ContentItemSkeleton } from '@/components/skeletons/Skeleton';
-import { mergeApprovalItems } from '@/lib/content/workflow';
+import { ContentBrandFilter, fetchIntelligenceBrandOptions } from '@/components/content/ContentBrandFilter';
 
 // Check if Meta publishing is enabled (client-side)
 const isMetaPublishingEnabled = () => {
@@ -32,7 +32,7 @@ type ContentItem = {
 	image_generation_source?: string;
 	image_reference_url?: string;
 	image_cloudinary_id?: string;
-	source?: 'airtable' | 'native';
+	source?: 'native';
 	workflowStatus?: string;
 	proposedSchedule?: string | null;
 	destination?: string | null;
@@ -170,13 +170,7 @@ export default function ContentApprovalPage() {
 
 	async function loadBrands() {
 		try {
-			const res = await fetch('/api/brands', { cache: 'no-store' });
-			if (!res.ok) throw new Error('Failed to load brands');
-			const data = await res.json();
-			const profiles = (data.profiles || []).map((p: any) => ({
-				id: p.id,
-				client_name: p.client_name || 'Unknown Brand',
-			}));
+			const profiles = await fetchIntelligenceBrandOptions();
 			setBrands(profiles);
 		} catch (err: any) {
 			console.error(err);
@@ -230,36 +224,25 @@ export default function ContentApprovalPage() {
 
 			const contentBriefId = searchParams.get('content_brief_id');
 			
-			let apiUrl = '/api/content/queue?stage=approval';
-			
-			// Add platform filter based on selected tab
-			apiUrl += `&platform=${encodeURIComponent(selectedTab)}`;
-			
-			// Add brand filter if not "all"
-			if (selectedBrandId && selectedBrandId !== 'all') {
-				apiUrl += `&brand_profile_id=${encodeURIComponent(selectedBrandId)}`;
-			}
-			if (contentBriefId) {
-				apiUrl += `&content_brief_id=${encodeURIComponent(contentBriefId)}`;
-			}
-			
-			const res = await fetch(apiUrl, { 
+			const nativeUrl = new URL('/api/content/native-queue', window.location.origin);
+			nativeUrl.searchParams.set('stage', 'approval');
+			nativeUrl.searchParams.set('platform', selectedTab);
+			if (selectedBrandId && selectedBrandId !== 'all') nativeUrl.searchParams.set('brand_profile_id', selectedBrandId);
+			if (contentBriefId) nativeUrl.searchParams.set('content_brief_id', contentBriefId);
+
+			const res = await fetch(nativeUrl.pathname + nativeUrl.search, {
 				cache: 'no-store',
-				credentials: 'include', // Include cookies for authentication
+				credentials: 'include',
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
 				throw new Error(data?.error || 'Failed to load content queue');
 			}
 			const data = await res.json();
-			const airtable = (Array.isArray(data.items) ? data.items : []).map((item: ContentItem) => ({ ...item, source: 'airtable' as const }));
-			const nativeUrl = new URL('/api/content/native-queue', window.location.origin);
-			nativeUrl.searchParams.set('platform', selectedTab);
-			if (selectedBrandId && selectedBrandId !== 'all') nativeUrl.searchParams.set('brand_profile_id', selectedBrandId);
-			const nativeRes = await fetch(nativeUrl.pathname + nativeUrl.search, { cache: 'no-store', credentials: 'include' });
-			const nativeData = nativeRes.ok ? await nativeRes.json() : { items: [] };
-			const native = (Array.isArray(nativeData.items) ? nativeData.items : []) as ContentItem[];
-			const items = mergeApprovalItems(airtable, native);
+			const items = (Array.isArray(data.items) ? data.items : []).map((item: ContentItem) => ({
+				...item,
+				source: 'native' as const,
+			}));
 			setContentItems(items);
 			
 			// If no items and we just approved a strategy, show loading state
@@ -283,32 +266,19 @@ export default function ContentApprovalPage() {
 		setApproving(id);
 		setError(null);
 		try {
-			const current = contentItems.find((item) => item.id === id);
-			if (current?.source === 'native') {
-				const res = await fetch('/api/content/native-queue', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					credentials: 'include',
-					body: JSON.stringify({ contentId: id, decision: 'approve' }),
-				});
-				if (!res.ok) throw new Error('Failed to approve content');
-				setContentItems((items) => items.map((item) => (item.id === id ? { ...item, status: 'APPROVED_UNSCHEDULED', workflowStatus: 'APPROVED_UNSCHEDULED' } : item)));
-				return;
-			}
-			const res = await fetch(`/api/content/queue/${id}`, {
-				method: 'PATCH',
+			const res = await fetch('/api/content/native-queue', {
+				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				credentials: 'include', // Include cookies for authentication
-				body: JSON.stringify({ action: 'approve' }),
+				credentials: 'include',
+				body: JSON.stringify({ contentId: id, decision: 'approve' }),
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
 				throw new Error(data?.error || 'Failed to approve content');
 			}
-			// Update item status to show approved state instead of removing
 			setContentItems((items) =>
 				items.map((item) =>
-					item.id === id ? { ...item, status: 'Ready To Publish' } : item
+					item.id === id ? { ...item, status: 'Ready To Publish', workflowStatus: 'APPROVED_UNSCHEDULED' } : item
 				)
 			);
 			setSelectedItems((prev) => {
@@ -329,30 +299,19 @@ export default function ContentApprovalPage() {
 		setRejecting(id);
 		setError(null);
 		try {
-			const current = contentItems.find((item) => item.id === id);
-			if (current?.source === 'native') {
-				const res = await fetch('/api/content/native-queue', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					credentials: 'include',
-					body: JSON.stringify({ contentId: id, decision: 'reject' }),
-				});
-				if (!res.ok) throw new Error('Failed to reject content');
-				setContentItems((items) => items.map((item) => (item.id === id ? { ...item, status: 'REJECTED', workflowStatus: 'REJECTED' } : item)));
-				return;
-			}
-			// Delete the content item instead of just updating status
-			const res = await fetch(`/api/content/queue/${id}`, {
-				method: 'DELETE',
+			const res = await fetch('/api/content/native-queue', {
+				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				credentials: 'include', // Include cookies for authentication
+				credentials: 'include',
+				body: JSON.stringify({ contentId: id, decision: 'reject' }),
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
 				throw new Error(data?.error || 'Failed to reject content');
 			}
-			// Remove item from list
-			setContentItems((items) => items.filter((item) => item.id !== id));
+			setContentItems((items) =>
+				items.map((item) => (item.id === id ? { ...item, status: 'REJECTED', workflowStatus: 'REJECTED' } : item))
+			);
 			setSelectedItems((prev) => {
 				const next = new Set(prev);
 				next.delete(id);
@@ -430,11 +389,11 @@ export default function ContentApprovalPage() {
 		setError(null);
 		try {
 			const promises = Array.from(selectedItems).map((id) =>
-				fetch(`/api/content/queue/${id}`, {
-					method: 'PATCH',
+				fetch('/api/content/native-queue', {
+					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
-					credentials: 'include', // Include cookies for authentication
-					body: JSON.stringify({ action: 'approve' }),
+					credentials: 'include',
+					body: JSON.stringify({ contentId: id, decision: 'approve' }),
 				})
 			);
 			const results = await Promise.all(promises);
@@ -442,7 +401,13 @@ export default function ContentApprovalPage() {
 			if (failed.length > 0) {
 				throw new Error(`Failed to approve ${failed.length} item(s)`);
 			}
-			setContentItems((items) => items.filter((item) => !selectedItems.has(item.id)));
+			setContentItems((items) =>
+				items.map((item) =>
+					selectedItems.has(item.id)
+						? { ...item, status: 'Ready To Publish', workflowStatus: 'APPROVED_UNSCHEDULED' }
+						: item
+				)
+			);
 			setSelectedItems(new Set());
 		} catch (err: any) {
 			console.error('Failed to bulk approve:', err);
@@ -463,11 +428,11 @@ export default function ContentApprovalPage() {
 				image_prompt: editingImagePrompt,
 			};
 
-			const res = await fetch(`/api/content/queue/${id}`, {
+			const res = await fetch('/api/content/native-queue', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				credentials: 'include', // Include cookies for authentication
-				body: JSON.stringify(payload),
+				credentials: 'include',
+				body: JSON.stringify({ contentId: id, ...payload }),
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
@@ -508,11 +473,11 @@ export default function ContentApprovalPage() {
 				? new Date(editingScheduledTime).toISOString()
 				: null;
 			
-			const res = await fetch(`/api/content/queue/${id}`, {
+			const res = await fetch('/api/content/native-queue', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				credentials: 'include', // Include cookies for authentication
-				body: JSON.stringify({ scheduled_time: isoString }),
+				credentials: 'include',
+				body: JSON.stringify({ contentId: id, scheduled_time: isoString }),
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
@@ -675,15 +640,14 @@ export default function ContentApprovalPage() {
 
 			const { secureUrl, publicId } = await uploadRes.json();
 
-			// Save to Airtable
-			const saveRes = await fetch(`/api/content/queue/${contentId}`, {
+			const saveRes = await fetch('/api/content/native-queue', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				credentials: 'include', // Include cookies for authentication
+				credentials: 'include',
 				body: JSON.stringify({
+					contentId,
 					imageUrl: secureUrl,
 					cloudinaryId: publicId,
-					source: 'Brand',
 				}),
 			});
 
@@ -812,26 +776,7 @@ export default function ContentApprovalPage() {
 				)}
 			</div>
 
-			{/* Brand Filter (if user has multiple brands) */}
-			{brands.length > 1 && (
-				<div className="mb-6">
-					<label className="block text-sm font-medium text-text mb-2">
-						Filter by Brand
-					</label>
-					<select
-						value={selectedBrandId}
-						onChange={(e) => handleBrandChange(e.target.value)}
-						className="w-full max-w-sm px-4 py-3 rounded-xl2 border-2 border-white/40 bg-surface/50 text-text font-medium focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 shadow-sm"
-					>
-						<option value="all">All Brands</option>
-						{brands.map((brand) => (
-							<option key={brand.id} value={brand.id}>
-								{brand.client_name}
-							</option>
-						))}
-					</select>
-				</div>
-			)}
+			<ContentBrandFilter brands={brands} value={selectedBrandId} onChange={handleBrandChange} className="mb-6" />
 
 			{/* Channel Tabs */}
 			<div className="mb-6">

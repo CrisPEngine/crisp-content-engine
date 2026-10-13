@@ -10,7 +10,12 @@ export async function GET() {
 		const { userId } = await requireIntelligenceUser();
 		const brains = await getIntelligenceStore().listBrandBrains(userId);
 		return NextResponse.json({
-			brands: brains.map((brain) => ({ id: brain.id, name: brain.identity.name, website: brain.identity.description })),
+			brands: brains.map((brain) => ({
+				id: brain.id,
+				name: brain.identity.name,
+				website: brain.identity.description,
+				airtableBrandId: brain.airtableBrandId || null,
+			})),
 		});
 	} catch {
 		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

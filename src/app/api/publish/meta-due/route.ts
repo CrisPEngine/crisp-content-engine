@@ -3,7 +3,7 @@ import { getSupabaseService } from '@/lib/supabaseService';
 import { isMetaPublishingEnabled } from '@/lib/featureFlags';
 import { publishToFacebookPage, publishToInstagram, decryptMetaToken, type MetaGraphErrorDetail } from '@/lib/meta/graph';
 import { duePublishJobsQuery, META_PUBLISH_PLATFORMS } from '@/lib/publish/dueJobsQuery';
-import { applyMetaJobOutcomeToAgentContent } from '@/lib/publish/agentMetaJob';
+import { applyMetaJobOutcomeToAgentContent, reconcileDueAgentMetaScheduledContent } from '@/lib/publish/agentMetaJob';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -54,6 +54,9 @@ export async function GET(request: Request) {
 
 		const admin = getSupabaseService();
 		const now = new Date().toISOString();
+
+		const reconcile = await reconcileDueAgentMetaScheduledContent({ now: new Date(now) });
+		console.log('[Meta Worker] Reconcile due scheduled content:', reconcile);
 
 		// Fetch due jobs: queued OR retrying, scheduled_time <= now,
 		// and next_attempt_at is null or in the past
@@ -131,7 +134,7 @@ export async function GET(request: Request) {
 		}
 
 		console.log('[Meta Worker] Processing complete:', results);
-		return NextResponse.json({ ok: true, results });
+		return NextResponse.json({ ok: true, reconcile, results });
 	} catch (error: any) {
 		console.error('[Meta Worker] Critical error:', error);
 		return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });

@@ -189,9 +189,10 @@ export async function syncAgentMetaPublishJob(input: {
 		throw new AgentError('not_found', 'Brand brain not found for this content.', 404);
 	}
 
+	const brandKey = brain.airtableBrandId?.trim() || brain.id;
 	const resolved = await resolvePublishDestination({
 		userId: input.userId,
-		airtableBrandId: brain.airtableBrandId,
+		airtableBrandId: brandKey,
 		platform: airtablePlatformLabel(platform),
 	});
 	if (!resolved) {
@@ -233,7 +234,7 @@ export async function syncAgentMetaPublishJob(input: {
 
 	const row = {
 		user_id: input.userId,
-		brand_profile_id: brain.airtableBrandId,
+		brand_profile_id: brandKey,
 		content_item_key: contentItemKey,
 		platform,
 		target_id: targetId,
@@ -327,18 +328,102 @@ export async function agentMetaJobIsArmed(
 	return Boolean(data);
 }
 
+export async function recordAgentMetaScheduleFailure(
+	userId: string,
+	memory: ContentMemoryRecord,
+	errorMessage: string,
+): Promise<void> {
+	const store = getIntelligenceStore();
+	await store.saveMemory(userId, {
+		...memory,
+		publicationStatus: 'failed',
+		metadata: {
+			...(memory.metadata ?? {}),
+			lastPublishError: errorMessage,
+			scheduleRepairFailedAt: new Date().toISOString(),
+		},
+	});
+}
+
 /** Re-queue publish_jobs for approved scheduled agent Meta content missing a job. */
 export async function repairAgentMetaPublishJobIfMissing(input: {
 	userId: string;
 	memory: ContentMemoryRecord;
 	publishAt?: string;
-}): Promise<{ repaired: boolean }> {
+	/** When true, persist a failed status + error on the content record. */
+	recordFailure?: boolean;
+}): Promise<{ repaired: boolean; error?: string }> {
 	const platform = agentMetaPlatformFromChannel(input.memory.channel);
 	if (!platform || input.memory.publicationStatus !== 'scheduled') {
 		return { repaired: false };
 	}
 	const armed = await agentMetaJobIsArmed(input.userId, input.memory.id, platform);
 	if (armed) return { repaired: false };
-	await syncAgentMetaPublishJob(input);
-	return { repaired: true };
+	try {
+		await syncAgentMetaPublishJob(input);
+		return { repaired: true };
+	} catch (error: unknown) {
+		const message =
+			error instanceof AgentError
+				? error.message
+				: error instanceof Error
+					? error.message
+					: 'Meta publish queue sync failed';
+		if (input.recordFailure) {
+			await recordAgentMetaScheduleFailure(input.userId, input.memory, message);
+		}
+		return { repaired: false, error: message };
+	}
+}
+
+/** Before meta-due runs: queue missing jobs or surface errors for overdue scheduled Meta content. */
+export async function reconcileDueAgentMetaScheduledContent(input: {
+	userId?: string;
+	now?: Date;
+	limit?: number;
+}): Promise<{ scanned: number; repaired: number; failed: number; skipped: number }> {
+	const admin = getSupabaseService();
+	const now = input.now ?? new Date();
+	const limit = input.limit ?? 100;
+	let query = admin
+		.from('content_memory')
+		.select('id, user_id, channel, publication_status, publication_date, brand_brain_id')
+		.eq('publication_status', 'scheduled')
+		.in('channel', ['instagram', 'facebook'])
+		.lte('publication_date', now.toISOString())
+		.order('publication_date', { ascending: true })
+		.limit(limit);
+	if (input.userId) query = query.eq('user_id', input.userId);
+
+	const { data: rows, error } = await query;
+	if (error) {
+		throw new AgentError('publish_queue_failed', `Failed to scan scheduled Meta content: ${error.message}`, 502);
+	}
+
+	const store = getIntelligenceStore();
+	const stats = { scanned: 0, repaired: 0, failed: 0, skipped: 0 };
+
+	for (const row of rows ?? []) {
+		stats.scanned += 1;
+		if (!isAgentMetaMemory({ channel: row.channel })) {
+			stats.skipped += 1;
+			continue;
+		}
+		const memory = await store.getMemory(row.user_id, row.id);
+		if (!memory || memory.publicationStatus !== 'scheduled') {
+			stats.skipped += 1;
+			continue;
+		}
+		const outcome = await repairAgentMetaPublishJobIfMissing({
+			userId: row.user_id,
+			memory,
+			publishAt: memory.publicationDate ?? row.publication_date ?? undefined,
+			recordFailure: true,
+		});
+		if (outcome.repaired) stats.repaired += 1;
+		else if (outcome.error) stats.failed += 1;
+		else stats.skipped += 1;
+	}
+
+	return stats;
 }

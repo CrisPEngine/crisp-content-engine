@@ -27,6 +27,8 @@ const PLATFORM_COLORS: Record<string, { bg: string; border: string; text: string
 	Blog: { bg: '#0D3A2A', border: '#2D8B6A', text: '#4FF0B8' },
 	Facebook: { bg: '#1B2A4A', border: '#3B5998', text: '#8AB4F8' },
 	Instagram: { bg: '#3A1A3A', border: '#C13584', text: '#E1306C' },
+	Threads: { bg: '#1A2030', border: '#6B7280', text: '#D1D5DB' },
+	Reddit: { bg: '#3A2010', border: '#FF4500', text: '#FF8A65' },
 };
 
 const DEFAULT_COLOR = { bg: '#1A2030', border: '#4A5568', text: '#B5C0CF' };
@@ -34,8 +36,10 @@ const DEFAULT_COLOR = { bg: '#1A2030', border: '#4A5568', text: '#B5C0CF' };
 const STATUS_DOT: Record<string, string> = {
 	Scheduled: '#8AB4F8',
 	'Ready To Publish': '#8AB4F8',
+	Publishing: '#8AB4F8',
 	Published: '#4FF0B8',
 	Failed: '#FF6D6D',
+	Overdue: '#FF6D6D',
 };
 
 export default function ScheduleCalendarView({ items, onReschedule }: Props) {
