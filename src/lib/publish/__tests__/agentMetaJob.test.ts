@@ -130,6 +130,39 @@ describe('agent Meta publish jobs', () => {
 		expect(row.payload_json.source).toBe('agent');
 	});
 
+	it('uses brand brain id when airtableBrandId is missing', async () => {
+		getBrandBrainById.mockResolvedValueOnce({
+			id: '03cba45a-6faf-4b6c-a20b-2c2496318b58',
+			userId: 'user-1',
+			airtableBrandId: '',
+			identity: { name: 'Folian' },
+			voice: {},
+			guardrails: {},
+			knowledge: {},
+			createdAt: '',
+			updatedAt: '',
+		});
+
+		const { syncAgentMetaPublishJob } = await import('@/lib/publish/agentMetaJob');
+		const memory: ContentMemoryRecord = {
+			id: 'mem-3',
+			brandBrainId: '03cba45a-6faf-4b6c-a20b-2c2496318b58',
+			channel: 'instagram',
+			body: 'Caption text',
+			publicationStatus: 'scheduled',
+			metadata: { image_reference_url: 'https://cdn.example.com/hero.jpg' },
+		};
+
+		await syncAgentMetaPublishJob({
+			userId: 'user-1',
+			memory,
+			publishAt: '2026-10-09T15:30:00.000Z',
+		});
+
+		expect(insert).toHaveBeenCalled();
+		expect(insert.mock.calls[0]?.[0].brand_profile_id).toBe('03cba45a-6faf-4b6c-a20b-2c2496318b58');
+	});
+
 	it('fails instagram scheduling without an image', async () => {
 		const { syncAgentMetaPublishJob } = await import('@/lib/publish/agentMetaJob');
 		const memory: ContentMemoryRecord = {

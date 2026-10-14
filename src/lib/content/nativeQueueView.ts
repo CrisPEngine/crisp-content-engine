@@ -1,0 +1,171 @@
+import type { BrandBrain } from '@/lib/intelligence/types';
+import type { ContentMemoryRecord } from '@/lib/intelligence/types';
+import { workflowStatus, type WorkflowStatus } from '@/lib/content/workflow';
+import type { ContentPublishDiagnostics } from '@/lib/publish/contentPublishDiagnostics';
+import { brainMatchesBrandFilter, effectiveBrandProfileId } from '@/lib/content/brandFilter';
+
+export type NativeQueueStage = 'approval' | 'schedule' | 'published';
+
+export type NativeQueueListItem = {
+	id: string;
+	source: 'native';
+	title: string;
+	platform: string;
+	channel: string;
+	content: string;
+	summary: string;
+	status: string;
+	workflowStatus: WorkflowStatus;
+	content_type?: string;
+	scheduled_date: string | null;
+	published_at: string | null;
+	created_time: string;
+	brand_name: string;
+	brand_profile_id: string;
+	destination: string | null;
+	external_url: string | null;
+	last_publish_error: string | null;
+	publish_job_status: string | null;
+	is_overdue: boolean;
+	hashtags?: string;
+	image_prompt?: string;
+	image_reference_url?: string;
+	proposedSchedule?: string | null;
+	evidence?: boolean;
+	airtableContentId?: string | null;
+};
+
+export function channelDisplayPlatform(channel: string): string {
+	const c = String(channel).toLowerCase();
+	if (c === 'linkedin') return 'LinkedIn';
+	if (c === 'x') return 'X';
+	if (c === 'blog') return 'Blog';
+	if (c === 'instagram') return 'Instagram';
+	if (c === 'facebook') return 'Facebook';
+	if (c === 'threads') return 'Threads';
+	if (c === 'reddit') return 'Reddit';
+	return channel;
+}
+
+/** Approval queue tab filter (Meta = Instagram + Facebook). */
+export function matchesPlatformTab(channel: string, tab: string | null | undefined): boolean {
+	if (!tab) return true;
+	const platform = channelDisplayPlatform(channel);
+	if (tab === 'Meta') return platform === 'Instagram' || platform === 'Facebook';
+	return platform === tab;
+}
+
+function metadataString(metadata: Record<string, unknown> | undefined, key: string): string | undefined {
+	const value = metadata?.[key];
+	return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+export function isScheduledOverdue(memory: Pick<ContentMemoryRecord, 'publicationStatus' | 'publicationDate'>): boolean {
+	if (memory.publicationStatus !== 'scheduled' || !memory.publicationDate) return false;
+	const due = new Date(memory.publicationDate);
+	return !Number.isNaN(due.getTime()) && due.getTime() < Date.now();
+}
+
+export function uiStatusLabel(
+	ws: WorkflowStatus,
+	input: { overdue?: boolean; publishJobStatus?: string | null },
+): string {
+	if (input.overdue && (ws === 'SCHEDULED' || ws === 'PUBLISHING')) return 'Overdue';
+	if (ws === 'FAILED') return 'Failed';
+	if (ws === 'PUBLISHED') return 'Published';
+	if (ws === 'PUBLISHING') return 'Publishing';
+	if (ws === 'SCHEDULED') return 'Scheduled';
+	if (ws === 'APPROVED_UNSCHEDULED') return 'Ready To Publish';
+	if (ws === 'NEEDS_APPROVAL') return 'Needs Approval';
+	if (ws === 'REJECTED') return 'Rejected';
+	if (ws === 'DRAFT') return 'Draft';
+	if (input.publishJobStatus === 'failed') return 'Failed';
+	return ws;
+}
+
+export function stageIncludesWorkflowStatus(stage: NativeQueueStage, ws: WorkflowStatus): boolean {
+	switch (stage) {
+		case 'approval':
+			return ['NEEDS_APPROVAL', 'APPROVED_UNSCHEDULED', 'REJECTED', 'DRAFT'].includes(ws);
+		case 'schedule':
+			return ['SCHEDULED', 'PUBLISHING', 'PUBLISHED', 'FAILED', 'APPROVED_UNSCHEDULED'].includes(ws);
+		case 'published':
+			return ws === 'PUBLISHED';
+		default:
+			return false;
+	}
+}
+
+export function mapMemoryToQueueItem(
+	brain: BrandBrain,
+	memory: ContentMemoryRecord,
+	diagnostics: ContentPublishDiagnostics | null,
+): NativeQueueListItem {
+	const ws = workflowStatus(memory);
+	const overdue = isScheduledOverdue(memory);
+	const metadata = memory.metadata ?? {};
+	const imageUrl =
+		metadataString(metadata, 'imageReferenceUrl') ||
+		metadataString(metadata, 'image_reference_url') ||
+		'';
+	const body = memory.body ?? '';
+
+	return {
+		id: memory.id,
+		source: 'native',
+		title: memory.hook || memory.topic || 'Untitled draft',
+		platform: channelDisplayPlatform(String(memory.channel)),
+		channel: String(memory.channel),
+		content: body,
+		summary: body.slice(0, 280),
+		status: uiStatusLabel(ws, { overdue, publishJobStatus: diagnostics?.publishJobStatus }),
+		workflowStatus: ws,
+		content_type: memory.contentType ? String(memory.contentType) : undefined,
+		scheduled_date:
+			ws === 'SCHEDULED' || ws === 'PUBLISHING' || memory.publicationStatus === 'scheduled'
+				? memory.publicationDate ?? null
+				: memory.publicationStatus === 'approved' && memory.publicationDate
+					? memory.publicationDate
+					: null,
+		published_at: memory.publicationStatus === 'published' ? memory.publicationDate ?? null : null,
+		created_time: memory.createdAt,
+		brand_name: brain.identity.name,
+		brand_profile_id: effectiveBrandProfileId(brain),
+		destination: memory.destination ?? null,
+		external_url: memory.externalUrl ?? null,
+		last_publish_error: diagnostics?.lastPublishError ?? null,
+		publish_job_status: diagnostics?.publishJobStatus ?? null,
+		is_overdue: overdue,
+		hashtags: metadataString(metadata, 'hashtags'),
+		image_prompt: metadataString(metadata, 'image_prompt') || metadataString(metadata, 'imagePrompt'),
+		image_reference_url: imageUrl || undefined,
+		proposedSchedule: metadataString(metadata, 'proposedSchedule') ?? null,
+		evidence: /source:/i.test(`${body}\n${memory.sourceIdea ?? ''}`),
+		airtableContentId: memory.airtableContentId ?? null,
+	};
+}
+
+export type ListNativeQueueInput = {
+	stage: NativeQueueStage;
+	brandProfileId?: string | null;
+	platformTab?: string | null;
+	contentBriefId?: string | null;
+};
+
+export function filterNativeQueueItem(
+	item: NativeQueueListItem,
+	memory: ContentMemoryRecord,
+	input: ListNativeQueueInput,
+): boolean {
+	if (!stageIncludesWorkflowStatus(input.stage, item.workflowStatus)) return false;
+	if (!matchesPlatformTab(String(memory.channel), input.platformTab)) return false;
+	if (input.contentBriefId && memory.briefId !== input.contentBriefId) return false;
+	return true;
+}
+
+export function filterBrainsForBrand(
+	brains: BrandBrain[],
+	brandProfileId?: string | null,
+): BrandBrain[] {
+	return brains.filter((brain) => brainMatchesBrandFilter(brain, brandProfileId));
+}

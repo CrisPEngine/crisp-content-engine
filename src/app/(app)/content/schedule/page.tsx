@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Calendar, Clock, CheckCircle, XCircle, Plus, List, Grid3X3 } from 'lucide-react';
 import { Skeleton, ContentItemSkeleton } from '@/components/skeletons/Skeleton';
+import { ContentBrandFilter, fetchIntelligenceBrandOptions } from '@/components/content/ContentBrandFilter';
 
 const ScheduleCalendarView = lazy(() => import('@/components/ScheduleCalendarView'));
 
@@ -17,6 +18,9 @@ type ScheduledContent = {
 	status: string;
 	brand_name: string;
 	content_preview: string;
+	external_url?: string | null;
+	last_publish_error?: string | null;
+	is_overdue?: boolean;
 };
 
 export default function SchedulingDashboard() {
@@ -28,6 +32,8 @@ export default function SchedulingDashboard() {
 	const [selectedDate, setSelectedDate] = useState<string>('');
 	const [error, setError] = useState<string | null>(null);
 	const [viewMode, setViewMode] = useState<'list' | 'calendar'>('calendar');
+	const [brands, setBrands] = useState<Array<{ id: string; client_name: string }>>([]);
+	const [selectedBrandId, setSelectedBrandId] = useState<string>('all');
 
 	function formatScheduledDateTime(dateString: string | null | undefined): string {
 		if (!dateString) return 'Not scheduled';
@@ -77,8 +83,13 @@ export default function SchedulingDashboard() {
 
 	useEffect(() => {
 		if (!supabase) return;
+		fetchIntelligenceBrandOptions().then(setBrands).catch(console.error);
+	}, [supabase]);
+
+	useEffect(() => {
+		if (!supabase) return;
 		loadScheduledContent();
-	}, [supabase, filter, selectedDate]);
+	}, [supabase, filter, selectedDate, selectedBrandId]);
 
 	async function loadScheduledContent() {
 		if (!supabase) return;
@@ -94,7 +105,10 @@ export default function SchedulingDashboard() {
 				return;
 			}
 
-			const res = await fetch('/api/content/queue?stage=schedule', { cache: 'no-store' });
+			const url = new URL('/api/content/native-queue', window.location.origin);
+			url.searchParams.set('stage', 'schedule');
+			if (selectedBrandId !== 'all') url.searchParams.set('brand_profile_id', selectedBrandId);
+			const res = await fetch(url.pathname + url.search, { cache: 'no-store', credentials: 'include' });
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
 				throw new Error(data?.error || 'Failed to load schedule');
@@ -108,6 +122,9 @@ export default function SchedulingDashboard() {
 				status: item.status,
 				brand_name: item.brand_name,
 				content_preview: item.summary || item.content || '',
+				external_url: item.external_url || null,
+				last_publish_error: item.last_publish_error || null,
+				is_overdue: Boolean(item.is_overdue),
 			}));
 			setScheduledContent(items);
 		} catch (err: any) {
@@ -124,10 +141,10 @@ export default function SchedulingDashboard() {
 				filter === 'all'
 					? true
 					: filter === 'scheduled'
-					? item.status === 'Scheduled' || item.status === 'Ready To Publish'
+					? item.status === 'Scheduled' || item.status === 'Ready To Publish' || item.status === 'Overdue' || item.status === 'Publishing'
 					: filter === 'published'
 					? item.status === 'Published'
-					: item.status === 'Failed';
+					: item.status === 'Failed' || item.status === 'Overdue';
 
 			if (!matchesStatus) return false;
 
@@ -140,10 +157,11 @@ export default function SchedulingDashboard() {
 
 	const handleReschedule = useCallback(async (contentId: string, newDate: string): Promise<boolean> => {
 		try {
-			const res = await fetch(`/api/content/queue/${contentId}`, {
+			const res = await fetch('/api/content/native-queue', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ scheduled_time: newDate }),
+				credentials: 'include',
+				body: JSON.stringify({ contentId, scheduled_time: newDate }),
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
@@ -170,6 +188,7 @@ export default function SchedulingDashboard() {
 			case 'Published':
 				return <CheckCircle className="w-4 h-4 text-accent" />;
 			case 'Failed':
+			case 'Overdue':
 				return <XCircle className="w-4 h-4 text-danger" />;
 			default:
 				return <Clock className="w-4 h-4 text-text-dim" />;
@@ -265,6 +284,8 @@ export default function SchedulingDashboard() {
 						<button onClick={() => setError(null)} className="text-danger/60 hover:text-danger ml-2">✕</button>
 					</div>
 				)}
+
+				<ContentBrandFilter brands={brands} value={selectedBrandId} onChange={setSelectedBrandId} />
 
 				{viewMode === 'list' && (
 					<div className="flex gap-3 flex-wrap">
@@ -364,7 +385,7 @@ export default function SchedulingDashboard() {
 											{item.platform}
 										</span>
 										<span className={`px-2 py-1 rounded-full text-xs border ${
-											item.status === 'Scheduled' || item.status === 'Ready To Publish'
+											item.status === 'Scheduled' || item.status === 'Ready To Publish' || item.status === 'Publishing'
 												? 'bg-primary/15 border-primary/30 text-primary'
 												: item.status === 'Published'
 												? 'bg-accent/15 border-accent/30 text-accent'
@@ -385,6 +406,14 @@ export default function SchedulingDashboard() {
 											</span>
 										)}
 									</div>
+									{item.last_publish_error ? (
+										<p className="text-xs text-danger mb-2">{item.last_publish_error}</p>
+									) : null}
+									{item.external_url ? (
+										<a href={item.external_url} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline mb-2 inline-block">
+											View published post
+										</a>
+									) : null}
 									<p className="text-sm text-text-soft line-clamp-2">
 										{item.content_preview}
 									</p>

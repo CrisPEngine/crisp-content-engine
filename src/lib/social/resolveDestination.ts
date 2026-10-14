@@ -17,20 +17,26 @@ export type ResolvedPublishDestination = {
 
 export type ResolveInput = {
 	userId: string;
-	/** Airtable BrandProfiles record id */
+	/** Airtable BrandProfiles record id or CCE brand_brains.id */
 	airtableBrandId: string;
 	platform: string;
 };
 
-export async function resolveBrandBrainId(userId: string, airtableBrandId: string): Promise<string | null> {
+export async function resolveBrandBrainId(userId: string, brandKey: string): Promise<string | null> {
+	const trimmed = brandKey?.trim();
+	if (!trimmed) return null;
+
 	const admin = getSupabaseService();
-	const { data } = await admin
+	const { data: byAirtable } = await admin
 		.from('brand_brains')
 		.select('id')
 		.eq('user_id', userId)
-		.eq('airtable_brand_id', airtableBrandId)
+		.eq('airtable_brand_id', trimmed)
 		.maybeSingle();
-	return data?.id ?? null;
+	if (byAirtable?.id) return byAirtable.id;
+
+	const { data: byId } = await admin.from('brand_brains').select('id').eq('user_id', userId).eq('id', trimmed).maybeSingle();
+	return byId?.id ?? null;
 }
 
 export async function resolvePublishDestination(input: ResolveInput): Promise<ResolvedPublishDestination | null> {

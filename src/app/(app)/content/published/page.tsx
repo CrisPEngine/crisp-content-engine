@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSupabase } from '@/components/SupabaseProvider';
 import { useRouter } from 'next/navigation';
-import { Calendar, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Calendar, CheckCircle, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { Skeleton, ContentItemSkeleton } from '@/components/skeletons/Skeleton';
+import { ContentBrandFilter, fetchIntelligenceBrandOptions } from '@/components/content/ContentBrandFilter';
 
 type PublishedContent = {
 	id: string;
@@ -17,6 +18,8 @@ type PublishedContent = {
 	content: string;
 	hashtags?: string;
 	image_reference_url?: string;
+	external_url?: string | null;
+	last_publish_error?: string | null;
 };
 
 export default function PublishedContentPage() {
@@ -27,12 +30,19 @@ export default function PublishedContentPage() {
 	const [error, setError] = useState<string | null>(null);
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 	const [page, setPage] = useState(1);
+	const [brands, setBrands] = useState<Array<{ id: string; client_name: string }>>([]);
+	const [selectedBrandId, setSelectedBrandId] = useState<string>('all');
 	const pageSize = 20;
 
 	useEffect(() => {
 		if (!supabase) return;
-		loadPublished();
+		fetchIntelligenceBrandOptions().then(setBrands).catch(console.error);
 	}, [supabase]);
+
+	useEffect(() => {
+		if (!supabase) return;
+		loadPublished();
+	}, [supabase, selectedBrandId]);
 
 	async function loadPublished() {
 		if (!supabase) return;
@@ -48,7 +58,10 @@ export default function PublishedContentPage() {
 				return;
 			}
 
-			const res = await fetch('/api/content/queue?status=Published', { cache: 'no-store' });
+			const url = new URL('/api/content/native-queue', window.location.origin);
+			url.searchParams.set('stage', 'published');
+			if (selectedBrandId !== 'all') url.searchParams.set('brand_profile_id', selectedBrandId);
+			const res = await fetch(url.pathname + url.search, { cache: 'no-store', credentials: 'include' });
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
 				throw new Error(data?.error || 'Failed to load published content');
@@ -58,13 +71,15 @@ export default function PublishedContentPage() {
 				id: item.id,
 				title: item.title,
 				platform: item.platform,
-				published_at: item.published_at || null,
+				published_at: item.published_at || item.scheduled_date || null,
 				created_time: item.created_time,
 				brand_name: item.brand_name,
 				content_preview: item.summary || item.content || '',
 				content: item.content || '',
 				hashtags: item.hashtags || '',
 				image_reference_url: item.image_reference_url || '',
+				external_url: item.external_url || null,
+				last_publish_error: item.last_publish_error || null,
 			}));
 			setItems(publishedItems);
 		} catch (err: any) {
@@ -157,6 +172,8 @@ export default function PublishedContentPage() {
 				</p>
 			</div>
 
+			<ContentBrandFilter brands={brands} value={selectedBrandId} onChange={setSelectedBrandId} className="mb-6" />
+
 			{error && (
 				<div className="border border-danger/30 bg-danger/10 text-danger text-sm rounded-xl2 p-3 mb-4">
 					{error}
@@ -203,10 +220,24 @@ export default function PublishedContentPage() {
 									<p className="text-sm text-text-dim mb-2">
 										Brand: {item.brand_name}
 									</p>
-									<div className="flex items-center gap-2 text-sm text-text-dim mb-2">
+									<div className="flex items-center gap-2 text-sm text-text-dim mb-2 flex-wrap">
 										<Calendar className="w-4 h-4" />
 										<span>Published {formatDate(item.published_at)}</span>
+										{item.external_url ? (
+											<a
+												href={item.external_url}
+												target="_blank"
+												rel="noreferrer"
+												className="inline-flex items-center gap-1 text-primary hover:underline"
+											>
+												<ExternalLink className="w-3.5 h-3.5" />
+												View live
+											</a>
+										) : null}
 									</div>
+									{item.last_publish_error ? (
+										<p className="text-xs text-danger mb-2">Last publish note: {item.last_publish_error}</p>
+									) : null}
 									{expanded.has(item.id) ? (
 										<div className="space-y-3">
 											{item.content && (
