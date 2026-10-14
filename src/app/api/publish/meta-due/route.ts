@@ -244,9 +244,7 @@ async function publishJob(
 		}
 
 		// Publish using payload_json (source of truth, never re-read Airtable)
-		const { imageUrl } = payload_json;
-		const { sanitizeText } = await import('@/lib/content/dashSanitizer');
-		const text = sanitizeText(String(payload_json.text ?? ''));
+		const { text, imageUrl } = payload_json;
 		let remotePostId: string;
 
 		if (platform === 'facebook') {

@@ -8,7 +8,6 @@ import { isAgentMetaMemory, repairAgentMetaPublishJobIfMissing } from '@/lib/pub
 import type { ApprovalRequest } from './types';
 import { isRedditPipelineChannel, redditFieldsFromMemory, type RedditPostFields } from '@/lib/channels/reddit';
 import { channelBodyCharLimit, channelTitleCharLimit } from '@/lib/content/channelCharLimits';
-import { utcIsoToGstDatetimeLocalValue } from '@/lib/datetime/gstSchedule';
 
 export function resolveApprovalDisplayBody(input: {
 	previewBody?: unknown;
@@ -40,7 +39,7 @@ export type ApprovalPageModel = {
 		body: string;
 		title: string;
 		cta: string;
-		publishAtGst: string;
+		publishAtUtc: string | null;
 		showTitle: boolean;
 		showCta: boolean;
 		showSchedule: boolean;
@@ -144,7 +143,7 @@ export async function loadApprovalPageModel(input: {
 							? String(preview.title ?? '')
 							: String(memory?.hook ?? preview.title ?? ''),
 					cta: String(memory?.cta ?? preview.cta ?? ''),
-					publishAtGst: utcIsoToGstDatetimeLocalValue(publishAtIso),
+					publishAtUtc: publishAtIso,
 					showTitle: request.targetType === 'article' || Boolean(redditPost) || request.targetType === 'content',
 					showCta: request.targetType === 'content' && !redditPost && !threadsReply,
 					showSchedule,

@@ -10,7 +10,6 @@ import { getAuthorizationSecrets } from '@/lib/social/authorizationSecrets';
 import { AgentError } from '@/lib/agent/errors';
 import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 import { resolveAgentThreadsAttachedImageUrl } from '@/lib/publish/agentThreadsJob';
-import { sanitizeText } from '@/lib/content/dashSanitizer';
 
 export type AgentMetaPlatform = 'facebook' | 'instagram';
 
@@ -56,7 +55,7 @@ export function buildAgentMetaPayload(
 		null;
 
 	return {
-		text: sanitizeText(memory.body || ''),
+		text: memory.body || '',
 		imageUrl,
 		videoUrl,
 		contentItemKey: memory.id,
