@@ -57,7 +57,6 @@ export function ApprovalEditPanel({
 	showSchedule,
 	bodyCharLimit,
 	titleCharLimit,
-	savedMessage,
 }: {
 	saveAction: SaveAction;
 	tokenField: { name: string; value: string };
@@ -71,7 +70,6 @@ export function ApprovalEditPanel({
 	showSchedule: boolean;
 	bodyCharLimit: number | null;
 	titleCharLimit: number | null;
-	savedMessage?: string | null;
 }) {
 	const [body, setBody] = useState(initialBody);
 	const [title, setTitle] = useState(initialTitle);
@@ -90,11 +88,6 @@ export function ApprovalEditPanel({
 				<h2 className="text-sm font-medium text-text">Edit before approving</h2>
 				<p className="mt-1 text-xs text-text-soft">Changes are saved to this draft. Channel limits apply.</p>
 			</div>
-			{savedMessage ? (
-				<p className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-text" role="status">
-					{savedMessage}
-				</p>
-			) : null}
 			<form action={saveAction} className="grid gap-4">
 				<input type="hidden" name={tokenField.name} value={tokenField.value} />
 				{showTitle ? (

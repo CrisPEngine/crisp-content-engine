@@ -66,6 +66,22 @@ describe('updatePendingApprovalFromToken', () => {
 		});
 	});
 
+	it('persists publishAt from GST datetime-local input', async () => {
+		await updatePendingApprovalFromToken({
+			token: 'plain-token',
+			userId: 'user-1',
+			edit: {
+				body: 'Updated body',
+				publishAtLocalGst: '2026-10-14T17:30',
+			},
+		});
+		expect(saveApprovalRequest).toHaveBeenCalled();
+		const savedRequest = saveApprovalRequest.mock.calls.at(-1)?.[0];
+		expect(savedRequest.parameters.publishAt).toBe('2026-10-14T13:30:00.000Z');
+		expect(savedRequest.preview.publishAt).toBe('2026-10-14T13:30:00.000Z');
+		expect(saveMemory.mock.calls[0][1].body).toBe('Updated body');
+	});
+
 	it('preserves em dashes in human edits', async () => {
 		const body = 'One — two';
 		await updatePendingApprovalFromToken({

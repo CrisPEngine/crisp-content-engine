@@ -8,6 +8,7 @@ import type { ApprovalUiMode } from './[token]/approvalFeedback';
 import { ApprovalRedditPreview } from './[token]/ApprovalRedditPreview';
 import { ApprovalEditPanel } from './[token]/ApprovalEditPanel';
 import { formatPublishAtForDisplay } from '@/lib/datetime/gstSchedule';
+import { ApprovalSavedBanner } from './[token]/ApprovalSavedBanner';
 
 type DecideAction = (formData: FormData) => void | Promise<void>;
 type SaveEditsAction = (formData: FormData) => void | Promise<void>;
@@ -55,6 +56,7 @@ export function ApprovalPageShell({
 				{brandName} · {String(request.preview.channel ?? (threadsReply ? 'threads reply' : 'content'))}
 			</p>
 			<h1 className="text-2xl font-semibold">{request.summary}</h1>
+			{query.saved === '1' && !query.error && !query.done ? <ApprovalSavedBanner /> : null}
 			{query.done || query.error ? (
 				<ApprovalStatusBanner
 					done={query.done}
@@ -62,9 +64,9 @@ export function ApprovalPageShell({
 					mode={uiMode}
 					publishError={publishError}
 				/>
-			) : (
+			) : query.saved !== '1' ? (
 				<p className="text-sm text-text-soft">Status: {request.status}</p>
-			)}
+			) : null}
 			{threadsReply ? (
 				<section className="card space-y-2 p-4 text-sm">
 					<p className="font-medium text-text">Original post</p>
@@ -99,7 +101,6 @@ export function ApprovalPageShell({
 					showSchedule={edit.showSchedule}
 					bodyCharLimit={edit.bodyCharLimit}
 					titleCharLimit={edit.titleCharLimit}
-					savedMessage={query.saved === '1' ? 'Changes saved.' : null}
 				/>
 			) : null}
 			{!edit || query.done ? (

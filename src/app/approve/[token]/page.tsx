@@ -6,6 +6,7 @@ import { createHash } from 'crypto';
 import { redirect } from 'next/navigation';
 import { loadApprovalPageModel } from '@/lib/agent/approvalPageModel';
 import { ApprovalPageShell } from '../ApprovalPageShell';
+import { appendApprovalSaveSearchParams, runApprovalSave } from '@/lib/agent/approvalSaveAction';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,11 +16,9 @@ async function decide(formData: FormData) {
 	const decision = formData.get('decision') === 'reject' ? 'reject' : 'approve';
 	const userId = await requireSessionUserId();
 	if (!userId) redirect(`/sign-in?redirect_to=${encodeURIComponent(`/approve/${token}`)}`);
-	try {
-		await resolveApprovalRequest({ token, userId, decision });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : 'Could not resolve the approval.';
-		redirect(`/approve/${token}?error=${encodeURIComponent(message)}`);
+	const resolved = await runApprovalSave(() => resolveApprovalRequest({ token, userId, decision }));
+	if (!resolved.ok) {
+		redirect(`/approve/${token}?error=${encodeURIComponent(resolved.message)}`);
 	}
 	redirect(`/approve/${token}?done=${decision}`);
 }
@@ -33,8 +32,8 @@ async function saveEdits(formData: FormData) {
 	const titleRaw = formData.get('title');
 	const ctaRaw = formData.get('cta');
 	const publishAtLocalGst = String(formData.get('publishAtLocalGst') ?? '');
-	try {
-		await updatePendingApprovalFromToken({
+	const outcome = await runApprovalSave(() =>
+		updatePendingApprovalFromToken({
 			token,
 			userId,
 			edit: {
@@ -43,12 +42,9 @@ async function saveEdits(formData: FormData) {
 				cta: ctaRaw != null ? String(ctaRaw) : undefined,
 				publishAtLocalGst: publishAtLocalGst || undefined,
 			},
-		});
-		redirect(`/approve/${token}?saved=1`);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : 'Could not save changes.';
-		redirect(`/approve/${token}?error=${encodeURIComponent(message)}`);
-	}
+		}),
+	);
+	redirect(appendApprovalSaveSearchParams(`/approve/${token}`, outcome));
 }
 
 export default async function ApprovalPage({
