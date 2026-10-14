@@ -5,6 +5,7 @@ import { getAgentStore } from '@/lib/agent/controlStore';
 import { redirect } from 'next/navigation';
 import { loadApprovalPageModel } from '@/lib/agent/approvalPageModel';
 import { ApprovalPageShell } from '@/app/approve/ApprovalPageShell';
+import { appendApprovalSaveSearchParams, runApprovalSave } from '@/lib/agent/approvalSaveAction';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,11 +15,9 @@ async function decide(formData: FormData) {
 	const decision = formData.get('decision') === 'reject' ? 'reject' : 'approve';
 	const userId = await requireSessionUserId();
 	if (!userId) redirect(`/sign-in?redirect_to=${encodeURIComponent(`/approvals/${requestId}`)}`);
-	try {
-		await resolveApprovalRequestById({ requestId, userId, decision });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : 'Could not resolve the approval.';
-		redirect(`/approvals/${requestId}?error=${encodeURIComponent(message)}`);
+	const resolved = await runApprovalSave(() => resolveApprovalRequestById({ requestId, userId, decision }));
+	if (!resolved.ok) {
+		redirect(`/approvals/${requestId}?error=${encodeURIComponent(resolved.message)}`);
 	}
 	redirect(`/approvals/${requestId}?done=${decision}`);
 }
@@ -32,8 +31,8 @@ async function saveEdits(formData: FormData) {
 	const titleRaw = formData.get('title');
 	const ctaRaw = formData.get('cta');
 	const publishAtLocalGst = String(formData.get('publishAtLocalGst') ?? '');
-	try {
-		await updatePendingApprovalById({
+	const outcome = await runApprovalSave(() =>
+		updatePendingApprovalById({
 			requestId,
 			userId,
 			edit: {
@@ -42,12 +41,9 @@ async function saveEdits(formData: FormData) {
 				cta: ctaRaw != null ? String(ctaRaw) : undefined,
 				publishAtLocalGst: publishAtLocalGst || undefined,
 			},
-		});
-		redirect(`/approvals/${requestId}?saved=1`);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : 'Could not save changes.';
-		redirect(`/approvals/${requestId}?error=${encodeURIComponent(message)}`);
-	}
+		}),
+	);
+	redirect(appendApprovalSaveSearchParams(`/approvals/${requestId}`, outcome));
 }
 
 export default async function ApprovalByIdPage({
