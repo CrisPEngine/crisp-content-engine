@@ -918,7 +918,8 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 				optimizationObjective: 'authority',
 			};
 			const review = await completeReview({ draft: revised, brain, brief });
-			const finalBody = review.improvedDraft || revised;
+			const { postProcessPlainDraft } = await import('@/lib/content/postProcessGeneration');
+			const finalBody = postProcessPlainDraft(review.improvedDraft || revised);
 			await store.saveDraft({
 				userId: ctx.credential.ownerUserId,
 				brandBrainId: brain.id,

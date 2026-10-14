@@ -7,6 +7,8 @@ import { pendingApprovalCounts } from './approvalInbox';
 import { isAgentMetaMemory, repairAgentMetaPublishJobIfMissing } from '@/lib/publish/agentMetaJob';
 import type { ApprovalRequest } from './types';
 import { isRedditPipelineChannel, redditFieldsFromMemory, type RedditPostFields } from '@/lib/channels/reddit';
+import { channelBodyCharLimit, channelTitleCharLimit } from '@/lib/content/channelCharLimits';
+import { utcIsoToGstDatetimeLocalValue } from '@/lib/datetime/gstSchedule';
 
 export function resolveApprovalDisplayBody(input: {
 	previewBody?: unknown;
@@ -34,6 +36,17 @@ export type ApprovalPageModel = {
 	publishError: string | null;
 	publishedPermalink: string | null;
 	redditPost: RedditPostFields | null;
+	edit: {
+		body: string;
+		title: string;
+		cta: string;
+		publishAtGst: string;
+		showTitle: boolean;
+		showCta: boolean;
+		showSchedule: boolean;
+		bodyCharLimit: number | null;
+		titleCharLimit: number | null;
+	} | null;
 };
 
 export async function loadApprovalPageModel(input: {
@@ -117,6 +130,29 @@ export async function loadApprovalPageModel(input: {
 	const redditPost =
 		memory && isRedditPipelineChannel(String(memory.channel)) ? redditFieldsFromMemory(memory) : null;
 
+	const publishAtIso =
+		(typeof request.parameters.publishAt === 'string' && request.parameters.publishAt) ||
+		(typeof preview.publishAt === 'string' ? preview.publishAt : null);
+	const channelKey = memory?.channel ?? String(preview.channel ?? '');
+	const showSchedule = schedule && !threadsReply && !redditPost;
+	const edit =
+		request.status === 'PENDING'
+			? {
+					body,
+					title:
+						request.targetType === 'article'
+							? String(preview.title ?? '')
+							: String(memory?.hook ?? preview.title ?? ''),
+					cta: String(memory?.cta ?? preview.cta ?? ''),
+					publishAtGst: utcIsoToGstDatetimeLocalValue(publishAtIso),
+					showTitle: request.targetType === 'article' || Boolean(redditPost) || request.targetType === 'content',
+					showCta: request.targetType === 'content' && !redditPost && !threadsReply,
+					showSchedule,
+					bodyCharLimit: channelBodyCharLimit(channelKey),
+					titleCharLimit: redditPost ? channelTitleCharLimit('reddit') : null,
+				}
+			: null;
+
 	return {
 		request,
 		brandName: brain?.identity.name ?? 'Brand',
@@ -130,5 +166,6 @@ export async function loadApprovalPageModel(input: {
 		publishError,
 		publishedPermalink,
 		redditPost,
+		edit,
 	};
 }

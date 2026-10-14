@@ -20,6 +20,7 @@ import type { ChannelId } from '@/lib/channels/types';
 import { validateMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 import { isRedditPipelineChannel } from '@/lib/channels/reddit';
 import { redditDraftFromGenerated, redditWriterMessages, type RedditGeneratedDraft } from './redditGeneration';
+import { postProcessPlainDraft, postProcessWriterDraft } from '@/lib/content/postProcessGeneration';
 
 export type IntelligenceCompletion<T> = {
 	data: T;
@@ -103,6 +104,7 @@ function writerMessages(
 				'You write as this specific brand, not as a generic AI content engine.',
 				'Brand voice outranks generic anti-AI style checklists. Do not become formulaically casual.',
 				'Return JSON: { "draft": string, "hook": string, "argument": string, "cta": string, "topic": string }',
+				'Never use em dash (—) or en dash as punctuation in any field. Use commas, periods, or hyphens instead.',
 				'Avoid repeating related previous hooks or arguments unless the brief says theme continuation is allowed.',
 				...(longForm && wordRange
 					? [
@@ -325,7 +327,9 @@ export async function runContentIntelligencePipeline(
 		);
 	}
 	usage.push(usageFrom('WRITING', redditChannel ? 'intelligence_draft_reddit' : longForm ? 'intelligence_draft_long_form' : 'intelligence_draft', generatedCompletion));
-	const generated = generatedCompletion.data;
+	const generated = redditChannel
+		? generatedCompletion.data
+		: postProcessWriterDraft(generatedCompletion.data as WriterDraft);
 
 	const redditParsed = redditChannel ? redditDraftFromGenerated(generated as RedditGeneratedDraft) : null;
 	const aiDraft = redditParsed ? redditParsed.body : ((generated as { draft?: string }).draft || '').trim();
@@ -405,9 +409,17 @@ export async function runContentIntelligencePipeline(
 		);
 	}
 
+	const reviewedBody = postProcessPlainDraft(review.improvedDraft);
+	const generatedFields = generated as WriterDraft;
+	const sanitizedHook = postProcessPlainDraft(
+		redditParsed?.title ?? generatedFields.hook ?? review.improvedDraft.split('\n')[0],
+	);
+	const sanitizedCta = postProcessPlainDraft((generatedFields.cta || briefPayload.cta || '').trim());
+	const sanitizedArgument = postProcessPlainDraft((generatedFields.argument || briefPayload.centralArgument || '').trim());
+
 	const comparable = memory.recentSameChannel.length;
 	const score = scoreDraft({
-		draft: review.improvedDraft,
+		draft: reviewedBody,
 		brief: briefPayload,
 		theme,
 		memory,
@@ -428,11 +440,11 @@ export async function runContentIntelligencePipeline(
 		contentPillar: briefPayload.contentPillar,
 		topic: redditParsed?.topic ?? briefPayload.topic,
 		angle: briefPayload.angle,
-		hook: redditParsed?.title ?? (generated as { hook?: string }).hook ?? review.improvedDraft.split('\n')[0],
-		argument: (generated as { argument?: string }).argument || briefPayload.centralArgument,
-		cta: (generated as { cta?: string }).cta || briefPayload.cta,
+		hook: redditParsed?.title ?? sanitizedHook,
+		argument: sanitizedArgument,
+		cta: sanitizedCta,
 		format: intent.contentType,
-		body: review.improvedDraft,
+		body: reviewedBody,
 		publicationStatus: 'draft',
 		sourceIdea: intent.userIntent,
 		...(redditParsed ? { metadata: redditParsed.metadata } : {}),
@@ -444,7 +456,7 @@ export async function runContentIntelligencePipeline(
 		briefId: storedBrief.id,
 		memoryId: savedMemory.id,
 		aiVersion: aiDraft,
-		reviewedVersion: review.improvedDraft,
+		reviewedVersion: reviewedBody,
 		reviewPayload: review,
 		scorePayload: score,
 	});
@@ -460,7 +472,7 @@ export async function runContentIntelligencePipeline(
 		brief: { ...storedBrief, memoryId: savedMemory.id },
 		draftId: draftRow.id,
 		aiDraft,
-		reviewedDraft: review.improvedDraft,
+		reviewedDraft: reviewedBody,
 		review,
 		score,
 		memory: savedMemory,

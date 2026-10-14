@@ -61,7 +61,7 @@ function chain() {
 		update(...args);
 		return { eq: vi.fn(async () => ({ error: null })) };
 	});
-	builder.then = undefined;
+	builder.delete = vi.fn(() => builder);
 	return builder;
 }
 

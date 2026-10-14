@@ -8,6 +8,7 @@ import { articleInlinePlan, planMedia } from '@/lib/media/planner';
 import { getNativeContentStore } from '@/lib/media/store';
 import { publicAsset } from '@/lib/media/images';
 import type { ArticleRecord, ArticleSection } from './types';
+import { postProcessPlainDraft } from '@/lib/content/postProcessGeneration';
 
 const TARGETS = [1500, 3000, 5000] as const;
 
@@ -220,7 +221,7 @@ export async function generateArticle(input: {
 	);
 	const coherenceFindings = Array.isArray(coherence.data.findings) ? coherence.data.findings.filter((item) => typeof item === 'string' && item.trim()).slice(0, 8) : [];
 	const review = await completeReview({ draft: body, brain: input.brand, brief });
-	const finalBody = review.improvedDraft || body;
+	const finalBody = postProcessPlainDraft(review.improvedDraft || body);
 	if (process.env.VITEST !== 'true') {
 		const totalRange = articleWordRange(targetWords);
 		assertLongFormDraftReady({ text: finalBody, wordRange: totalRange });

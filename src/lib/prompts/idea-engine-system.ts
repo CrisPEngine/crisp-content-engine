@@ -25,7 +25,7 @@ RULES (non-negotiable):
 12. series_position and series_total must match the generation request exactly.
 13. Promotional balance: majority value-driven content. If offers/CTA context is provided, use naturally in at most ~30% of items — never force into every post.
 14. Do not invent facts, testimonials, metrics, or client names not supported by brand context.
-15. Never use em dash if content_rules forbid it.
+15. Never use em dash (—) or en dash as punctuation in any field (title, body, hashtags). Use commas, periods, or hyphens instead.
 
 QUALITY:
 - Hooks must stop the scroll or earn the click.

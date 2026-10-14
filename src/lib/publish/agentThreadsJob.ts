@@ -9,6 +9,7 @@ import { getAuthorizationSecrets } from '@/lib/social/authorizationSecrets';
 import { AgentError } from '@/lib/agent/errors';
 import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 import { getNativeContentStore } from '@/lib/media/store';
+import { sanitizeText } from '@/lib/content/dashSanitizer';
 
 export function isAgentThreadsMemory(memory: Pick<ContentMemoryRecord, 'channel'>): boolean {
 	return String(memory.channel).toLowerCase() === 'threads';
@@ -52,7 +53,7 @@ export function buildAgentThreadsPayload(
 		null;
 
 	return {
-		text: memory.body || '',
+		text: sanitizeText(memory.body || ''),
 		imageUrl,
 		videoUrl,
 		contentItemKey: memory.id,
@@ -156,13 +157,15 @@ export async function syncAgentThreadsPublishJob(input: {
 		.from('publish_jobs')
 		.select('id, status')
 		.eq('platform', 'threads')
-		.eq('target_id', targetId)
 		.eq('content_item_key', contentItemKey)
+		.in('status', ['published', 'publishing'])
 		.maybeSingle();
 
 	if (existing?.status === 'published' || existing?.status === 'publishing') {
 		return { armed: existing.status === 'publishing' };
 	}
+
+	await cancelAgentThreadsPublishJob(input.userId, contentItemKey);
 
 	const row = {
 		user_id: input.userId,
@@ -179,16 +182,9 @@ export async function syncAgentThreadsPublishJob(input: {
 		next_attempt_at: null,
 	};
 
-	if (existing) {
-		const { error } = await admin.from('publish_jobs').update({ ...row, updated_at: new Date().toISOString() }).eq('id', existing.id);
-		if (error) {
-			throw new AgentError('publish_queue_failed', `Failed to update Threads publish job: ${error.message}`, 502);
-		}
-	} else {
-		const { error } = await admin.from('publish_jobs').insert(row);
-		if (error) {
-			throw new AgentError('publish_queue_failed', `Failed to create Threads publish job: ${error.message}`, 502);
-		}
+	const { error } = await admin.from('publish_jobs').insert(row);
+	if (error) {
+		throw new AgentError('publish_queue_failed', `Failed to create Threads publish job: ${error.message}`, 502);
 	}
 
 	return { armed: true };

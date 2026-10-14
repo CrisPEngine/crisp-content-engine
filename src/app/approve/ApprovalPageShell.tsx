@@ -6,18 +6,23 @@ import { ApprovalInboxNav, ApprovalReviewNextButton } from './[token]/ApprovalIn
 import type { ApprovalPageModel } from '@/lib/agent/approvalPageModel';
 import type { ApprovalUiMode } from './[token]/approvalFeedback';
 import { ApprovalRedditPreview } from './[token]/ApprovalRedditPreview';
+import { ApprovalEditPanel } from './[token]/ApprovalEditPanel';
+import { formatPublishAtForDisplay } from '@/lib/datetime/gstSchedule';
 
 type DecideAction = (formData: FormData) => void | Promise<void>;
+type SaveEditsAction = (formData: FormData) => void | Promise<void>;
 
 export function ApprovalPageShell({
 	model,
 	query,
 	decide,
+	saveEdits,
 	tokenField,
 }: {
 	model: ApprovalPageModel;
-	query: { done?: string; error?: string };
+	query: { done?: string; error?: string; saved?: string; dashFixed?: string };
 	decide: DecideAction;
+	saveEdits?: SaveEditsAction;
 	tokenField: { name: string; value: string };
 }) {
 	const {
@@ -33,6 +38,7 @@ export function ApprovalPageShell({
 		publishError,
 		publishedPermalink,
 		redditPost,
+		edit,
 	} = model;
 	const uiMode: ApprovalUiMode = threadsReply ? 'threads_reply' : schedule ? 'schedule' : 'content';
 	const approvedScheduleSuccess = query.done === 'approve' && schedule;
@@ -80,12 +86,38 @@ export function ApprovalPageShell({
 			{!threadsReply ? (
 				<ApprovalDestinationLine destination={destination} hideWhenScheduledSuccess={hideDestinationWarning} />
 			) : null}
-			{redditPost ? <ApprovalRedditPreview reddit={redditPost} /> : null}
-			{!redditPost ? (
-				<article className="card whitespace-pre-wrap p-4 text-base leading-relaxed">
-					{threadsReply ? <p className="mb-2 text-sm font-medium text-text-soft">Your reply</p> : null}
-					{body}
-				</article>
+			{edit && saveEdits && !query.done ? (
+				<ApprovalEditPanel
+					saveAction={saveEdits}
+					tokenField={tokenField}
+					initialBody={edit.body}
+					initialTitle={edit.title}
+					initialCta={edit.cta}
+					initialPublishAtGst={edit.publishAtGst}
+					showTitle={edit.showTitle}
+					showCta={edit.showCta}
+					showSchedule={edit.showSchedule}
+					bodyCharLimit={edit.bodyCharLimit}
+					titleCharLimit={edit.titleCharLimit}
+					savedMessage={
+						query.saved === '1'
+							? query.dashFixed === '1'
+								? 'Saved. Em dashes were replaced with standard punctuation.'
+								: 'Changes saved.'
+							: null
+					}
+				/>
+			) : null}
+			{!edit || query.done ? (
+				<>
+					{redditPost ? <ApprovalRedditPreview reddit={redditPost} /> : null}
+					{!redditPost ? (
+						<article className="card whitespace-pre-wrap p-4 text-base leading-relaxed">
+							{threadsReply ? <p className="mb-2 text-sm font-medium text-text-soft">Your reply</p> : null}
+							{body}
+						</article>
+					) : null}
+				</>
 			) : null}
 			{publishedPermalink ? (
 				<p className="text-sm">
@@ -101,7 +133,7 @@ export function ApprovalPageShell({
 					: redditPost
 						? 'Approve to mark this ready for manual Reddit posting. CCE will not publish or schedule.'
 						: schedule
-							? `Approve and schedule for ${String(request.preview.publishAt ?? '')}`
+							? `Approve and schedule for ${formatPublishAtForDisplay(String(request.preview.publishAt ?? request.parameters.publishAt ?? ''))}`
 							: 'Approve this draft only. It will not be scheduled or published.'}
 			</p>
 			{request.status === 'PENDING' && !query.done ? (
