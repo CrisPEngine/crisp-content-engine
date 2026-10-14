@@ -34,7 +34,7 @@ async function saveEdits(formData: FormData) {
 	const ctaRaw = formData.get('cta');
 	const publishAtLocalGst = String(formData.get('publishAtLocalGst') ?? '');
 	try {
-		const result = await updatePendingApprovalFromToken({
+		await updatePendingApprovalFromToken({
 			token,
 			userId,
 			edit: {
@@ -44,9 +44,7 @@ async function saveEdits(formData: FormData) {
 				publishAtLocalGst: publishAtLocalGst || undefined,
 			},
 		});
-		const params = new URLSearchParams({ saved: '1' });
-		if (result.dashAutoFixed) params.set('dashFixed', '1');
-		redirect(`/approve/${token}?${params.toString()}`);
+		redirect(`/approve/${token}?saved=1`);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : 'Could not save changes.';
 		redirect(`/approve/${token}?error=${encodeURIComponent(message)}`);
@@ -58,7 +56,7 @@ export default async function ApprovalPage({
 	searchParams,
 }: {
 	params: Promise<{ token: string }>;
-	searchParams: Promise<{ done?: string; error?: string; saved?: string; dashFixed?: string }>;
+	searchParams: Promise<{ done?: string; error?: string; saved?: string }>;
 }) {
 	const { token } = await params;
 	const query = await searchParams;

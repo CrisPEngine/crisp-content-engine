@@ -1,9 +1,13 @@
 'use client';
 
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { containsForbiddenDash } from '@/lib/content/dashSanitizer';
+import {
+	assertGstDatetimeLocalFieldValue,
+	formatPublishAtForDisplay,
+	utcIsoToGstDatetimeLocalValue,
+} from '@/lib/datetime/gstSchedule';
 
 const pressableButton =
 	'touch-manipulation select-none transition-[transform,background-color,border-color,opacity] duration-150 motion-reduce:transition-none motion-reduce:active:scale-100 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:pointer-events-none disabled:opacity-60';
@@ -20,15 +24,10 @@ function CharCount({ value, limit }: { value: string; limit: number | null }) {
 	);
 }
 
-function SaveFieldset({ dashHint }: { dashHint: boolean }) {
+function SaveFieldset() {
 	const { pending } = useFormStatus();
 	return (
 		<fieldset disabled={pending} className="grid gap-3 border-0 p-0 m-0">
-			{dashHint ? (
-				<p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-					Em dashes are not allowed. They will be replaced when you save.
-				</p>
-			) : null}
 			<button
 				type="submit"
 				className={`inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl2 border border-edge/60 bg-surface/50 px-4 hover:bg-surface/70 ${pressableButton}`}
@@ -52,7 +51,7 @@ export function ApprovalEditPanel({
 	initialBody,
 	initialTitle,
 	initialCta,
-	initialPublishAtGst,
+	publishAtUtc,
 	showTitle,
 	showCta,
 	showSchedule,
@@ -65,7 +64,8 @@ export function ApprovalEditPanel({
 	initialBody: string;
 	initialTitle: string;
 	initialCta: string;
-	initialPublishAtGst: string;
+	/** UTC ISO for the scheduled publish instant (preferred over pre-formatted local strings). */
+	publishAtUtc: string | null;
 	showTitle: boolean;
 	showCta: boolean;
 	showSchedule: boolean;
@@ -76,12 +76,13 @@ export function ApprovalEditPanel({
 	const [body, setBody] = useState(initialBody);
 	const [title, setTitle] = useState(initialTitle);
 	const [cta, setCta] = useState(initialCta);
-	const [publishAtGst, setPublishAtGst] = useState(initialPublishAtGst);
-
-	const dashHint = useMemo(
-		() => containsForbiddenDash(body) || containsForbiddenDash(title) || containsForbiddenDash(cta),
-		[body, title, cta],
+	const [publishAtGst, setPublishAtGst] = useState(() =>
+		assertGstDatetimeLocalFieldValue(utcIsoToGstDatetimeLocalValue(publishAtUtc)),
 	);
+
+	useEffect(() => {
+		setPublishAtGst(assertGstDatetimeLocalFieldValue(utcIsoToGstDatetimeLocalValue(publishAtUtc)));
+	}, [publishAtUtc]);
 
 	return (
 		<section className="card space-y-4 p-4" aria-label="Edit before approving">
@@ -138,13 +139,19 @@ export function ApprovalEditPanel({
 							type="datetime-local"
 							name="publishAtLocalGst"
 							value={publishAtGst}
-							onChange={(e) => setPublishAtGst(e.target.value)}
+							onChange={(e) => setPublishAtGst(assertGstDatetimeLocalFieldValue(e.target.value))}
 							className="rounded-xl2 border border-edge/60 bg-bg px-3 py-2"
 						/>
-						<span className="text-xs text-text-soft">Stored in UTC when saved.</span>
+						{publishAtUtc ? (
+							<span className="text-xs text-text-soft">
+								UTC {publishAtUtc} · {formatPublishAtForDisplay(publishAtUtc)}
+							</span>
+						) : (
+							<span className="text-xs text-text-soft">Wall time is Gulf Standard Time; stored as UTC when saved.</span>
+						)}
 					</label>
 				) : null}
-				<SaveFieldset dashHint={dashHint} />
+				<SaveFieldset />
 			</form>
 		</section>
 	);

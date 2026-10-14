@@ -13,7 +13,6 @@ import { publishApprovedThreadsReply } from '@/lib/threads/publishReply';
 import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 import { assertRedditManualPublishOnly } from '@/lib/channels/redditPolicy';
 import { isRedditPipelineChannel, redditFieldsFromMemory } from '@/lib/channels/reddit';
-import { sanitizeContentFields } from '@/lib/content/dashSanitizer';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -348,21 +347,9 @@ async function applyHumanApproval(request: ApprovalRequest, userId: string): Pro
 	}
 	if (request.targetType === 'content') {
 		const intelligence = getIntelligenceStore();
-		let memory = await intelligence.getMemory(request.ownerUserId, request.targetId);
+		const memory = await intelligence.getMemory(request.ownerUserId, request.targetId);
 		if (!memory) throw new AgentError('not_found', 'The content for this approval no longer exists.', 404);
 		const schedule = request.requestedAction === 'approve_and_schedule';
-		const cleaned = sanitizeContentFields({
-			body: memory.body ?? '',
-			hook: memory.hook,
-			cta: memory.cta,
-			title: memory.hook,
-		});
-		memory = {
-			...memory,
-			body: cleaned.body,
-			...(cleaned.hook != null ? { hook: cleaned.hook } : {}),
-			...(cleaned.cta != null ? { cta: cleaned.cta } : {}),
-		};
 		assertMemoryChannelConstraints(memory);
 		assertRedditManualPublishOnly({
 			channel: String(memory.channel),

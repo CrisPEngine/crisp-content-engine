@@ -9,7 +9,6 @@ import { getAuthorizationSecrets } from '@/lib/social/authorizationSecrets';
 import { AgentError } from '@/lib/agent/errors';
 import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 import { getNativeContentStore } from '@/lib/media/store';
-import { sanitizeText } from '@/lib/content/dashSanitizer';
 
 export function isAgentThreadsMemory(memory: Pick<ContentMemoryRecord, 'channel'>): boolean {
 	return String(memory.channel).toLowerCase() === 'threads';
@@ -53,7 +52,7 @@ export function buildAgentThreadsPayload(
 		null;
 
 	return {
-		text: sanitizeText(memory.body || ''),
+		text: memory.body || '',
 		imageUrl,
 		videoUrl,
 		contentItemKey: memory.id,

@@ -1,7 +1,6 @@
 import { createHash } from 'crypto';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { getNativeContentStore } from '@/lib/media/store';
-import { containsForbiddenDash, sanitizeContentFields } from '@/lib/content/dashSanitizer';
 import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 import { fingerprintArticle, fingerprintContent } from './approvals';
 import { fingerprintReplyDraft } from '@/lib/threads/replyFingerprint';
@@ -27,15 +26,12 @@ export type ApprovalEditInput = {
 	body: string;
 	title?: string | null;
 	cta?: string | null;
-	/** UTC ISO from client, or GST datetime-local converted server-side via publishAtLocalGst */
 	publishAt?: string | null;
 	publishAtLocalGst?: string | null;
 };
 
 export type ApprovalEditResult = {
 	request: ApprovalRequest;
-	dashAutoFixed: boolean;
-	dashWarning: boolean;
 };
 
 async function applyApprovalEdit(request: ApprovalRequest, userId: string, raw: ApprovalEditInput): Promise<ApprovalEditResult> {
@@ -49,44 +45,35 @@ async function applyApprovalEdit(request: ApprovalRequest, userId: string, raw: 
 		publishAt = gstDatetimeLocalValueToUtcIso(raw.publishAtLocalGst);
 	}
 
-	const dashWarning = containsEditableDash(raw);
-	const sanitized = sanitizeContentFields({
-		body: raw.body,
-		title: raw.title ?? undefined,
-		cta: raw.cta ?? undefined,
-		hook: raw.title ?? undefined,
-	});
+	const body = raw.body;
+	const title = raw.title?.trim() ? raw.title.trim() : undefined;
+	const cta = raw.cta?.trim() ? raw.cta.trim() : undefined;
 
 	if (request.targetType === 'reply') {
 		const store = getAgentStore();
 		const interaction = await store.getInteraction(request.ownerUserId, request.targetId);
 		if (!interaction) throw new AgentError('not_found', 'The reply draft for this approval no longer exists.', 404);
-		interaction.draftReply = sanitized.body;
+		interaction.draftReply = body;
 		await store.saveInteraction(request.ownerUserId, interaction);
-		request.preview = { ...request.preview, body: sanitized.body };
+		request.preview = { ...request.preview, body };
 		request.contentHash = fingerprintReplyDraft(interaction);
 		await store.saveApprovalRequest(request);
-		return {
-			request,
-			dashAutoFixed: sanitized.dashAutoFixed,
-			dashWarning: dashWarning && !sanitized.dashAutoFixed,
-		};
+		return { request };
 	}
 
 	if (request.targetType === 'article') {
 		const articles = getNativeContentStore();
 		const article = await articles.getArticle(request.ownerUserId, request.targetId);
 		if (!article) throw new AgentError('not_found', 'The article for this approval no longer exists.', 404);
-		const title = sanitized.title ?? article.title;
-		article.title = title;
-		article.body = sanitized.body;
+		if (title != null) article.title = title;
+		article.body = body;
 		article.updatedAt = new Date().toISOString();
 		await articles.saveArticle(article);
 		request.preview = {
 			...request.preview,
-			title,
-			body: sanitized.body,
-			excerpt: article.excerpt ?? sanitized.body.slice(0, 280),
+			title: article.title,
+			body,
+			excerpt: article.excerpt ?? body.slice(0, 280),
 			...(publishAt !== undefined ? { publishAt } : {}),
 		};
 		if (publishAt !== undefined) {
@@ -95,11 +82,7 @@ async function applyApprovalEdit(request: ApprovalRequest, userId: string, raw: 
 		}
 		request.contentHash = fingerprintArticle(article);
 		await getAgentStore().saveApprovalRequest(request);
-		return {
-			request,
-			dashAutoFixed: sanitized.dashAutoFixed,
-			dashWarning: dashWarning && !sanitized.dashAutoFixed,
-		};
+		return { request };
 	}
 
 	if (request.targetType === 'content') {
@@ -109,18 +92,18 @@ async function applyApprovalEdit(request: ApprovalRequest, userId: string, raw: 
 
 		const updated = {
 			...memory,
-			body: sanitized.body,
-			...(sanitized.title != null ? { hook: sanitized.title } : {}),
-			...(sanitized.cta != null ? { cta: sanitized.cta } : {}),
+			body,
+			...(title != null ? { hook: title } : {}),
+			...(cta != null ? { cta } : {}),
 		};
 		assertMemoryChannelConstraints(updated);
 		await intelligence.saveMemory(request.ownerUserId, updated);
 
 		request.preview = {
 			...request.preview,
-			body: sanitized.body,
+			body,
 			title: updated.hook ?? null,
-			...(sanitized.cta != null ? { cta: sanitized.cta } : {}),
+			...(cta != null ? { cta } : {}),
 			...(publishAt !== undefined ? { publishAt } : {}),
 		};
 		if (publishAt !== undefined) {
@@ -129,18 +112,10 @@ async function applyApprovalEdit(request: ApprovalRequest, userId: string, raw: 
 		}
 		request.contentHash = fingerprintContent(updated);
 		await getAgentStore().saveApprovalRequest(request);
-		return {
-			request,
-			dashAutoFixed: sanitized.dashAutoFixed,
-			dashWarning: dashWarning && !sanitized.dashAutoFixed,
-		};
+		return { request };
 	}
 
 	throw new AgentError('invalid_input', 'Unsupported approval target.', 400);
-}
-
-function containsEditableDash(raw: ApprovalEditInput): boolean {
-	return [raw.body, raw.title, raw.cta].some((part) => part && containsForbiddenDash(part));
 }
 
 export async function updatePendingApprovalFromToken(input: {

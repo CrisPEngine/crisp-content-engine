@@ -2,17 +2,33 @@ import { DateTime } from 'luxon';
 
 export const APPROVAL_SCHEDULE_TIMEZONE = 'Asia/Dubai';
 
-/** Format UTC ISO for `<input type="datetime-local">` interpreted as GST. */
-export function utcIsoToGstDatetimeLocalValue(iso: string | null | undefined): string {
-	if (!iso) return '';
-	const dt = DateTime.fromISO(iso, { zone: 'utc' });
-	if (!dt.isValid) return '';
-	return dt.setZone(APPROVAL_SCHEDULE_TIMEZONE).toFormat("yyyy-MM-dd'T'HH:mm");
+const DATETIME_LOCAL_FORMAT = "yyyy-MM-dd'T'HH:mm";
+
+/**
+ * Parse a stored publishAt as a UTC instant.
+ * Offset-less strings are treated as UTC (not the server or browser local zone).
+ */
+export function parseUtcPublishAtIso(iso: string): DateTime {
+	const trimmed = iso.trim();
+	if (!trimmed) return DateTime.invalid('empty');
+	if (/[zZ]$/.test(trimmed) || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+		const parsed = DateTime.fromISO(trimmed, { setZone: true });
+		return parsed.isValid ? parsed.toUTC() : DateTime.invalid('invalid');
+	}
+	return DateTime.fromISO(trimmed, { zone: 'utc' });
 }
 
-/** Parse datetime-local value as GST and return UTC ISO. */
+/** Format UTC ISO for `<input type="datetime-local">` wall time in GST (no offset suffix). */
+export function utcIsoToGstDatetimeLocalValue(iso: string | null | undefined): string {
+	if (!iso) return '';
+	const dt = parseUtcPublishAtIso(iso);
+	if (!dt.isValid) return '';
+	return dt.setZone(APPROVAL_SCHEDULE_TIMEZONE).toFormat(DATETIME_LOCAL_FORMAT);
+}
+
+/** Parse datetime-local value as GST wall time and return UTC ISO. */
 export function gstDatetimeLocalValueToUtcIso(local: string): string {
-	const dt = DateTime.fromFormat(local.trim(), "yyyy-MM-dd'T'HH:mm", { zone: APPROVAL_SCHEDULE_TIMEZONE });
+	const dt = DateTime.fromFormat(local.trim(), DATETIME_LOCAL_FORMAT, { zone: APPROVAL_SCHEDULE_TIMEZONE });
 	if (!dt.isValid) {
 		throw new Error('Invalid schedule time.');
 	}
@@ -24,7 +40,16 @@ export function gstDatetimeLocalValueToUtcIso(local: string): string {
 
 export function formatPublishAtForDisplay(iso: string | null | undefined): string {
 	if (!iso) return '';
-	const dt = DateTime.fromISO(iso, { zone: 'utc' });
+	const dt = parseUtcPublishAtIso(iso);
 	if (!dt.isValid) return String(iso);
 	return dt.setZone(APPROVAL_SCHEDULE_TIMEZONE).toFormat("d LLL yyyy, HH:mm 'GST'");
+}
+
+/** Avoid passing ISO strings with Z into datetime-local (browsers show local time). */
+export function assertGstDatetimeLocalFieldValue(value: string): string {
+	if (!value) return value;
+	if (/[zZ]$/.test(value) || /[+-]\d{2}:\d{2}$/.test(value)) {
+		return utcIsoToGstDatetimeLocalValue(value);
+	}
+	return value;
 }

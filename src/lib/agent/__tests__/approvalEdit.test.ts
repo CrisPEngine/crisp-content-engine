@@ -66,17 +66,16 @@ describe('updatePendingApprovalFromToken', () => {
 		});
 	});
 
-	it('sanitizes em dashes and updates content hash', async () => {
-		const result = await updatePendingApprovalFromToken({
+	it('preserves em dashes in human edits', async () => {
+		const body = 'One — two';
+		await updatePendingApprovalFromToken({
 			token: 'plain-token',
 			userId: 'user-1',
-			edit: { body: 'One — two', title: 'Title', cta: 'Go' },
+			edit: { body, title: 'Title', cta: 'Go' },
 		});
-		expect(result.dashAutoFixed).toBe(true);
 		expect(saveMemory).toHaveBeenCalled();
 		const saved = saveMemory.mock.calls[0][1];
-		expect(saved.body).toBe('One, two');
+		expect(saved.body).toBe(body);
 		expect(saveApprovalRequest).toHaveBeenCalled();
-		expect(result.request.contentHash).not.toBe('old-hash');
 	});
 });

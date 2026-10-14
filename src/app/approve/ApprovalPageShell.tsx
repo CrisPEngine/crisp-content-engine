@@ -20,7 +20,7 @@ export function ApprovalPageShell({
 	tokenField,
 }: {
 	model: ApprovalPageModel;
-	query: { done?: string; error?: string; saved?: string; dashFixed?: string };
+	query: { done?: string; error?: string; saved?: string };
 	decide: DecideAction;
 	saveEdits?: SaveEditsAction;
 	tokenField: { name: string; value: string };
@@ -93,19 +93,13 @@ export function ApprovalPageShell({
 					initialBody={edit.body}
 					initialTitle={edit.title}
 					initialCta={edit.cta}
-					initialPublishAtGst={edit.publishAtGst}
+					publishAtUtc={edit.publishAtUtc}
 					showTitle={edit.showTitle}
 					showCta={edit.showCta}
 					showSchedule={edit.showSchedule}
 					bodyCharLimit={edit.bodyCharLimit}
 					titleCharLimit={edit.titleCharLimit}
-					savedMessage={
-						query.saved === '1'
-							? query.dashFixed === '1'
-								? 'Saved. Em dashes were replaced with standard punctuation.'
-								: 'Changes saved.'
-							: null
-					}
+					savedMessage={query.saved === '1' ? 'Changes saved.' : null}
 				/>
 			) : null}
 			{!edit || query.done ? (

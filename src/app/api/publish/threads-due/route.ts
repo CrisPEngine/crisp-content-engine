@@ -5,7 +5,6 @@ import { publishThreadsPost } from '@/lib/threads/oauth';
 import { getAuthorizationSecrets } from '@/lib/social/authorizationSecrets';
 import { applyThreadsJobOutcomeToAgentContent } from '@/lib/publish/agentThreadsJob';
 import { duePublishJobsQuery } from '@/lib/publish/dueJobsQuery';
-import { sanitizeText } from '@/lib/content/dashSanitizer';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -86,7 +85,7 @@ export async function GET(request: Request) {
 				const result = await publishThreadsPost({
 					threadsUserId: target_id,
 					accessToken: secrets.accessToken,
-					text: sanitizeText(text || ''),
+					text: text || '',
 					imageUrl: imageUrl || undefined,
 					videoUrl: videoUrl || undefined,
 					replyToId: typeof replyToId === 'string' ? replyToId : undefined,
