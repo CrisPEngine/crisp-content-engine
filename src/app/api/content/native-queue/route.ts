@@ -97,7 +97,7 @@ export async function PATCH(request: Request) {
 		let publicationStatus = memory.publicationStatus;
 
 		if (body.scheduled_time !== undefined) {
-			publicationDate = body.scheduled_time;
+			publicationDate = body.scheduled_time ?? undefined;
 			if (body.scheduled_time) {
 				publicationStatus = 'scheduled';
 			} else if (publicationStatus === 'scheduled') {
