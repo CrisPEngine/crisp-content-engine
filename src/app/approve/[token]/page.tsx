@@ -1,5 +1,6 @@
 import { requireSessionUserId } from '@/lib/agent/session';
 import { resolveApprovalRequest } from '@/lib/agent/approvals';
+import { updatePendingApprovalFromToken } from '@/lib/agent/approvalEdit';
 import { getAgentStore } from '@/lib/agent/controlStore';
 import { createHash } from 'crypto';
 import { redirect } from 'next/navigation';
@@ -23,12 +24,41 @@ async function decide(formData: FormData) {
 	redirect(`/approve/${token}?done=${decision}`);
 }
 
+async function saveEdits(formData: FormData) {
+	'use server';
+	const token = String(formData.get('token') ?? '');
+	const userId = await requireSessionUserId();
+	if (!userId) redirect(`/sign-in?redirect_to=${encodeURIComponent(`/approve/${token}`)}`);
+	const body = String(formData.get('body') ?? '');
+	const titleRaw = formData.get('title');
+	const ctaRaw = formData.get('cta');
+	const publishAtLocalGst = String(formData.get('publishAtLocalGst') ?? '');
+	try {
+		const result = await updatePendingApprovalFromToken({
+			token,
+			userId,
+			edit: {
+				body,
+				title: titleRaw != null ? String(titleRaw) : undefined,
+				cta: ctaRaw != null ? String(ctaRaw) : undefined,
+				publishAtLocalGst: publishAtLocalGst || undefined,
+			},
+		});
+		const params = new URLSearchParams({ saved: '1' });
+		if (result.dashAutoFixed) params.set('dashFixed', '1');
+		redirect(`/approve/${token}?${params.toString()}`);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Could not save changes.';
+		redirect(`/approve/${token}?error=${encodeURIComponent(message)}`);
+	}
+}
+
 export default async function ApprovalPage({
 	params,
 	searchParams,
 }: {
 	params: Promise<{ token: string }>;
-	searchParams: Promise<{ done?: string; error?: string }>;
+	searchParams: Promise<{ done?: string; error?: string; saved?: string; dashFixed?: string }>;
 }) {
 	const { token } = await params;
 	const query = await searchParams;
@@ -62,6 +92,7 @@ export default async function ApprovalPage({
 			model={model}
 			query={query}
 			decide={decide}
+			saveEdits={saveEdits}
 			tokenField={{ name: 'token', value: token }}
 		/>
 	);

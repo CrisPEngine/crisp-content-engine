@@ -10,6 +10,7 @@ import { getAuthorizationSecrets } from '@/lib/social/authorizationSecrets';
 import { AgentError } from '@/lib/agent/errors';
 import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 import { resolveAgentThreadsAttachedImageUrl } from '@/lib/publish/agentThreadsJob';
+import { sanitizeText } from '@/lib/content/dashSanitizer';
 
 export type AgentMetaPlatform = 'facebook' | 'instagram';
 
@@ -55,7 +56,7 @@ export function buildAgentMetaPayload(
 		null;
 
 	return {
-		text: memory.body || '',
+		text: sanitizeText(memory.body || ''),
 		imageUrl,
 		videoUrl,
 		contentItemKey: memory.id,
@@ -224,13 +225,15 @@ export async function syncAgentMetaPublishJob(input: {
 		.from('publish_jobs')
 		.select('id, status')
 		.eq('platform', platform)
-		.eq('target_id', targetId)
 		.eq('content_item_key', contentItemKey)
+		.in('status', ['published', 'publishing'])
 		.maybeSingle();
 
 	if (existing?.status === 'published' || existing?.status === 'publishing') {
 		return { armed: existing.status === 'publishing', platform };
 	}
+
+	await cancelAgentMetaPublishJob(input.userId, contentItemKey, platform);
 
 	const row = {
 		user_id: input.userId,
@@ -247,16 +250,9 @@ export async function syncAgentMetaPublishJob(input: {
 		next_attempt_at: null,
 	};
 
-	if (existing) {
-		const { error } = await admin.from('publish_jobs').update({ ...row, updated_at: new Date().toISOString() }).eq('id', existing.id);
-		if (error) {
-			throw new AgentError('publish_queue_failed', `Failed to update ${platform} publish job: ${error.message}`, 502);
-		}
-	} else {
-		const { error } = await admin.from('publish_jobs').insert(row);
-		if (error) {
-			throw new AgentError('publish_queue_failed', `Failed to create ${platform} publish job: ${error.message}`, 502);
-		}
+	const { error } = await admin.from('publish_jobs').insert(row);
+	if (error) {
+		throw new AgentError('publish_queue_failed', `Failed to create ${platform} publish job: ${error.message}`, 502);
 	}
 
 	return { armed: true, platform };

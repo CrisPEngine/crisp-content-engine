@@ -64,7 +64,10 @@ function chain() {
 			eq: vi.fn(async () => ({ error: null })),
 		};
 	});
-	builder.delete = del;
+	builder.delete = vi.fn(() => {
+		del();
+		return builder;
+	});
 	return builder;
 }
 
@@ -218,8 +221,8 @@ describe('agent Threads publish jobs', () => {
 			memory,
 			publishAt: '2030-06-01T12:00:00.000Z',
 		});
-		expect(update).toHaveBeenCalled();
-		const row = update.mock.calls[0]?.[0] as { payload_json: { imageUrl: string } };
+		expect(insert).toHaveBeenCalled();
+		const row = insert.mock.calls[0]?.[0] as { payload_json: { imageUrl: string } };
 		expect(row.payload_json.imageUrl).toBe('https://res.cloudinary.com/demo/resync.jpg');
 	});
 
