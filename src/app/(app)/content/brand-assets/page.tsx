@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 type Brand = { id: string; name: string };
 type Asset = { id: string; title?: string; url?: string; libraryType?: string; description?: string; productFeature?: string; verifiedReference?: boolean; approvalStatus: string };
@@ -8,6 +9,7 @@ type Asset = { id: string; title?: string; url?: string; libraryType?: string; d
 const TYPES = ['PRODUCT_SCREENSHOT', 'PRODUCT_UI', 'LOGO', 'BRAND_MARK', 'BRAND_REFERENCE', 'PRODUCT_PHOTO', 'FOUNDER_PHOTO', 'MARKETING_EXAMPLE', 'ARTICLE_IMAGE', 'SOCIAL_IMAGE', 'OTHER'];
 
 export default function BrandAssetsPage() {
+	const searchParams = useSearchParams();
 	const [brands, setBrands] = useState<Brand[]>([]);
 	const [assets, setAssets] = useState<Asset[]>([]);
 	const [brandId, setBrandId] = useState('');
@@ -17,7 +19,9 @@ export default function BrandAssetsPage() {
 	const [verified, setVerified] = useState(true);
 	const [reference, setReference] = useState(true);
 	const [previews, setPreviews] = useState<Array<{ file: File; url: string }>>([]);
+	const [uploadRows, setUploadRows] = useState<Array<{ name: string; status: 'pending' | 'uploading' | 'done' | 'error'; detail?: string }>>([]);
 	const [message, setMessage] = useState<string | null>(null);
+	const [saving, setSaving] = useState(false);
 
 	async function load(nextBrandId = brandId) {
 		const response = await fetch(`/api/brand-assets${nextBrandId ? `?brandId=${encodeURIComponent(nextBrandId)}` : ''}`);
@@ -42,11 +46,14 @@ export default function BrandAssetsPage() {
 				const body = (await response.json()) as { brands?: Brand[]; assets?: Asset[] };
 				setBrands(body.brands ?? []);
 				setAssets(body.assets ?? []);
-				if (body.brands?.[0]) setBrandId(body.brands[0].id);
+				const requested = searchParams.get('brandId');
+				if (requested && body.brands?.some((brand) => brand.id === requested)) {
+					setBrandId(requested);
+				} else if (body.brands?.[0]) setBrandId(body.brands[0].id);
 			})();
 		}, 0);
 		return () => window.clearTimeout(timer);
-	}, []);
+	}, [searchParams]);
 
 	function chooseFiles(files: FileList | null) {
 		setPreviews([...(files ?? [])].map((file) => ({ file, url: URL.createObjectURL(file) })));
@@ -58,14 +65,29 @@ export default function BrandAssetsPage() {
 			setMessage('Choose a brand first.');
 			return;
 		}
-		for (const preview of previews) {
+		if (previews.length === 0) {
+			setMessage('Choose one or more images to upload.');
+			return;
+		}
+		setSaving(true);
+		const batchSize = previews.length;
+		setUploadRows(previews.map((preview) => ({ name: preview.file.name, status: 'pending' as const })));
+		let failures = 0;
+		for (let index = 0; index < previews.length; index += 1) {
+			const preview = previews[index];
+			setUploadRows((rows) => rows.map((row, rowIndex) => (rowIndex === index ? { ...row, status: 'uploading' } : row)));
 			const form = new FormData();
 			form.set('file', preview.file);
 			const uploaded = await fetch('/api/uploads/image', { method: 'POST', body: form });
 			const uploadBody = (await uploaded.json()) as { assetId?: string; error?: string };
 			if (!uploaded.ok || !uploadBody.assetId) {
-				setMessage(uploadBody.error ?? 'Upload failed.');
-				return;
+				failures += 1;
+				setUploadRows((rows) =>
+					rows.map((row, rowIndex) =>
+						rowIndex === index ? { ...row, status: 'error', detail: uploadBody.error ?? 'Upload failed.' } : row,
+					),
+				);
+				continue;
 			}
 			const saved = await fetch('/api/brand-assets', {
 				method: 'POST',
@@ -83,12 +105,23 @@ export default function BrandAssetsPage() {
 			});
 			if (!saved.ok) {
 				const errorBody = (await saved.json()) as { error?: string };
-				setMessage(errorBody.error ?? 'Could not save asset metadata.');
-				return;
+				failures += 1;
+				setUploadRows((rows) =>
+					rows.map((row, rowIndex) =>
+						rowIndex === index ? { ...row, status: 'error', detail: errorBody.error ?? 'Could not save metadata.' } : row,
+					),
+				);
+				continue;
 			}
+			setUploadRows((rows) => rows.map((row, rowIndex) => (rowIndex === index ? { ...row, status: 'done' } : row)));
 		}
-		setPreviews([]);
-		setMessage('Saved.');
+		setSaving(false);
+		if (failures === 0) {
+			setPreviews([]);
+			setMessage(`Saved ${batchSize} asset${batchSize === 1 ? '' : 's'}.`);
+		} else {
+			setMessage(`${failures} file${failures === 1 ? '' : 's'} failed. Successful uploads were saved.`);
+		}
 		await load(brandId);
 	}
 
@@ -128,10 +161,23 @@ export default function BrandAssetsPage() {
 					Generative media may use this as a reference
 				</label>
 				<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => chooseFiles(event.target.files)} />
+				<p className="text-xs text-text-dim">Up to 10 MB per image. Larger files show a clear error; CCE resizes on upload.</p>
 				<div className="flex gap-3 flex-wrap">
 					{previews.map((preview) => <img key={preview.url} src={preview.url} alt="" className="h-28 w-auto rounded border" />)}
 				</div>
-				<button className="rounded bg-primary px-4 py-2 text-white" type="button" onClick={() => void save()}>Save assets</button>
+				{uploadRows.length > 0 ? (
+					<ul className="text-sm space-y-1">
+						{uploadRows.map((row) => (
+							<li key={row.name}>
+								{row.name}: {row.status}
+								{row.detail ? ` (${row.detail})` : ''}
+							</li>
+						))}
+					</ul>
+				) : null}
+				<button className="rounded bg-primary px-4 py-2 text-white disabled:opacity-60" type="button" disabled={saving} onClick={() => void save()}>
+					{saving ? 'Uploading…' : 'Save assets'}
+				</button>
 				{message ? <p className="text-sm">{message}</p> : null}
 			</div>
 			<div className="grid gap-4 sm:grid-cols-2">

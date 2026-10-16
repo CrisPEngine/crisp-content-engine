@@ -15,6 +15,8 @@ type Credential = {
 	expiresAt?: string;
 };
 
+type BrandOption = { id: string; name: string };
+
 type AuditRow = {
 	id: string;
 	action: string;
@@ -32,17 +34,57 @@ export default function AgentCredentialsPage() {
 	const [chiefName, setChiefName] = useState('Chris Marketing Chief of Staff');
 	const [secret, setSecret] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [brands, setBrands] = useState<BrandOption[]>([]);
+	const [expandBrandId, setExpandBrandId] = useState('');
 
 	async function reload() {
-		const [credentialResponse, auditResponse] = await Promise.all([fetch('/api/agent/v1/credentials'), fetch('/api/agent/v1/audit')]);
+		const [credentialResponse, auditResponse, brandResponse] = await Promise.all([
+			fetch('/api/agent/v1/credentials'),
+			fetch('/api/agent/v1/audit'),
+			fetch('/api/brand-assets'),
+		]);
 		if (credentialResponse.status === 401) {
 			setError('Sign in to manage agent credentials.');
 			return;
 		}
 		const credentialBody = (await credentialResponse.json()) as { credentials?: Credential[] };
 		const auditBody = (await auditResponse.json()) as { entries?: AuditRow[] };
+		const brandBody = (await brandResponse.json()) as { brands?: BrandOption[] };
 		setCredentials(credentialBody.credentials ?? []);
 		setAudit(auditBody.entries ?? []);
+		setBrands(brandBody.brands ?? []);
+	}
+
+	async function grantAllBrands(credentialId: string) {
+		const response = await fetch(`/api/agent/v1/credentials/${credentialId}`, {
+			method: 'PATCH',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ grantAllBrands: true }),
+		});
+		if (!response.ok) {
+			const body = (await response.json()) as { error?: string };
+			setError(body.error ?? 'Could not update credential scope.');
+			return;
+		}
+		await reload();
+	}
+
+	async function addBrandToCredential(credentialId: string) {
+		if (!expandBrandId.trim()) {
+			setError('Choose a brand brain id to add.');
+			return;
+		}
+		const response = await fetch(`/api/agent/v1/credentials/${credentialId}`, {
+			method: 'PATCH',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ addBrandId: expandBrandId.trim() }),
+		});
+		if (!response.ok) {
+			const body = (await response.json()) as { error?: string };
+			setError(body.error ?? 'Could not add brand to credential.');
+			return;
+		}
+		await reload();
 	}
 
 	useEffect(() => {
@@ -110,6 +152,18 @@ export default function AgentCredentialsPage() {
 			</div>
 			{secret ? <p className="text-sm break-all">Copy this secret now. It will not be shown again: {secret}</p> : null}
 			{error ? <p className="text-sm">{error}</p> : null}
+			<div className="card p-4 space-y-2">
+				<h2 className="font-medium">Add brand to an existing credential</h2>
+				<select className="w-full rounded border px-3 py-2 text-sm" value={expandBrandId} onChange={(event) => setExpandBrandId(event.target.value)}>
+					<option value="">Select brand brain</option>
+					{brands.map((brand) => (
+						<option key={brand.id} value={brand.id}>
+							{brand.name} ({brand.id.slice(0, 8)}…)
+						</option>
+					))}
+				</select>
+				<p className="text-xs text-text-soft">For MCP OAuth, reconnect the assistant and choose Allow all my brands so new brands are included automatically.</p>
+			</div>
 			<div className="card p-4">
 				<h2 className="font-medium mb-3">Credentials</h2>
 				<ul className="space-y-3">
@@ -120,9 +174,21 @@ export default function AgentCredentialsPage() {
 								{credential.keyPrefix}… · {credential.scope ?? 'BRAND'} · brands {credential.allowedBrandIds.join(', ') || 'account brands'} · {credential.revokedAt ? 'revoked' : 'active'}
 							</div>
 							{credential.revokedAt ? null : (
-								<button className="mt-2 text-sm underline" type="button" onClick={() => void revoke(credential.id)}>
-									Revoke
-								</button>
+								<div className="mt-2 flex flex-wrap gap-3 items-center">
+									<button className="text-sm underline" type="button" onClick={() => void revoke(credential.id)}>
+										Revoke
+									</button>
+									{credential.scope !== 'OWNER_ACCOUNT' ? (
+										<button className="text-sm underline" type="button" onClick={() => void grantAllBrands(credential.id)}>
+											Grant all brands on this account
+										</button>
+									) : null}
+									{credential.scope !== 'OWNER_ACCOUNT' ? (
+										<button className="text-sm underline" type="button" onClick={() => void addBrandToCredential(credential.id)}>
+											Add selected brand
+										</button>
+									) : null}
+								</div>
 							)}
 						</li>
 					))}

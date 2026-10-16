@@ -5,7 +5,7 @@ import { uploadImageFromBuffer } from '@/lib/cloudinary';
 
 export const runtime = 'nodejs';
 
-const MAX_FILE_SIZE_MB = parseInt(process.env.CLOUDINARY_MAX_FILE_SIZE_MB || '2', 10);
+const MAX_FILE_SIZE_MB = parseInt(process.env.CLOUDINARY_MAX_FILE_SIZE_MB || '10', 10);
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
@@ -65,7 +65,9 @@ export async function POST(req: Request) {
 		// Validate file size
 		if (file.size > MAX_FILE_SIZE_BYTES) {
 			return NextResponse.json(
-				{ error: `File too large. Maximum size is ${MAX_FILE_SIZE_MB} MB` },
+				{
+					error: `This file is too large. Please use an image up to ${MAX_FILE_SIZE_MB} MB. CCE will resize it after upload.`,
+				},
 				{ status: 400 }
 			);
 		}

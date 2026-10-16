@@ -1,7 +1,11 @@
+import { randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { z } from 'zod';
+import { getIntelligenceStore } from '@/lib/intelligence/actions';
+import { activateBrandFromOnboarding } from '@/lib/intelligence/onboarding/activateFromOnboarding';
+import type { OnboardingNativeInput } from '@/lib/intelligence/onboarding/mapOnboardingToNative';
 
 export const runtime = 'nodejs';
 
@@ -303,12 +307,47 @@ export async function POST(req: Request) {
 		const BASE_ID = process.env.AIRTABLE_BASE_ID;
 		const TABLE_ID = process.env.AIRTABLE_BRANDPROFILES_TABLE;
 
-		if (!AIRTABLE_TOKEN || !BASE_ID || !TABLE_ID) {
-			return NextResponse.json(
-				{ error: 'Airtable configuration missing. Please contact support.' },
-				{ status: 500 }
-			);
-		}
+		const airtableConfigured = Boolean(AIRTABLE_TOKEN && BASE_ID && TABLE_ID);
+
+		const clientName =
+			data.brand_type === 'personal'
+				? String(data.personal_full_name || data.client_name || 'Personal Brand')
+				: String(data.client_name || 'Brand');
+
+		const onboardingNative: OnboardingNativeInput = {
+			brandType: data.brand_type,
+			clientName,
+			website: data.website || undefined,
+			audience: data.brand_type === 'personal' ? String(data.personal_audience || data.audience || '') : String(data.audience || ''),
+			valueProps: data.brand_type === 'personal' ? String(data.personal_expertise || data.value_props || '') : String(data.value_props || ''),
+			offers: data.brand_type === 'personal' ? 'Personal brand creator package.' : String(data.offers || ''),
+			brandGoals: data.brand_type === 'personal' ? String(data.personal_goals || data.brand_goals || '') : String(data.brand_goals || ''),
+			voiceRules: data.voice_rules || undefined,
+			brandKeywords: data.brand_keywords || undefined,
+			excludeKeywords: data.exclude_keywords || undefined,
+			contentRules: data.content_rules || undefined,
+			additionalInfo: data.additional_info || undefined,
+			platformsRequested: data.platforms_requested,
+			timezone: data.timezone,
+			languageRegion: data.language_region,
+			preferredImageSource: data.preferred_image_source,
+			brandPalette: data.brand_palette || undefined,
+			approvalContactEmail: data.approval_contact_email || undefined,
+			personalVoiceTraits: data.personal_voice_traits,
+			personalToneAvoid: data.personal_tone_avoid,
+			personalRiskTolerance: data.personal_risk_tolerance,
+			personalContentStyle: data.personal_content_style,
+			personalExcludeKeywords: data.personal_exclude_keywords || undefined,
+		};
+
+		let airtableId: string | undefined;
+		let airtableWarning: string | undefined;
+
+		if (!airtableConfigured) {
+			airtableId = `local_${randomUUID()}`;
+			airtableWarning =
+				'Airtable is not configured. Your native brand was created, but legacy Make/Airtable workflows will not run until Airtable is linked.';
+		} else {
 
 		// Map attachment URLs to Airtable attachment format
 		const attachments = (data.brand_assets_urls || []).map((url) => ({ url }));
@@ -422,69 +461,74 @@ export async function POST(req: Request) {
 			recordPayload.fields.personal_assets = personalAttachments;
 		}
 
-		// Write to Airtable
-		const airtableRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`, {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify(recordPayload),
-		});
-
-		const airtableResult = await airtableRes.json();
-
-		if (!airtableRes.ok) {
-			console.error('Airtable error:', JSON.stringify(airtableResult, null, 2));
-			// Common errors:
-			// - Unknown field name
-			// - Invalid select option value
-			// - Insufficient permissions
-			// - Field type mismatch (e.g., trying to send text to a select field)
-			const errorMessage = airtableResult?.error?.message || 'Failed to create brand profile';
-			const errorDetails = airtableResult?.error || {};
-			
-			// Log the full payload for debugging
-			console.error('Airtable payload sent:', JSON.stringify(recordPayload, null, 2));
-			
-			return NextResponse.json(
-				{
-					error: errorMessage,
-					details: errorDetails,
-					fieldErrors: airtableResult?.error?.fields || {},
+			// Write to Airtable
+			const airtableRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`, {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+					'Content-Type': 'application/json',
 				},
-				{ status: 422 }
-			);
-		}
+				body: JSON.stringify(recordPayload),
+			});
 
-		// Optional: Trigger Make webhook for site scraping/strategy generation
-		if (process.env.MAKE_ONBOARDING_WEBHOOK_URL) {
-			try {
-				await fetch(process.env.MAKE_ONBOARDING_WEBHOOK_URL, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						...(process.env.MAKE_API_KEY && {
-							'x-api-key': process.env.MAKE_API_KEY,
-						}),
-					},
-					body: JSON.stringify({
-						brand_profile_id: airtableResult.id,
-						user_id: user.id,
-						client_name: data.client_name,
-						website: data.website || '',
-					}),
-				});
-			} catch (webhookError) {
-				// Log but don't fail the request if webhook fails
-				console.error('Make webhook error:', webhookError);
+			const airtableResult = await airtableRes.json();
+
+			if (!airtableRes.ok) {
+				console.error('Airtable error:', JSON.stringify(airtableResult, null, 2));
+				console.error('Airtable payload sent:', JSON.stringify(recordPayload, null, 2));
+				airtableId = `local_${randomUUID()}`;
+				airtableWarning =
+					airtableResult?.error?.message ||
+					'Could not save the Airtable brand profile. Your native brand was still created in CCE.';
+			} else {
+				airtableId = airtableResult.id as string;
+
+				if (process.env.MAKE_ONBOARDING_WEBHOOK_URL) {
+					try {
+						await fetch(process.env.MAKE_ONBOARDING_WEBHOOK_URL, {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json',
+								...(process.env.MAKE_API_KEY && {
+									'x-api-key': process.env.MAKE_API_KEY,
+								}),
+							},
+							body: JSON.stringify({
+								brand_profile_id: airtableResult.id,
+								user_id: user.id,
+								client_name: data.client_name,
+								website: data.website || '',
+							}),
+						});
+					} catch (webhookError) {
+						console.error('Make webhook error:', webhookError);
+					}
+				}
 			}
 		}
 
+		if (!airtableId) {
+			return NextResponse.json({ error: 'Could not determine brand profile id.' }, { status: 500 });
+		}
+
+		const store = getIntelligenceStore();
+		const activated = await activateBrandFromOnboarding({
+			store,
+			userId: user.id,
+			airtableTable: TABLE_ID || 'BrandProfiles',
+			airtableBrandId: airtableId,
+			clientName,
+			onboarding: onboardingNative,
+			reason: 'onboarding',
+		});
+
 		return NextResponse.json({
 			ok: true,
-			airtableId: airtableResult.id,
-			message: 'Brand profile created successfully',
+			airtableId,
+			brandBrainId: activated.brandId,
+			strategyId: activated.strategyId,
+			airtableWarning,
+			message: airtableWarning ? 'Native brand created with warnings.' : 'Brand profile created successfully',
 		});
 	} catch (e: any) {
 		console.error('Onboarding error:', e);

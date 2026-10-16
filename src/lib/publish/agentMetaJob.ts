@@ -4,7 +4,8 @@ import { getSupabaseService } from '@/lib/supabaseService';
 import { isMetaPublishingEnabled } from '@/lib/featureFlags';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import type { ContentMemoryRecord } from '@/lib/intelligence/types';
-import { resolvePublishDestination } from '@/lib/social/resolveDestination';
+import { PublishDestinationMissingError, requirePublishDestination } from '@/lib/social/publishDestination';
+import type { ResolvedPublishDestination } from '@/lib/social/resolveDestination';
 import { DESTINATION_TYPES } from '@/lib/social/providers';
 import { getAuthorizationSecrets } from '@/lib/social/authorizationSecrets';
 import { AgentError } from '@/lib/agent/errors';
@@ -98,7 +99,7 @@ async function applyPublishSpacing(admin: ReturnType<typeof getSupabaseService>,
 async function assertMetaDestinationReady(input: {
 	userId: string;
 	platform: AgentMetaPlatform;
-	resolved: NonNullable<Awaited<ReturnType<typeof resolvePublishDestination>>>;
+	resolved: ResolvedPublishDestination;
 }): Promise<void> {
 	const admin = getSupabaseService();
 	const { userId, platform, resolved } = input;
@@ -190,17 +191,18 @@ export async function syncAgentMetaPublishJob(input: {
 	}
 
 	const brandKey = brain.airtableBrandId?.trim() || brain.id;
-	const resolved = await resolvePublishDestination({
-		userId: input.userId,
-		airtableBrandId: brandKey,
-		platform: airtablePlatformLabel(platform),
-	});
-	if (!resolved) {
-		throw new AgentError(
-			'destination_not_ready',
-			`No ${platform === 'instagram' ? 'Instagram' : 'Facebook'} destination for this brand. Assign a channel in Connections.`,
-			409,
-		);
+	let resolved: ResolvedPublishDestination;
+	try {
+		resolved = await requirePublishDestination({
+			userId: input.userId,
+			airtableBrandId: brandKey,
+			platform: airtablePlatformLabel(platform),
+		});
+	} catch (error) {
+		if (error instanceof PublishDestinationMissingError) {
+			throw new AgentError('destination_not_ready', error.message, 409);
+		}
+		throw error;
 	}
 
 	await assertMetaDestinationReady({ userId: input.userId, platform, resolved });

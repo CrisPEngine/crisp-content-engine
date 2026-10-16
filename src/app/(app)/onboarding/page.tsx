@@ -325,6 +325,7 @@ export default function OnboardingPage() {
 	const [submitting, setSubmitting] = useState(false);
 	const [showLoading, setShowLoading] = useState(false);
 	const [submittedBrandName, setSubmittedBrandName] = useState('');
+	const [postSubmitQuery, setPostSubmitQuery] = useState('new_brand=1');
 
 	const draft = loadDraft();
 
@@ -545,8 +546,16 @@ export default function OnboardingPage() {
 			}
 
 			const airtableId: string | undefined = result?.airtableId;
+			const brandBrainId: string | undefined = result?.brandBrainId;
 			const brandName = inferredClientName;
 			setSubmittedBrandName(brandName);
+			const query = new URLSearchParams({ new_brand: '1' });
+			if (brandBrainId) query.set('brandBrainId', brandBrainId);
+			if (airtableId) query.set('airtableBrandId', airtableId);
+			setPostSubmitQuery(query.toString());
+			if (result?.airtableWarning) {
+				console.warn('[Onboarding]', result.airtableWarning);
+			}
 			clearDraft();
 			setShowLoading(true);
 
@@ -618,7 +627,7 @@ export default function OnboardingPage() {
 	};
 
 	const handleLoadingComplete = () => {
-		window.location.href = '/dashboard?new_brand=1';
+		window.location.href = `/dashboard?${postSubmitQuery}`;
 	};
 
 	if (!mounted) {
