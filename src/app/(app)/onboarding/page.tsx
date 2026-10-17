@@ -427,19 +427,20 @@ export default function OnboardingPage() {
 			const planData = await planRes.json();
 			const plan = planData.planName?.toLowerCase() || 'free';
 			
-			// Get max brands from entitlements
 			let maxBrands = 999;
+			let platformAdmin = false;
 			try {
 				const entsRes = await fetch('/api/usage/summary');
 				if (entsRes.ok) {
 					const entsData = await entsRes.json();
+					platformAdmin = entsData.platform_admin === true;
 					maxBrands = entsData.caps?.max_brands || 999;
 				}
 			} catch (err) {
 				console.warn('Failed to get entitlements:', err);
 			}
-			
-			if (currentBrandCount >= maxBrands) {
+
+			if (!platformAdmin && currentBrandCount >= maxBrands) {
 				setSubmitting(false); // Reset loading state
 				alert(`You've reached the maximum number of brands for your plan (${maxBrands} brand${maxBrands !== 1 ? 's' : ''}). Please upgrade your package or create a new account to add more brands.`);
 				return;

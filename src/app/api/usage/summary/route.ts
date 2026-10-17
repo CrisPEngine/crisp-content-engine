@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { getMaxBrandsForUser } from '@/lib/brandLimits';
+import { bypassesUsageLimits } from '@/lib/auth/platformAdmin';
 import { enforceCaps } from '@/lib/enforceCaps';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { resolvePlan } from '@/lib/planResolver';
@@ -47,18 +49,8 @@ export async function GET(req: Request) {
 		}),
 	};
 
-	let maxBrands = planCaps?.max_brands ?? 999;
-	if (maxBrands === 999) {
-		try {
-			const { getEntitlements } = await import('@/lib/enforceCaps');
-			const entitlements = await getEntitlements(userId);
-			if (entitlements?.max_brands != null) {
-				maxBrands = entitlements.max_brands;
-			}
-		} catch (error) {
-			console.error('Failed to get max_brands:', error);
-		}
-	}
+	const platformAdmin = await bypassesUsageLimits(userId);
+	const maxBrands = await getMaxBrandsForUser(userId);
 
 	return NextResponse.json({
 		...check,
@@ -68,6 +60,7 @@ export async function GET(req: Request) {
 		},
 		plan: resolved.plan,
 		isEmailVerified: resolved.isEmailVerified,
+		platform_admin: platformAdmin,
 	});
 }
 

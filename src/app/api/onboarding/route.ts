@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { z } from 'zod';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
+import { assertCanAddBrand, BrandLimitReachedError } from '@/lib/brandLimits';
 import { activateBrandFromOnboarding } from '@/lib/intelligence/onboarding/activateFromOnboarding';
 import type { OnboardingNativeInput } from '@/lib/intelligence/onboarding/mapOnboardingToNative';
 
@@ -300,6 +301,23 @@ export async function POST(req: Request) {
 
 		if (userErr || !user) {
 			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+		}
+
+		try {
+			await assertCanAddBrand(user.id);
+		} catch (limitError) {
+			if (limitError instanceof BrandLimitReachedError) {
+				return NextResponse.json(
+					{
+						error: limitError.message,
+						code: limitError.code,
+						max_brands: limitError.maxBrands,
+						current_count: limitError.currentCount,
+					},
+					{ status: 403 },
+				);
+			}
+			throw limitError;
 		}
 
 		// Airtable configuration

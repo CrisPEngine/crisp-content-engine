@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { UNLIMITED_USAGE_CAP, bypassesUsageLimits } from '@/lib/auth/platformAdmin';
+import { getMaxBrandsForUser } from '@/lib/brandLimits';
 import { getChannelUsage } from '@/lib/enforceCaps';
 import { resolvePlan } from '@/lib/planResolver';
 import { CAPS } from '@/config/pricing';
@@ -89,7 +90,7 @@ export async function GET(request: Request) {
 				},
 			},
 			plan_meta: {
-				max_brands: planCaps.maxBrands,
+				max_brands: await getMaxBrandsForUser(user.id),
 				max_seats: planCaps.maxSeats,
 				included_platforms: planCaps.includedPlatforms,
 				make_scenario: planCaps.makeScenario,

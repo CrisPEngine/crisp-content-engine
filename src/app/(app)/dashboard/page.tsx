@@ -240,9 +240,11 @@ export default async function Dashboard({
 			.eq('user_id', user.id);
 
 		const showWelcomeOnboarding = (nativeBrandCount ?? 0) === 0 && !hasBrandProfiles;
-		let maxBrands = 999; // Default to high number for admins or no subscription
+		let maxBrands = 999; // Default when no entitlements row
 		let currentBrandCount = brandProfiles.length;
-		if (entitlementsRow?.max_brands != null) {
+		if (profile?.is_admin) {
+			maxBrands = 999;
+		} else if (entitlementsRow?.max_brands != null) {
 			maxBrands = entitlementsRow.max_brands;
 		}
 
