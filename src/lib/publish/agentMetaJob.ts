@@ -11,6 +11,7 @@ import { getAuthorizationSecrets } from '@/lib/social/authorizationSecrets';
 import { AgentError } from '@/lib/agent/errors';
 import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 import { resolveAgentThreadsAttachedImageUrl } from '@/lib/publish/agentThreadsJob';
+import { composeAgentPublishText } from '@/lib/content/socialPublishBody';
 
 export type AgentMetaPlatform = 'facebook' | 'instagram';
 
@@ -56,7 +57,7 @@ export function buildAgentMetaPayload(
 		null;
 
 	return {
-		text: memory.body || '',
+		text: composeAgentPublishText(memory),
 		imageUrl,
 		videoUrl,
 		contentItemKey: memory.id,

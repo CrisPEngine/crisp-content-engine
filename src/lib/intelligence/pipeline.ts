@@ -21,6 +21,7 @@ import { validateMemoryChannelConstraints } from '@/lib/channels/validateMemory'
 import { isRedditPipelineChannel } from '@/lib/channels/reddit';
 import { redditDraftFromGenerated, redditWriterMessages, type RedditGeneratedDraft } from './redditGeneration';
 import { postProcessPlainDraft, postProcessWriterDraft } from '@/lib/content/postProcessGeneration';
+import { isSocialPublishChannel, sanitizeSocialPublishFields } from '@/lib/content/socialPublishBody';
 
 export type IntelligenceCompletion<T> = {
 	data: T;
@@ -88,6 +89,15 @@ function channelDraftLimitLine(channel: string, longForm: boolean): string | nul
 	return `The full draft (including hashtags and line breaks) must be ${max} characters or fewer. Count carefully before returning JSON.`;
 }
 
+function socialDraftInstruction(channel: string, longForm: boolean): string | null {
+	if (longForm || !isSocialPublishChannel(channel)) return null;
+	return [
+		'The draft field is ONLY the publishable post copy for this channel (caption or post text).',
+		'Do NOT include production headers or brief material such as VISUAL CONCEPT, IMAGE PROMPT, CAROUSEL COPY, panel instructions, or image-generation prompts.',
+		'Put the closing question in the cta JSON field, not duplicated at the end of draft unless it is inseparable from the caption flow.',
+	].join(' ');
+}
+
 function writerMessages(
 	contextPrompt: string,
 	brief: ContentBrief,
@@ -112,6 +122,7 @@ function writerMessages(
 						]
 					: []),
 				...(limitLine ? [limitLine] : []),
+				...(socialDraftInstruction(channel, longForm) ? [socialDraftInstruction(channel, longForm) as string] : []),
 			].join('\n'),
 		},
 		{
@@ -409,13 +420,24 @@ export async function runContentIntelligencePipeline(
 		);
 	}
 
-	const reviewedBody = postProcessPlainDraft(review.improvedDraft);
+	const reviewedBodyRaw = postProcessPlainDraft(review.improvedDraft);
 	const generatedFields = generated as WriterDraft;
 	const sanitizedHook = postProcessPlainDraft(
 		redditParsed?.title ?? generatedFields.hook ?? review.improvedDraft.split('\n')[0],
 	);
 	const sanitizedCta = postProcessPlainDraft((generatedFields.cta || briefPayload.cta || '').trim());
 	const sanitizedArgument = postProcessPlainDraft((generatedFields.argument || briefPayload.centralArgument || '').trim());
+	const socialSanitized = sanitizeSocialPublishFields({
+		channel: intent.channel,
+		body: reviewedBodyRaw,
+		cta: sanitizedCta,
+		metadata: redditParsed ? { ...redditParsed.metadata } : {},
+	});
+	const reviewedBody = socialSanitized.body;
+	const finalCta = socialSanitized.cta ?? sanitizedCta;
+	const generationMetadata = socialSanitized.warnings.length
+		? { generationWarnings: socialSanitized.warnings }
+		: {};
 
 	const comparable = memory.recentSameChannel.length;
 	const score = scoreDraft({
@@ -442,12 +464,16 @@ export async function runContentIntelligencePipeline(
 		angle: briefPayload.angle,
 		hook: redditParsed?.title ?? sanitizedHook,
 		argument: sanitizedArgument,
-		cta: sanitizedCta,
+		cta: finalCta,
 		format: intent.contentType,
 		body: reviewedBody,
 		publicationStatus: 'draft',
 		sourceIdea: intent.userIntent,
-		...(redditParsed ? { metadata: redditParsed.metadata } : {}),
+		metadata: {
+			...(redditParsed?.metadata ?? {}),
+			...socialSanitized.metadata,
+			...generationMetadata,
+		},
 	});
 
 	const draftRow = await store.saveDraft({

@@ -8,6 +8,7 @@ import { getAgentStore } from './controlStore';
 import { AgentError } from './errors';
 import type { ApprovalRequest } from './types';
 import { gstDatetimeLocalValueToUtcIso } from '@/lib/datetime/gstSchedule';
+import { sanitizeSocialPublishFields } from '@/lib/content/socialPublishBody';
 
 function hashToken(token: string): string {
 	return createHash('sha256').update(token).digest('hex');
@@ -90,11 +91,18 @@ async function applyApprovalEdit(request: ApprovalRequest, userId: string, raw: 
 		const memory = await intelligence.getMemory(request.ownerUserId, request.targetId);
 		if (!memory) throw new AgentError('not_found', 'The content for this approval no longer exists.', 404);
 
+		const sanitized = sanitizeSocialPublishFields({
+			channel: String(memory.channel),
+			body,
+			cta: cta ?? memory.cta,
+			metadata: memory.metadata,
+		});
 		const updated = {
 			...memory,
-			body,
+			body: sanitized.body,
 			...(title != null ? { hook: title } : {}),
-			...(cta != null ? { cta } : {}),
+			...(sanitized.cta != null ? { cta: sanitized.cta } : cta != null ? { cta } : {}),
+			metadata: sanitized.metadata,
 		};
 		assertMemoryChannelConstraints(updated);
 		await intelligence.saveMemory(request.ownerUserId, updated);

@@ -21,7 +21,7 @@ RULES (non-negotiable):
 8. Hashtags: platform-appropriate; LinkedIn/Instagram/Facebook may include hashtags; X sparingly; Blog usually none in body (optional in hashtags field).
 9. image_prompt: use RICH schema for LinkedIn, Instagram, Facebook; use SIMPLE schema for X and Blog.
 10. post_title is the hook/headline line (maps to ContentQueue "hook"). Keep it compelling and distinct per item.
-11. body_draft is the full post body ready for review (not an outline unless Blog requests long-form).
+11. body_draft is publishable post copy only (caption or post text). Never put VISUAL CONCEPT, IMAGE PROMPT, CAROUSEL COPY, or panel instructions in body_draft; use image_prompt for visual briefs.
 12. series_position and series_total must match the generation request exactly.
 13. Promotional balance: majority value-driven content. If offers/CTA context is provided, use naturally in at most ~30% of items — never force into every post.
 14. Do not invent facts, testimonials, metrics, or client names not supported by brand context.
