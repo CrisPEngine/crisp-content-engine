@@ -128,6 +128,26 @@ export function validateXThread(draft: ContentDraft): ValidationResult {
 export function validateMetaCaption(draft: ContentDraft): ValidationResult {
 	const errors: ValidationError[] = [];
 	const text = draft.post_content || '';
+	const platform = String(draft.platform || '').toLowerCase();
+	const maxChars = platform === 'instagram' ? 2200 : platform === 'facebook' ? 63206 : null;
+
+	if (maxChars && text.length > maxChars) {
+		errors.push({
+			code: 'META_CAPTION_OVER_LIMIT',
+			message: `Caption is ${text.length} characters (max ${maxChars})`,
+			severity: 'block',
+			canAutoRewrite: true,
+		});
+	}
+
+	if (/^\s*(VISUAL CONCEPT|IMAGE PROMPT|CAROUSEL COPY)\s*:?\s*$/im.test(text)) {
+		errors.push({
+			code: 'META_PRODUCTION_SECTION_IN_BODY',
+			message: 'Caption includes internal production sections (visual concept or carousel copy). Keep only publishable caption text in the body.',
+			severity: 'block',
+			canAutoRewrite: true,
+		});
+	}
 
 	// Check for wall-of-text (avoid single giant paragraph)
 	const paragraphs = text.split('\n\n').filter((p) => p.trim().length > 0);

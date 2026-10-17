@@ -41,7 +41,7 @@ export function buildIdeaEnginePrompt(
       "channel": "${channel}",
       "post_title": "hook/headline string",
       "post_type": "e.g. thought_leadership|story|tip|promo",
-      "body_draft": "full post body",
+      "body_draft": "publishable post copy only (no visual concept or carousel panel briefs)",
       "hashtags": "optional hashtag string",
       "image_prompt": { },
       "series_position": ${positionStart},

@@ -6,6 +6,8 @@ import { listNativeQueueForUser } from '@/lib/content/listNativeQueue';
 import type { NativeQueueStage } from '@/lib/content/nativeQueueView';
 import { isAgentMetaMemory, syncAgentMetaPublishJob } from '@/lib/publish/agentMetaJob';
 import { isAgentThreadsMemory, syncAgentThreadsPublishJob } from '@/lib/publish/agentThreadsJob';
+import { sanitizeSocialPublishFields } from '@/lib/content/socialPublishBody';
+import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -105,14 +107,23 @@ export async function PATCH(request: Request) {
 			}
 		}
 
+		const draftBody = body.content !== undefined ? body.content : memory.body;
+		const sanitized = sanitizeSocialPublishFields({
+			channel: String(memory.channel),
+			body: draftBody ?? '',
+			cta: memory.cta,
+			metadata,
+		});
 		const updated = await store.saveMemory(userId, {
 			...memory,
 			hook: body.title !== undefined ? body.title : memory.hook,
-			body: body.content !== undefined ? body.content : memory.body,
+			body: sanitized.body,
+			...(sanitized.cta != null ? { cta: sanitized.cta } : {}),
 			publicationStatus,
 			publicationDate,
-			metadata,
+			metadata: sanitized.metadata,
 		});
+		assertMemoryChannelConstraints(updated);
 
 		if (body.scheduled_time && publicationStatus === 'scheduled') {
 			if (isAgentThreadsMemory(updated)) {

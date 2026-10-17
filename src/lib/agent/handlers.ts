@@ -11,6 +11,7 @@ import { validateBrandBrain, validateFolianBrand } from '@/lib/intelligence/foli
 import type { BrandBrain, BrandStrategy, ContentBrief, ContentMemoryRecord, ContentTheme, GenerationResult } from '@/lib/intelligence/types';
 import { channelCatalog, resolveChannel } from './channels';
 import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
+import { sanitizeSocialPublishFields } from '@/lib/content/socialPublishBody';
 import { assertRedditManualPublishOnly } from '@/lib/channels/redditPolicy';
 import { isRedditPipelineChannel, redditFieldsFromMemory } from '@/lib/channels/reddit';
 import { loadContentPublishDiagnostics } from '@/lib/publish/contentPublishDiagnostics';
@@ -919,7 +920,14 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			};
 			const review = await completeReview({ draft: revised, brain, brief });
 			const { postProcessPlainDraft } = await import('@/lib/content/postProcessGeneration');
-			const finalBody = postProcessPlainDraft(review.improvedDraft || revised);
+			const finalBodyRaw = postProcessPlainDraft(review.improvedDraft || revised);
+			const sanitized = sanitizeSocialPublishFields({
+				channel: String(memory.channel),
+				body: finalBodyRaw,
+				cta: memory.cta,
+				metadata: memory.metadata,
+			});
+			const finalBody = sanitized.body;
 			await store.saveDraft({
 				userId: ctx.credential.ownerUserId,
 				brandBrainId: brain.id,
@@ -928,7 +936,12 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 				reviewedVersion: finalBody,
 				reviewPayload: { materialPassed: review.materialPassed, revisionInstruction: instruction, actor: ctx.credential.id },
 			});
-			await store.saveMemory(ctx.credential.ownerUserId, { ...memory, body: finalBody });
+			await store.saveMemory(ctx.credential.ownerUserId, {
+				...memory,
+				body: finalBody,
+				...(sanitized.cta != null ? { cta: sanitized.cta } : {}),
+				metadata: sanitized.metadata,
+			});
 			if (typeof completion.estimatedCostUsd === 'number') await getAgentStore().addCost(ctx.credential.id, completion.estimatedCostUsd);
 			return {
 				contentId: memory.id,
@@ -970,20 +983,43 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			if (!contentId) throw new AgentError('invalid_input', 'contentId is required.', 400);
 			const memory = await requireContent(ctx, contentId);
 			if (memory.publicationStatus === 'published') throw new AgentError('content_already_published', 'This content is already published.', 409);
-			assertMemoryChannelConstraints(memory);
+			const cleaned = sanitizeSocialPublishFields({
+				channel: String(memory.channel),
+				body: memory.body ?? '',
+				cta: memory.cta,
+				metadata: memory.metadata,
+			});
+			const memoryForApproval =
+				cleaned.body !== memory.body ||
+				cleaned.cta !== memory.cta ||
+				JSON.stringify(cleaned.metadata) !== JSON.stringify(memory.metadata ?? {})
+					? await getIntelligenceStore().saveMemory(ctx.credential.ownerUserId, {
+							...memory,
+							body: cleaned.body,
+							...(cleaned.cta != null ? { cta: cleaned.cta } : {}),
+							metadata: cleaned.metadata,
+						})
+					: memory;
+			assertMemoryChannelConstraints(memoryForApproval);
 			const publishAt = inputString(input, 'publishAt');
 			const requestedAction = inputString(input, 'requestedAction') === 'approve_and_schedule' ? 'approve_and_schedule' : 'approve_content';
 			assertRedditManualPublishOnly({ channel: String(memory.channel), requestedAction, publishAt });
 			const next = await getIntelligenceStore().saveMemory(ctx.credential.ownerUserId, {
-				...memory,
+				...memoryForApproval,
 				publicationStatus: 'review',
-				publicationDate: memory.publicationDate,
-				metadata: { ...(memory.metadata ?? {}), submittedForApprovalAt: new Date().toISOString(), submittedBy: ctx.credential.id, approver: 'human', proposedSchedule: publishAt ?? null },
+				publicationDate: memoryForApproval.publicationDate,
+				metadata: {
+					...(memoryForApproval.metadata ?? {}),
+					submittedForApprovalAt: new Date().toISOString(),
+					submittedBy: ctx.credential.id,
+					approver: 'human',
+					proposedSchedule: publishAt ?? null,
+				},
 			});
-			await emit(ctx, memory.brandBrainId, 'content.ready_for_approval', { contentId: memory.id });
+			await emit(ctx, memoryForApproval.brandBrainId, 'content.ready_for_approval', { contentId: memoryForApproval.id });
 			const created = await createApprovalRequest({
 				credential: ctx.credential,
-				brandId: memory.brandBrainId,
+				brandId: memoryForApproval.brandBrainId,
 				targetType: 'content',
 				targetId: next.id,
 				requestedAction,
