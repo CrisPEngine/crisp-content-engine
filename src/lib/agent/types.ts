@@ -242,7 +242,7 @@ export type AgentControlStore = {
 	getApprovalRequest(id: string): Promise<ApprovalRequest | null>;
 	getApprovalRequestByTokenHash(tokenHash: string): Promise<ApprovalRequest | null>;
 	listApprovalRequests(ownerUserId: string, status?: ApprovalRequest['status']): Promise<ApprovalRequest[]>;
-	updateCredential(id: string, patch: Partial<Pick<AgentCredential, 'lastUsedAt' | 'revokedAt' | 'capabilities' | 'allowedBrandIds'>>): Promise<void>;
+	updateCredential(id: string, patch: Partial<Pick<AgentCredential, 'lastUsedAt' | 'revokedAt' | 'capabilities' | 'allowedBrandIds' | 'scope'>>): Promise<void>;
 	findCredentialByHash(keyHash: string): Promise<AgentCredential | null>;
 	listCredentials(ownerUserId: string): Promise<AgentCredential[]>;
 	getCredential(ownerUserId: string, id: string): Promise<AgentCredential | null>;

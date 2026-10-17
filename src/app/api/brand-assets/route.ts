@@ -3,6 +3,7 @@ import { requireSessionUserId } from '@/lib/agent/session';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { getNativeContentStore } from '@/lib/media/store';
 import { publicAsset } from '@/lib/media/images';
+import { runAssetVisionAnalysis } from '@/lib/media/runAssetVision';
 import type { LibraryAssetType } from '@/lib/media/types';
 
 export const runtime = 'nodejs';
@@ -51,6 +52,8 @@ export async function POST(request: Request) {
 		tags?: string[];
 		verifiedReference?: boolean;
 		referenceAllowed?: boolean;
+		userEdited?: boolean;
+		runVisionAnalysis?: boolean;
 	};
 	if (!body.assetId || !body.brandId) return NextResponse.json({ error: 'assetId and brandId are required.' }, { status: 400 });
 	const brain = await getIntelligenceStore().getBrandBrainById(userId, body.brandId);
@@ -59,6 +62,7 @@ export async function POST(request: Request) {
 	const asset = await store.getAsset(userId, body.assetId);
 	if (!asset) return NextResponse.json({ error: 'Asset was not found.' }, { status: 404 });
 	const libraryType = body.libraryType && LIBRARY_TYPES.has(body.libraryType as LibraryAssetType) ? (body.libraryType as LibraryAssetType) : 'OTHER';
+	const userEdited = body.userEdited === true;
 	const saved = await store.saveAsset({
 		...asset,
 		brandId: brain.id,
@@ -70,7 +74,21 @@ export async function POST(request: Request) {
 		tags: Array.isArray(body.tags) ? body.tags.map((tag) => tag.trim()).filter(Boolean) : asset.tags,
 		verifiedReference: body.verifiedReference === true,
 		referenceAllowed: body.referenceAllowed === true && body.verifiedReference === true,
+		visionUserLocked: userEdited ? true : asset.visionUserLocked,
 		updatedAt: new Date().toISOString(),
 	});
-	return NextResponse.json({ asset: publicAsset(saved) });
+	let finalAsset = saved;
+	if (body.runVisionAnalysis !== false) {
+		try {
+			finalAsset =
+				(await runAssetVisionAnalysis({
+					ownerUserId: userId,
+					assetId: saved.id,
+					brandName: brain.identity.name,
+				})) ?? saved;
+		} catch {
+			finalAsset = saved;
+		}
+	}
+	return NextResponse.json({ asset: publicAsset(finalAsset) });
 }

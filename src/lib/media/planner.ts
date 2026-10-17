@@ -1,26 +1,17 @@
 import { mediaSpecFor } from './channelMedia';
+import { bestAssetForTopic } from './assetMatching';
 import type { MediaDecision, MediaType, PublicAsset } from './types';
 
 const VISUAL_TOPIC = /\b(diagram|screenshot|chart|infographic|before and after|interface|canvas|timeline)\b/i;
 
-function tokens(text: string): string[] {
-	return text.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 3);
-}
-
-function assetText(asset: PublicAsset): string {
-	return [asset.title, asset.altText, asset.caption, asset.description, asset.productFeature, asset.libraryType, ...(asset.tags ?? [])].filter(Boolean).join(' ');
-}
-
-function matchScore(topic: string, asset: PublicAsset): number {
-	const wanted = new Set(tokens(topic));
-	const overlap = tokens(assetText(asset)).filter((word) => wanted.has(word)).length;
-	if (overlap === 0 || !asset.verifiedReference) return 0;
-	const product = asset.libraryType === 'PRODUCT_SCREENSHOT' || asset.libraryType === 'PRODUCT_UI' || asset.libraryType === 'PRODUCT_PHOTO';
-	return overlap + (product ? 2 : 0);
-}
-
-function bestAsset(topic: string, assets: PublicAsset[]): PublicAsset | undefined {
-	return [...assets].sort((a, b) => matchScore(topic, b) - matchScore(topic, a)).find((asset) => matchScore(topic, asset) > 0);
+function bestAsset(topic: string, assets: PublicAsset[]): { asset: PublicAsset; matchReason: string; score: number } | undefined {
+	const match = bestAssetForTopic(
+		topic,
+		assets,
+		new Map(assets.filter((asset) => asset.visionAnalysis).map((asset) => [asset.id, asset.visionAnalysis!])),
+	);
+	if (!match || !match.asset.verifiedReference) return undefined;
+	return match;
 }
 
 export function planMedia(input: {
@@ -33,9 +24,11 @@ export function planMedia(input: {
 	const spec = mediaSpecFor(input.channel);
 	const topic = input.topic ?? input.objective ?? '';
 	const visualTopic = VISUAL_TOPIC.test(topic);
-	const existing = bestAsset(topic, input.assets ?? []);
+	const matched = bestAsset(topic, input.assets ?? []);
+	const existing = matched?.asset;
 	const direct = existing && (existing.libraryType === 'PRODUCT_SCREENSHOT' || existing.libraryType === 'PRODUCT_UI' || existing.libraryType === 'PRODUCT_PHOTO' || existing.libraryType === 'FOUNDER_PHOTO');
 	const reference = existing?.verifiedReference && existing.referenceAllowed ? existing : undefined;
+	const matchMeta = matched ? { assetMatchReason: matched.matchReason, assetMatchScore: matched.score } : { assetMatchReason: null, assetMatchScore: null };
 	const article = input.contentType === 'article' || spec.supportedTypes.includes('HERO_IMAGE');
 
 	if (spec.mediaRequired) {
@@ -51,6 +44,7 @@ export function planMedia(input: {
 			textOverlayRecommendation: 'No text baked into the image. Put the argument in the caption and alt text.',
 			altTextDirection: `Describe the concrete visual for ${topic || 'this post'}, not a slogan.`,
 			existingAssetId: direct ? existing.id : null,
+			...matchMeta,
 			referenceAssetIds: !direct && reference ? [reference.id] : [],
 			mediaChoice: direct ? 'existing' : reference ? 'reference' : 'generate',
 			generateNow: false,
@@ -70,6 +64,7 @@ export function planMedia(input: {
 			textOverlayRecommendation: 'Do not cover the product interface with a slogan.',
 			altTextDirection: 'Name the product view and what the reader is meant to notice.',
 			existingAssetId: existing.id,
+			...matchMeta,
 			referenceAssetIds: [],
 			mediaChoice: 'existing',
 			generateNow: false,
@@ -89,6 +84,7 @@ export function planMedia(input: {
 			textOverlayRecommendation: 'No headline burned into the hero. The title already does that work.',
 			altTextDirection: 'Describe the scene or diagram a reader needs if they cannot see it.',
 			existingAssetId: existing?.id ?? null,
+			...matchMeta,
 			generateNow: false,
 		};
 	}
@@ -107,6 +103,7 @@ export function planMedia(input: {
 			textOverlayRecommendation: 'Label only what the reader cannot infer.',
 			altTextDirection: `Describe the concrete visual for ${topic || 'this post'}, not a slogan.`,
 			existingAssetId: existing?.id ?? null,
+			...matchMeta,
 			generateNow: false,
 		};
 	}

@@ -4,7 +4,8 @@ import { getSupabaseService } from '@/lib/supabaseService';
 import { isThreadsPublishingEnabled } from '@/lib/featureFlags';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import type { ContentMemoryRecord } from '@/lib/intelligence/types';
-import { resolvePublishDestination } from '@/lib/social/resolveDestination';
+import { PublishDestinationMissingError, requirePublishDestination } from '@/lib/social/publishDestination';
+import type { ResolvedPublishDestination } from '@/lib/social/resolveDestination';
 import { getAuthorizationSecrets } from '@/lib/social/authorizationSecrets';
 import { AgentError } from '@/lib/agent/errors';
 import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
@@ -127,17 +128,18 @@ export async function syncAgentThreadsPublishJob(input: {
 	}
 
 	const brandKey = brain.airtableBrandId?.trim() || brain.id;
-	const resolved = await resolvePublishDestination({
-		userId: input.userId,
-		airtableBrandId: brandKey,
-		platform: 'Threads',
-	});
-	if (!resolved) {
-		throw new AgentError(
-			'destination_not_ready',
-			'No Threads destination for this brand. Assign a channel in Connections.',
-			409,
-		);
+	let resolved: ResolvedPublishDestination;
+	try {
+		resolved = await requirePublishDestination({
+			userId: input.userId,
+			airtableBrandId: brandKey,
+			platform: 'Threads',
+		});
+	} catch (error) {
+		if (error instanceof PublishDestinationMissingError) {
+			throw new AgentError('destination_not_ready', error.message, 409);
+		}
+		throw error;
 	}
 
 	const secrets = resolved.authorizationId ? await getAuthorizationSecrets(resolved.authorizationId) : null;

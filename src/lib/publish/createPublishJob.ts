@@ -1,5 +1,5 @@
 import { getSupabaseService } from '@/lib/supabaseService';
-import { resolvePublishDestination } from '@/lib/social/resolveDestination';
+import { requirePublishDestination } from '@/lib/social/publishDestination';
 import { DESTINATION_TYPES } from '@/lib/social/providers';
 import { getAuthorizationSecrets } from '@/lib/social/authorizationSecrets';
 
@@ -23,15 +23,11 @@ async function queuePublishJob(input: {
 
 	const contentItemKey = (record.fields?.content_item_key as string) || contentId;
 
-	const resolved = await resolvePublishDestination({
+	const resolved = await requirePublishDestination({
 		userId,
 		airtableBrandId: brandProfileId,
 		platform: airtablePlatformLabel,
 	});
-
-	if (!resolved) {
-		throw new Error(`No ${platform} destination for this brand. Assign a channel in Connections.`);
-	}
 
 	const targetId = resolved.providerDestinationId;
 

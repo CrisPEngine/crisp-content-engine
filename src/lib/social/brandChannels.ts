@@ -126,7 +126,7 @@ export async function brandChannelRows(userId: string, brandId: string): Promise
 		const addAccountHref = (() => {
 			if (channel === 'instagram') return `/api/connections/instagram/authorize?add_account=1&brand_id=${encodeURIComponent(brandId)}`;
 			if (channel === 'threads') return `/api/connections/threads/authorize?add_account=1&brand_id=${encodeURIComponent(brandId)}`;
-			if (channel === 'facebook') return `/api/meta/oauth/start`;
+			if (channel === 'facebook') return `/api/meta/oauth/start?add_account=1&${brandQ}`;
 			if (channel === 'linkedin') return `/api/connections/linkedin/authorize?type=business`;
 			return connectHref;
 		})();

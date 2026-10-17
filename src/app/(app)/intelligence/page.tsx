@@ -183,6 +183,28 @@ function IntelligencePageInner() {
 		setStrategyJson(JSON.stringify({ ...strategyObject(), [key]: value }, null, 2));
 	}
 
+	async function activateBrand() {
+		if (!brandId) return;
+		setSaving(true);
+		setError(null);
+		setNotice(null);
+		try {
+			const res = await fetch('/api/intelligence/activate', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ airtableBrandId: brandId }),
+			});
+			const data = (await res.json()) as { error?: string; brandId?: string; alreadyActive?: boolean };
+			if (!res.ok) throw new Error(data.error || 'Activation failed');
+			setNotice(data.alreadyActive ? 'Brand brain was already active.' : 'Brand brain activated from Airtable profile.');
+			await loadIntelligence(brandId);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Activation failed');
+		} finally {
+			setSaving(false);
+		}
+	}
+
 	async function saveBrain() {
 		setSaving(true);
 		setError(null);
@@ -305,6 +327,14 @@ function IntelligencePageInner() {
 
 			{error && <div className="card p-4 border-danger/40 bg-danger/10 text-danger text-sm">{error}</div>}
 			{notice && <div className="card p-4 border-primary/40 bg-primary/10 text-sm">{notice}</div>}
+			{brandId && !payload?.brain ? (
+				<div className="card p-4 border-warning/40 bg-warning/10 text-sm space-y-2">
+					<p>This Airtable brand does not have a native brand brain yet. Connections and brand assets need an active brain.</p>
+					<button type="button" onClick={() => void activateBrand()} disabled={saving} className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 text-sm">
+						{saving ? 'Activating…' : 'Activate brand'}
+					</button>
+				</div>
+			) : null}
 
 			<div className="flex gap-2 border-b border-edge/60">
 				{(

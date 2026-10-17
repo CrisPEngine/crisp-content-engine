@@ -1,5 +1,6 @@
 import { getSupabaseService } from '@/lib/supabaseService';
 import type { ArticleRecord } from '@/lib/articles/types';
+import type { AssetVisionAnalysis } from './assetVisionTypes';
 import type { AssetLink, ContentAssetRecord } from './types';
 import type { NativeContentStore } from './store';
 
@@ -38,8 +39,24 @@ function assetFromRow(row: Record<string, unknown>): ContentAssetRecord {
 		verifiedReference: Boolean(row.verified_reference),
 		referenceAllowed: Boolean(row.reference_allowed),
 		approvalStatus: row.approval_status as ContentAssetRecord['approvalStatus'],
+		visionAnalysis: (row.vision_analysis as AssetVisionAnalysis | null) ?? undefined,
+		visionAnalysisStatus: (row.vision_analysis_status as ContentAssetRecord['visionAnalysisStatus']) ?? undefined,
+		visionUserLocked: Boolean(row.vision_user_locked),
 		createdAt: String(row.created_at),
 		updatedAt: String(row.updated_at),
+	};
+}
+
+function linkFromRow(row: Record<string, unknown>): AssetLink {
+	return {
+		id: String(row.id),
+		ownerUserId: String(row.owner_user_id),
+		assetId: String(row.asset_id),
+		targetType: row.target_type as AssetLink['targetType'],
+		targetId: String(row.target_id),
+		role: (row.role as string | null) ?? undefined,
+		matchReason: (row.match_reason as string | null) ?? undefined,
+		createdAt: String(row.created_at),
 	};
 }
 
@@ -76,6 +93,9 @@ export function createSupabaseNativeContentStore(): NativeContentStore {
 				verified_reference: asset.verifiedReference ?? false,
 				reference_allowed: asset.referenceAllowed ?? false,
 				approval_status: asset.approvalStatus,
+				vision_analysis: asset.visionAnalysis ?? null,
+				vision_analysis_status: asset.visionAnalysisStatus ?? null,
+				vision_user_locked: asset.visionUserLocked ?? false,
 				created_at: asset.createdAt,
 				updated_at: asset.updatedAt,
 			});
@@ -102,6 +122,7 @@ export function createSupabaseNativeContentStore(): NativeContentStore {
 				target_type: link.targetType,
 				target_id: link.targetId,
 				role: link.role ?? null,
+				match_reason: link.matchReason ?? null,
 				created_at: link.createdAt,
 			});
 			if (error) throw new Error(error.message);
@@ -152,17 +173,5 @@ export function createSupabaseNativeContentStore(): NativeContentStore {
 			if (error) throw new Error(error.message);
 			return (data?.document as ArticleRecord | undefined) ?? null;
 		},
-	};
-}
-
-function linkFromRow(row: Record<string, unknown>): AssetLink {
-	return {
-		id: String(row.id),
-		ownerUserId: String(row.owner_user_id),
-		assetId: String(row.asset_id),
-		targetType: row.target_type as AssetLink['targetType'],
-		targetId: String(row.target_id),
-		role: (row.role as string | null) ?? undefined,
-		createdAt: String(row.created_at),
 	};
 }

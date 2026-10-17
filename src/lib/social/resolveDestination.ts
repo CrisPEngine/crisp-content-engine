@@ -75,6 +75,16 @@ export async function resolvePublishDestination(input: ResolveInput): Promise<Re
 				};
 			}
 		}
+
+		// Native brand exists but no mapped destination: never fall back to account-wide legacy Meta.
+		console.warn('[publish:resolve] native brand has no destination mapping', {
+			userId: input.userId,
+			brandBrainId: brandId,
+			airtableBrandId: input.airtableBrandId,
+			platform: input.platform,
+			channel,
+		});
+		return null;
 	}
 
 	return resolveLegacyDestination(input, channel);

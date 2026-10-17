@@ -184,6 +184,7 @@ export function createSupabaseAgentStore(): AgentControlStore {
 			if (patch.revokedAt) row.revoked_at = patch.revokedAt;
 			if (patch.capabilities) row.capabilities = patch.capabilities;
 			if (patch.allowedBrandIds) row.allowed_brand_ids = patch.allowedBrandIds;
+			if (patch.scope) row.scope = patch.scope;
 			if (Object.keys(row).length === 0) return;
 			const { error } = await db().from('agent_credentials').update(row).eq('id', id);
 			if (error) throw new Error(error.message);

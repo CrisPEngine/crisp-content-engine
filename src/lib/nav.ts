@@ -30,7 +30,7 @@ export const APP_NAV: NavItem[] = [
 			{ label: 'Scheduled', href: '/content/schedule' },
 			{ label: 'Published', href: '/content/published' },
 			{ label: 'Idea Engine', href: '/content/idea-engine' },
-			{ label: 'Assets', href: '/content/brand-assets' },
+			{ label: 'Brand Assets', href: '/content/brand-assets' },
 		],
 	},
 	{
