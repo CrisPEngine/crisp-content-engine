@@ -9,7 +9,9 @@ import {
 import { generateArticle, reviseArticle } from '@/lib/articles/pipeline';
 import { mediaSpecFor } from '@/lib/media/channelMedia';
 import { generateAssetFromProposal, imageProviderStatus, publicAsset } from '@/lib/media/images';
+import { rankAssetsForTopic } from '@/lib/media/assetMatching';
 import { planMedia } from '@/lib/media/planner';
+import { publicAssetsWithVision } from '@/lib/media/plannerAssets';
 import { getNativeContentStore } from '@/lib/media/store';
 import type { ArticleRecord } from '@/lib/articles/types';
 import type { MediaDecision } from '@/lib/media/types';
@@ -61,7 +63,8 @@ function publicArticle(article: ArticleRecord) {
 async function mediaPlanFor(ctx: AgentContext, input: Record<string, unknown>): Promise<{ brandId: string; decision: MediaDecision }> {
 	const brain = await brand(ctx, text(input, 'brandId'));
 	const channel = text(input, 'channel') ?? 'LINKEDIN_PERSONAL';
-	const assets = (await getNativeContentStore().listAssets(ctx.credential.ownerUserId, brain.id)).map(publicAsset);
+	const rawAssets = await getNativeContentStore().listAssets(ctx.credential.ownerUserId, brain.id);
+	const { publicAssets: assets } = publicAssetsWithVision(rawAssets);
 	const decision = planMedia({
 		channel,
 		topic: text(input, 'topic') ?? text(input, 'instruction'),
@@ -119,11 +122,37 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 		}
 		case 'cce_find_assets': {
 			const brain = await brand(ctx, text(input, 'brandId'));
-			const query = (text(input, 'query') ?? '').toLowerCase();
-			const assets = (await store.listAssets(ctx.credential.ownerUserId, brain.id))
-				.map(publicAsset)
-				.filter((asset) => !query || `${asset.title ?? ''} ${asset.altText ?? ''} ${asset.caption ?? ''} ${asset.description ?? ''} ${asset.productFeature ?? ''} ${(asset.tags ?? []).join(' ')}`.toLowerCase().includes(query));
-			return { assets };
+			const query = text(input, 'query') ?? text(input, 'topic') ?? '';
+			const topic = text(input, 'topic') ?? query;
+			const { publicAssets: assets, visionByAssetId } = publicAssetsWithVision(await store.listAssets(ctx.credential.ownerUserId, brain.id));
+			if (topic.trim()) {
+				const ranked = rankAssetsForTopic(topic, assets, visionByAssetId);
+				const filtered = query
+					? ranked.filter((row) =>
+							`${row.asset.title ?? ''} ${row.asset.description ?? ''} ${(row.asset.tags ?? []).join(' ')}`
+								.toLowerCase()
+								.includes(query.toLowerCase()),
+						)
+					: ranked;
+				return {
+					assets: filtered.map((row) => row.asset),
+					ranked: filtered.map((row) => ({
+						assetId: row.asset.id,
+						score: row.score,
+						matchReason: row.matchReason,
+					})),
+				};
+			}
+			const q = query.toLowerCase();
+			return {
+				assets: assets.filter(
+					(asset) =>
+						!q ||
+						`${asset.title ?? ''} ${asset.altText ?? ''} ${asset.caption ?? ''} ${asset.description ?? ''} ${asset.productFeature ?? ''} ${(asset.tags ?? []).join(' ')} ${asset.visionAnalysis?.summary ?? ''}`
+							.toLowerCase()
+							.includes(q),
+				),
+			};
 		}
 		case 'cce_detach_asset': {
 			const assetId = text(input, 'assetId');

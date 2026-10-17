@@ -1478,9 +1478,23 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			return { id: saved.id, appliedToBrandBrain: false };
 		}
 		case 'cce_attach_asset': {
-			const assetId = inputString(input, 'assetId');
+			let assetId = inputString(input, 'assetId');
 			const targetId = inputString(input, 'targetId') ?? inputString(input, 'contentId') ?? inputString(input, 'articleId') ?? inputString(input, 'briefId');
 			const targetType = (inputString(input, 'targetType') ?? (inputString(input, 'articleId') ? 'article' : inputString(input, 'briefId') ? 'brief' : 'content')) as 'content' | 'article' | 'brief' | 'version' | 'section' | 'campaign';
+			const topic = inputString(input, 'topic') ?? inputString(input, 'query');
+			let matchReason = inputString(input, 'matchReason');
+			if (!assetId && topic) {
+				const brain = await requireBrand(ctx, inputString(input, 'brandId'));
+				const { rankAssetsForTopic } = await import('@/lib/media/assetMatching');
+				const { publicAssetsWithVision } = await import('@/lib/media/plannerAssets');
+				const { publicAssets, visionByAssetId } = publicAssetsWithVision(
+					await getNativeContentStore().listAssets(ctx.credential.ownerUserId, brain.id),
+				);
+				const best = rankAssetsForTopic(topic, publicAssets, visionByAssetId)[0];
+				if (!best) throw new AgentError('not_found', 'No library asset matched that topic.', 404);
+				assetId = best.asset.id;
+				matchReason = matchReason ?? best.matchReason;
+			}
 			if (!assetId || !targetId) throw new AgentError('invalid_input', 'assetId and a target id are required.', 400);
 			const asset = await getNativeContentStore().getAsset(ctx.credential.ownerUserId, assetId);
 			if (!asset || (asset.brandId && !ctx.credential.allowedBrandIds.includes(asset.brandId))) {
@@ -1493,6 +1507,7 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 				targetType,
 				targetId,
 				role: inputString(input, 'role'),
+				matchReason: matchReason ?? undefined,
 				createdAt: new Date().toISOString(),
 			});
 			if (targetType === 'article') {
@@ -1512,7 +1527,7 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 				current.assetIds = [...new Set([...current.assetIds, assetId])];
 				await getAgentStore().saveBrief(ctx.credential.ownerUserId, current);
 			}
-			return { asset: publicAsset(asset), targetId, attached: true, published: false };
+			return { asset: publicAsset(asset), targetId, attached: true, published: false, matchReason: matchReason ?? null };
 		}
 		default: {
 			const extra = await dispatchContentExtensions(name, ctx, input);

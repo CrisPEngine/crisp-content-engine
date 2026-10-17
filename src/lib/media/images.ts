@@ -59,6 +59,8 @@ export function publicAsset(asset: ContentAssetRecord): PublicAsset {
 		referenceAllowed: asset.referenceAllowed,
 		approvalStatus: asset.approvalStatus,
 		url: asset.url,
+		visionAnalysis: asset.visionAnalysis,
+		visionAnalysisStatus: asset.visionAnalysisStatus,
 	};
 }
 

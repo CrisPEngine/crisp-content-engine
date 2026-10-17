@@ -2,12 +2,12 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { uploadImageFromBuffer } from '@/lib/cloudinary';
+import { isAllowedUploadMime, resolveUploadMimeType, UPLOAD_IMAGE_FRIENDLY_LABEL } from '@/lib/media/uploadMime';
 
 export const runtime = 'nodejs';
 
 const MAX_FILE_SIZE_MB = parseInt(process.env.CLOUDINARY_MAX_FILE_SIZE_MB || '10', 10);
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
 export async function POST(req: Request) {
 	try {
@@ -54,10 +54,10 @@ export async function POST(req: Request) {
 			return NextResponse.json({ error: 'No file provided' }, { status: 400 });
 		}
 
-		// Validate file type
-		if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+		const resolvedMime = resolveUploadMimeType(file.name, file.type);
+		if (!isAllowedUploadMime(resolvedMime)) {
 			return NextResponse.json(
-				{ error: `Invalid file type. Allowed types: ${ALLOWED_MIME_TYPES.join(', ')}` },
+				{ error: `Unsupported file type. Supported formats: ${UPLOAD_IMAGE_FRIENDLY_LABEL}.` },
 				{ status: 400 }
 			);
 		}
@@ -88,7 +88,7 @@ export async function POST(req: Request) {
 				providerAssetId: result.public_id,
 				width: result.width,
 				height: result.height,
-				mimeType: file.type,
+				mimeType: resolvedMime,
 				fileSize: file.size,
 			});
 			assetId = recorded.id;

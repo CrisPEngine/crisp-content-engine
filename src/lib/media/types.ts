@@ -1,3 +1,5 @@
+import type { AssetVisionAnalysis, AssetVisionAnalysisStatus } from './assetVisionTypes';
+
 export type MediaRole = 'NONE' | 'SUPPORTING' | 'PRIMARY' | 'REQUIRED_BY_CHANNEL';
 
 export type MediaType =
@@ -25,6 +27,8 @@ export type MediaDecision = {
 	textOverlayRecommendation: string;
 	altTextDirection: string | null;
 	existingAssetId: string | null;
+	assetMatchReason?: string | null;
+	assetMatchScore?: number | null;
 	referenceAssetIds?: string[];
 	mediaChoice?: 'existing' | 'reference' | 'generate' | 'none';
 	generateNow: false;
@@ -86,6 +90,9 @@ export type ContentAssetRecord = {
 	verifiedReference?: boolean;
 	referenceAllowed?: boolean;
 	approvalStatus: 'draft' | 'approved' | 'rejected';
+	visionAnalysis?: AssetVisionAnalysis;
+	visionAnalysisStatus?: AssetVisionAnalysisStatus;
+	visionUserLocked?: boolean;
 	createdAt: string;
 	updatedAt: string;
 };
@@ -97,6 +104,7 @@ export type AssetLink = {
 	targetType: 'content' | 'version' | 'article' | 'section' | 'campaign' | 'brief';
 	targetId: string;
 	role?: string;
+	matchReason?: string;
 	createdAt: string;
 };
 
@@ -120,6 +128,8 @@ export type PublicAsset = {
 	referenceAllowed?: boolean;
 	approvalStatus: ContentAssetRecord['approvalStatus'];
 	url?: string;
+	visionAnalysis?: AssetVisionAnalysis;
+	visionAnalysisStatus?: AssetVisionAnalysisStatus;
 };
 
 export type ImageGenerationRequest = {

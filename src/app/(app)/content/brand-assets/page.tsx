@@ -4,7 +4,28 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 type Brand = { id: string; name: string };
-type Asset = { id: string; title?: string; url?: string; libraryType?: string; description?: string; productFeature?: string; verifiedReference?: boolean; approvalStatus: string };
+type AssetVision = {
+	summary?: string;
+	searchTags?: string[];
+	suggestedTopics?: string[];
+	brandEntities?: string[];
+	altText?: string;
+};
+
+type Asset = {
+	id: string;
+	title?: string;
+	url?: string;
+	libraryType?: string;
+	description?: string;
+	altText?: string;
+	tags?: string[];
+	productFeature?: string;
+	verifiedReference?: boolean;
+	approvalStatus: string;
+	visionAnalysis?: AssetVision;
+	visionAnalysisStatus?: string;
+};
 
 const TYPES = ['PRODUCT_SCREENSHOT', 'PRODUCT_UI', 'LOGO', 'BRAND_MARK', 'BRAND_REFERENCE', 'PRODUCT_PHOTO', 'FOUNDER_PHOTO', 'MARKETING_EXAMPLE', 'ARTICLE_IMAGE', 'SOCIAL_IMAGE', 'OTHER'];
 
@@ -22,6 +43,10 @@ export default function BrandAssetsPage() {
 	const [uploadRows, setUploadRows] = useState<Array<{ name: string; status: 'pending' | 'uploading' | 'done' | 'error'; detail?: string }>>([]);
 	const [message, setMessage] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
+	const [altText, setAltText] = useState('');
+	const [tags, setTags] = useState('');
+	const [metadataEdited, setMetadataEdited] = useState(false);
+	const [analysingId, setAnalysingId] = useState<string | null>(null);
 
 	async function load(nextBrandId = brandId) {
 		const response = await fetch(`/api/brand-assets${nextBrandId ? `?brandId=${encodeURIComponent(nextBrandId)}` : ''}`);
@@ -98,9 +123,12 @@ export default function BrandAssetsPage() {
 					libraryType,
 					title: preview.file.name,
 					description,
+					altText,
+					tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean),
 					productFeature,
 					verifiedReference: verified,
 					referenceAllowed: reference,
+					userEdited: metadataEdited,
 				}),
 			});
 			if (!saved.ok) {
@@ -146,7 +174,15 @@ export default function BrandAssetsPage() {
 				</label>
 				<label className="block text-sm">
 					Description
-					<input className="mt-1 w-full rounded border px-3 py-2" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What this image shows" />
+					<input className="mt-1 w-full rounded border px-3 py-2" value={description} onChange={(event) => { setDescription(event.target.value); setMetadataEdited(true); }} placeholder="What this image shows" />
+				</label>
+				<label className="block text-sm">
+					Alt text
+					<input className="mt-1 w-full rounded border px-3 py-2" value={altText} onChange={(event) => { setAltText(event.target.value); setMetadataEdited(true); }} placeholder="Accessible description for the image" />
+				</label>
+				<label className="block text-sm">
+					Tags (comma separated)
+					<input className="mt-1 w-full rounded border px-3 py-2" value={tags} onChange={(event) => { setTags(event.target.value); setMetadataEdited(true); }} placeholder="ferrari, diecast, 1:18" />
 				</label>
 				<label className="block text-sm">
 					Product feature
@@ -160,8 +196,8 @@ export default function BrandAssetsPage() {
 					<input type="checkbox" checked={reference} onChange={(event) => setReference(event.target.checked)} />
 					Generative media may use this as a reference
 				</label>
-				<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => chooseFiles(event.target.files)} />
-				<p className="text-xs text-text-dim">Up to 10 MB per image. Larger files show a clear error; CCE resizes on upload.</p>
+				<input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" multiple onChange={(event) => chooseFiles(event.target.files)} />
+				<p className="text-xs text-text-dim">JPEG, PNG, WebP, HEIC, and HEIF up to 10 MB each. iPhone photos are converted to JPG after upload.</p>
 				<div className="flex gap-3 flex-wrap">
 					{previews.map((preview) => <img key={preview.url} src={preview.url} alt="" className="h-28 w-auto rounded border" />)}
 				</div>
@@ -182,11 +218,33 @@ export default function BrandAssetsPage() {
 			</div>
 			<div className="grid gap-4 sm:grid-cols-2">
 				{assets.map((asset) => (
-					<div key={asset.id} className="card p-3">
-						{asset.url ? <img src={asset.url} alt={asset.title ?? ''} className="mb-2 h-40 w-full object-contain bg-black/20" /> : null}
+					<div key={asset.id} className="card p-3 space-y-2">
+						{asset.url ? <img src={asset.url} alt={(asset.altText || asset.title) ?? ''} className="mb-2 h-40 w-full object-contain bg-black/20" /> : null}
 						<div className="font-medium">{asset.title || asset.libraryType || 'Image'}</div>
-						<p className="text-sm text-text-soft">{asset.libraryType} · {asset.productFeature || 'no feature tag'} · {asset.verifiedReference ? 'verified' : asset.approvalStatus}</p>
-						{asset.description ? <p className="text-sm mt-1">{asset.description}</p> : null}
+						<p className="text-sm text-text-soft">
+							{asset.libraryType} · {asset.productFeature || 'no feature tag'} · {asset.verifiedReference ? 'verified' : asset.approvalStatus}
+							{asset.visionAnalysisStatus ? ` · vision ${asset.visionAnalysisStatus}` : ''}
+						</p>
+						{asset.description ? <p className="text-sm">{asset.description}</p> : null}
+						{asset.visionAnalysis?.summary ? <p className="text-sm text-text-dim">AI summary: {asset.visionAnalysis.summary}</p> : null}
+						{(asset.tags?.length ?? 0) > 0 ? <p className="text-xs text-text-dim">Tags: {asset.tags?.join(', ')}</p> : null}
+						<button
+							type="button"
+							className="text-sm underline disabled:opacity-50"
+							disabled={analysingId === asset.id}
+							onClick={() => {
+								setAnalysingId(asset.id);
+								void fetch('/api/brand-assets/analyse', {
+									method: 'POST',
+									headers: { 'content-type': 'application/json' },
+									body: JSON.stringify({ assetId: asset.id }),
+								})
+									.then(() => load(brandId))
+									.finally(() => setAnalysingId(null));
+							}}
+						>
+							{analysingId === asset.id ? 'Analysing…' : 'Analyse image'}
+						</button>
 					</div>
 				))}
 			</div>
