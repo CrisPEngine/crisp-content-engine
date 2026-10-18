@@ -415,16 +415,15 @@ export default function OnboardingPage() {
 					setValue('avoid_negative_tones', true, { shouldDirty: false });
 					return;
 				}
-				if (
-					field === 'personal_voice_traits' ||
-					field === 'personal_tone_avoid' ||
-					field === 'personal_content_style'
-				) {
+				if (field === 'personal_voice_traits' || field === 'personal_content_style') {
 					setValue(field, [], { shouldDirty: false });
 					return;
 				}
 				setValue(field, '', { shouldDirty: false });
 			});
+			// Derived on submit for personal brands; not in personalFields step list.
+			setValue('personal_tone_avoid', [], { shouldDirty: false });
+			setValue('personal_assets_urls', [], { shouldDirty: false });
 			setValue('client_name', '', { shouldDirty: true });
 		}
 	};
