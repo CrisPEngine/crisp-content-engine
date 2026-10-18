@@ -10,6 +10,7 @@ import { SubmissionLoading } from '@/components/SubmissionLoading';
 import { LoadingButton } from '@/components/LoadingButton';
 import { TIMEZONES } from '@/lib/timezones';
 import { useSupabase } from '@/components/SupabaseProvider';
+import { coerceBoolean } from '@/lib/onboarding/coerceBoolean';
 
 const PlatformsEnum = z.enum(['LinkedIn', 'X', 'Instagram', 'Facebook', 'Blog']);
 const LanguageRegionEnum = z.enum(['US English', 'UK English', 'AU English']);
@@ -92,7 +93,10 @@ const schema = z
 			z.array(z.string()).default([])
 		),
 		/** If true (Yes), we pass AVOID_NEGATIVE_TONES_LIST to the AI; if false (No), we pass []. */
-		avoid_negative_tones: z.boolean().default(true),
+		avoid_negative_tones: z.preprocess(
+			(val) => coerceBoolean(val, true),
+			z.boolean().default(true),
+		),
 		personal_risk_tolerance: z.preprocess(
 			(val) => {
 				// Convert empty string, null, or undefined to undefined
@@ -258,7 +262,12 @@ const LS_KEY = 'crisp_onboarding_draft';
 function loadDraft(): Partial<FormData> | null {
 	try {
 		const raw = typeof window !== 'undefined' ? localStorage.getItem(LS_KEY) : null;
-		return raw ? JSON.parse(raw) : null;
+		if (!raw) return null;
+		const parsed = JSON.parse(raw) as Partial<FormData>;
+		if (parsed && 'avoid_negative_tones' in parsed) {
+			parsed.avoid_negative_tones = coerceBoolean(parsed.avoid_negative_tones, true);
+		}
+		return parsed;
 	} catch {
 		return null;
 	}
@@ -401,7 +410,21 @@ export default function OnboardingPage() {
 	const handleBrandTypeChange = (type: 'personal' | 'company') => {
 		setValue('brand_type', type, { shouldDirty: true });
 		if (type === 'company') {
-			personalFields.forEach((field) => setValue(field, '', { shouldDirty: false }));
+			personalFields.forEach((field) => {
+				if (field === 'avoid_negative_tones') {
+					setValue('avoid_negative_tones', true, { shouldDirty: false });
+					return;
+				}
+				if (
+					field === 'personal_voice_traits' ||
+					field === 'personal_tone_avoid' ||
+					field === 'personal_content_style'
+				) {
+					setValue(field, [], { shouldDirty: false });
+					return;
+				}
+				setValue(field, '', { shouldDirty: false });
+			});
 			setValue('client_name', '', { shouldDirty: true });
 		}
 	};
@@ -481,10 +504,13 @@ export default function OnboardingPage() {
 			};
 			
 			// Only include personal fields if it's a personal brand. Derive personal_tone_avoid from Yes/No.
+			const avoidNegativeTones = coerceBoolean(normalisedData.avoid_negative_tones, true);
+
 			const payloadData = isPersonal
 				? {
 						...basePayload,
-						personal_tone_avoid: normalisedData.avoid_negative_tones ? AVOID_NEGATIVE_TONES_LIST : [],
+						avoid_negative_tones: avoidNegativeTones,
+						personal_tone_avoid: avoidNegativeTones ? AVOID_NEGATIVE_TONES_LIST : [],
 						personal_assets_urls: ensureArray(normalisedData.personal_assets_urls),
 					}
 				: {
