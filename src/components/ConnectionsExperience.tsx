@@ -58,30 +58,32 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 	const selectedBrandIdRef = useRef(selectedBrandId);
 	selectedBrandIdRef.current = selectedBrandId;
 
-	const loadBase = useCallback(async () => {
-		setLoading(true);
-		try {
-			const res = await fetch('/api/social/connections', { cache: 'no-store' });
-			const data = await res.json();
-			if (!res.ok) throw new Error(data.error || 'Failed to load');
-			const loadedBrands: BrandRow[] = data.brands || [];
-			setBrands(loadedBrands);
-			setDestinations(data.destinations || []);
-			setAccounts(data.accounts || []);
-
-			if (!initialBrandId && loadedBrands.length > 0) {
-				const fromStorage = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
-				const pick = initialBrandId || fromStorage || loadedBrands[0].id;
-				setSelectedBrandId(pick);
-			}
-		} finally {
-			setLoading(false);
-		}
-	}, [initialBrandId]);
-
 	useEffect(() => {
-		loadBase();
-	}, [loadBase]);
+		let cancelled = false;
+		(async () => {
+			setLoading(true);
+			try {
+				const res = await fetch('/api/social/connections?skipSync=1', { cache: 'no-store' });
+				const data = await res.json();
+				if (!res.ok) throw new Error(data.error || 'Failed to load');
+				if (cancelled) return;
+				const loadedBrands: BrandRow[] = data.brands || [];
+				setBrands(loadedBrands);
+				setDestinations(data.destinations || []);
+				setAccounts(data.accounts || []);
+				if (!selectedBrandIdRef.current && loadedBrands.length > 0) {
+					const fromStorage = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
+					const pick = initialBrandId || fromStorage || loadedBrands[0].id;
+					setSelectedBrandId(pick);
+				}
+			} finally {
+				if (!cancelled) setLoading(false);
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [initialBrandId]);
 
 	useEffect(() => {
 		if (!selectedBrandId) return;
@@ -96,7 +98,7 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 
 		(async () => {
 			try {
-				const res = await fetch(`/api/social/connections?brandId=${encodeURIComponent(selectedBrandId)}`, {
+				const res = await fetch(`/api/social/connections?brandId=${encodeURIComponent(selectedBrandId)}&skipSync=1`, {
 					cache: 'no-store',
 					signal: controller.signal,
 				});
@@ -266,7 +268,12 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 	}
 
 	if (loading && brands.length === 0) {
-		return <div className="card p-8 animate-pulse h-48" />;
+		return (
+			<div className="card p-8 text-center space-y-3">
+				<div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary/30 border-t-primary mx-auto" />
+				<p className="text-sm text-text-soft">Loading connections and linked accounts…</p>
+			</div>
+		);
 	}
 
 	return (
@@ -360,6 +367,7 @@ export function ConnectionsExperience({ initialBrandId, oauthSuccess, error, err
 
 				{brandLoading ? (
 					<div className="space-y-4" aria-label="Loading brand channels">
+						<p className="text-sm text-text-soft">Loading channel assignments…</p>
 						{[1, 2, 3, 4].map((item) => (
 							<div key={item} className="h-28 rounded-xl2 border border-edge/60 bg-surface animate-pulse" />
 						))}

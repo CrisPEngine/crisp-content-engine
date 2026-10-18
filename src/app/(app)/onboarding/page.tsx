@@ -614,13 +614,15 @@ export default function OnboardingPage() {
 					brand_assets_urls: combinedAssets,
 				};
 
-				await fetch('/api/strategy/generate', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify(strategyPayload),
-				}).catch((hookError) => {
-					console.error('strategy generation trigger failed', hookError);
-				});
+				if (result?.strategyEngine !== 'native') {
+					await fetch('/api/strategy/generate', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify(strategyPayload),
+					}).catch((hookError) => {
+						console.error('strategy generation trigger failed', hookError);
+					});
+				}
 			}
 		} catch (err: any) {
 			console.error('Onboarding submission error:', err);

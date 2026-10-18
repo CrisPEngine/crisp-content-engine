@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { z } from 'zod';
+import { isNativeStrategyEngine } from '@/lib/intelligence/strategy/strategyEngine';
 
 export const runtime = 'nodejs';
 
@@ -69,6 +70,16 @@ const inferMimeType = (url: string) => {
 
 export async function POST(req: Request) {
 	try {
+		if (isNativeStrategyEngine()) {
+			return NextResponse.json(
+				{
+					error: 'Native strategy engine is enabled. Generate strategy from Brand Intelligence.',
+					code: 'strategy_engine_native',
+				},
+				{ status: 400 },
+			);
+		}
+
 		if (!process.env.MAKE_STRATEGY_WEBHOOK_URL) {
 			return NextResponse.json({ error: 'MAKE_STRATEGY_WEBHOOK_URL is not configured' }, { status: 500 });
 		}

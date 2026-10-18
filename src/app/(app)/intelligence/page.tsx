@@ -23,6 +23,14 @@ type DiagnosticInvocation = {
 	ok: boolean;
 	created_at: string;
 };
+type StrategyGenerationMeta = {
+	phase?: string;
+	modelRole?: string;
+	model?: string;
+	error?: string;
+	jobId?: string;
+};
+
 type IntelligencePayload = {
 	brain?: { identity?: unknown; voice?: unknown; guardrails?: unknown; knowledge?: unknown };
 	strategy?: {
@@ -31,6 +39,9 @@ type IntelligencePayload = {
 		contentPillars?: unknown;
 		positioning?: unknown;
 		audiences?: unknown;
+		draftPayload?: Record<string, unknown> | null;
+		generationMetadata?: StrategyGenerationMeta;
+		status?: string;
 	};
 	themes?: Array<{ id: string; title: string; objective?: string; description?: string; status?: string; channels?: string[]; targetAudience?: string }>;
 };
@@ -68,6 +79,11 @@ function IntelligencePageInner() {
 	const [knowledge, setKnowledge] = useState('{\n  "brandFacts": [],\n  "proofPoints": []\n}');
 	const [strategyJson, setStrategyJson] = useState('{\n  "objectives": [],\n  "keyMessages": [],\n  "contentPillars": []\n}');
 	const [diagnostics, setDiagnostics] = useState<{ roles: DiagnosticRole[]; recentInvocations: DiagnosticInvocation[] } | null>(null);
+	const [strategyGenerating, setStrategyGenerating] = useState(false);
+	const [strategyInstructions, setStrategyInstructions] = useState('');
+	const [strategyResearchId, setStrategyResearchId] = useState('');
+	const [strategyEscalate, setStrategyEscalate] = useState(false);
+	const [draftPreview, setDraftPreview] = useState('');
 
 	useEffect(() => {
 		const requested = searchParams.get('tab');
@@ -141,6 +157,9 @@ function IntelligencePageInner() {
 					null,
 					2,
 				),
+			);
+			setDraftPreview(
+				data.strategy.draftPayload ? JSON.stringify(data.strategy.draftPayload, null, 2) : '',
 			);
 		}
 	}, []);
@@ -227,6 +246,58 @@ function IntelligencePageInner() {
 			await loadIntelligence(brandId);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Save failed');
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	async function generateNativeStrategy() {
+		if (!brandId) return;
+		setStrategyGenerating(true);
+		setError(null);
+		setNotice(null);
+		try {
+			const res = await fetch('/api/intelligence/strategy/generate', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					airtableBrandId: brandId,
+					researchId: strategyResearchId.trim() || undefined,
+					instructions: strategyInstructions || undefined,
+					escalate: strategyEscalate,
+				}),
+			});
+			const data = (await res.json()) as { error?: string; job?: { status?: string; error?: string; jobId?: string } };
+			if (!res.ok) throw new Error(data.error || 'Native strategy generation failed');
+			if (data.job?.status === 'failed') throw new Error(data.job.error || 'Native strategy generation failed');
+			setNotice(
+				'Native strategy draft is ready for review. Your Make/Airtable strategy is unchanged until you activate this draft.',
+			);
+			await loadIntelligence(brandId);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Native strategy generation failed');
+		} finally {
+			setStrategyGenerating(false);
+		}
+	}
+
+	async function activateNativeDraft() {
+		if (!brandId) return;
+		setSaving(true);
+		setError(null);
+		setNotice(null);
+		try {
+			const res = await fetch('/api/intelligence/strategy/activate', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ airtableBrandId: brandId }),
+			});
+			const data = (await res.json()) as { error?: string };
+			if (!res.ok) throw new Error(data.error || 'Activation failed');
+			setNotice('Native strategy activated and synced to Airtable for approval. You can open the strategy page to approve.');
+			await loadIntelligence(brandId);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Activation failed');
 		} finally {
 			setSaving(false);
 		}
@@ -380,6 +451,67 @@ function IntelligencePageInner() {
 
 			{tab === 'strategy' && (
 				<div className="space-y-4">
+					<div className="card p-4 space-y-3 border-primary/30 bg-primary/5">
+						<p className="text-sm text-text-soft">
+							Generate a native AI strategy draft here. Compare it with your existing Make strategy on the strategy approval page. Nothing in Airtable is overwritten until you activate the draft.
+						</p>
+						<input
+							className="w-full rounded-xl2 border border-edge/60 bg-surface/30 px-3 py-2 text-sm"
+							placeholder="Optional research record ID (from Research after running premiumdiecast.com)"
+							value={strategyResearchId}
+							onChange={(event) => setStrategyResearchId(event.target.value)}
+						/>
+						<textarea
+							className="w-full min-h-20 rounded-xl2 border border-edge/60 bg-surface/30 p-3 text-sm"
+							placeholder="Optional instructions for this run (e.g. emphasize research on premiumdiecast.com)"
+							value={strategyInstructions}
+							onChange={(event) => setStrategyInstructions(event.target.value)}
+						/>
+						<label className="flex items-center gap-2 text-sm text-text-soft">
+							<input type="checkbox" checked={strategyEscalate} onChange={(e) => setStrategyEscalate(e.target.checked)} />
+							Use deep strategy model (slower, richer)
+						</label>
+						<div className="flex flex-wrap gap-2">
+							<button
+								type="button"
+								onClick={() => void generateNativeStrategy()}
+								disabled={strategyGenerating || !brandId}
+								className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 text-sm"
+							>
+								{strategyGenerating ? 'Generating native strategy…' : payload?.strategy?.draftPayload ? 'Regenerate native draft' : 'Generate native strategy'}
+							</button>
+							{payload?.strategy?.draftPayload ? (
+								<button
+									type="button"
+									onClick={() => void activateNativeDraft()}
+									disabled={saving || payload?.strategy?.generationMetadata?.phase === 'generating'}
+									className="px-4 py-2 rounded-xl2 border border-emerald-500/40 bg-emerald-500/10 text-sm"
+								>
+									{saving ? 'Activating…' : 'Activate draft (sync to Airtable)'}
+								</button>
+							) : null}
+						</div>
+						{payload?.strategy?.generationMetadata?.phase === 'generating' && (
+							<p className="text-sm text-text-soft flex items-center gap-2">
+								<Loader2 className="w-4 h-4 animate-spin" /> Generating…
+							</p>
+						)}
+						{payload?.strategy?.generationMetadata?.phase === 'ready' && payload.strategy.generationMetadata.modelRole && (
+							<p className="text-xs text-text-dim">
+								Draft model role: {payload.strategy.generationMetadata.modelRole}
+								{payload.strategy.generationMetadata.model ? ` (${payload.strategy.generationMetadata.model})` : ''}
+							</p>
+						)}
+						{payload?.strategy?.generationMetadata?.phase === 'failed' && payload.strategy.generationMetadata.error && (
+							<p className="text-sm text-danger">{payload.strategy.generationMetadata.error}</p>
+						)}
+					</div>
+					{draftPreview ? (
+						<details className="card p-4" open>
+							<summary className="cursor-pointer text-sm font-medium">Native draft preview (not active until you activate)</summary>
+							<pre className="mt-3 text-xs overflow-auto max-h-96 whitespace-pre-wrap">{draftPreview}</pre>
+						</details>
+					) : null}
 					<label className="block text-sm text-text-soft">Objectives, one per line</label>
 					<textarea
 						className="w-full min-h-32 rounded-xl2 border border-edge/60 bg-surface/30 p-3 text-sm"

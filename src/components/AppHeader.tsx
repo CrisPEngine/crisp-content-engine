@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
 import { useSupabase } from './SupabaseProvider';
 import { APP_NAV, NavItem } from '@/lib/nav';
+import { HeaderBrandSwitcher } from '@/components/HeaderBrandSwitcher';
 
 const LOGO_URL =
 	'https://res.cloudinary.com/dr75zvtso/image/upload/v1762325831/CrispContentEngineLogo_white_1200x627_ojrxn6.png';
@@ -178,8 +179,9 @@ export function AppHeader() {
 						})}
 					</nav>
 
-					{/* Right: user avatar + mobile hamburger */}
+					{/* Right: brand switcher + user avatar + mobile hamburger */}
 					<div className="ml-auto flex items-center gap-2">
+						<HeaderBrandSwitcher />
 						{/* User menu — desktop */}
 						<div className="hidden md:block relative">
 							<button

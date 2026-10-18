@@ -29,6 +29,14 @@ export type IntelligenceStore = {
 
 	upsertStrategy(userId: string, strategy: Omit<BrandStrategy, 'id' | 'campaigns' | 'channelStrategies'> & { id?: string }): Promise<BrandStrategy>;
 	getStrategyForBrand(userId: string, brandBrainId: string): Promise<BrandStrategy | null>;
+	saveStrategyDraft(
+		userId: string,
+		strategyId: string,
+		draft: Record<string, unknown> | null,
+		metadata: import('./types').StrategyGenerationMetadata,
+	): Promise<BrandStrategy>;
+	snapshotStrategy(userId: string, strategyId: string, snapshot: Record<string, unknown>, reason?: string): Promise<{ id: string }>;
+	listStrategySnapshots(userId: string, strategyId: string, limit?: number): Promise<Array<{ id: string; reason: string; createdAt: string }>>;
 	upsertCampaign(userId: string, campaign: Omit<BrandCampaign, 'id'> & { id?: string }): Promise<BrandCampaign>;
 	upsertChannelStrategy(userId: string, channel: Omit<ChannelStrategy, 'id'> & { id?: string }): Promise<ChannelStrategy>;
 

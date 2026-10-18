@@ -59,6 +59,7 @@ export type WorkflowJobStatus = 'queued' | 'processing' | 'completed' | 'failed'
 export type WorkflowJobType =
 	| 'generation'
 	| 'article_generation'
+	| 'strategy_generation'
 	| 'research'
 	| 'review'
 	| 'publishing'
@@ -66,6 +67,17 @@ export type WorkflowJobType =
 	| 'notification'
 	| 'theme_plan'
 	| 'brief';
+
+export type StrategyGenerationMetadata = {
+	phase: 'idle' | 'generating' | 'ready' | 'failed';
+	modelRole?: string;
+	model?: string;
+	jobId?: string;
+	error?: string;
+	startedAt?: string;
+	completedAt?: string;
+	source?: string;
+};
 
 export type BrandIdentity = {
 	name: string;
@@ -184,6 +196,9 @@ export type BrandStrategy = {
 	editorialThemes: string[];
 	campaigns: BrandCampaign[];
 	channelStrategies: ChannelStrategy[];
+	draftPayload?: Record<string, unknown> | null;
+	generationMetadata?: StrategyGenerationMetadata;
+	strategyExtras?: Record<string, unknown>;
 };
 
 export type BrandCampaign = {
