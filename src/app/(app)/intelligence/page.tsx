@@ -81,6 +81,7 @@ function IntelligencePageInner() {
 	const [diagnostics, setDiagnostics] = useState<{ roles: DiagnosticRole[]; recentInvocations: DiagnosticInvocation[] } | null>(null);
 	const [strategyGenerating, setStrategyGenerating] = useState(false);
 	const [strategyInstructions, setStrategyInstructions] = useState('');
+	const [strategyResearchId, setStrategyResearchId] = useState('');
 	const [strategyEscalate, setStrategyEscalate] = useState(false);
 	const [draftPreview, setDraftPreview] = useState('');
 
@@ -261,6 +262,7 @@ function IntelligencePageInner() {
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					airtableBrandId: brandId,
+					researchId: strategyResearchId.trim() || undefined,
 					instructions: strategyInstructions || undefined,
 					escalate: strategyEscalate,
 				}),
@@ -453,6 +455,12 @@ function IntelligencePageInner() {
 						<p className="text-sm text-text-soft">
 							Generate a native AI strategy draft here. Compare it with your existing Make strategy on the strategy approval page. Nothing in Airtable is overwritten until you activate the draft.
 						</p>
+						<input
+							className="w-full rounded-xl2 border border-edge/60 bg-surface/30 px-3 py-2 text-sm"
+							placeholder="Optional research record ID (from Research after running premiumdiecast.com)"
+							value={strategyResearchId}
+							onChange={(event) => setStrategyResearchId(event.target.value)}
+						/>
 						<textarea
 							className="w-full min-h-20 rounded-xl2 border border-edge/60 bg-surface/30 p-3 text-sm"
 							placeholder="Optional instructions for this run (e.g. emphasize research on premiumdiecast.com)"
