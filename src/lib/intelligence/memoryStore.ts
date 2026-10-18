@@ -52,6 +52,7 @@ export function createMemoryIntelligenceStore(): IntelligenceStore {
 	const experiments = new Map<string, Experiment>();
 	const experimentResults: ExperimentResultRow[] = [];
 	const jobs = new Map<string, WorkflowJob>();
+	const strategySnapshots: Array<{ id: string; userId: string; strategyId: string; reason: string; createdAt: string }> = [];
 
 	const owned = <T extends { userId: string }>(row: T | undefined, userId: string): T | null =>
 		row && row.userId === userId ? row : null;
@@ -129,6 +130,28 @@ export function createMemoryIntelligenceStore(): IntelligenceStore {
 				[...strategies.values()].find((row) => row.userId === userId && row.brandBrainId === brandBrainId) ??
 				null
 			);
+		},
+
+		async saveStrategyDraft(userId, strategyId, draft, metadata) {
+			const strategy = owned(strategies.get(strategyId), userId);
+			if (!strategy) throw new Error('Strategy not found');
+			strategy.draftPayload = draft;
+			strategy.generationMetadata = metadata;
+			return strategy;
+		},
+
+		async snapshotStrategy(userId, strategyId, _snapshot, reason = 'pre_regenerate') {
+			const id = newId();
+			strategySnapshots.push({ id, userId, strategyId, reason, createdAt: nowIso() });
+			return { id };
+		},
+
+		async listStrategySnapshots(userId, strategyId, limit = 5) {
+			return strategySnapshots
+				.filter((row) => row.userId === userId && row.strategyId === strategyId)
+				.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+				.slice(0, limit)
+				.map((row) => ({ id: row.id, reason: row.reason, createdAt: row.createdAt }));
 		},
 
 		async upsertCampaign(userId, campaign) {

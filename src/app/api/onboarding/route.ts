@@ -6,6 +6,11 @@ import { z } from 'zod';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { assertCanAddBrand, BrandLimitReachedError } from '@/lib/brandLimits';
 import { activateBrandFromOnboarding } from '@/lib/intelligence/onboarding/activateFromOnboarding';
+import { resolveStrategyEngine } from '@/lib/intelligence/strategy/strategyEngine';
+import {
+	dispatchStrategyGenerationWorker,
+	enqueueNativeStrategyGeneration,
+} from '@/lib/intelligence/strategy/generationJob';
 import type { OnboardingNativeInput } from '@/lib/intelligence/onboarding/mapOnboardingToNative';
 import {
 	normalizeOnboardingBody,
@@ -290,11 +295,32 @@ export async function POST(req: Request) {
 			reason: 'onboarding',
 		});
 
+		const strategyEngine = resolveStrategyEngine();
+		let strategyGenerationJobId: string | undefined;
+		if (strategyEngine === 'native') {
+			try {
+				const job = await enqueueNativeStrategyGeneration({
+					ownerUserId: user.id,
+					airtableBrandId: airtableId,
+					brandBrainId: activated.brandId,
+					source: 'onboarding',
+				});
+				strategyGenerationJobId = job.id;
+				await dispatchStrategyGenerationWorker(job.id).catch((err) => {
+					console.error('[Onboarding] Native strategy generation dispatch failed:', err);
+				});
+			} catch (genError) {
+				console.error('[Onboarding] Native strategy generation enqueue failed:', genError);
+			}
+		}
+
 		return NextResponse.json({
 			ok: true,
 			airtableId,
 			brandBrainId: activated.brandId,
 			strategyId: activated.strategyId,
+			strategyEngine,
+			strategyGenerationJobId,
 			airtableWarning,
 			message: airtableWarning ? 'Native brand created with warnings.' : 'Brand profile created successfully',
 		});

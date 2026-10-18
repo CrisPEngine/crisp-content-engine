@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { syncNativeSocialForUser, assignBrandDestination } from '@/lib/social/nativeSync';
+import { assignBrandDestination } from '@/lib/social/nativeSync';
+import { syncNativeSocialForUserThrottled } from '@/lib/social/syncThrottle';
 import { channelFromPlatform, type PublishChannel } from '@/lib/social/channels';
 import { brandChannelRows } from '@/lib/social/brandChannels';
 import { listAccountAuthorizations } from '@/lib/social/brandChannels';
@@ -19,8 +20,11 @@ export async function GET(request: Request) {
 
 	const url = new URL(request.url);
 	const brandIdParam = url.searchParams.get('brandId');
+	const skipSync = url.searchParams.get('skipSync') === '1';
 
-	await syncNativeSocialForUser(user.id);
+	if (!skipSync) {
+		await syncNativeSocialForUserThrottled(user.id, brandIdParam == null);
+	}
 
 	const { data: authorizations } = await supabase
 		.from('social_authorizations')

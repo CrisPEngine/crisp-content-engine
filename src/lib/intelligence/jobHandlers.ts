@@ -1,5 +1,6 @@
 import { ingestBrandLinkedInAnalytics } from './ingestion/linkedin';
 import { publishStoredMemory } from './publishMemory';
+import { runStrategyGenerationJob } from './strategy/generationJob';
 import type { IntelligenceStore } from './store';
 import type { WorkflowJob } from './types';
 
@@ -39,6 +40,10 @@ export function getDefaultJobHandlers(store: IntelligenceStore) {
 		},
 		async brief() {
 			return { skipped: true };
+		},
+
+		async strategy_generation(job: WorkflowJob) {
+			return runStrategyGenerationJob(job);
 		},
 	};
 }

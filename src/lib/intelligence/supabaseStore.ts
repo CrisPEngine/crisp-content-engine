@@ -58,6 +58,9 @@ function mapStrategy(row: Record<string, unknown>, campaigns: BrandCampaign[], c
 		editorialThemes: asArray(row.editorial_themes),
 		campaigns,
 		channelStrategies,
+		draftPayload: (row.draft_payload as Record<string, unknown> | null | undefined) ?? null,
+		generationMetadata: (row.generation_metadata as BrandStrategy['generationMetadata']) ?? { phase: 'idle' },
+		strategyExtras: (row.strategy_extras as Record<string, unknown>) ?? {},
 	};
 }
 
@@ -250,6 +253,9 @@ export function createSupabaseIntelligenceStore(): IntelligenceStore {
 				cta_strategy: strategy.ctaStrategy,
 				content_mix: strategy.contentMix,
 				editorial_themes: strategy.editorialThemes,
+				...(strategy.draftPayload !== undefined ? { draft_payload: strategy.draftPayload } : {}),
+				...(strategy.generationMetadata !== undefined ? { generation_metadata: strategy.generationMetadata } : {}),
+				...(strategy.strategyExtras !== undefined ? { strategy_extras: strategy.strategyExtras } : {}),
 			};
 			const { data, error } = await db().from('brand_strategies').upsert(payload).select().single();
 			if (error || !data) throw new Error(error?.message || 'Failed to upsert strategy');
@@ -292,6 +298,52 @@ export function createSupabaseIntelligenceStore(): IntelligenceStore {
 					constraints: row.constraints ?? [],
 				})),
 			);
+		},
+
+		async saveStrategyDraft(userId, strategyId, draft, metadata) {
+			const { data, error } = await db()
+				.from('brand_strategies')
+				.update({
+					draft_payload: draft,
+					generation_metadata: metadata,
+				})
+				.eq('id', strategyId)
+				.eq('user_id', userId)
+				.select('brand_brain_id')
+				.single();
+			if (error || !data) throw new Error(error?.message || 'Failed to save strategy draft');
+			return this.getStrategyForBrand(userId, String(data.brand_brain_id)) as Promise<BrandStrategy>;
+		},
+
+		async snapshotStrategy(userId, strategyId, snapshot, reason = 'pre_regenerate') {
+			const { data, error } = await db()
+				.from('brand_strategy_snapshots')
+				.insert({
+					user_id: userId,
+					strategy_id: strategyId,
+					snapshot,
+					reason,
+				})
+				.select('id')
+				.single();
+			if (error || !data) throw new Error(error?.message || 'Failed to snapshot strategy');
+			return { id: String(data.id) };
+		},
+
+		async listStrategySnapshots(userId, strategyId, limit = 5) {
+			const { data, error } = await db()
+				.from('brand_strategy_snapshots')
+				.select('id, reason, created_at')
+				.eq('user_id', userId)
+				.eq('strategy_id', strategyId)
+				.order('created_at', { ascending: false })
+				.limit(limit);
+			if (error) throw new Error(error.message);
+			return (data ?? []).map((row) => ({
+				id: String(row.id),
+				reason: String(row.reason),
+				createdAt: String(row.created_at),
+			}));
 		},
 
 		async upsertCampaign(userId, campaign) {
