@@ -9,6 +9,7 @@ import {
 	filterBrainsForBrand,
 	filterNativeQueueItem,
 	mapMemoryToQueueItem,
+	matchesPlatformTab,
 	memoryForQueueDisplay,
 	type ListNativeQueueInput,
 	type NativeQueueListItem,
@@ -49,6 +50,10 @@ export async function listNativeQueueForUser(
 		memories.map(async (memory) => {
 			const brain = brainById.get(memory.brandBrainId);
 			if (!brain) return;
+
+			if (input.platformTab && !matchesPlatformTab(String(memory.channel), input.platformTab)) {
+				return;
+			}
 
 			const job = jobByMemoryId.get(memory.id);
 			const displayMemory = memoryForQueueDisplay(memory, job);

@@ -41,6 +41,11 @@ describe('nativeQueueView', () => {
 		expect(matchesPlatformTab('linkedin', 'Meta')).toBe(false);
 	});
 
+	it('filters X tab to x channel only', () => {
+		expect(matchesPlatformTab('x', 'X')).toBe(true);
+		expect(matchesPlatformTab('linkedin', 'X')).toBe(false);
+	});
+
 	it('flags overdue scheduled content', () => {
 		const memory: ContentMemoryRecord = {
 			id: 'mem-1',
