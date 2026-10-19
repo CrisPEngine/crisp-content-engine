@@ -28,15 +28,15 @@ export function HeaderBrandSwitcher() {
 				name: row.client_name || 'Unnamed brand',
 			}));
 			setBrands(rows);
+			let brainMap: Record<string, string> = {};
 			if (socialRes.ok) {
 				const social = (await socialRes.json()) as {
 					brands?: Array<{ id: string; airtableBrandId?: string }>;
 				};
-				const map: Record<string, string> = {};
 				for (const row of social.brands ?? []) {
-					if (row.airtableBrandId) map[row.airtableBrandId] = row.id;
+					if (row.airtableBrandId) brainMap[row.airtableBrandId] = row.id;
 				}
-				setBrainByAirtable(map);
+				setBrainByAirtable(brainMap);
 			}
 			const fromUrl =
 				typeof window !== 'undefined'
@@ -45,7 +45,18 @@ export function HeaderBrandSwitcher() {
 						new URLSearchParams(window.location.search).get('airtableBrandId')
 					: null;
 			const stored = readWorkingBrandId();
-			const pick = (fromUrl && rows.some((r) => r.id === fromUrl) ? fromUrl : null) || (stored && rows.some((r) => r.id === stored) ? stored : rows[0]?.id) || '';
+			const resolveRowId = (candidate: string | null | undefined): string | null => {
+				if (!candidate) return null;
+				if (rows.some((r) => r.id === candidate)) return candidate;
+				const airtableForBrain = Object.entries(brainMap).find(([, brain]) => brain === candidate)?.[0];
+				if (airtableForBrain && rows.some((r) => r.id === airtableForBrain)) return airtableForBrain;
+				return null;
+			};
+			const pick =
+				resolveRowId(fromUrl) ||
+				resolveRowId(stored) ||
+				rows[0]?.id ||
+				'';
 			setBrandId(pick);
 			if (pick) writeWorkingBrandId(pick);
 		} finally {

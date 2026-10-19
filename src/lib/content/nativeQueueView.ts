@@ -2,7 +2,9 @@ import type { BrandBrain } from '@/lib/intelligence/types';
 import type { ContentMemoryRecord } from '@/lib/intelligence/types';
 import { workflowStatus, type WorkflowStatus } from '@/lib/content/workflow';
 import type { ContentPublishDiagnostics } from '@/lib/publish/contentPublishDiagnostics';
+import type { PublishJobRow } from '@/lib/publish/contentPublishDiagnostics';
 import { brainMatchesBrandFilter, effectiveBrandProfileId } from '@/lib/content/brandFilter';
+import { memoryBlocksQueueConfirm } from '@/lib/intelligence/queueBridge';
 
 export type NativeQueueStage = 'approval' | 'schedule' | 'published';
 
@@ -33,7 +35,30 @@ export type NativeQueueListItem = {
 	proposedSchedule?: string | null;
 	evidence?: boolean;
 	airtableContentId?: string | null;
+	queue_hold?: boolean;
 };
+
+export function memoryHeldFromQueue(memory: ContentMemoryRecord): boolean {
+	return memoryBlocksQueueConfirm(memory);
+}
+
+/** Treat scheduled rows with publish evidence as published for queue display only. */
+export function memoryForQueueDisplay(
+	memory: ContentMemoryRecord,
+	job: PublishJobRow | undefined,
+): ContentMemoryRecord {
+	if (memory.publicationStatus === 'published') return memory;
+	const publishedJob = job?.status === 'published';
+	const hasExternal = Boolean(memory.externalPostId?.trim() || memory.externalUrl?.trim());
+	if (memory.publicationStatus === 'scheduled' && (publishedJob || hasExternal)) {
+		return {
+			...memory,
+			publicationStatus: 'published',
+			publicationDate: memory.publicationDate ?? memory.createdAt,
+		};
+	}
+	return memory;
+}
 
 export function channelDisplayPlatform(channel: string): string {
 	const c = String(channel).toLowerCase();
@@ -86,7 +111,7 @@ export function uiStatusLabel(
 export function stageIncludesWorkflowStatus(stage: NativeQueueStage, ws: WorkflowStatus): boolean {
 	switch (stage) {
 		case 'approval':
-			return ['NEEDS_APPROVAL', 'APPROVED_UNSCHEDULED', 'REJECTED', 'DRAFT'].includes(ws);
+			return ['NEEDS_APPROVAL', 'APPROVED_UNSCHEDULED', 'REJECTED'].includes(ws);
 		case 'schedule':
 			return ['SCHEDULED', 'PUBLISHING', 'PUBLISHED', 'FAILED', 'APPROVED_UNSCHEDULED'].includes(ws);
 		case 'published':
@@ -100,11 +125,13 @@ export function mapMemoryToQueueItem(
 	brain: BrandBrain,
 	memory: ContentMemoryRecord,
 	diagnostics: ContentPublishDiagnostics | null,
+	extra?: { linkedImageUrl?: string | null; destinationLabel?: string | null },
 ): NativeQueueListItem {
 	const ws = workflowStatus(memory);
 	const overdue = isScheduledOverdue(memory);
 	const metadata = memory.metadata ?? {};
 	const imageUrl =
+		extra?.linkedImageUrl?.trim() ||
 		metadataString(metadata, 'imageReferenceUrl') ||
 		metadataString(metadata, 'image_reference_url') ||
 		'';
@@ -131,7 +158,7 @@ export function mapMemoryToQueueItem(
 		created_time: memory.createdAt,
 		brand_name: brain.identity.name,
 		brand_profile_id: effectiveBrandProfileId(brain),
-		destination: memory.destination ?? null,
+		destination: extra?.destinationLabel ?? memory.destination ?? null,
 		external_url: memory.externalUrl ?? null,
 		last_publish_error: diagnostics?.lastPublishError ?? null,
 		publish_job_status: diagnostics?.publishJobStatus ?? null,
@@ -142,6 +169,7 @@ export function mapMemoryToQueueItem(
 		proposedSchedule: metadataString(metadata, 'proposedSchedule') ?? null,
 		evidence: /source:/i.test(`${body}\n${memory.sourceIdea ?? ''}`),
 		airtableContentId: memory.airtableContentId ?? null,
+		queue_hold: memoryHeldFromQueue(memory) || undefined,
 	};
 }
 
@@ -157,6 +185,7 @@ export function filterNativeQueueItem(
 	memory: ContentMemoryRecord,
 	input: ListNativeQueueInput,
 ): boolean {
+	if (input.stage === 'approval' && memoryHeldFromQueue(memory)) return false;
 	if (!stageIncludesWorkflowStatus(input.stage, item.workflowStatus)) return false;
 	if (!matchesPlatformTab(String(memory.channel), input.platformTab)) return false;
 	if (input.contentBriefId && memory.briefId !== input.contentBriefId) return false;

@@ -9,9 +9,12 @@ import {
 	filterBrainsForBrand,
 	filterNativeQueueItem,
 	mapMemoryToQueueItem,
+	memoryForQueueDisplay,
 	type ListNativeQueueInput,
 	type NativeQueueListItem,
 } from '@/lib/content/nativeQueueView';
+import { resolveLinkedImageUrlForTarget } from '@/lib/content/queueLinkedImage';
+import { resolveQueuePublishTarget } from '@/lib/content/queuePublishTarget';
 
 export async function listNativeQueueForUser(
 	userId: string,
@@ -25,8 +28,26 @@ export async function listNativeQueueForUser(
 	for (const brain of brains) {
 		const memories = await store.listMemory(userId, brain.id);
 		for (const memory of memories) {
-			const diagnostics = diagnosticsFromPublishJob(memory, jobByMemoryId.get(memory.id));
-			const item = mapMemoryToQueueItem(brain, memory, diagnostics);
+			const job = jobByMemoryId.get(memory.id);
+			const displayMemory = memoryForQueueDisplay(memory, job);
+			const diagnostics = diagnosticsFromPublishJob(displayMemory, job);
+			const [linkedImageUrl, publishTarget] = await Promise.all([
+				resolveLinkedImageUrlForTarget({
+					ownerUserId: userId,
+					targetType: 'content',
+					targetId: displayMemory.id,
+					brandBrainId: brain.id,
+				}),
+				resolveQueuePublishTarget({
+					userId,
+					brandBrain: brain,
+					channel: String(displayMemory.channel),
+				}),
+			]);
+			const item = mapMemoryToQueueItem(brain, displayMemory, diagnostics, {
+				linkedImageUrl,
+				destinationLabel: publishTarget.ready ? publishTarget.label : null,
+			});
 			if (!filterNativeQueueItem(item, memory, input)) continue;
 			items.push(item);
 		}
