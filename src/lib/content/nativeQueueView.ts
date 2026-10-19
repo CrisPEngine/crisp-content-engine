@@ -1,4 +1,5 @@
 import { proposedScheduleLabelFromMetadata } from '@/lib/intelligence/scheduleProposal';
+import { displayScheduleAt } from '@/lib/content/nativeQueueSchedule';
 import type { BrandBrain } from '@/lib/intelligence/types';
 import type { ContentMemoryRecord } from '@/lib/intelligence/types';
 import { workflowStatus, type WorkflowStatus } from '@/lib/content/workflow';
@@ -151,12 +152,7 @@ export function mapMemoryToQueueItem(
 		status: uiStatusLabel(ws, { overdue, publishJobStatus: diagnostics?.publishJobStatus }),
 		workflowStatus: ws,
 		content_type: memory.contentType ? String(memory.contentType) : undefined,
-		scheduled_date:
-			ws === 'SCHEDULED' || ws === 'PUBLISHING' || memory.publicationStatus === 'scheduled'
-				? memory.publicationDate ?? null
-				: memory.publicationStatus === 'approved' && memory.publicationDate
-					? memory.publicationDate
-					: null,
+		scheduled_date: displayScheduleAt(memory),
 		published_at: memory.publicationStatus === 'published' ? memory.publicationDate ?? null : null,
 		created_time: memory.createdAt,
 		brand_name: brain.identity.name,

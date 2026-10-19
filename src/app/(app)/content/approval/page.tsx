@@ -381,11 +381,30 @@ export default function ContentApprovalPage() {
 				const data = await res.json().catch(() => ({}));
 				throw new Error(data?.error || 'Failed to approve content');
 			}
-			setContentItems((items) =>
-				items.map((item) =>
-					item.id === id ? { ...item, status: 'Ready To Publish', workflowStatus: 'APPROVED_UNSCHEDULED' } : item
-				)
-			);
+			const data = await res.json().catch(() => ({}));
+			const workflowStatus =
+				typeof data?.workflowStatus === 'string' ? data.workflowStatus : 'APPROVED_UNSCHEDULED';
+			const scheduledDate =
+				typeof data?.scheduled_date === 'string'
+					? data.scheduled_date
+					: data?.scheduled
+						? undefined
+						: null;
+			setContentItems((items) => {
+				if (workflowStatus === 'SCHEDULED' || workflowStatus === 'PUBLISHING') {
+					return items.filter((item) => item.id !== id);
+				}
+				return items.map((item) =>
+					item.id === id
+						? {
+								...item,
+								status: 'Ready To Publish',
+								workflowStatus,
+								scheduled_date: scheduledDate ?? item.scheduled_date ?? null,
+							}
+						: item,
+				);
+			});
 			setSelectedItems((prev) => {
 				const next = new Set(prev);
 				next.delete(id);
@@ -498,25 +517,39 @@ export default function ContentApprovalPage() {
 		setBulkApproving(true);
 		setError(null);
 		try {
-			const promises = Array.from(selectedItems).map((id) =>
-				fetch('/api/content/native-queue', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					credentials: 'include',
-					body: JSON.stringify({ contentId: id, decision: 'approve' }),
-				})
+			const ids = Array.from(selectedItems);
+			const results = await Promise.all(
+				ids.map(async (id) => {
+					const res = await fetch('/api/content/native-queue', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						credentials: 'include',
+						body: JSON.stringify({ contentId: id, decision: 'approve' }),
+					});
+					const data = await res.json().catch(() => ({}));
+					return { id, ok: res.ok, data };
+				}),
 			);
-			const results = await Promise.all(promises);
 			const failed = results.filter((r) => !r.ok);
 			if (failed.length > 0) {
 				throw new Error(`Failed to approve ${failed.length} item(s)`);
 			}
+			const scheduledIds = new Set(
+				results
+					.filter(
+						(r) =>
+							r.data?.workflowStatus === 'SCHEDULED' || r.data?.workflowStatus === 'PUBLISHING' || r.data?.scheduled,
+					)
+					.map((r) => r.id),
+			);
 			setContentItems((items) =>
-				items.map((item) =>
-					selectedItems.has(item.id)
-						? { ...item, status: 'Ready To Publish', workflowStatus: 'APPROVED_UNSCHEDULED' }
-						: item
-				)
+				items
+					.filter((item) => !scheduledIds.has(item.id))
+					.map((item) =>
+						selectedItems.has(item.id)
+							? { ...item, status: 'Ready To Publish', workflowStatus: 'APPROVED_UNSCHEDULED' }
+							: item,
+					),
 			);
 			setSelectedItems(new Set());
 		} catch (err: any) {
@@ -583,11 +616,16 @@ export default function ContentApprovalPage() {
 				? new Date(editingScheduledTime).toISOString()
 				: null;
 			
+			const item = contentItems.find((row) => row.id === id);
+			const scheduleIntent =
+				item?.status === 'Ready To Publish' || item?.workflowStatus === 'APPROVED_UNSCHEDULED'
+					? 'publish'
+					: 'preference';
 			const res = await fetch('/api/content/native-queue', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
-				body: JSON.stringify({ contentId: id, scheduled_time: isoString, scheduleIntent: 'preference' }),
+				body: JSON.stringify({ contentId: id, scheduled_time: isoString, scheduleIntent }),
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));

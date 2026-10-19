@@ -16,7 +16,13 @@ import {
 } from '@/lib/content/nativeQueueView';
 import { resolveLinkedImageUrlForTarget } from '@/lib/content/queueLinkedImage';
 import { resolveQueuePublishTarget, type QueuePublishTarget } from '@/lib/content/queuePublishTarget';
-import type { BrandBrain } from '@/lib/intelligence/types';
+import type { BrandBrain, ContentMemoryRecord } from '@/lib/intelligence/types';
+import {
+	needsApprovedScheduleRepair,
+	repairApprovedScheduleMemory,
+} from '@/lib/content/nativeQueueSchedule';
+import { isAgentMetaMemory, syncAgentMetaPublishJob } from '@/lib/publish/agentMetaJob';
+import { isAgentThreadsMemory, syncAgentThreadsPublishJob } from '@/lib/publish/agentThreadsJob';
 
 export async function listNativeQueueForUser(
 	userId: string,
@@ -46,10 +52,26 @@ export async function listNativeQueueForUser(
 
 	const items: NativeQueueListItem[] = [];
 
+	async function memoryForListing(memory: ContentMemoryRecord): Promise<ContentMemoryRecord> {
+		if (!needsApprovedScheduleRepair(memory)) return memory;
+		const repaired = repairApprovedScheduleMemory(memory);
+		const saved = await store.saveMemory(userId, repaired);
+		if (repaired.publicationDate && repaired.publicationStatus === 'scheduled') {
+			if (isAgentThreadsMemory(saved)) {
+				await syncAgentThreadsPublishJob({ userId, memory: saved, publishAt: repaired.publicationDate });
+			} else if (isAgentMetaMemory(saved)) {
+				await syncAgentMetaPublishJob({ userId, memory: saved, publishAt: repaired.publicationDate });
+			}
+		}
+		return saved;
+	}
+
 	await Promise.all(
 		memories.map(async (memory) => {
 			const brain = brainById.get(memory.brandBrainId);
 			if (!brain) return;
+
+			memory = await memoryForListing(memory);
 
 			if (input.platformTab && !matchesPlatformTab(String(memory.channel), input.platformTab)) {
 				return;
