@@ -125,12 +125,34 @@ function publicContent(memory: ContentMemoryRecord, publish?: Awaited<ReturnType
 	};
 }
 
+async function loadLinkedPublicAssets(
+	ownerUserId: string,
+	targetType: 'content' | 'article',
+	targetId: string,
+	brandBrainId?: string,
+) {
+	const store = getNativeContentStore();
+	const links = await store.listLinks(ownerUserId, targetType, targetId);
+	const assets = [];
+	for (const link of links) {
+		const asset = await store.getAsset(ownerUserId, link.assetId);
+		if (!asset) continue;
+		if (brandBrainId && asset.brandId && asset.brandId !== brandBrainId) continue;
+		assets.push(publicAsset(asset));
+	}
+	return assets;
+}
+
 async function publicContentForOwner(ownerUserId: string, memory: ContentMemoryRecord) {
 	const publish =
 		memory.publicationStatus === 'failed' || memory.metadata?.lastPublishError
 			? await loadContentPublishDiagnostics(ownerUserId, memory)
 			: null;
-	return publicContent(memory, publish ?? undefined);
+	const linkedAssets = await loadLinkedPublicAssets(ownerUserId, 'content', memory.id, memory.brandBrainId);
+	return {
+		...publicContent(memory, publish ?? undefined),
+		...(linkedAssets.length > 0 ? { linkedAssets } : {}),
+	};
 }
 
 function publicStrategy(strategy: BrandStrategy | null) {

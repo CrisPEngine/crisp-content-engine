@@ -1,7 +1,13 @@
 'use client';
 
+export type ContentBrandOption = {
+	id: string;
+	client_name: string;
+	airtableBrandId?: string | null;
+};
+
 type Props = {
-	brands: Array<{ id: string; client_name: string }>;
+	brands: ContentBrandOption[];
 	value: string;
 	onChange: (brandId: string) => void;
 	className?: string;
@@ -29,12 +35,28 @@ export function ContentBrandFilter({ brands, value, onChange, className }: Props
 	);
 }
 
-export async function fetchIntelligenceBrandOptions(): Promise<Array<{ id: string; client_name: string }>> {
+export async function fetchIntelligenceBrandOptions(): Promise<ContentBrandOption[]> {
 	const res = await fetch('/api/intelligence/brands', { cache: 'no-store', credentials: 'include' });
 	if (!res.ok) return [];
 	const data = await res.json();
-	return (Array.isArray(data.brands) ? data.brands : []).map((b: { id: string; name: string }) => ({
-		id: b.id,
-		client_name: b.name || 'Unknown Brand',
-	}));
+	return (Array.isArray(data.brands) ? data.brands : []).map(
+		(b: { id: string; name: string; airtableBrandId?: string | null }) => ({
+			id: b.id,
+			client_name: b.name || 'Unknown Brand',
+			airtableBrandId: b.airtableBrandId ?? null,
+		}),
+	);
+}
+
+export function resolveContentBrandBrainId(brands: ContentBrandOption[], storedOrUrlId: string): string | null {
+	const trimmed = storedOrUrlId.trim();
+	if (!trimmed) return null;
+	const direct = brands.find((b) => b.id === trimmed);
+	if (direct) return direct.id;
+	const byAirtable = brands.find((b) => b.airtableBrandId === trimmed);
+	return byAirtable?.id ?? null;
+}
+
+export function workingBrandStorageId(brand: ContentBrandOption): string {
+	return brand.airtableBrandId?.trim() || brand.id;
 }

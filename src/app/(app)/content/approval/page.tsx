@@ -6,7 +6,13 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, X, Eye, Calendar, Loader2, Edit2, Save, Clock, Upload, Image as ImageIcon, Copy } from 'lucide-react';
 import { Skeleton, ContentItemSkeleton } from '@/components/skeletons/Skeleton';
-import { ContentBrandFilter, fetchIntelligenceBrandOptions } from '@/components/content/ContentBrandFilter';
+import {
+	ContentBrandFilter,
+	fetchIntelligenceBrandOptions,
+	resolveContentBrandBrainId,
+	workingBrandStorageId,
+	type ContentBrandOption,
+} from '@/components/content/ContentBrandFilter';
 import {
 	readApprovalBrandFromSearch,
 	readWorkingBrandId,
@@ -55,10 +61,16 @@ type ContentItem = {
 
 type ChannelTab = 'LinkedIn' | 'X' | 'Meta' | 'Blog';
 
-type BrandOption = {
-	id: string;
-	client_name: string;
+type BrandOption = ContentBrandOption;
+
+type BrandPublishBanner = {
+	instagram: string | null;
+	facebook: string | null;
 };
+
+function platformRequiresDestination(platform: string): boolean {
+	return platform === 'Instagram' || platform === 'Facebook' || platform === 'LinkedIn' || platform === 'Threads';
+}
 
 export default function ContentApprovalPage() {
 	const supabase = useSupabase();
@@ -96,11 +108,11 @@ export default function ContentApprovalPage() {
 	const [legacyQueueCount, setLegacyQueueCount] = useState(0);
 	const [legacyQueueLoading, setLegacyQueueLoading] = useState(false);
 	
-	// Meta connection state
-	const [metaConnected, setMetaConnected] = useState<boolean>(false);
-	const [metaSelectedPage, setMetaSelectedPage] = useState<string | null>(null);
-	const [metaSelectedInstagram, setMetaSelectedInstagram] = useState<string | null>(null);
-	const [metaStatusLoading, setMetaStatusLoading] = useState<boolean>(false);
+	const [brandPublishBanner, setBrandPublishBanner] = useState<BrandPublishBanner>({
+		instagram: null,
+		facebook: null,
+	});
+	const [brandPublishBannerLoading, setBrandPublishBannerLoading] = useState(false);
 
 	// Load brands on mount
 	useEffect(() => {
@@ -123,11 +135,37 @@ export default function ContentApprovalPage() {
 		})();
 	}, []);
 
-	// Load Meta connection status on mount (if feature flag enabled)
 	useEffect(() => {
 		if (!supabase || !isMetaPublishingEnabled()) return;
-		loadMetaStatus();
-	}, [supabase]);
+		if (selectedBrandId === 'all') {
+			setBrandPublishBanner({ instagram: null, facebook: null });
+			return;
+		}
+		const brainId = resolveContentBrandBrainId(brands, selectedBrandId) ?? selectedBrandId;
+		setBrandPublishBannerLoading(true);
+		void fetch(`/api/social/connections?skipSync=1&brandId=${encodeURIComponent(brainId)}`, {
+			cache: 'no-store',
+			credentials: 'include',
+		})
+			.then(async (res) => (res.ok ? res.json() : null))
+			.then((data) => {
+				const rows = Array.isArray(data?.brandChannels) ? data.brandChannels : [];
+				const instagram = rows.find((row: { channel?: string }) => row.channel === 'instagram');
+				const facebook = rows.find((row: { channel?: string }) => row.channel === 'facebook');
+				setBrandPublishBanner({
+					instagram:
+						typeof instagram?.destinationLabel === 'string' && instagram.destinationLabel.trim()
+							? instagram.destinationLabel.trim()
+							: null,
+					facebook:
+						typeof facebook?.destinationLabel === 'string' && facebook.destinationLabel.trim()
+							? facebook.destinationLabel.trim()
+							: null,
+				});
+			})
+			.catch(() => setBrandPublishBanner({ instagram: null, facebook: null }))
+			.finally(() => setBrandPublishBannerLoading(false));
+	}, [supabase, selectedBrandId, brands]);
 
 	// Load content when brand or tab changes
 	useEffect(() => {
@@ -158,14 +196,14 @@ export default function ContentApprovalPage() {
 	useEffect(() => {
 		if (brands.length === 0 || hasInitializedBrand.current) return;
 
-		const fromUrl =
-			brandParamFromUrl && brands.some((b) => b.id === brandParamFromUrl) ? brandParamFromUrl : null;
+		const fromUrl = brandParamFromUrl ? resolveContentBrandBrainId(brands, brandParamFromUrl) : null;
 		const stored = readWorkingBrandId();
-		const fromStored = stored && brands.some((b) => b.id === stored) ? stored : null;
+		const fromStored = stored ? resolveContentBrandBrainId(brands, stored) : null;
 		const pick = fromUrl ?? fromStored;
 		if (pick) {
 			setSelectedBrandId(pick);
-			writeWorkingBrandId(pick);
+			const brandRow = brands.find((b) => b.id === pick);
+			if (brandRow) writeWorkingBrandId(workingBrandStorageId(brandRow));
 			if (!fromUrl) {
 				const params = new URLSearchParams(searchParams.toString());
 				params.set('brand', pick);
@@ -176,6 +214,17 @@ export default function ContentApprovalPage() {
 		}
 		hasInitializedBrand.current = true;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [brands]);
+
+	useEffect(() => {
+		const onWorkingBrand = (event: Event) => {
+			const detail = (event as CustomEvent<string>).detail;
+			if (!detail || brands.length === 0) return;
+			const brainId = resolveContentBrandBrainId(brands, detail);
+			if (brainId) setSelectedBrandId(brainId);
+		};
+		window.addEventListener('cce-working-brand', onWorkingBrand);
+		return () => window.removeEventListener('cce-working-brand', onWorkingBrand);
 	}, [brands]);
 
 	// Poll for content if generating
@@ -197,7 +246,8 @@ export default function ContentApprovalPage() {
 			params.delete('brand');
 		} else {
 			params.set('brand', brandId);
-			writeWorkingBrandId(brandId);
+			const brandRow = brands.find((b) => b.id === brandId);
+			writeWorkingBrandId(brandRow ? workingBrandStorageId(brandRow) : brandId);
 		}
 		const qs = params.toString();
 		router.replace(`/content/approval${qs ? `?${qs}` : ''}`, { scroll: false });
@@ -221,25 +271,6 @@ export default function ContentApprovalPage() {
 			}
 		} catch (err) {
 			console.error('Failed to load quota:', err);
-		}
-	}
-
-	async function loadMetaStatus() {
-		if (!isMetaPublishingEnabled()) return;
-		
-		setMetaStatusLoading(true);
-		try {
-			const res = await fetch('/api/meta/status', { cache: 'no-store', credentials: 'include' });
-			if (res.ok) {
-				const data = await res.json();
-				setMetaConnected(data.connected || false);
-				setMetaSelectedPage(data.selectedPage?.pageName || null);
-				setMetaSelectedInstagram(data.selectedInstagram?.igUsername || null);
-			}
-		} catch (err) {
-			console.error('Failed to load Meta status:', err);
-		} finally {
-			setMetaStatusLoading(false);
 		}
 	}
 
@@ -1036,7 +1067,7 @@ export default function ContentApprovalPage() {
 												<span className="px-2.5 py-1 rounded-full text-xs font-medium bg-surface/50 border border-edge/60 text-text-soft">
 													{item.destination}
 												</span>
-											) : item.source === 'native' ? (
+											) : item.source === 'native' && platformRequiresDestination(item.platform) ? (
 												<span className="px-2.5 py-1 rounded-full text-xs font-medium bg-warning/15 border border-warning/30 text-warning">
 													Destination required
 												</span>
@@ -1075,36 +1106,49 @@ export default function ContentApprovalPage() {
 											</div>
 										)}
 
-										{/* Meta Connection CTA - Show if Facebook or Instagram and not connected */}
-										{isMetaPublishingEnabled() && (item.platform === 'Facebook' || item.platform === 'Instagram') && !metaConnected && item.status !== 'Ready To Publish' && item.status !== 'Published' && (
-											<div className="px-3 py-2 rounded-lg bg-primary/10 border border-primary/30 text-primary text-xs flex items-center justify-between">
-												<span>🔗 Connect Meta to publish to {item.platform}</span>
-												<a 
-													href="/connections"
-													className="ml-2 px-2 py-1 rounded-md bg-primary/20 hover:bg-primary/30 font-medium text-xs"
+										{isMetaPublishingEnabled() &&
+											selectedBrandId !== 'all' &&
+											(item.platform === 'Facebook' || item.platform === 'Instagram') &&
+											item.status !== 'Ready To Publish' &&
+											item.status !== 'Published' && (
+												<div
+													className={`px-3 py-2 rounded-lg text-xs ${
+														(item.platform === 'Instagram' ? item.destination || brandPublishBanner.instagram : item.destination || brandPublishBanner.facebook)
+															? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300'
+															: 'bg-primary/10 border border-primary/30 text-primary'
+													}`}
 												>
-													Connect
-												</a>
-											</div>
-										)}
-
-										{/* Meta Connection Status - Show if connected */}
-										{isMetaPublishingEnabled() && (item.platform === 'Facebook' || item.platform === 'Instagram') && metaConnected && item.status !== 'Ready To Publish' && item.status !== 'Published' && (
-											<div className="px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs">
-												{item.platform === 'Facebook' && metaSelectedPage && (
-													<span>✓ Publishing to Facebook Page: {metaSelectedPage}</span>
-												)}
-												{item.platform === 'Facebook' && !metaSelectedPage && (
-													<span>⚠️ No Facebook Page selected. <a href="/connections" className="underline">Select one</a></span>
-												)}
-												{item.platform === 'Instagram' && metaSelectedInstagram && (
-													<span>✓ Publishing to Instagram: @{metaSelectedInstagram}</span>
-												)}
-												{item.platform === 'Instagram' && !metaSelectedInstagram && (
-													<span>⚠️ No Instagram account selected. <a href="/connections" className="underline">Select one</a></span>
-												)}
-											</div>
-										)}
+													{brandPublishBannerLoading ? (
+														<span>Loading publish destination...</span>
+													) : item.platform === 'Instagram' ? (
+														item.destination || brandPublishBanner.instagram ? (
+															<span>
+																Publishing to Instagram:{' '}
+																{item.destination || brandPublishBanner.instagram}
+															</span>
+														) : (
+															<span>
+																No Instagram destination for this brand.{' '}
+																<a href="/connections" className="underline">
+																	Assign in Connections
+																</a>
+															</span>
+														)
+													) : item.destination || brandPublishBanner.facebook ? (
+														<span>
+															Publishing to Facebook Page:{' '}
+															{item.destination || brandPublishBanner.facebook}
+														</span>
+													) : (
+														<span>
+															No Facebook Page for this brand.{' '}
+															<a href="/connections" className="underline">
+																Assign in Connections
+															</a>
+														</span>
+													)}
+												</div>
+											)}
 
 										{/* Status Badge - Show prominently if Ready To Publish or Published */}
 										{item.status === 'Ready To Publish' && (
