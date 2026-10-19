@@ -350,6 +350,16 @@ async function applyHumanApproval(request: ApprovalRequest, userId: string): Pro
 		const memory = await intelligence.getMemory(request.ownerUserId, request.targetId);
 		if (!memory) throw new AgentError('not_found', 'The content for this approval no longer exists.', 404);
 		const schedule = request.requestedAction === 'approve_and_schedule';
+		const { finalizeApprovalSchedule } = await import('@/lib/content/nativeQueueSchedule');
+		const finalized = schedule
+			? {
+					publicationStatus: 'scheduled' as const,
+					publicationDate: publishAt,
+					metadata: memory.metadata ?? {},
+					publishAt,
+					scheduled: true,
+				}
+			: finalizeApprovalSchedule(memory);
 		assertMemoryChannelConstraints(memory);
 		assertRedditManualPublishOnly({
 			channel: String(memory.channel),
@@ -359,10 +369,10 @@ async function applyHumanApproval(request: ApprovalRequest, userId: string): Pro
 		const redditManual = isRedditPipelineChannel(String(memory.channel));
 		const updatedMemory = {
 			...memory,
-			publicationStatus: schedule ? 'scheduled' : 'approved',
-			publicationDate: schedule ? publishAt : memory.publicationDate,
+			publicationStatus: finalized.publicationStatus,
+			publicationDate: finalized.publicationDate,
 			metadata: {
-				...(memory.metadata ?? {}),
+				...finalized.metadata,
 				approvedByUserId: userId,
 				approvalRequestId: request.id,
 				approvalContentHash: request.contentHash,
@@ -378,18 +388,19 @@ async function applyHumanApproval(request: ApprovalRequest, userId: string): Pro
 					: {}),
 			},
 		};
-		if (schedule && isAgentThreadsMemory(memory)) {
+		const publishAtForJob = schedule ? publishAt : finalized.publishAt;
+		if (finalized.scheduled && publishAtForJob && isAgentThreadsMemory(memory)) {
 			await syncAgentThreadsPublishJob({
 				userId: request.ownerUserId,
 				memory: updatedMemory,
-				publishAt,
+				publishAt: publishAtForJob,
 			});
 		}
-		if (schedule && isAgentMetaMemory(memory)) {
+		if (finalized.scheduled && publishAtForJob && isAgentMetaMemory(memory)) {
 			await syncAgentMetaPublishJob({
 				userId: request.ownerUserId,
 				memory: updatedMemory,
-				publishAt,
+				publishAt: publishAtForJob,
 			});
 		}
 		await intelligence.saveMemory(request.ownerUserId, updatedMemory);

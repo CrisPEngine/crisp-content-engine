@@ -15,6 +15,10 @@ import {
 import { recordUserEdit } from '@/lib/intelligence/pipeline';
 import { DateTime } from 'luxon';
 import { timezoneFromBrandBrain } from '@/lib/intelligence/brandTimezone';
+import {
+	applyNativeQueueSchedulePatch,
+	finalizeApprovalSchedule,
+} from '@/lib/content/nativeQueueSchedule';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -103,15 +107,32 @@ export async function POST(request: Request) {
 			});
 		}
 
-		await store.saveMemory(userId, {
+		const finalized = finalizeApprovalSchedule(memory);
+		const approvedMemory = await store.saveMemory(userId, {
 			...memory,
-			publicationStatus: 'approved',
-			publicationDate: memory.publicationDate,
+			publicationStatus: finalized.publicationStatus,
+			publicationDate: finalized.publicationDate,
+			metadata: finalized.metadata,
+		});
+		assertMemoryChannelConstraints(approvedMemory);
+
+		if (finalized.scheduled && finalized.publishAt) {
+			if (isAgentThreadsMemory(approvedMemory)) {
+				await syncAgentThreadsPublishJob({ userId, memory: approvedMemory, publishAt: finalized.publishAt });
+			} else if (isAgentMetaMemory(approvedMemory)) {
+				await syncAgentMetaPublishJob({ userId, memory: approvedMemory, publishAt: finalized.publishAt });
+			}
+		}
+
+		const ws = workflowStatus({
+			publicationStatus: approvedMemory.publicationStatus,
+			publicationDate: approvedMemory.publicationDate,
 		});
 		return NextResponse.json({
-			id: memory.id,
-			workflowStatus: workflowStatus({ publicationStatus: 'approved', publicationDate: memory.publicationDate }),
-			scheduled: false,
+			id: approvedMemory.id,
+			workflowStatus: ws,
+			scheduled: finalized.scheduled,
+			scheduled_date: approvedMemory.publicationDate ?? null,
 		});
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : 'Request failed';
@@ -151,26 +172,24 @@ export async function PATCH(request: Request) {
 			if (body.cloudinaryId) metadata.image_cloudinary_id = body.cloudinaryId;
 		}
 
-		let publicationDate = memory.publicationDate;
-		let publicationStatus = memory.publicationStatus;
 		const scheduleIntent = body.scheduleIntent ?? 'preference';
+		let schedulePatch = applyNativeQueueSchedulePatch({
+			memory: { ...memory, metadata },
+			scheduledTime: body.scheduled_time,
+			scheduleIntent,
+		});
 
-		if (body.scheduled_time !== undefined) {
-			publicationDate = body.scheduled_time ?? undefined;
-			if (body.scheduled_time && scheduleIntent === 'publish') {
-				publicationStatus = 'scheduled';
-			} else if (body.scheduled_time) {
-				const brain = await store.getBrandBrainById(userId, memory.brandBrainId);
-				const timezone = brain ? timezoneFromBrandBrain(brain) : 'UTC';
-				const label = formatScheduleLabel(body.scheduled_time, timezone);
-				metadata.proposedScheduleAt = body.scheduled_time;
-				metadata.proposedScheduleLabel = label;
-				metadata.proposedSchedule = label;
-				metadata.userAcceptedProposedSchedule = true;
-			} else if (publicationStatus === 'scheduled' && scheduleIntent === 'publish') {
-				publicationStatus = 'approved';
-			}
+		if (body.scheduled_time && scheduleIntent === 'preference' && schedulePatch.metadata.proposedScheduleAt) {
+			const brain = await store.getBrandBrainById(userId, memory.brandBrainId);
+			const timezone = brain ? timezoneFromBrandBrain(brain) : 'UTC';
+			const label = formatScheduleLabel(String(schedulePatch.metadata.proposedScheduleAt), timezone);
+			schedulePatch.metadata.proposedScheduleLabel = label;
+			schedulePatch.metadata.proposedSchedule = label;
 		}
+
+		const publicationDate = schedulePatch.publicationDate;
+		const publicationStatus = schedulePatch.publicationStatus;
+		Object.assign(metadata, schedulePatch.metadata);
 
 		const draftBody = body.content !== undefined ? body.content : memory.body;
 		const sanitized = sanitizeSocialPublishFields({
@@ -207,11 +226,11 @@ export async function PATCH(request: Request) {
 			});
 		}
 
-		if (body.scheduled_time && publicationStatus === 'scheduled' && scheduleIntent === 'publish') {
+		if (schedulePatch.shouldSyncPublishJob && schedulePatch.publishAt) {
 			if (isAgentThreadsMemory(updated)) {
-				await syncAgentThreadsPublishJob({ userId, memory: updated, publishAt: body.scheduled_time });
+				await syncAgentThreadsPublishJob({ userId, memory: updated, publishAt: schedulePatch.publishAt });
 			} else if (isAgentMetaMemory(updated)) {
-				await syncAgentMetaPublishJob({ userId, memory: updated, publishAt: body.scheduled_time });
+				await syncAgentMetaPublishJob({ userId, memory: updated, publishAt: schedulePatch.publishAt });
 			}
 		}
 
