@@ -1,3 +1,4 @@
+import { proposedScheduleLabelFromMetadata } from '@/lib/intelligence/scheduleProposal';
 import type { BrandBrain } from '@/lib/intelligence/types';
 import type { ContentMemoryRecord } from '@/lib/intelligence/types';
 import { workflowStatus, type WorkflowStatus } from '@/lib/content/workflow';
@@ -33,6 +34,8 @@ export type NativeQueueListItem = {
 	image_prompt?: string;
 	image_reference_url?: string;
 	proposedSchedule?: string | null;
+	proposedScheduleKind?: string;
+	proposedScheduleAt?: string;
 	evidence?: boolean;
 	airtableContentId?: string | null;
 	queue_hold?: boolean;
@@ -166,7 +169,11 @@ export function mapMemoryToQueueItem(
 		hashtags: metadataString(metadata, 'hashtags'),
 		image_prompt: metadataString(metadata, 'image_prompt') || metadataString(metadata, 'imagePrompt'),
 		image_reference_url: imageUrl || undefined,
-		proposedSchedule: metadataString(metadata, 'proposedSchedule') ?? null,
+		proposedSchedule: proposedScheduleLabelFromMetadata(metadata),
+		proposedScheduleKind:
+			typeof metadata.proposedScheduleKind === 'string' ? metadata.proposedScheduleKind : undefined,
+		proposedScheduleAt:
+			typeof metadata.proposedScheduleAt === 'string' ? metadata.proposedScheduleAt : undefined,
 		evidence: /source:/i.test(`${body}\n${memory.sourceIdea ?? ''}`),
 		airtableContentId: memory.airtableContentId ?? null,
 		queue_hold: memoryHeldFromQueue(memory) || undefined,

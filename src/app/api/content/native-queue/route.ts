@@ -8,6 +8,13 @@ import { isAgentMetaMemory, syncAgentMetaPublishJob } from '@/lib/publish/agentM
 import { isAgentThreadsMemory, syncAgentThreadsPublishJob } from '@/lib/publish/agentThreadsJob';
 import { sanitizeSocialPublishFields } from '@/lib/content/socialPublishBody';
 import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
+import {
+	applyNativeRewriteWithFeedback,
+	captureNativeLearningEvent,
+} from '@/lib/intelligence/learningLoop';
+import { recordUserEdit } from '@/lib/intelligence/pipeline';
+import { DateTime } from 'luxon';
+import { timezoneFromBrandBrain } from '@/lib/intelligence/brandTimezone';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,6 +22,13 @@ export const dynamic = 'force-dynamic';
 function parseStage(value: string | null): NativeQueueStage {
 	if (value === 'schedule' || value === 'published') return value;
 	return 'approval';
+}
+
+function formatScheduleLabel(iso: string, timezone: string): string {
+	const dt = DateTime.fromISO(iso, { zone: 'utc' }).setZone(timezone);
+	if (!dt.isValid) return iso;
+	const suffix = timezone === 'Asia/Dubai' ? ' GST' : '';
+	return `${dt.toFormat('ccc d LLL, h:mm a')}${suffix}`;
 }
 
 export async function GET(request: Request) {
@@ -42,26 +56,66 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
 	try {
 		const { userId } = await requireIntelligenceUser();
-		const body = (await request.json()) as { contentId?: string; decision?: 'approve' | 'reject' };
+		const body = (await request.json()) as {
+			contentId?: string;
+			decision?: 'approve' | 'reject';
+			feedback?: string;
+		};
 		if (!body.contentId || (body.decision !== 'approve' && body.decision !== 'reject')) {
 			return NextResponse.json({ error: 'contentId and decision are required' }, { status: 400 });
 		}
 		const store = getIntelligenceStore();
 		const memory = await store.getMemory(userId, body.contentId);
 		if (!memory) return NextResponse.json({ error: 'Content not found' }, { status: 404 });
-		const nextStatus = body.decision === 'approve' ? 'approved' : 'rejected';
+
+		const feedback = (body.feedback ?? '').trim();
+
+		if (body.decision === 'reject') {
+			await captureNativeLearningEvent(store, {
+				userId,
+				brandBrainId: memory.brandBrainId,
+				contentId: memory.id,
+				channel: String(memory.channel),
+				action: 'reject',
+				feedbackText: feedback,
+				beforeBody: memory.body ?? '',
+			});
+
+			if (feedback) {
+				const rewritten = await applyNativeRewriteWithFeedback(store, userId, memory, feedback);
+				return NextResponse.json({
+					id: rewritten.id,
+					workflowStatus: workflowStatus(rewritten),
+					rewritten: true,
+					scheduled: false,
+				});
+			}
+
+			await store.saveMemory(userId, {
+				...memory,
+				publicationStatus: 'rejected',
+				publicationDate: memory.publicationDate,
+			});
+			return NextResponse.json({
+				id: memory.id,
+				workflowStatus: workflowStatus({ publicationStatus: 'rejected', publicationDate: memory.publicationDate }),
+				scheduled: false,
+			});
+		}
+
 		await store.saveMemory(userId, {
 			...memory,
-			publicationStatus: nextStatus,
-			publicationDate: body.decision === 'approve' ? undefined : memory.publicationDate,
+			publicationStatus: 'approved',
+			publicationDate: memory.publicationDate,
 		});
 		return NextResponse.json({
 			id: memory.id,
-			workflowStatus: workflowStatus({ publicationStatus: nextStatus, publicationDate: null }),
+			workflowStatus: workflowStatus({ publicationStatus: 'approved', publicationDate: memory.publicationDate }),
 			scheduled: false,
 		});
-	} catch {
-		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : 'Request failed';
+		return NextResponse.json({ error: message }, { status: error instanceof Error && message === 'Unauthorized' ? 401 : 400 });
 	}
 }
 
@@ -71,6 +125,7 @@ export async function PATCH(request: Request) {
 		const body = (await request.json()) as {
 			contentId?: string;
 			scheduled_time?: string | null;
+			scheduleIntent?: 'preference' | 'publish';
 			content?: string;
 			title?: string;
 			hashtags?: string;
@@ -86,6 +141,7 @@ export async function PATCH(request: Request) {
 		const memory = await store.getMemory(userId, body.contentId);
 		if (!memory) return NextResponse.json({ error: 'Content not found' }, { status: 404 });
 
+		const beforeBody = memory.body ?? '';
 		const metadata = { ...(memory.metadata ?? {}) };
 		if (body.hashtags !== undefined) metadata.hashtags = body.hashtags;
 		if (body.image_prompt !== undefined) metadata.image_prompt = body.image_prompt;
@@ -97,12 +153,21 @@ export async function PATCH(request: Request) {
 
 		let publicationDate = memory.publicationDate;
 		let publicationStatus = memory.publicationStatus;
+		const scheduleIntent = body.scheduleIntent ?? 'preference';
 
 		if (body.scheduled_time !== undefined) {
 			publicationDate = body.scheduled_time ?? undefined;
-			if (body.scheduled_time) {
+			if (body.scheduled_time && scheduleIntent === 'publish') {
 				publicationStatus = 'scheduled';
-			} else if (publicationStatus === 'scheduled') {
+			} else if (body.scheduled_time) {
+				const brain = await store.getBrandBrainById(userId, memory.brandBrainId);
+				const timezone = brain ? timezoneFromBrandBrain(brain) : 'UTC';
+				const label = formatScheduleLabel(body.scheduled_time, timezone);
+				metadata.proposedScheduleAt = body.scheduled_time;
+				metadata.proposedScheduleLabel = label;
+				metadata.proposedSchedule = label;
+				metadata.userAcceptedProposedSchedule = true;
+			} else if (publicationStatus === 'scheduled' && scheduleIntent === 'publish') {
 				publicationStatus = 'approved';
 			}
 		}
@@ -125,7 +190,24 @@ export async function PATCH(request: Request) {
 		});
 		assertMemoryChannelConstraints(updated);
 
-		if (body.scheduled_time && publicationStatus === 'scheduled') {
+		if (body.content !== undefined && beforeBody.trim() !== sanitized.body.trim()) {
+			const drafts = await store.listDrafts(userId, memory.id);
+			const latestDraft = drafts.at(-1);
+			if (latestDraft) {
+				await recordUserEdit(store, userId, latestDraft.id, sanitized.body, memory.brandBrainId);
+			}
+			await captureNativeLearningEvent(store, {
+				userId,
+				brandBrainId: memory.brandBrainId,
+				contentId: memory.id,
+				channel: String(memory.channel),
+				action: 'edit',
+				beforeBody,
+				afterBody: sanitized.body,
+			});
+		}
+
+		if (body.scheduled_time && publicationStatus === 'scheduled' && scheduleIntent === 'publish') {
 			if (isAgentThreadsMemory(updated)) {
 				await syncAgentThreadsPublishJob({ userId, memory: updated, publishAt: body.scheduled_time });
 			} else if (isAgentMetaMemory(updated)) {
@@ -133,7 +215,12 @@ export async function PATCH(request: Request) {
 			}
 		}
 
-		return NextResponse.json({ ok: true, id: updated.id, scheduled_date: updated.publicationDate ?? null });
+		return NextResponse.json({
+			ok: true,
+			id: updated.id,
+			scheduled_date: updated.publicationDate ?? null,
+			proposedSchedule: metadata.proposedScheduleLabel ?? null,
+		});
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : 'Update failed';
 		return NextResponse.json({ error: message }, { status: 400 });

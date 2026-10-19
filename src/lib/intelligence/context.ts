@@ -20,8 +20,9 @@ export function buildComposableContext(input: {
 	learnings: ContentLearning[];
 	editLearnings?: UserEditLearning[];
 	channel: string;
+	extraSections?: Record<string, string>;
 }): { sections: Record<string, string>; prompt: string } {
-	const { brain, strategy, theme, memory, learnings, editLearnings, channel } = input;
+	const { brain, strategy, theme, memory, learnings, editLearnings, channel, extraSections } = input;
 
 	const identity = clip(
 		[
@@ -123,9 +124,17 @@ export function buildComposableContext(input: {
 	);
 
 	const acceptedEdits = (editLearnings ?? [])
-		.filter((row) => row.status === 'accepted' || row.status === 'edited')
-		.filter((row) => row.confidence === 'strong' || row.confidence === 'confirmed')
-		.slice(0, 5);
+		.filter((row) => row.status !== 'rejected' && row.status !== 'disabled')
+		.filter(
+			(row) =>
+				row.signalType === 'user_feedback' ||
+				row.status === 'accepted' ||
+				row.status === 'edited' ||
+				row.confidence === 'observed' ||
+				row.confidence === 'strong' ||
+				row.confidence === 'confirmed',
+		)
+		.slice(0, 6);
 
 	const editSlice = clip(acceptedEdits.map((row) => row.observation).join('\n'), 500);
 
@@ -139,6 +148,7 @@ export function buildComposableContext(input: {
 		memory: memorySlice,
 		learnings: learningSlice,
 		editLearnings: editSlice,
+		...(extraSections ?? {}),
 	};
 
 	const prompt = [
@@ -156,6 +166,7 @@ export function buildComposableContext(input: {
 		memorySlice ? `## Content memory\n${memorySlice}` : '',
 		learningSlice ? `## Performance learnings (observational, not causal certainty)\n${learningSlice}` : '',
 		editSlice ? `## Confirmed user preferences\n${editSlice}` : '',
+		extraSections?.performance ? `## Performance context (observational)\n${extraSections.performance}` : '',
 	]
 		.filter((block) => block.trim().length > 0)
 		.join('\n');

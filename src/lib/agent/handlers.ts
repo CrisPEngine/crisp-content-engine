@@ -964,6 +964,17 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 				...(sanitized.cta != null ? { cta: sanitized.cta } : {}),
 				metadata: sanitized.metadata,
 			});
+			const { captureNativeLearningEvent } = await import('@/lib/intelligence/learningLoop');
+			await captureNativeLearningEvent(store, {
+				userId: ctx.credential.ownerUserId,
+				brandBrainId: brain.id,
+				contentId: memory.id,
+				channel: String(memory.channel),
+				action: 'rewrite',
+				feedbackText: instruction,
+				beforeBody: memory.body ?? '',
+				afterBody: finalBody,
+			});
 			if (typeof completion.estimatedCostUsd === 'number') await getAgentStore().addCost(ctx.credential.id, completion.estimatedCostUsd);
 			return {
 				contentId: memory.id,
@@ -1076,25 +1087,53 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			const contentId = inputString(input, 'contentId');
 			if (!contentId) throw new AgentError('invalid_input', 'contentId is required.', 400);
 			const memory = await requireContent(ctx, contentId);
-			const status = name === 'cce_approve_content' ? 'approved' : 'review';
+			const reason = inputString(input, 'reason');
+			if (name === 'cce_reject_content') {
+				const store = getIntelligenceStore();
+				const { captureNativeLearningEvent } = await import('@/lib/intelligence/learningLoop');
+				await captureNativeLearningEvent(store, {
+					userId: ctx.credential.ownerUserId,
+					brandBrainId: memory.brandBrainId,
+					contentId: memory.id,
+					channel: String(memory.channel),
+					action: 'reject',
+					feedbackText: reason,
+					beforeBody: memory.body ?? '',
+				});
+			}
+			const status = name === 'cce_approve_content' ? 'approved' : 'rejected';
 			const next = await getIntelligenceStore().saveMemory(ctx.credential.ownerUserId, {
 				...memory,
 				publicationStatus: status,
-				metadata: { ...(memory.metadata ?? {}), decisionBy: ctx.credential.id, decision: name, reason: inputString(input, 'reason') },
+				metadata: { ...(memory.metadata ?? {}), decisionBy: ctx.credential.id, decision: name, reason },
 			});
 			await emit(ctx, memory.brandBrainId, name === 'cce_approve_content' ? 'content.approved' : 'content.rejected', { contentId });
 			return { content: publicContent(next), publisherArmed: false };
 		}
 		case 'cce_get_schedule_recommendation': {
+			const brain = await requireBrand(ctx, brandId);
 			const { strategy, memory } = await brandContext(ctx, brandId);
-			const snapshots = await getIntelligenceStore().listPerformance(ctx.credential.ownerUserId, (await requireBrand(ctx, brandId)).id);
-			const sufficient = snapshots.length >= 8;
+			const snapshots = await getIntelligenceStore().listPerformance(ctx.credential.ownerUserId, brain.id);
+			const channel = resolveChannel(inputString(input, 'channel'))?.pipelineChannel ?? 'instagram';
+			const { buildScheduleProposal } = await import('@/lib/intelligence/scheduleProposal');
+			const proposal = buildScheduleProposal({
+				brain,
+				strategy,
+				channel,
+				snapshots,
+				scheduledMemories: memory.filter((row) => row.publicationStatus === 'scheduled' || row.publicationDate),
+			});
 			return {
-				sufficientHistory: sufficient,
-				recommendation: sufficient ? 'History exists, but CCE does not claim a single best clock time.' : 'Use the channel cadence already in strategy. No statistically optimal time is available.',
-				note: sufficient ? 'Observational only.' : INSUFFICIENT,
-				cadence: strategy?.channelStrategies.map((channel) => ({ channel: channel.channel, cadence: channel.cadence })) ?? [],
+				sufficientHistory: proposal.sufficientHistory,
+				sampleSize: proposal.sampleSize,
+				publishAt: proposal.publishAtIso,
+				humanLabel: proposal.humanLabel,
+				kind: proposal.kind,
+				recommendation: proposal.humanLabel,
+				note: proposal.note,
+				cadence: strategy?.channelStrategies.map((row) => ({ channel: row.channel, cadence: row.cadence })) ?? [],
 				recentCount: memory.length,
+				experimental: proposal.kind === 'experimental_test',
 			};
 		}
 		case 'cce_schedule_content':

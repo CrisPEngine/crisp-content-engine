@@ -547,6 +547,19 @@ export function createSupabaseIntelligenceStore(): IntelligenceStore {
 			return (data ?? []).map(mapMemory);
 		},
 
+		async listMemoryForBrandBrains(userId, brandBrainIds) {
+			if (brandBrainIds.length === 0) return [];
+			const { data, error } = await db()
+				.from('content_memory')
+				.select('*')
+				.eq('user_id', userId)
+				.in('brand_brain_id', brandBrainIds)
+				.order('created_at', { ascending: false })
+				.limit(Math.min(500, brandBrainIds.length * 100));
+			if (error) throw new Error(error.message);
+			return (data ?? []).map(mapMemory);
+		},
+
 		async getMemory(userId, id) {
 			const { data, error } = await db().from('content_memory').select('*').eq('id', id).eq('user_id', userId).maybeSingle();
 			if (error) throw new Error(error.message);

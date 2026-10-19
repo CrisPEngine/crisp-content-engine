@@ -48,6 +48,7 @@ export type IntelligenceStore = {
 
 	saveMemory(userId: string, record: Omit<ContentMemoryRecord, 'id' | 'userId' | 'createdAt'> & { id?: string; createdAt?: string }): Promise<ContentMemoryRecord>;
 	listMemory(userId: string, brandBrainId: string): Promise<ContentMemoryRecord[]>;
+	listMemoryForBrandBrains(userId: string, brandBrainIds: string[]): Promise<ContentMemoryRecord[]>;
 	getMemory(userId: string, id: string): Promise<ContentMemoryRecord | null>;
 
 	saveBrief(userId: string, brief: Omit<StoredBrief, 'id' | 'userId'> & { id?: string }): Promise<StoredBrief>;

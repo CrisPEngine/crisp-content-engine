@@ -224,7 +224,7 @@ describe('agent control plane', () => {
 		const outputs = (generated.body.result as { outputs: Array<{ contentId: string; channel: string; body: string; status: string }> }).outputs;
 		expect(outputs).toHaveLength(2);
 		expect(new Set(outputs.map((item) => item.channel)).size).toBe(2);
-		expect(outputs.every((item) => item.status === 'draft')).toBe(true);
+		expect(outputs.every((item) => item.status === 'review')).toBe(true);
 		const contentId = outputs[0].contentId;
 
 		const revision = await call(secret, 'cce_request_revision', { contentId, instruction: 'Make the author-approval point clearer.' }, 'rev-1');
