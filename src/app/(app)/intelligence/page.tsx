@@ -3,13 +3,15 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, Brain, Map, Layers, Activity } from 'lucide-react';
+import { Loader2, Brain, Map, Layers, Activity, Lightbulb } from 'lucide-react';
 import { resolveWorkingBrandId, writeWorkingBrandId } from '@/lib/brands/workingBrand';
 import type { StrategyCompletenessResult } from '@/lib/intelligence/strategy/strategyCompleteness';
 import { HumanBrandBrain } from '@/components/HumanBrandBrain';
 
 type BrandProfile = { id: string; name: string };
-type Tab = 'brain' | 'strategy' | 'themes' | 'diagnostics';
+type Tab = 'brain' | 'strategy' | 'themes' | 'learnings' | 'diagnostics';
+type LearningRow = { id: string; scope?: string; channel?: string; observation: string; confidence?: string };
+type EditLearningRow = { id: string; signalType: string; observation: string; confidence: string; status: string; occurrenceCount: number };
 type DiagnosticRole = {
 	role: string;
 	provider: string;
@@ -98,10 +100,15 @@ function IntelligencePageInner() {
 	const [draftPreview, setDraftPreview] = useState('');
 	const [legacyStrategy, setLegacyStrategy] = useState<LegacyStrategyPreview | null>(null);
 	const [completeness, setCompleteness] = useState<StrategyCompletenessResult | null>(null);
+	const [learningsPayload, setLearningsPayload] = useState<{
+		content: LearningRow[];
+		edits: EditLearningRow[];
+		editorial: LearningRow[];
+	} | null>(null);
 
 	useEffect(() => {
 		const requested = searchParams.get('tab');
-		if (requested === 'brain' || requested === 'strategy' || requested === 'themes' || requested === 'diagnostics') setTab(requested);
+		if (requested === 'brain' || requested === 'strategy' || requested === 'themes' || requested === 'learnings' || requested === 'diagnostics') setTab(requested);
 	}, [searchParams]);
 
 	useEffect(() => {
@@ -200,8 +207,40 @@ function IntelligencePageInner() {
 	useEffect(() => {
 		if (!brandId) return;
 		loadIntelligence(brandId).catch((err) => setError(err.message));
+	}, [brandId, loadIntelligence]);
+
+	useEffect(() => {
+		if (!brandId || tab !== 'strategy') return;
 		void loadLegacyStrategy(brandId);
-	}, [brandId, loadIntelligence, loadLegacyStrategy]);
+	}, [brandId, tab, loadLegacyStrategy]);
+
+	useEffect(() => {
+		if (!brandId || tab !== 'learnings') return;
+		let cancelled = false;
+		fetch(`/api/intelligence/learnings?airtableBrandId=${encodeURIComponent(brandId)}`, { cache: 'no-store' })
+			.then(async (res) => {
+				const data = (await res.json()) as {
+					content?: LearningRow[];
+					edits?: EditLearningRow[];
+					editorial?: LearningRow[];
+					error?: string;
+				};
+				if (!res.ok) throw new Error(data.error || 'Failed to load learnings');
+				if (!cancelled) {
+					setLearningsPayload({
+						content: data.content ?? [],
+						edits: data.edits ?? [],
+						editorial: data.editorial ?? [],
+					});
+				}
+			})
+			.catch((err: unknown) => {
+				if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load learnings');
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [brandId, tab]);
 
 	useEffect(() => {
 		if (payload?.strategy?.generationMetadata?.phase !== 'generating') return;
@@ -497,6 +536,7 @@ function IntelligencePageInner() {
 						['brain', 'Brand Brain', Brain],
 						['strategy', 'Strategy', Map],
 						['themes', 'Themes', Layers],
+						['learnings', 'Learnings', Lightbulb],
 						['diagnostics', 'Diagnostics', Activity],
 					] as const
 				).map(([id, label, Icon]) => (
@@ -715,6 +755,50 @@ function IntelligencePageInner() {
 							</div>
 						))}
 					</div>
+				</div>
+			)}
+
+			{tab === 'learnings' && (
+				<div className="space-y-4">
+					<p className="text-sm text-text-soft">
+						Edit, rejection, and performance signals captured from your approvals and analytics. Native generation reads accepted signals and observational performance hints only.
+					</p>
+					{!learningsPayload ? (
+						<p className="text-sm text-text-dim">Loading learnings…</p>
+					) : (
+						<>
+							<div className="card p-4 space-y-2">
+								<h2 className="font-semibold text-sm">Editorial feedback</h2>
+								{learningsPayload.editorial.length === 0 ? (
+									<p className="text-sm text-text-dim">No editorial learnings yet.</p>
+								) : (
+									<ul className="space-y-2 text-sm">
+										{learningsPayload.editorial.slice(0, 12).map((row) => (
+											<li key={row.id} className="border-b border-edge/40 pb-2">
+												{row.channel ? <span className="text-text-dim">{row.channel}: </span> : null}
+												{row.observation}
+											</li>
+										))}
+									</ul>
+								)}
+							</div>
+							<div className="card p-4 space-y-2">
+								<h2 className="font-semibold text-sm">Edit patterns</h2>
+								{learningsPayload.edits.length === 0 ? (
+									<p className="text-sm text-text-dim">No edit patterns yet.</p>
+								) : (
+									<ul className="space-y-2 text-sm">
+										{learningsPayload.edits.slice(0, 12).map((row) => (
+											<li key={row.id} className="border-b border-edge/40 pb-2">
+												<span className="text-text-dim">{row.signalType} ({row.confidence}, {row.status}): </span>
+												{row.observation}
+											</li>
+										))}
+									</ul>
+								)}
+							</div>
+						</>
+					)}
 				</div>
 			)}
 

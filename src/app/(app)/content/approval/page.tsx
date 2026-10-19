@@ -51,6 +51,7 @@ type ContentItem = {
 	source?: 'native';
 	workflowStatus?: string;
 	proposedSchedule?: string | null;
+	proposedScheduleKind?: string;
 	destination?: string | null;
 	evidence?: boolean;
 	airtableContentId?: string | null;
@@ -180,8 +181,7 @@ export default function ContentApprovalPage() {
 	// Load content when brand or tab changes
 	useEffect(() => {
 		if (!supabase) return;
-		void loadContent('tab');
-		loadQuota();
+		void Promise.all([loadContent('tab'), loadQuota()]);
 		return () => {
 			queueAbortRef.current?.abort();
 		};
@@ -400,7 +400,7 @@ export default function ContentApprovalPage() {
 	}
 
 	async function rejectContent(id: string) {
-		const feedback = window.prompt('Share optional feedback for the rewrite (optional):') || '';
+		const feedback = window.prompt('Share optional feedback for the rewrite:') || '';
 		setRejecting(id);
 		setError(null);
 		try {
@@ -408,15 +408,20 @@ export default function ContentApprovalPage() {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
-				body: JSON.stringify({ contentId: id, decision: 'reject' }),
+				body: JSON.stringify({ contentId: id, decision: 'reject', feedback }),
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
 				throw new Error(data?.error || 'Failed to reject content');
 			}
-			setContentItems((items) =>
-				items.map((item) => (item.id === id ? { ...item, status: 'REJECTED', workflowStatus: 'REJECTED' } : item))
-			);
+			const data = await res.json().catch(() => ({}));
+			if (data.rewritten) {
+				await loadContent();
+			} else {
+				setContentItems((items) =>
+					items.map((item) => (item.id === id ? { ...item, status: 'REJECTED', workflowStatus: 'REJECTED' } : item))
+				);
+			}
 			setSelectedItems((prev) => {
 				const next = new Set(prev);
 				next.delete(id);
@@ -582,7 +587,7 @@ export default function ContentApprovalPage() {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
-				body: JSON.stringify({ contentId: id, scheduled_time: isoString }),
+				body: JSON.stringify({ contentId: id, scheduled_time: isoString, scheduleIntent: 'preference' }),
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));
@@ -1124,6 +1129,7 @@ export default function ContentApprovalPage() {
 											{item.proposedSchedule ? (
 												<span className="px-2.5 py-1 rounded-full text-xs font-medium bg-surface/50 border border-edge/60 text-text-soft">
 													Proposed {item.proposedSchedule}
+													{item.proposedScheduleKind === 'experimental_test' ? ' (experimental test slot)' : ''}
 												</span>
 											) : null}
 											{item.destination ? (

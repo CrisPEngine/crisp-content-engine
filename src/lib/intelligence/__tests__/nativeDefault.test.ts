@@ -41,7 +41,7 @@ describe('a new native brand needs no allowlist', () => {
 			userIntent: 'Create a short draft idea.',
 			channel: 'linkedin',
 		}) as { contextGaps: string[]; memory: { publicationStatus: string } };
-		expect(result.memory.publicationStatus).toBe('draft');
+		expect(result.memory.publicationStatus).toBe('review');
 		expect(result.contextGaps).toEqual(expect.arrayContaining(['strategy', 'themes', 'content_memory', 'brand_facts']));
 		expect(brain.guardrails.nativeIntelligenceEnabled).not.toBe(false);
 		await expect(dispatchIntelligenceAction(OTHER, 'draft_content', {

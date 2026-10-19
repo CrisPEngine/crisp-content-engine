@@ -218,6 +218,13 @@ export function createMemoryIntelligenceStore(): IntelligenceStore {
 				.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 		},
 
+		async listMemoryForBrandBrains(userId, brandBrainIds) {
+			const allowed = new Set(brandBrainIds);
+			return [...memory.values()]
+				.filter((row) => row.userId === userId && allowed.has(row.brandBrainId))
+				.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+		},
+
 		async getMemory(userId, id) {
 			return owned(memory.get(id), userId);
 		},

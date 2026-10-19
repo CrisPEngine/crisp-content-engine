@@ -161,7 +161,7 @@ export default function SchedulingDashboard() {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
-				body: JSON.stringify({ contentId, scheduled_time: newDate }),
+				body: JSON.stringify({ contentId, scheduled_time: newDate, scheduleIntent: 'publish' }),
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({}));

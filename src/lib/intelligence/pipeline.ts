@@ -9,7 +9,10 @@ import { buildComposableContext } from './context';
 import { retrieveRelevantMemory, type MemoryRetrieval } from './contentMemory';
 import { analyseEditDiff, nextConfidence } from './editLearning';
 import { applyDecay } from './performance';
+import { performanceHintsForGeneration } from './performanceContext';
 import { learningLinesForBrief } from './experimentOps';
+import { buildScheduleProposal } from './scheduleProposal';
+import { timezoneFromBrandBrain } from './brandTimezone';
 import { acceptEditorialPlan, buildDeterministicPlan, selectTheme } from './plan';
 import { completeReview } from './review';
 import { scoreDraft } from './scoring';
@@ -151,12 +154,13 @@ export async function runContentIntelligencePipeline(
 		throw new Error('Brand brain not found. Create Brand Brain before native generation.');
 	}
 
-	const [strategy, themes, memoryRows, learnings, editLearnings] = await Promise.all([
+	const [strategy, themes, memoryRows, learnings, editLearnings, performanceSnapshots] = await Promise.all([
 		store.getStrategyForBrand(intent.userId, brain.id),
 		store.listThemes(intent.userId, brain.id),
 		store.listMemory(intent.userId, brain.id),
 		store.listLearnings(intent.userId, brain.id),
 		store.listEditLearnings(intent.userId, brain.id),
+		store.listPerformance(intent.userId, brain.id),
 	]);
 
 	let theme = selectTheme(themes, memoryRows, intent.themeId);
@@ -243,6 +247,13 @@ export async function runContentIntelligencePipeline(
 		plan = fallbackPlan;
 	}
 
+	const performanceHints = performanceHintsForGeneration({
+		snapshots: performanceSnapshots,
+		memory: memoryRows,
+		channel: intent.channel,
+		objective: intent.optimizationObjective,
+	});
+
 	const briefPayload = buildStructuredBrief({
 		userIntent: intent.userIntent,
 		channel: intent.channel,
@@ -253,7 +264,10 @@ export async function runContentIntelligencePipeline(
 		theme,
 		campaignTitle: strategy?.campaigns.find((row) => row.id === intent.campaignId)?.title,
 		memory,
-		learnings: learningLinesForBrief(activeLearnings, intent.channel),
+		learnings: [
+			...learningLinesForBrief(activeLearnings, intent.channel),
+			...performanceHints,
+		],
 		plan,
 	});
 
@@ -274,6 +288,9 @@ export async function runContentIntelligencePipeline(
 		learnings: activeLearnings,
 		editLearnings,
 		channel: intent.channel,
+		extraSections: performanceHints.length
+			? { performance: performanceHints.join('\n') }
+			: undefined,
 	});
 
 	const redditChannel = isRedditPipelineChannel(intent.channel);
@@ -451,6 +468,15 @@ export async function runContentIntelligencePipeline(
 		comparableCount: comparable,
 	});
 
+	const scheduleProposal = buildScheduleProposal({
+		brain,
+		strategy,
+		channel: intent.channel,
+		snapshots: performanceSnapshots,
+		scheduledMemories: memoryRows.filter((row) => row.publicationStatus === 'scheduled' || row.publicationDate),
+	});
+	const brandTimezone = timezoneFromBrandBrain(brain);
+
 	const savedMemory = await store.saveMemory(intent.userId, {
 		brandBrainId: brain.id,
 		themeId: theme?.id,
@@ -467,12 +493,18 @@ export async function runContentIntelligencePipeline(
 		cta: finalCta,
 		format: intent.contentType,
 		body: reviewedBody,
-		publicationStatus: 'draft',
+		publicationStatus: 'review',
 		sourceIdea: intent.userIntent,
 		metadata: {
 			...(redditParsed?.metadata ?? {}),
 			...socialSanitized.metadata,
 			...generationMetadata,
+			proposedScheduleAt: scheduleProposal.publishAtIso,
+			proposedScheduleLabel: scheduleProposal.humanLabel,
+			proposedScheduleKind: scheduleProposal.kind,
+			proposedScheduleNote: scheduleProposal.note,
+			proposedSchedule: scheduleProposal.humanLabel,
+			brandTimezone,
 		},
 	});
 
@@ -542,10 +574,12 @@ export async function recordUserEdit(
 		const match = existing.find((row) => row.signalType === signal.signalType && row.status !== 'rejected' && row.status !== 'disabled');
 		if (match) {
 			const occurrenceCount = match.occurrenceCount + 1;
+			const confidence = nextConfidence(match.confidence, occurrenceCount);
 			await store.saveEditLearning(userId, {
 				...match,
 				occurrenceCount,
-				confidence: nextConfidence(match.confidence, occurrenceCount),
+				confidence,
+				status: confidence === 'observed' || confidence === 'strong' || confidence === 'confirmed' ? 'accepted' : match.status,
 				observation: signal.observation,
 			});
 		} else {
