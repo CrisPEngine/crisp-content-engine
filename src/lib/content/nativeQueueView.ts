@@ -1,5 +1,5 @@
 import { proposedScheduleLabelFromMetadata } from '@/lib/intelligence/scheduleProposal';
-import { displayScheduleAt } from '@/lib/content/nativeQueueSchedule';
+import { displayScheduleAt, shouldExcludeFromApprovalStage } from '@/lib/content/nativeQueueSchedule';
 import type { BrandBrain } from '@/lib/intelligence/types';
 import type { ContentMemoryRecord } from '@/lib/intelligence/types';
 import { workflowStatus, type WorkflowStatus } from '@/lib/content/workflow';
@@ -189,6 +189,7 @@ export function filterNativeQueueItem(
 	input: ListNativeQueueInput,
 ): boolean {
 	if (input.stage === 'approval' && memoryHeldFromQueue(memory)) return false;
+	if (input.stage === 'approval' && shouldExcludeFromApprovalStage(memory)) return false;
 	if (!stageIncludesWorkflowStatus(input.stage, item.workflowStatus)) return false;
 	if (!matchesPlatformTab(String(memory.channel), input.platformTab)) return false;
 	if (input.contentBriefId && memory.briefId !== input.contentBriefId) return false;

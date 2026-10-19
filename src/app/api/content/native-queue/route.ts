@@ -18,6 +18,7 @@ import { timezoneFromBrandBrain } from '@/lib/intelligence/brandTimezone';
 import {
 	applyNativeQueueSchedulePatch,
 	finalizeApprovalSchedule,
+	resolveNativeQueueScheduleIntent,
 } from '@/lib/content/nativeQueueSchedule';
 
 export const runtime = 'nodejs';
@@ -161,6 +162,9 @@ export async function PATCH(request: Request) {
 		const store = getIntelligenceStore();
 		const memory = await store.getMemory(userId, body.contentId);
 		if (!memory) return NextResponse.json({ error: 'Content not found' }, { status: 404 });
+		if (memory.publicationStatus === 'published') {
+			return NextResponse.json({ error: 'Published content cannot be rescheduled.' }, { status: 409 });
+		}
 
 		const beforeBody = memory.body ?? '';
 		const metadata = { ...(memory.metadata ?? {}) };
@@ -172,7 +176,7 @@ export async function PATCH(request: Request) {
 			if (body.cloudinaryId) metadata.image_cloudinary_id = body.cloudinaryId;
 		}
 
-		const scheduleIntent = body.scheduleIntent ?? 'preference';
+		const scheduleIntent = resolveNativeQueueScheduleIntent(memory, body.scheduleIntent);
 		let schedulePatch = applyNativeQueueSchedulePatch({
 			memory: { ...memory, metadata },
 			scheduledTime: body.scheduled_time,
@@ -234,11 +238,17 @@ export async function PATCH(request: Request) {
 			}
 		}
 
+		const ws = workflowStatus({
+			publicationStatus: updated.publicationStatus,
+			publicationDate: updated.publicationDate,
+		});
 		return NextResponse.json({
 			ok: true,
 			id: updated.id,
 			scheduled_date: updated.publicationDate ?? null,
 			proposedSchedule: metadata.proposedScheduleLabel ?? null,
+			workflowStatus: ws,
+			status: ws === 'SCHEDULED' ? 'Scheduled' : ws === 'APPROVED_UNSCHEDULED' ? 'Ready To Publish' : undefined,
 		});
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : 'Update failed';

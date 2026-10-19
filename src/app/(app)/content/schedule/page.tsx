@@ -4,7 +4,15 @@ import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react
 import { useSupabase } from '@/components/SupabaseProvider';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Calendar, Clock, CheckCircle, XCircle, Plus, List, Grid3X3 } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, XCircle, Plus, List, Grid3X3, Edit2, Save, Loader2, X } from 'lucide-react';
+import {
+	assertGstDatetimeLocalFieldValue,
+	formatPublishAtForDisplay,
+	gstDatetimeLocalValueToUtcIso,
+	utcIsoToGstDatetimeLocalValue,
+	APPROVAL_SCHEDULE_TIMEZONE,
+} from '@/lib/datetime/gstSchedule';
+import { DateTime } from 'luxon';
 import { Skeleton, ContentItemSkeleton } from '@/components/skeletons/Skeleton';
 import { ContentBrandFilter, fetchIntelligenceBrandOptions } from '@/components/content/ContentBrandFilter';
 
@@ -34,20 +42,46 @@ export default function SchedulingDashboard() {
 	const [viewMode, setViewMode] = useState<'list' | 'calendar'>('calendar');
 	const [brands, setBrands] = useState<Array<{ id: string; client_name: string }>>([]);
 	const [selectedBrandId, setSelectedBrandId] = useState<string>('all');
+	const [rescheduleId, setRescheduleId] = useState<string | null>(null);
+	const [rescheduleValue, setRescheduleValue] = useState('');
+	const [rescheduleSaving, setRescheduleSaving] = useState(false);
 
 	function formatScheduledDateTime(dateString: string | null | undefined): string {
 		if (!dateString) return 'Not scheduled';
+		return formatPublishAtForDisplay(dateString);
+	}
+
+	function scheduleMinLocal(): string {
+		return DateTime.now().setZone(APPROVAL_SCHEDULE_TIMEZONE).toFormat("yyyy-MM-dd'T'HH:mm");
+	}
+
+	function scheduleMaxLocal(): string {
+		return DateTime.now()
+			.setZone(APPROVAL_SCHEDULE_TIMEZONE)
+			.plus({ days: 30 })
+			.endOf('day')
+			.toFormat("yyyy-MM-dd'T'HH:mm");
+	}
+
+	function startListReschedule(item: ScheduledContent) {
+		setRescheduleId(item.id);
+		setRescheduleValue(utcIsoToGstDatetimeLocalValue(item.scheduled_date));
+	}
+
+	async function saveListReschedule(contentId: string) {
+		setRescheduleSaving(true);
+		setError(null);
 		try {
-			const date = new Date(dateString);
-			return date.toLocaleString('en-US', {
-				month: 'short',
-				day: 'numeric',
-				year: 'numeric',
-				hour: 'numeric',
-				minute: '2-digit',
-			});
-		} catch {
-			return 'Invalid date';
+			const newDate = gstDatetimeLocalValueToUtcIso(rescheduleValue);
+			const ok = await handleReschedule(contentId, newDate);
+			if (ok) {
+				setRescheduleId(null);
+				setRescheduleValue('');
+			}
+		} catch (err: unknown) {
+			setError(err instanceof Error ? err.message : 'Failed to reschedule');
+		} finally {
+			setRescheduleSaving(false);
 		}
 	}
 
@@ -399,11 +433,59 @@ export default function SchedulingDashboard() {
 									</p>
 									<div className="flex items-center gap-2 text-sm text-text-dim mb-2 flex-wrap">
 										<Calendar className="w-4 h-4" />
-										<span>{formatScheduledDateTime(item.scheduled_date)}</span>
-										{formatCountdown(item.scheduled_date) && (
-											<span className="px-2 py-0.5 rounded-full text-xs bg-primary/10 border border-primary/30 text-primary">
-												{formatCountdown(item.scheduled_date)}
-											</span>
+										{rescheduleId === item.id ? (
+											<div className="flex items-center gap-2 flex-wrap">
+												<input
+													type="datetime-local"
+													value={assertGstDatetimeLocalFieldValue(rescheduleValue)}
+													onChange={(e) => setRescheduleValue(e.target.value)}
+													min={scheduleMinLocal()}
+													max={scheduleMaxLocal()}
+													className="px-2 py-1 text-sm rounded-lg border border-edge/60 bg-surface/30 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+												/>
+												<button
+													type="button"
+													onClick={() => saveListReschedule(item.id)}
+													disabled={rescheduleSaving || item.status === 'Published'}
+													className="p-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary disabled:opacity-50"
+													title="Save new publish time"
+												>
+													{rescheduleSaving ? (
+														<Loader2 className="w-4 h-4 animate-spin" />
+													) : (
+														<Save className="w-4 h-4" />
+													)}
+												</button>
+												<button
+													type="button"
+													onClick={() => {
+														setRescheduleId(null);
+														setRescheduleValue('');
+													}}
+													className="p-1.5 rounded-lg hover:bg-surface/50 text-text-dim"
+												>
+													<X className="w-4 h-4" />
+												</button>
+											</div>
+										) : (
+											<>
+												<span>{formatScheduledDateTime(item.scheduled_date)}</span>
+												{formatCountdown(item.scheduled_date) && (
+													<span className="px-2 py-0.5 rounded-full text-xs bg-primary/10 border border-primary/30 text-primary">
+														{formatCountdown(item.scheduled_date)}
+													</span>
+												)}
+												{item.status !== 'Published' ? (
+													<button
+														type="button"
+														onClick={() => startListReschedule(item)}
+														className="px-2 py-0.5 rounded-lg text-xs inline-flex items-center gap-1 hover:bg-surface/50 text-text-soft"
+													>
+														<Edit2 className="w-3.5 h-3.5" />
+														Reschedule
+													</button>
+												) : null}
+											</>
 										)}
 									</div>
 									{item.last_publish_error ? (

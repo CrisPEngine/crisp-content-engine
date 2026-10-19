@@ -9,6 +9,7 @@ import {
 	matchesPlatformTab,
 	memoryForQueueDisplay,
 	memoryHeldFromQueue,
+	filterNativeQueueItem,
 	stageIncludesWorkflowStatus,
 	uiStatusLabel,
 } from '@/lib/content/nativeQueueView';
@@ -127,6 +128,26 @@ describe('nativeQueueView', () => {
 		});
 		expect(item.image_reference_url).toBe('https://cdn.example.com/folian-post.jpg');
 		expect(item.destination).toBe('@folian.app');
+	});
+
+	it('excludes scheduled and approved-with-date rows from approval stage', () => {
+		const scheduledMemory: ContentMemoryRecord = {
+			id: 'mem-sched',
+			userId: 'user-1',
+			brandBrainId: folianBrain.id,
+			channel: 'instagram',
+			body: 'Caption',
+			publicationStatus: 'approved',
+			publicationDate: '2026-10-26T08:47:00.000Z',
+			createdAt: '2026-10-19T00:00:00.000Z',
+		};
+		const item = mapMemoryToQueueItem(folianBrain, scheduledMemory, null);
+		expect(
+			filterNativeQueueItem(item, scheduledMemory, { stage: 'approval' }),
+		).toBe(false);
+		expect(
+			filterNativeQueueItem(item, scheduledMemory, { stage: 'schedule' }),
+		).toBe(true);
 	});
 
 	it('maps memory to queue item with publish diagnostics', () => {

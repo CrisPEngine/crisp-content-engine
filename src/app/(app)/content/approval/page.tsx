@@ -23,6 +23,14 @@ import {
 	fetchNativeApprovalQueue,
 	shouldPollForGeneratingContent,
 } from '@/lib/content/approvalQueueClient';
+import {
+	APPROVAL_SCHEDULE_TIMEZONE,
+	assertGstDatetimeLocalFieldValue,
+	formatPublishAtForDisplay,
+	gstDatetimeLocalValueToUtcIso,
+	utcIsoToGstDatetimeLocalValue,
+} from '@/lib/datetime/gstSchedule';
+import { DateTime } from 'luxon';
 
 // Check if Meta publishing is enabled (client-side)
 const isMetaPublishingEnabled = () => {
@@ -611,16 +619,13 @@ export default function ContentApprovalPage() {
 		setSaving(id);
 		setError(null);
 		try {
-			// Convert datetime-local to ISO string for Airtable
-			const isoString = editingScheduledTime 
-				? new Date(editingScheduledTime).toISOString()
-				: null;
-			
+			const isoString = editingScheduledTime ? gstDatetimeLocalValueToUtcIso(editingScheduledTime) : null;
+
 			const item = contentItems.find((row) => row.id === id);
 			const scheduleIntent =
-				item?.status === 'Ready To Publish' || item?.workflowStatus === 'APPROVED_UNSCHEDULED'
-					? 'publish'
-					: 'preference';
+				item?.status === 'Needs Approval' || item?.workflowStatus === 'NEEDS_APPROVAL'
+					? 'preference'
+					: 'publish';
 			const res = await fetch('/api/content/native-queue', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
@@ -631,11 +636,25 @@ export default function ContentApprovalPage() {
 				const data = await res.json().catch(() => ({}));
 				throw new Error(data?.error || 'Failed to save scheduled time');
 			}
-			setContentItems((items) =>
-				items.map((item) =>
-					item.id === id ? { ...item, scheduled_date: isoString } : item
-				)
-			);
+			const data = await res.json().catch(() => ({}));
+			const workflowStatus =
+				typeof data?.workflowStatus === 'string' ? data.workflowStatus : undefined;
+			const scheduledDate =
+				typeof data?.scheduled_date === 'string' ? data.scheduled_date : isoString;
+			setContentItems((items) => {
+				if (workflowStatus === 'SCHEDULED' || workflowStatus === 'PUBLISHING' || scheduleIntent === 'publish') {
+					return items.filter((row) => row.id !== id);
+				}
+				return items.map((row) =>
+					row.id === id
+						? {
+								...row,
+								scheduled_date: scheduledDate,
+								proposedSchedule: data?.proposedSchedule ?? row.proposedSchedule,
+							}
+						: row,
+				);
+			});
 			setEditingScheduledTimeId(null);
 			setEditingScheduledTime('');
 		} catch (err: any) {
@@ -657,58 +676,28 @@ export default function ContentApprovalPage() {
 	function startEditScheduledTime(item: ContentItem) {
 		setEditingScheduledTimeId(item.id);
 		if (item.scheduled_date) {
-			// Convert to local datetime-local format (YYYY-MM-DDTHH:mm)
-			const date = new Date(item.scheduled_date);
-			const year = date.getFullYear();
-			const month = String(date.getMonth() + 1).padStart(2, '0');
-			const day = String(date.getDate()).padStart(2, '0');
-			const hours = String(date.getHours()).padStart(2, '0');
-			const minutes = String(date.getMinutes()).padStart(2, '0');
-			setEditingScheduledTime(`${year}-${month}-${day}T${hours}:${minutes}`);
+			setEditingScheduledTime(utcIsoToGstDatetimeLocalValue(item.scheduled_date));
 		} else {
-			// Set to current date/time as default
-			const now = new Date();
-			const year = now.getFullYear();
-			const month = String(now.getMonth() + 1).padStart(2, '0');
-			const day = String(now.getDate()).padStart(2, '0');
-			const hours = String(now.getHours()).padStart(2, '0');
-			const minutes = String(now.getMinutes()).padStart(2, '0');
-			setEditingScheduledTime(`${year}-${month}-${day}T${hours}:${minutes}`);
+			setEditingScheduledTime(utcIsoToGstDatetimeLocalValue(new Date().toISOString()));
 		}
 	}
 
 	// Get min and max dates for date picker (next 30 days)
 	function getMinDate(): string {
-		const now = new Date();
-		const year = now.getFullYear();
-		const month = String(now.getMonth() + 1).padStart(2, '0');
-		const day = String(now.getDate()).padStart(2, '0');
-		const hours = String(now.getHours()).padStart(2, '0');
-		const minutes = String(now.getMinutes()).padStart(2, '0');
-		return `${year}-${month}-${day}T${hours}:${minutes}`;
+		return DateTime.now().setZone(APPROVAL_SCHEDULE_TIMEZONE).toFormat("yyyy-MM-dd'T'HH:mm");
 	}
 
 	function getMaxDate(): string {
-		const maxDate = new Date();
-		maxDate.setDate(maxDate.getDate() + 30);
-		const year = maxDate.getFullYear();
-		const month = String(maxDate.getMonth() + 1).padStart(2, '0');
-		const day = String(maxDate.getDate()).padStart(2, '0');
-		const hours = '23';
-		const minutes = '59';
-		return `${year}-${month}-${day}T${hours}:${minutes}`;
+		return DateTime.now()
+			.setZone(APPROVAL_SCHEDULE_TIMEZONE)
+			.plus({ days: 30 })
+			.endOf('day')
+			.toFormat("yyyy-MM-dd'T'HH:mm");
 	}
 
 	function formatScheduledDate(dateString: string | null | undefined): string {
 		if (!dateString) return 'Not scheduled';
-		const date = new Date(dateString);
-		return date.toLocaleString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			year: 'numeric',
-			hour: '2-digit',
-			minute: '2-digit',
-		});
+		return formatPublishAtForDisplay(dateString);
 	}
 
 	function getContentPreview(content: string, maxLines: number = 3): string {
@@ -1512,12 +1501,12 @@ export default function ContentApprovalPage() {
 												<div className="flex items-center gap-2 flex-1">
 													<input
 														type="datetime-local"
-														value={editingScheduledTime}
+														value={assertGstDatetimeLocalFieldValue(editingScheduledTime)}
 														onChange={(e) => setEditingScheduledTime(e.target.value)}
 														min={getMinDate()}
 														max={getMaxDate()}
 														className="flex-1 px-2 py-1 text-sm rounded-lg border border-edge/60 bg-surface/30 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-														title="Select a date within the next 30 days"
+														title="Select a date within the next 30 days (GST)"
 													/>
 													<button
 														onClick={() => saveScheduledTime(item.id)}
@@ -1547,10 +1536,11 @@ export default function ContentApprovalPage() {
 													</span>
 													<button
 														onClick={() => startEditScheduledTime(item)}
-														className="p-1.5 rounded-lg hover:bg-surface/50 text-text-dim"
-														title="Edit scheduled time"
+														className="px-2 py-1.5 rounded-lg hover:bg-surface/50 text-text-dim text-xs inline-flex items-center gap-1"
+														title="Reschedule publish time"
 													>
 														<Edit2 className="w-3.5 h-3.5" />
+														Reschedule
 													</button>
 												</div>
 											)}
