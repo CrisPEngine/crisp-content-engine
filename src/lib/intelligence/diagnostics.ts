@@ -3,7 +3,7 @@
  */
 
 import { MODEL_ROLES, resolveModelForRole } from '@/lib/ai/roles';
-import { isNativeIntelligenceGloballyEnabled, nativeIntelligenceBrandAllowlist } from '@/lib/featureFlags';
+import { isLegacyMakeEnabled, isNativeIntelligenceGloballyEnabled, nativeIntelligenceBrandAllowlist } from '@/lib/featureFlags';
 
 export type DiagnosticCheck = {
 	id: string;
@@ -50,15 +50,22 @@ export function runConfigDiagnostics(): DiagnosticCheck[] {
 		},
 		{
 			id: 'make_strategy',
-			ok: present(process.env.MAKE_STRATEGY_WEBHOOK_URL),
-			severity: 'critical',
-			detail: 'Make strategy webhook still configured',
+			ok: isLegacyMakeEnabled() ? present(process.env.MAKE_STRATEGY_WEBHOOK_URL) : true,
+			severity: isLegacyMakeEnabled() ? 'critical' : 'info',
+			detail: isLegacyMakeEnabled()
+				? 'Legacy Make strategy webhook (rollback mode)'
+				: 'Native strategy engine default; Make optional behind LEGACY_MAKE_ENABLED',
 		},
 		{
 			id: 'make_content',
-			ok: present(process.env.MAKE_MULTI_CHANNEL_CONTENT_GENERATION_WEBHOOK_URL) || present(process.env.MAKE_CONTENT_GENERATION_WEBHOOK_URL),
-			severity: 'critical',
-			detail: 'Make content generation webhook still configured',
+			ok: isLegacyMakeEnabled()
+				? present(process.env.MAKE_MULTI_CHANNEL_CONTENT_GENERATION_WEBHOOK_URL) ||
+					present(process.env.MAKE_CONTENT_GENERATION_WEBHOOK_URL)
+				: true,
+			severity: isLegacyMakeEnabled() ? 'critical' : 'info',
+			detail: isLegacyMakeEnabled()
+				? 'Legacy Make content webhooks (rollback mode)'
+				: 'Native content generation default; Make optional behind LEGACY_MAKE_ENABLED',
 		},
 		{
 			id: 'native_intelligence',

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { CHIEF_OF_STAFF_CAPABILITIES, FOLIAN_GROK_CAPABILITIES } from '@/lib/agent/policy';
+import { readWorkingBrandId } from '@/lib/brands/workingBrand';
 
 type Credential = {
 	id: string;
@@ -12,35 +13,21 @@ type Credential = {
 	keyPrefix: string;
 	lastUsedAt?: string;
 	revokedAt?: string;
-	expiresAt?: string;
 };
 
-type BrandOption = { id: string; name: string };
-
-type AuditRow = {
-	id: string;
-	action: string;
-	resultStatus: string;
-	errorCode?: string;
-	consequenceLevel?: number;
-	createdAt: string;
-};
+type BrandOption = { id: string; name: string; airtableBrandId?: string };
 
 export default function AgentCredentialsPage() {
 	const [credentials, setCredentials] = useState<Credential[]>([]);
-	const [audit, setAudit] = useState<AuditRow[]>([]);
-	const [name, setName] = useState('Folian Marketing Grok');
-	const [brandId, setBrandId] = useState('');
-	const [chiefName, setChiefName] = useState('Chris Marketing Chief of Staff');
+	const [brands, setBrands] = useState<BrandOption[]>([]);
+	const [name, setName] = useState('Marketing assistant');
 	const [secret, setSecret] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [brands, setBrands] = useState<BrandOption[]>([]);
-	const [expandBrandId, setExpandBrandId] = useState('');
+	const [rowBrandPick, setRowBrandPick] = useState<Record<string, string>>({});
 
 	async function reload() {
-		const [credentialResponse, auditResponse, brandResponse] = await Promise.all([
+		const [credentialResponse, brandResponse] = await Promise.all([
 			fetch('/api/agent/v1/credentials'),
-			fetch('/api/agent/v1/audit'),
 			fetch('/api/brand-assets'),
 		]);
 		if (credentialResponse.status === 401) {
@@ -48,12 +35,22 @@ export default function AgentCredentialsPage() {
 			return;
 		}
 		const credentialBody = (await credentialResponse.json()) as { credentials?: Credential[] };
-		const auditBody = (await auditResponse.json()) as { entries?: AuditRow[] };
 		const brandBody = (await brandResponse.json()) as { brands?: BrandOption[] };
 		setCredentials(credentialBody.credentials ?? []);
-		setAudit(auditBody.entries ?? []);
 		setBrands(brandBody.brands ?? []);
 	}
+
+	useEffect(() => {
+		const working = readWorkingBrandId();
+		if (working) {
+			const match = brands.find((b) => b.airtableBrandId === working || b.id === working);
+			if (match) setRowBrandPick((prev) => ({ ...prev, __new: match.id }));
+		}
+	}, [brands]);
+
+	useEffect(() => {
+		void reload();
+	}, []);
 
 	async function grantAllBrands(credentialId: string) {
 		const response = await fetch(`/api/agent/v1/credentials/${credentialId}`, {
@@ -70,14 +67,15 @@ export default function AgentCredentialsPage() {
 	}
 
 	async function addBrandToCredential(credentialId: string) {
-		if (!expandBrandId.trim()) {
-			setError('Choose a brand brain id to add.');
+		const brandId = rowBrandPick[credentialId]?.trim();
+		if (!brandId) {
+			setError('Choose a brand from the list.');
 			return;
 		}
 		const response = await fetch(`/api/agent/v1/credentials/${credentialId}`, {
 			method: 'PATCH',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ addBrandId: expandBrandId.trim() }),
+			body: JSON.stringify({ addBrandId: brandId }),
 		});
 		if (!response.ok) {
 			const body = (await response.json()) as { error?: string };
@@ -87,22 +85,13 @@ export default function AgentCredentialsPage() {
 		await reload();
 	}
 
-	useEffect(() => {
-		const timer = window.setTimeout(() => {
-			void reload();
-		}, 0);
-		return () => window.clearTimeout(timer);
-	}, []);
-
-	async function createCredential(preset: 'folian' | 'chief') {
+	async function createAllBrandsCredential() {
 		setError(null);
 		setSecret(null);
 		const response = await fetch('/api/agent/v1/credentials', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(preset === 'chief'
-				? { name: chiefName, useChiefOfStaffPolicy: true }
-				: { name, allowedBrandIds: [brandId.trim()], useFolianPolicy: true }),
+			body: JSON.stringify({ name, useChiefOfStaffPolicy: true }),
 		});
 		const body = (await response.json()) as { secret?: string; error?: string };
 		if (!response.ok) {
@@ -118,89 +107,79 @@ export default function AgentCredentialsPage() {
 		await reload();
 	}
 
+	function coverageLabel(credential: Credential): string {
+		if (credential.scope === 'OWNER_ACCOUNT') return 'All my brands, including brands you add later';
+		const names = credential.allowedBrandIds
+			.map((id) => brands.find((b) => b.id === id)?.name ?? id.slice(0, 8))
+			.filter(Boolean);
+		return names.length ? names.join(', ') : 'No brands linked yet';
+	}
+
 	return (
 		<div className="mx-auto max-w-5xl p-6 space-y-6">
 			<div>
-				<h1 className="text-2xl font-semibold">Agent credentials</h1>
-				<p className="text-text-soft mt-2">Create a brand-scoped key for an external operator. The secret is shown once. Folian policy can draft and propose. It cannot approve, publish, or change spend.</p>
+				<h1 className="text-2xl font-semibold">Connect an assistant</h1>
+				<p className="text-text-soft mt-2">
+					Grant MCP or bearer access so an assistant can read strategy, research, and draft content. Approval and publishing stay human-only.
+				</p>
 			</div>
 			<div className="card p-4 space-y-3">
+				<h2 className="font-medium">Recommended: all brands</h2>
+				<p className="text-sm text-text-soft">Covers every brand on your account, including brands you create later. Bearer token updates apply on the next request. OAuth connections need a one-time reconnect after scope changes.</p>
 				<label className="block text-sm">
-					Name
+					Connection name
 					<input className="mt-1 w-full rounded border px-3 py-2" value={name} onChange={(event) => setName(event.target.value)} />
 				</label>
-				<label className="block text-sm">
-					CCE brand id
-					<input className="mt-1 w-full rounded border px-3 py-2" value={brandId} onChange={(event) => setBrandId(event.target.value)} placeholder="Canonical brand brain id" />
-				</label>
-				<p className="text-sm text-text-soft">Capabilities: {FOLIAN_GROK_CAPABILITIES.join(', ')}</p>
-				<button className="rounded bg-primary px-4 py-2 text-white" type="button" onClick={() => void createCredential('folian')}>
-					Create Folian operator credential
-				</button>
-			</div>
-			<div className="card p-4 space-y-3">
-				<h2 className="font-medium">Chris Marketing Chief of Staff</h2>
-				<p className="text-sm text-text-soft">Scope is OWNER_ACCOUNT. It can reach brands this signed-in account owns, including brands created later. It cannot approve, publish, send replies, or change spend.</p>
-				<label className="block text-sm">
-					Name
-					<input className="mt-1 w-full rounded border px-3 py-2" value={chiefName} onChange={(event) => setChiefName(event.target.value)} />
-				</label>
 				<p className="text-sm text-text-soft">Capabilities: {CHIEF_OF_STAFF_CAPABILITIES.join(', ')}</p>
-				<button className="rounded bg-primary px-4 py-2 text-white" type="button" onClick={() => void createCredential('chief')}>
-					Create Chief of Staff credential
+				<button className="rounded bg-primary px-4 py-2 text-white" type="button" onClick={() => void createAllBrandsCredential()}>
+					Connect assistant (all brands)
 				</button>
 			</div>
 			{secret ? <p className="text-sm break-all">Copy this secret now. It will not be shown again: {secret}</p> : null}
-			{error ? <p className="text-sm">{error}</p> : null}
-			<div className="card p-4 space-y-2">
-				<h2 className="font-medium">Add brand to an existing credential</h2>
-				<select className="w-full rounded border px-3 py-2 text-sm" value={expandBrandId} onChange={(event) => setExpandBrandId(event.target.value)}>
-					<option value="">Select brand brain</option>
-					{brands.map((brand) => (
-						<option key={brand.id} value={brand.id}>
-							{brand.name} ({brand.id.slice(0, 8)}…)
-						</option>
-					))}
-				</select>
-				<p className="text-xs text-text-soft">For MCP OAuth, reconnect the assistant and choose Allow all my brands so new brands are included automatically.</p>
-			</div>
+			{error ? <p className="text-sm text-warning">{error}</p> : null}
 			<div className="card p-4">
-				<h2 className="font-medium mb-3">Credentials</h2>
-				<ul className="space-y-3">
+				<h2 className="font-medium mb-3">Connections</h2>
+				<ul className="space-y-4">
 					{credentials.map((credential) => (
-						<li key={credential.id} className="border-b pb-3">
+						<li key={credential.id} className="border-b pb-4">
 							<div className="font-medium">{credential.name}</div>
 							<div className="text-sm text-text-soft">
-								{credential.keyPrefix}… · {credential.scope ?? 'BRAND'} · brands {credential.allowedBrandIds.join(', ') || 'account brands'} · {credential.revokedAt ? 'revoked' : 'active'}
+								Covers: {coverageLabel(credential)} · {credential.keyPrefix}… · last used{' '}
+								{credential.lastUsedAt?.slice(0, 10) ?? 'never'} · {credential.revokedAt ? 'revoked' : 'active'}
 							</div>
+							<p className="text-xs text-text-soft mt-1">Capabilities: {(credential.capabilities.length ? credential.capabilities : FOLIAN_GROK_CAPABILITIES).join(', ')}</p>
 							{credential.revokedAt ? null : (
-								<div className="mt-2 flex flex-wrap gap-3 items-center">
+								<div className="mt-3 flex flex-wrap gap-3 items-end">
+									{credential.scope !== 'OWNER_ACCOUNT' ? (
+										<>
+											<label className="text-sm">
+												Add a brand
+												<select
+													className="mt-1 block rounded border px-2 py-1"
+													value={rowBrandPick[credential.id] ?? ''}
+													onChange={(event) => setRowBrandPick((prev) => ({ ...prev, [credential.id]: event.target.value }))}
+												>
+													<option value="">Choose brand</option>
+													{brands.map((brand) => (
+														<option key={brand.id} value={brand.id}>
+															{brand.name}
+														</option>
+													))}
+												</select>
+											</label>
+											<button className="text-sm underline" type="button" onClick={() => void addBrandToCredential(credential.id)}>
+												Add brand
+											</button>
+											<button className="text-sm underline" type="button" onClick={() => void grantAllBrands(credential.id)}>
+												Upgrade to all brands
+											</button>
+										</>
+									) : null}
 									<button className="text-sm underline" type="button" onClick={() => void revoke(credential.id)}>
 										Revoke
 									</button>
-									{credential.scope !== 'OWNER_ACCOUNT' ? (
-										<button className="text-sm underline" type="button" onClick={() => void grantAllBrands(credential.id)}>
-											Grant all brands on this account
-										</button>
-									) : null}
-									{credential.scope !== 'OWNER_ACCOUNT' ? (
-										<button className="text-sm underline" type="button" onClick={() => void addBrandToCredential(credential.id)}>
-											Add selected brand
-										</button>
-									) : null}
 								</div>
 							)}
-						</li>
-					))}
-				</ul>
-			</div>
-			<div className="card p-4">
-				<h2 className="font-medium mb-3">Recent activity</h2>
-				<ul className="space-y-2 text-sm">
-					{audit.map((entry) => (
-						<li key={entry.id}>
-							{entry.createdAt} · {entry.action} · {entry.resultStatus}
-							{entry.errorCode ? ` · ${entry.errorCode}` : ''} · level {entry.consequenceLevel ?? '—'}
 						</li>
 					))}
 				</ul>

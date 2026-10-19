@@ -256,7 +256,7 @@ export async function POST(req: Request) {
 			} else {
 				airtableId = airtableResult.id as string;
 
-				if (process.env.MAKE_ONBOARDING_WEBHOOK_URL) {
+				if (process.env.LEGACY_MAKE_ENABLED === 'true' && process.env.MAKE_ONBOARDING_WEBHOOK_URL) {
 					try {
 						await fetch(process.env.MAKE_ONBOARDING_WEBHOOK_URL, {
 							method: 'POST',

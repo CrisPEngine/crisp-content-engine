@@ -117,8 +117,8 @@ export default function ContentBriefReviewPage() {
 	}
 
 	// Poll function for ContentGenerationLoading
-	async function pollForCompletion(): Promise<boolean> {
-		if (!brief) return false;
+	async function pollForCompletion(): Promise<'pending' | 'complete' | 'failed' | 'stalled'> {
+		if (!brief) return 'pending';
 		
 		try {
 			// Check if content has been created
@@ -134,7 +134,7 @@ export default function ContentBriefReviewPage() {
 				// If content exists, generation is complete
 				if (items.length > 0) {
 					console.log(`[Content Brief] Polling found ${items.length} content items - generation complete`);
-					return true;
+					return 'complete';
 				}
 			}
 			
@@ -142,16 +142,19 @@ export default function ContentBriefReviewPage() {
 			const briefRes = await fetch(`/api/content-brief/${brief.id}`, { cache: 'no-store' });
 			if (briefRes.ok) {
 				const briefData = await briefRes.json();
-				if (briefData.status === 'Generation Completed' || briefData.status === 'Failed') {
+				if (briefData.status === 'Failed') {
+					return 'failed';
+				}
+				if (briefData.status === 'Generation Completed') {
 					console.log(`[Content Brief] Polling found brief status: ${briefData.status} - generation complete`);
-					return true;
+					return 'complete';
 				}
 			}
 			
-			return false;
+			return 'pending';
 		} catch (error) {
 			console.error('Error polling for completion:', error);
-			return false;
+			return 'pending';
 		}
 	}
 
@@ -231,8 +234,6 @@ export default function ContentBriefReviewPage() {
 			<ContentGenerationLoading 
 				onComplete={() => router.push(`/content/approval?brand_profile_id=${brief?.brand_profile_id}&content_brief_id=${brief?.id}&generating=true`)}
 				pollForCompletion={pollForCompletion}
-				briefId={brief?.id}
-				brandProfileId={brief?.brand_profile_id || undefined}
 			/>
 		);
 	}

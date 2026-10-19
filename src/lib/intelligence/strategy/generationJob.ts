@@ -6,6 +6,8 @@ import { enqueueWorkflowJob } from '../jobs';
 import type { WorkflowJob } from '../types';
 import { generateNativeStrategy } from './generateNativeStrategy';
 import { strategyRowToSnapshotPayload } from './strategyDraftStore';
+import { executeResearch } from '@/lib/research/service';
+import { selectSearchProvider } from '@/lib/research/search';
 
 export type StrategyGenerationJobPayload = {
 	airtableBrandId: string;
@@ -92,6 +94,19 @@ export async function runStrategyGenerationJob(job: WorkflowJob): Promise<Strate
 	let research = null;
 	if (payload.researchId) {
 		research = await getAgentStore().getResearch(job.userId, payload.researchId);
+	} else if (brain.identity.website?.trim() && payload.source === 'onboarding') {
+		const provider = selectSearchProvider();
+		const record = await executeResearch({
+			ownerUserId: job.userId,
+			brandId: brain.id,
+			brandName: brain.identity.name,
+			website: brain.identity.website,
+			query: `Website discovery for ${brain.identity.name}`,
+			projectType: 'WEBSITE_DISCOVERY',
+			brandFacts: brain.knowledge.brandFacts,
+			search: provider.configured ? provider : { name: provider.name, configured: false, async search() { return []; } },
+		});
+		research = record;
 	}
 
 	const learnings = await store.listLearnings(job.userId, brain.id);

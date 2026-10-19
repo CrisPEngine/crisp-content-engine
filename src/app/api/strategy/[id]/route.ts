@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { nativeStrategyDocument } from '@/lib/intelligence/strategyView';
+import { scoreStrategyCompleteness, strategyGenerationPhase } from '@/lib/intelligence/strategy/strategyCompleteness';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
@@ -121,13 +122,30 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 			}
 		}
 
+		const brain = await getIntelligenceStore().getBrandBrain(user.id, brandProfileId);
+		const nativeStrategy = brain ? await getIntelligenceStore().getStrategyForBrand(user.id, brain.id) : null;
+		const completeness = scoreStrategyCompleteness(nativeStrategy);
+		const nativePhase = strategyGenerationPhase(nativeStrategy);
+		const displayStatus =
+			nativeStrategy?.status === 'active'
+				? 'Strategy Approved'
+				: nativePhase === 'draft_ready'
+					? 'Strategy Ready'
+					: nativePhase === 'generating'
+						? 'Strategy Generating'
+						: record.fields.status || 'New Brief';
+
 		return NextResponse.json({
 			id: record.id,
 			brand_name: record.fields.client_name || 'Unknown Brand',
-			status: record.fields.status || 'New Brief',
+			status: displayStatus,
+			airtable_status_mirror: record.fields.status || 'New Brief',
+			native_phase: nativePhase,
+			native_completeness: completeness,
 			content: strategyContent,
 			strategy_summary: record.fields.strategy_summary || '',
 			strategy_json: strategyJson,
+			source: nativeStrategy ? 'native' : 'airtable_mirror',
 			created_at: record.fields.created_time || record.createdTime,
 		});
 	} catch (error: any) {

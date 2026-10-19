@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { isOperatorConsoleEnabledClient } from '@/lib/featureFlags';
 import { Skeleton } from '@/components/skeletons/Skeleton';
 import { LoadingButton } from '@/components/LoadingButton';
+import { NativeMigrationPanel } from '@/components/admin/NativeMigrationPanel';
 
 type User = {
 	id: string;
@@ -405,6 +406,7 @@ export default function AdminPage() {
 
 	return (
 		<div className="mx-auto max-w-6xl p-6 space-y-6">
+			<NativeMigrationPanel />
 			<div className="flex items-center justify-between">
 				<h1 className="text-3xl font-semibold">Admin Dashboard</h1>
 				<div className="flex items-center gap-3">

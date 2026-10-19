@@ -6,6 +6,7 @@ import { publishToLinkedIn, refreshLinkedInToken } from '@/lib/linkedin/publish'
 import { listRecords } from '@/lib/airtable/client';
 import { generateSidecarDraft } from '@/lib/sidecar/draft';
 import { INTELLIGENCE_ACTION_NAMES } from '../actions';
+import { isLegacyMakeEnabled } from '@/lib/featureFlags';
 
 const root = path.resolve(__dirname, '../../../..');
 
@@ -14,20 +15,22 @@ function read(rel: string): string {
 }
 
 describe('critical journey regression contracts', () => {
-	it('does not remove Make generation webhooks from the live content generate route', () => {
+	it('defaults to native content generation with optional Make rollback', () => {
+		expect(isLegacyMakeEnabled()).toBe(false);
 		const src = read('src/app/api/content/generate/route.ts');
+		expect(src).toContain('createNativeGenerationJob');
 		expect(src).toContain('MAKE_MULTI_CHANNEL_CONTENT_GENERATION_WEBHOOK_URL');
-		expect(src).toContain('MAKE_WEBHOOK_STARTER');
 	});
 
-	it('keeps strategy generation on Make', () => {
+	it('keeps legacy Make strategy route behind STRATEGY_ENGINE=make', () => {
 		const src = read('src/app/api/strategy/generate/route.ts');
 		expect(src).toContain('MAKE_STRATEGY_WEBHOOK_URL');
+		expect(src).toContain('isNativeStrategyEngine');
 	});
 
-	it('keeps Airtable BrandProfiles and ContentQueue as the live CMS', () => {
+	it('keeps Airtable BrandProfiles as mirror; native queue for approval', () => {
 		expect(read('src/app/api/brands/route.ts')).toContain('AIRTABLE_BRANDPROFILES_TABLE');
-		expect(read('src/app/api/content/queue/route.ts')).toMatch(/AIRTABLE_CONTENTQUEUE_TABLE|AIRTABLE_/);
+		expect(read('src/app/api/content/native-queue/route.ts')).toContain('listNativeQueueForUser');
 		expect(typeof listRecords).toBe('function');
 	});
 

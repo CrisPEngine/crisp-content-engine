@@ -9,6 +9,7 @@ import { useUsage } from '@/lib/useUsage';
 import type { PlanId } from '@/config/pricing';
 import { CAPS, PER_CHANNEL_REQUEST_CAPS } from '@/config/pricing';
 import { UpgradeModal } from '@/components/UpgradeModal';
+import { readWorkingBrandId, writeWorkingBrandId } from '@/lib/brands/workingBrand';
 
 type BrandProfile = {
 	id: string;
@@ -41,6 +42,10 @@ export default function ContentGeneratePage() {
 	const [userPlan, setUserPlan] = useState<PlanId | null>(null);
 	const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 	const [upgradeReason, setUpgradeReason] = useState<string>('');
+	const [generationJobId, setGenerationJobId] = useState<string | null>(null);
+	const [recentJobs, setRecentJobs] = useState<
+		Array<{ generation_job_id: string; status: string; created_at?: string; error_message?: string | null }>
+	>([]);
 
 	// Load user plan
 	useEffect(() => {
@@ -72,20 +77,20 @@ export default function ContentGeneratePage() {
 			const res = await fetch('/api/brands', { cache: 'no-store' });
 			if (!res.ok) throw new Error('Failed to load brands');
 			const data = await res.json();
-			const profiles = (data.profiles || []).filter((p: BrandProfile) => {
-				const status = (p.status || '').toLowerCase();
-				return status.includes('approved') || status === 'strategy approved';
-			});
+			const profiles = (data.profiles || []) as BrandProfile[];
 			setBrands(profiles);
 
-			// Auto-select brand from query param or first brand
 			const brandParam = searchParams.get('brand');
-			if (brandParam && profiles.some((p: BrandProfile) => p.id === brandParam)) {
+			const workingBrand = readWorkingBrandId();
+			if (brandParam && profiles.some((p) => p.id === brandParam)) {
 				setSelectedBrand(brandParam);
+				writeWorkingBrandId(brandParam);
+			} else if (workingBrand && profiles.some((p) => p.id === workingBrand)) {
+				setSelectedBrand(workingBrand);
 			} else if (profiles.length === 1) {
 				setSelectedBrand(profiles[0].id);
+				writeWorkingBrandId(profiles[0].id);
 			} else if (profiles.length > 0) {
-				// Default to most recently created
 				setSelectedBrand(profiles[0].id);
 			}
 		} catch (err: any) {
@@ -171,9 +176,13 @@ export default function ContentGeneratePage() {
 			const data = await res.json();
 
 			if (!res.ok) {
-				throw new Error(data.error || 'Failed to generate content');
+				const hint = data.next_action_href ? ` Open Intelligence to fix strategy.` : '';
+				throw new Error((data.error || 'Failed to generate content') + hint);
 			}
 
+			if (data.generation_job_id) {
+				setGenerationJobId(String(data.generation_job_id));
+			}
 			setShowLoading(true);
 		} catch (err: any) {
 			console.error('Content generation error:', err);
@@ -182,19 +191,18 @@ export default function ContentGeneratePage() {
 		}
 	}
 
-	async function pollForCompletion(): Promise<boolean> {
-		if (!selectedBrand) return false;
+	async function pollForCompletion(): Promise<'pending' | 'complete' | 'failed' | 'stalled'> {
+		if (!generationJobId) return 'stalled';
 		try {
-			const res = await fetch(
-				`/api/content/queue?stage=approval&brand_profile_id=${selectedBrand}`,
-				{ cache: 'no-store' }
-			);
-			if (!res.ok) return false;
+			const res = await fetch(`/api/content/generation/${generationJobId}`, { cache: 'no-store' });
+			if (!res.ok) return 'pending';
 			const data = await res.json();
-			const items = Array.isArray(data.items) ? data.items : [];
-			return items.length > 0;
+			const status = data.job?.status as string | undefined;
+			if (status === 'completed' || status === 'partial') return 'complete';
+			if (status === 'failed') return 'failed';
+			return 'pending';
 		} catch {
-			return false;
+			return 'pending';
 		}
 	}
 
@@ -207,7 +215,7 @@ export default function ContentGeneratePage() {
 			<ContentGenerationLoading
 				onComplete={handleContentGenerationComplete}
 				pollForCompletion={pollForCompletion}
-				brandProfileId={selectedBrand}
+				generationJobId={generationJobId ?? undefined}
 			/>
 		);
 	}
@@ -228,9 +236,9 @@ export default function ContentGeneratePage() {
 			<main className="p-6">
 				<div className="max-w-2xl mx-auto card p-8 text-center">
 					<AlertCircle className="w-12 h-12 text-warning mx-auto mb-4" />
-					<h2 className="text-xl font-semibold mb-2">No Approved Strategies</h2>
+					<h2 className="text-xl font-semibold mb-2">No brands yet</h2>
 					<p className="text-text-dim mb-4">
-						You need to create and approve a brand strategy before generating content.
+						Create a brand and activate a native strategy in Intelligence before generating content.
 					</p>
 					<button
 						onClick={() => router.push('/onboarding')}
@@ -308,7 +316,8 @@ export default function ContentGeneratePage() {
 							value={selectedBrand}
 							onChange={(e) => {
 								setSelectedBrand(e.target.value);
-								setQuantities({}); // Reset quantities when brand changes
+								writeWorkingBrandId(e.target.value);
+								setQuantities({});
 							}}
 							className="w-full px-4 py-3 rounded-xl2 border border-edge/60 bg-bg/80 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
 							required

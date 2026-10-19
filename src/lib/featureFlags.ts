@@ -100,3 +100,11 @@ export function nativeIntelligenceBlock(brand: { nativeIntelligenceEnabled?: boo
 	if (brand?.nativeIntelligenceEnabled === false) return 'native_intelligence_brand_disabled';
 	return null;
 }
+
+/**
+ * Legacy Make.com webhooks for strategy/content onboarding batches.
+ * Default off. Set LEGACY_MAKE_ENABLED=true for one-release rollback only.
+ */
+export function isLegacyMakeEnabled(): boolean {
+	return process.env.LEGACY_MAKE_ENABLED === 'true';
+}

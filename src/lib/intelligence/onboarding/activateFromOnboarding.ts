@@ -26,7 +26,10 @@ export async function activateBrandFromOnboarding(input: {
 			guardrails: mapped.guardrails,
 			knowledge: mapped.knowledge,
 		},
-		strategy: mapped.strategy,
+		strategy: {
+			...mapped.strategy,
+			generationMetadata: { phase: 'generating', source: 'onboarding', startedAt: new Date().toISOString() },
+		},
 		themes: [],
 	});
 

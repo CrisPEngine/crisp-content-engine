@@ -4,6 +4,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { getNativeContentStore } from '@/lib/media/store';
 import { brandChannelRows } from '@/lib/social/brandChannels';
+import { scoreStrategyCompleteness, strategyGenerationPhase } from '@/lib/intelligence/strategy/strategyCompleteness';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,6 +51,8 @@ export async function GET(request: Request) {
 	}
 
 	const strategy = await store.getStrategyForBrand(user.id, brain.id);
+	const completeness = scoreStrategyCompleteness(strategy);
+	const phase = strategyGenerationPhase(strategy);
 	const assets = await getNativeContentStore().listAssets(user.id, brain.id);
 	const channels = await brandChannelRows(user.id, brain.id);
 	const connectedChannels = channels.filter((row) => row.phase === 'READY' || row.phase === 'ASSIGNED').length;
@@ -75,7 +78,7 @@ export async function GET(request: Request) {
 				id: 'strategy',
 				label: 'Review brand strategy in Intelligence',
 				href: `/intelligence?brand_profile_id=${encodeURIComponent(brain.airtableBrandId)}`,
-				done: Boolean(strategy && (strategy.objectives?.length || strategy.positioning)),
+				done: strategy?.status === 'active' || (phase === 'draft_ready' && completeness.complete),
 			},
 			{
 				id: 'connections',

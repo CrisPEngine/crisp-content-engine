@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { getSupabaseService } from '@/lib/supabaseService';
+import { getIntelligenceStore } from '@/lib/intelligence/actions';
+import { activateNativeStrategyDraft } from '@/lib/intelligence/strategy/activateNativeStrategy';
+import { assertStrategyReadyForContent, scoreStrategyCompleteness } from '@/lib/intelligence/strategy/strategyCompleteness';
+import { generateStrategySummary } from '@/app/api/strategy/webhook/generateStrategySummary';
+import { nativeStrategyDocument } from '@/lib/intelligence/strategyView';
+import { isLegacyMakeEnabled } from '@/lib/featureFlags';
 
 export const runtime = 'nodejs';
 
@@ -10,8 +15,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 		const { id: brandProfileId } = await context.params;
 		const body = await request.json().catch(() => ({}));
 		const strategyContent = body?.strategy_content || body?.content || '';
+		const triggerFirstContent = Boolean(body?.triggerFirstContent);
 
-		// Authenticate user
 		const cookieStore = await cookies();
 		const supabase = createServerClient(
 			process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,7 +33,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 						cookieStore.set({ name, value: '', ...options });
 					},
 				},
-			}
+			},
 		);
 
 		const {
@@ -40,272 +45,122 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 		}
 
-		const admin = getSupabaseService();
+		const store = getIntelligenceStore();
+		const brain = await store.getBrandBrain(user.id, brandProfileId);
+		if (!brain) {
+			return NextResponse.json(
+				{ error: 'Native brand brain not found. Open Intelligence to finish setup.' },
+				{ status: 400 },
+			);
+		}
 
-		// User plan: Creator tier uses Creator Make scenario (requires LinkedIn); Starter/Growth/Pro/Scale use multichannel (no LinkedIn required to approve)
-		// When no subscription row (e.g. admin-set plan via entitlements only), default to growth so we don't require LinkedIn
-		const { data: subscription } = await supabase
-			.from('subscriptions')
-			.select('plan')
-			.eq('user_id', user.id)
-			.maybeSingle();
-		const plan = (subscription?.plan as 'creator' | 'starter' | 'growth' | 'pro' | 'scale') || 'growth';
+		let strategy = await store.getStrategyForBrand(user.id, brain.id);
+		if (strategy?.draftPayload) {
+			await activateNativeStrategyDraft({ userId: user.id, airtableBrandId: brandProfileId });
+			strategy = await store.getStrategyForBrand(user.id, brain.id);
+		}
+
+		const gate = assertStrategyReadyForContent(strategy);
+		if (!gate.ok && gate.code !== 'strategy_not_active') {
+			return NextResponse.json(
+				{
+					error: gate.message,
+					code: gate.code,
+					next_action_href: `/intelligence?brand_profile_id=${encodeURIComponent(brandProfileId)}`,
+					completeness: gate.completeness,
+				},
+				{ status: 400 },
+			);
+		}
+
+		if (strategy && strategy.status !== 'active') {
+			await store.upsertStrategy(user.id, {
+				...strategy,
+				status: 'active',
+			});
+			strategy = await store.getStrategyForBrand(user.id, brain.id);
+		}
+
+		const themes = await store.listThemes(user.id, brain.id);
+		const completeness = scoreStrategyCompleteness(strategy);
+		const document = strategy ? nativeStrategyDocument(strategy, themes) : {};
+		const summary =
+			(strategyContent && String(strategyContent).trim()) ||
+			generateStrategySummary(document) ||
+			strategy?.positioning ||
+			'';
 
 		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
 		const BASE_ID = process.env.AIRTABLE_BASE_ID;
 		const TABLE_ID = process.env.AIRTABLE_BRANDPROFILES_TABLE;
 
-		// Only Creator tier requires LinkedIn for approval (Creator Make scenario needs URNs). Multi-channel plans can approve and create content without connections.
-		let linkedInConnection: any = null;
-		let brandType = 'company';
-		if (plan === 'creator') {
-			const { data: linkedInConnections } = await admin
-				.from('social_connections')
-				.select('person_urn, organization_urn, connection_type, brand_profile_id')
-				.eq('user_id', user.id)
-				.eq('provider', 'linkedin');
-
-			if (!linkedInConnections || linkedInConnections.length === 0) {
+		if (AIRTABLE_TOKEN && BASE_ID && TABLE_ID && !brandProfileId.startsWith('local_')) {
+			const updateFields: Record<string, unknown> = {
+				status: 'Strategy Approved',
+				strategy_json: JSON.stringify({ ...document, source: 'native_mirror' }),
+				strategy_summary: summary,
+			};
+			const updateRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${brandProfileId}`, {
+				method: 'PATCH',
+				headers: {
+					Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ fields: updateFields }),
+			});
+			if (!updateRes.ok) {
+				const errorText = await updateRes.text();
 				return NextResponse.json(
-					{ error: 'LinkedIn not connected. Please connect your LinkedIn account first.', requiresConnection: true },
-					{ status: 400 }
-				);
-			}
-
-			if (AIRTABLE_TOKEN && BASE_ID && TABLE_ID) {
-				try {
-					const brandRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${brandProfileId}`, {
-						method: 'GET',
-						headers: {
-							Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-							'Content-Type': 'application/json',
-						},
-					});
-					if (brandRes.ok) {
-						const brandRecord = await brandRes.json();
-						brandType = brandRecord.fields?.brand_type || 'company';
-						if (brandType === 'company') {
-							linkedInConnection = linkedInConnections.find(
-								(conn: any) => conn.connection_type === 'organization' && 
-									(conn.brand_profile_id === brandProfileId || !conn.brand_profile_id)
-							) || linkedInConnections.find((conn: any) => conn.connection_type === 'organization');
-							if (!linkedInConnection) linkedInConnection = linkedInConnections[0];
-						} else {
-							linkedInConnection = linkedInConnections.find(
-								(conn: any) => conn.connection_type === 'member' && 
-									(conn.brand_profile_id === brandProfileId || !conn.brand_profile_id)
-							) || linkedInConnections.find((conn: any) => conn.connection_type === 'member');
-							if (!linkedInConnection) linkedInConnection = linkedInConnections[0];
-						}
-					}
-				} catch (error) {
-					console.warn('Failed to fetch brand profile for connection matching:', error);
-					linkedInConnection = linkedInConnections[0];
-				}
-			} else {
-				linkedInConnection = linkedInConnections[0];
-			}
-
-			if (!linkedInConnection) {
-				return NextResponse.json(
-					{ error: 'LinkedIn not connected. Please connect your LinkedIn account first.', requiresConnection: true },
-					{ status: 400 }
+					{ error: 'Failed to sync strategy approval mirror to Airtable', details: errorText.slice(0, 400) },
+					{ status: 502 },
 				);
 			}
 		}
 
-		// Update strategy status in Airtable
-		// AIRTABLE_TOKEN, BASE_ID, and TABLE_ID are already defined above
+		let generation_job_id: string | undefined;
+		let generationError: string | undefined;
 
-		if (!AIRTABLE_TOKEN || !BASE_ID || !TABLE_ID) {
-			return NextResponse.json(
-				{ error: 'Airtable configuration missing' },
-				{ status: 500 }
-			);
-		}
-
-		// Update strategy status to "Strategy Approved"
-		// Note: strategy_approved_at is optional - only include if field exists in Airtable
-		const updateFields: Record<string, any> = {
-			status: 'Strategy Approved',
-			// If strategy content was edited, update strategy_summary (not strategy_json - that's the source of truth)
-			...(strategyContent && { strategy_summary: String(strategyContent) }),
-		};
-		
-		// Only include strategy_approved_at if you've added this field to Airtable
-		// Uncomment the line below after adding the field:
-		// updateFields.strategy_approved_at = new Date().toISOString();
-		
-		const updateRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${brandProfileId}`, {
-			method: 'PATCH',
-			headers: {
-				Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
-				fields: updateFields,
-			}),
-		});
-
-		if (!updateRes.ok) {
-			const errorText = await updateRes.text();
-			let errorData: any = {};
-			try {
-				errorData = JSON.parse(errorText);
-			} catch {
-				errorData = { message: errorText };
-			}
-			
-			console.error('Airtable strategy approval update failed:', errorData);
-			
-			// Provide more specific error messages
-			const errorMessage = errorData?.error?.message || errorData?.message || 'Failed to update strategy status';
-			const isFieldError = errorData?.error?.type === 'INVALID_VALUE_FOR_COLUMN' || errorData?.error?.type === 'UNKNOWN_FIELD_NAME';
-			
-			return NextResponse.json(
-				{ 
-					error: errorMessage,
-					details: errorData,
-					isFieldError,
-					hint: isFieldError 
-						? 'Please check that the "status" field in Airtable has "Strategy Approved" as an option, and that "strategy_approved_at" field exists.'
-						: undefined,
-				},
-				{ status: 502 }
-			);
-		}
-
-		// Fetch brand profile details for content generation (if not already fetched)
-		let strategyJson = null;
-		let strategySummary = null;
-		if (AIRTABLE_TOKEN && BASE_ID && TABLE_ID) {
-			try {
-				const brandRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}/${brandProfileId}`, {
-					method: 'GET',
-					headers: {
-						Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-						'Content-Type': 'application/json',
-					},
-				});
-				
-				if (brandRes.ok) {
-					const brandRecord = await brandRes.json();
-					// brandType already set above
-					strategyJson = brandRecord.fields?.strategy_json || null;
-					strategySummary = brandRecord.fields?.strategy_summary || null;
-				}
-			} catch (error) {
-				console.warn('Failed to fetch brand profile details:', error);
-			}
-		}
-
-		// Require strategy content before triggering content generation
-		const hasStrategyContent =
-			(strategySummary && String(strategySummary).trim().length > 50) ||
-			(strategyJson && (typeof strategyJson === 'string' ? strategyJson.trim().length > 20 : Object.keys(strategyJson).length > 0));
-		if (!hasStrategyContent) {
-			return NextResponse.json(
-				{
-					error: 'Strategy content is not ready yet. Our AI is still generating your strategy. Please wait a minute or two and refresh the page, then try approving again.',
-					hint: 'If the strategy page shows "Strategy Ready" but no content, the strategy callback from Make may not have included the strategy. Check that your Make strategy scenario sends strategy_update_id, strategy_payload or strategy_summary in the webhook callback.',
-				},
-				{ status: 400 }
-			);
-		}
-
-		// Trigger content generation: Creator tier → Creator Make scenario; other tiers → multichannel Make scenario
-		if (plan === 'creator') {
-			// Creator tier: call Creator Make scenario (MAKE_CONTENT_GENERATION_WEBHOOK_URL)
-			const MAKE_CONTENT_WEBHOOK_URL = process.env.MAKE_CONTENT_GENERATION_WEBHOOK_URL;
-			if (MAKE_CONTENT_WEBHOOK_URL) {
-				try {
-					const personUrn = linkedInConnection.person_urn || null;
-					const organizationUrn = linkedInConnection.organization_urn || null;
-					const contentPayload = {
-						brand_profile_id: brandProfileId,
-						user_id: user.id,
-						person_urn: personUrn,
-						organization_urn: organizationUrn,
-						brand_type: brandType,
-						strategy_json: strategyJson,
-						strategy_summary: strategySummary,
-						triggered_at: new Date().toISOString(),
-					};
-					const webhookRes = await fetch(MAKE_CONTENT_WEBHOOK_URL, {
-						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json',
-							...(process.env.MAKE_API_KEY && { 'x-api-key': process.env.MAKE_API_KEY }),
-							...(process.env.MAKE_CONTENT_WEBHOOK_SECRET || process.env.MAKE_SHARED_SECRET ? {
-								'x-make-secret': process.env.MAKE_CONTENT_WEBHOOK_SECRET || process.env.MAKE_SHARED_SECRET,
-							} : {}),
-						},
-						body: JSON.stringify(contentPayload),
-					});
-					if (!webhookRes.ok) {
-						const errorText = await webhookRes.text();
-						console.error('Make content generation webhook failed:', {
-							status: webhookRes.status,
-							error: errorText,
-							payload: contentPayload,
-						});
-					} else {
-						console.log('Content generation webhook triggered successfully (Creator tier)');
-					}
-				} catch (webhookError: any) {
-					console.error('Make content generation webhook error:', webhookError);
-				}
-			} else {
-				console.warn('MAKE_CONTENT_GENERATION_WEBHOOK_URL is not configured. Strategy approved but Creator content webhook was not triggered.');
-			}
-		} else {
-			// Growth / Pro / Scale: use multichannel Make scenario via POST /api/content/generate
+		if (triggerFirstContent && !isLegacyMakeEnabled()) {
 			const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 			const cookieHeader = request.headers.get('cookie') || '';
-			// Default channels for first content after strategy approval (LinkedIn + Blog)
 			const defaultChannels = [
 				{ platform: 'LinkedIn' as const, count: 2 },
 				{ platform: 'Blog' as const, count: 1 },
 			];
-			try {
-				const genRes = await fetch(`${siteUrl}/api/content/generate`, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						...(cookieHeader ? { Cookie: cookieHeader } : {}),
-					},
-					body: JSON.stringify({ brandProfileId, channels: defaultChannels }),
-				});
-				const genData = await genRes.json().catch(() => ({}));
-				if (!genRes.ok) {
-					console.error('Multichannel content generation (post-approve) failed:', {
-						status: genRes.status,
-						error: genData?.error,
-						plan,
-					});
-				} else {
-					console.log('Content generation webhook triggered successfully (multichannel tier)', {
-						plan,
-						generation_job_id: genData?.generation_job_id,
-					});
-				}
-			} catch (err: any) {
-				console.error('Multichannel content generation (post-approve) error:', err?.message || err);
+			const genRes = await fetch(`${siteUrl}/api/content/generate`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					...(cookieHeader ? { Cookie: cookieHeader } : {}),
+				},
+				body: JSON.stringify({ brandProfileId, channels: defaultChannels }),
+			});
+			const genData = await genRes.json().catch(() => ({}));
+			if (!genRes.ok) {
+				generationError = genData?.error ?? 'Content generation failed';
+			} else {
+				generation_job_id = genData?.generation_job_id;
 			}
 		}
 
 		return NextResponse.json({
 			ok: true,
-			message: 'Strategy approved. Content generation started.',
-			plan, // Return plan so client knows which flow was used
-			redirect_to: plan === 'creator' ? '/content/approval' : `/content/generate?brand=${brandProfileId}`,
+			engine: 'native',
+			message: generationError
+				? 'Strategy approved. First content batch did not start.'
+				: triggerFirstContent
+					? 'Strategy approved. Native content generation started.'
+					: 'Strategy approved.',
+			completeness,
+			generation_job_id,
+			generation_error: generationError,
+			redirect_to: `/content/approval?brand=${encodeURIComponent(brandProfileId)}`,
 		});
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error('Strategy approval error:', error);
 		return NextResponse.json(
-			{ error: error?.message || 'Server error' },
-			{ status: 500 }
+			{ error: error instanceof Error ? error.message : 'Server error' },
+			{ status: 500 },
 		);
 	}
 }
-
