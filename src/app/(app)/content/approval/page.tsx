@@ -18,6 +18,11 @@ import {
 	readWorkingBrandId,
 	writeWorkingBrandId,
 } from '@/lib/brands/workingBrand';
+import {
+	ApprovalQueueFetchError,
+	fetchNativeApprovalQueue,
+	shouldPollForGeneratingContent,
+} from '@/lib/content/approvalQueueClient';
 
 // Check if Meta publishing is enabled (client-side)
 const isMetaPublishingEnabled = () => {
@@ -77,6 +82,9 @@ export default function ContentApprovalPage() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const [loading, setLoading] = useState(true);
+	const [queueLoading, setQueueLoading] = useState(false);
+	const [queueLoadError, setQueueLoadError] = useState<string | null>(null);
+	const [hasQueueLoadedOnce, setHasQueueLoadedOnce] = useState(false);
 	const [contentItems, setContentItems] = useState<ContentItem[]>([]);
 	const [brands, setBrands] = useState<BrandOption[]>([]);
 	const [selectedBrandId, setSelectedBrandId] = useState<string>('all');
@@ -105,6 +113,8 @@ export default function ContentApprovalPage() {
 	const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null);
 	const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 	const hasInitializedBrand = useRef(false); // Track if we've set initial brand from URL
+	const queueLoadGenerationRef = useRef(0);
+	const queueAbortRef = useRef<AbortController | null>(null);
 	const [legacyQueueCount, setLegacyQueueCount] = useState(0);
 	const [legacyQueueLoading, setLegacyQueueLoading] = useState(false);
 	
@@ -170,9 +180,13 @@ export default function ContentApprovalPage() {
 	// Load content when brand or tab changes
 	useEffect(() => {
 		if (!supabase) return;
-		loadContent();
+		void loadContent('tab');
 		loadQuota();
-	}, [supabase, selectedTab, selectedBrandId]); // Reload when tab or brand changes
+		return () => {
+			queueAbortRef.current?.abort();
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [supabase, selectedTab, selectedBrandId]);
 
 	useEffect(() => {
 		if (selectedBrandId === 'all') {
@@ -221,19 +235,20 @@ export default function ContentApprovalPage() {
 			const detail = (event as CustomEvent<string>).detail;
 			if (!detail || brands.length === 0) return;
 			const brainId = resolveContentBrandBrainId(brands, detail);
-			if (brainId) setSelectedBrandId(brainId);
+			if (!brainId) return;
+			setSelectedBrandId((current) => (current === brainId ? current : brainId));
 		};
 		window.addEventListener('cce-working-brand', onWorkingBrand);
 		return () => window.removeEventListener('cce-working-brand', onWorkingBrand);
 	}, [brands]);
 
-	// Poll for content if generating
+	// Poll for content if generating (light refresh; no full-page skeleton)
 	useEffect(() => {
 		if (!isGenerating || !supabase) return;
-		
+
 		const pollInterval = setInterval(() => {
-			loadContent();
-		}, 5000); // Poll every 5 seconds
+			void loadContent('poll');
+		}, 5000);
 
 		return () => clearInterval(pollInterval);
 	}, [isGenerating, supabase]);
@@ -274,10 +289,22 @@ export default function ContentApprovalPage() {
 		}
 	}
 
-	async function loadContent() {
+	async function loadContent(reason: 'initial' | 'tab' | 'poll' | 'retry' = 'tab') {
 		if (!supabase) return;
-		setLoading(true);
-		setError(null);
+
+		queueAbortRef.current?.abort();
+		const controller = new AbortController();
+		queueAbortRef.current = controller;
+		const generation = ++queueLoadGenerationRef.current;
+
+		const useFullPageLoader = !hasQueueLoadedOnce && reason !== 'poll';
+		if (useFullPageLoader) setLoading(true);
+		else setQueueLoading(true);
+		setQueueLoadError(null);
+		if (reason === 'tab' || reason === 'retry') {
+			setContentItems([]);
+		}
+
 		try {
 			const {
 				data: { user },
@@ -289,42 +316,54 @@ export default function ContentApprovalPage() {
 			}
 
 			const contentBriefId = searchParams.get('content_brief_id');
-			
-			const nativeUrl = new URL('/api/content/native-queue', window.location.origin);
-			nativeUrl.searchParams.set('stage', 'approval');
-			nativeUrl.searchParams.set('platform', selectedTab);
-			if (selectedBrandId && selectedBrandId !== 'all') nativeUrl.searchParams.set('brand_profile_id', selectedBrandId);
-			if (contentBriefId) nativeUrl.searchParams.set('content_brief_id', contentBriefId);
+			const data = await fetchNativeApprovalQueue(
+				{
+					stage: 'approval',
+					platform: selectedTab,
+					brandProfileId: selectedBrandId,
+					contentBriefId,
+				},
+				{ signal: controller.signal },
+			);
 
-			const res = await fetch(nativeUrl.pathname + nativeUrl.search, {
-				cache: 'no-store',
-				credentials: 'include',
-			});
-			if (!res.ok) {
-				const data = await res.json().catch(() => ({}));
-				throw new Error(data?.error || 'Failed to load content queue');
-			}
-			const data = await res.json();
-			const items = (Array.isArray(data.items) ? data.items : []).map((item: ContentItem) => ({
-				...item,
+			if (generation !== queueLoadGenerationRef.current) return;
+
+			const items = data.items.map((item) => ({
+				...(item as ContentItem),
 				source: 'native' as const,
 			}));
 			setContentItems(items);
-			
-			// If no items and we just approved a strategy, show loading state
-			if (items.length === 0) {
-				const urlParams = new URLSearchParams(window.location.search);
-				if (urlParams.get('generating') === 'true') {
-					setIsGenerating(true);
-				}
-			} else {
-				setIsGenerating(false);
+
+			const generatingParam =
+				typeof window !== 'undefined' &&
+				new URLSearchParams(window.location.search).get('generating') === 'true';
+			setIsGenerating(shouldPollForGeneratingContent(generatingParam, items.length));
+
+			if (items.length > 0 && generatingParam) {
+				const params = new URLSearchParams(searchParams.toString());
+				params.delete('generating');
+				const qs = params.toString();
+				router.replace(`/content/approval${qs ? `?${qs}` : ''}`, { scroll: false });
 			}
-		} catch (err: any) {
+
+			setHasQueueLoadedOnce(true);
+		} catch (err: unknown) {
+			if (generation !== queueLoadGenerationRef.current) return;
+			if (err instanceof ApprovalQueueFetchError && err.code === 'aborted') return;
 			console.error('Failed to load content:', err);
-			setError(err.message || 'Failed to load content');
+			const message =
+				err instanceof ApprovalQueueFetchError
+					? err.message
+					: err instanceof Error
+						? err.message
+						: 'Failed to load content';
+			setQueueLoadError(message);
+			setContentItems([]);
+			setIsGenerating(false);
 		} finally {
+			if (generation !== queueLoadGenerationRef.current) return;
 			setLoading(false);
+			setQueueLoading(false);
 		}
 	}
 
@@ -795,7 +834,7 @@ export default function ContentApprovalPage() {
 
 	const isStarterUser = userPlan === 'starter' || userPlan === 'free';
 
-	if (loading) {
+	if (!hasQueueLoadedOnce && loading) {
 		return (
 			<div className="mx-auto max-w-7xl space-y-4">
 				<div className="mb-6 space-y-3">
@@ -869,8 +908,11 @@ export default function ContentApprovalPage() {
 						<button
 							key={tab}
 							onClick={() => {
+								queueAbortRef.current?.abort();
 								setSelectedTab(tab);
-								setSelectedItems(new Set()); // Clear selection when changing tabs
+								setSelectedItems(new Set());
+								setQueueLoadError(null);
+								setIsGenerating(false);
 							}}
 							className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
 								selectedTab === tab
@@ -883,6 +925,27 @@ export default function ContentApprovalPage() {
 					))}
 				</div>
 			</div>
+
+			{queueLoadError ? (
+				<div className="mb-4 card p-4 border border-danger/30 bg-danger/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+					<p className="text-sm text-danger">{queueLoadError}</p>
+					<button
+						type="button"
+						onClick={() => void loadContent('retry')}
+						disabled={queueLoading}
+						className="px-4 py-2 rounded-xl2 bg-surface/50 border border-edge/60 text-sm font-medium hover:bg-surface/70 disabled:opacity-50"
+					>
+						{queueLoading ? 'Retrying…' : 'Retry'}
+					</button>
+				</div>
+			) : null}
+
+			{queueLoading && hasQueueLoadedOnce ? (
+				<div className="mb-4 flex items-center gap-2 text-sm text-text-dim">
+					<Loader2 className="w-4 h-4 animate-spin text-primary" />
+					Loading {selectedTab} queue…
+				</div>
+			) : null}
 
 			{/* Export-only notice when viewing LinkedIn (Starter), X or Blog */}
 			{isStarterUser && selectedTab === 'LinkedIn' && contentItems.some((i) => i.platform === 'LinkedIn') && (
