@@ -232,9 +232,21 @@ export async function POST(req: Request) {
 			return NextResponse.json({ previewSessionId, status: 'generating' }, { status: 202 });
 		}
 
+		const { isLegacyMakeEnabled } = await import('@/lib/featureFlags');
+		if (!isLegacyMakeEnabled()) {
+			return NextResponse.json(
+				{
+					error: 'Marketing previews use legacy automation. Quick Generate and Idea Engine are the native paths.',
+					code: 'legacy_make_disabled',
+					next_action_href: '/content/generate',
+				},
+				{ status: 503 },
+			);
+		}
+
 		const webhookUrl = process.env.MAKE_PREVIEW_WEBHOOK_URL;
 		if (!webhookUrl) {
-			return NextResponse.json({ error: 'Preview generation webhook not configured' }, { status: 500 });
+			return NextResponse.json({ error: 'Preview generation webhook not configured' }, { status: 503 });
 		}
 
 		// Update status to generating

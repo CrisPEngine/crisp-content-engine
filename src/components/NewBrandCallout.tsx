@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { CheckCircle2, Circle, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { humanStepLabel } from '@/lib/onboarding/stepLabels';
 
 type Step = { id: string; label: string; href: string; done: boolean };
 
@@ -31,7 +32,12 @@ export function NewBrandCallout() {
 		void fetch(`/api/onboarding/next-steps?${query.toString()}`, { cache: 'no-store' })
 			.then(async (res) => {
 				const body = (await res.json()) as { steps?: Step[]; brandName?: string };
-				setSteps(body.steps ?? []);
+				setSteps(
+					(body.steps ?? []).map((step) => ({
+						...step,
+						label: humanStepLabel(step.id, step.label),
+					})),
+				);
 				setBrandName(body.brandName ?? null);
 			})
 			.finally(() => setLoading(false));

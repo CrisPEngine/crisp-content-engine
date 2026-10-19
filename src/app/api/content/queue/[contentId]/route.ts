@@ -327,9 +327,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ conte
 				fields.rejection_feedback = feedback;
 			}
 
-			// Trigger Make to regenerate content
+			const { isLegacyMakeEnabled } = await import('@/lib/featureFlags');
 			const MAKE_CONTENT_REGENERATE_WEBHOOK_URL = process.env.MAKE_CONTENT_REGENERATE_WEBHOOK_URL;
-			if (MAKE_CONTENT_REGENERATE_WEBHOOK_URL) {
+			if (isLegacyMakeEnabled() && MAKE_CONTENT_REGENERATE_WEBHOOK_URL) {
 				try {
 					// Get brand profile ID from the content record
 					const brandProfileId = record.fields?.brand_profile_id;

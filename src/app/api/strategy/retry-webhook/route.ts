@@ -13,6 +13,8 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { isLegacyMakeEnabled } from '@/lib/featureFlags';
+import { enqueueMonthlyNativeStrategy, patchAirtableBriefStatus } from '@/lib/intelligence/strategy/monthlyNativeFlow';
 
 export const runtime = 'nodejs';
 
@@ -159,11 +161,32 @@ export async function POST(request: Request) {
 			strategy_context: null,
 		};
 
+		if (!isLegacyMakeEnabled()) {
+			const nativeJobId = await enqueueMonthlyNativeStrategy({
+				ownerUserId: String(userId),
+				airtableBrandId: brandProfileId,
+				briefOrUpdateId: strategyUpdateId,
+				objective: fields.objective,
+				themesFocus: fields.themes_focus,
+				keyDates: fields.key_dates,
+				feedbackNotes: fields.feedback_notes,
+				contentPreferences: fields.content_preferences,
+				cycleLabel: fields.cycle_label,
+				source: 'monthly_update',
+			});
+			await patchAirtableBriefStatus({
+				recordId: strategyUpdateId,
+				status: 'Native Processing',
+				nativeJobId,
+			});
+			return NextResponse.json({ ok: true, engine: 'native', native_strategy_job_id: nativeJobId });
+		}
+
 		const webhookUrl = process.env.MAKE_STRATEGY_WEBHOOK_URL;
 		if (!webhookUrl) {
 			return NextResponse.json(
 				{ error: 'MAKE_STRATEGY_WEBHOOK_URL is not configured' },
-				{ status: 500 }
+				{ status: 503 }
 			);
 		}
 

@@ -44,8 +44,19 @@ export default function ContentGeneratePage() {
 	const [upgradeReason, setUpgradeReason] = useState<string>('');
 	const [generationJobId, setGenerationJobId] = useState<string | null>(null);
 	const [recentJobs, setRecentJobs] = useState<
-		Array<{ generation_job_id: string; status: string; created_at?: string; error_message?: string | null }>
+		Array<{
+			generation_job_id: string;
+			status: string;
+			created_at?: string;
+			error_message?: string | null;
+			requested_count?: number;
+			created_count?: number;
+			engine?: string | null;
+			channels?: string;
+		}>
 	>([]);
+	const [jobsLoading, setJobsLoading] = useState(false);
+	const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
 
 	// Load user plan
 	useEffect(() => {
@@ -59,6 +70,14 @@ export default function ContentGeneratePage() {
 		loadBrands();
 	}, [supabase]);
 
+	useEffect(() => {
+		if (!selectedBrand) {
+			setRecentJobs([]);
+			return;
+		}
+		void loadRecentJobs(selectedBrand);
+	}, [selectedBrand]);
+
 	async function loadUserPlan() {
 		try {
 			const res = await fetch('/api/plan', { cache: 'no-store' });
@@ -69,6 +88,48 @@ export default function ContentGeneratePage() {
 			}
 		} catch (err) {
 			console.error('Failed to load user plan:', err);
+		}
+	}
+
+	async function loadRecentJobs(brandProfileId: string) {
+		setJobsLoading(true);
+		try {
+			const res = await fetch(
+				`/api/content/generation/jobs?brand_profile_id=${encodeURIComponent(brandProfileId)}&limit=8`,
+				{ cache: 'no-store' },
+			);
+			if (!res.ok) return;
+			const data = await res.json();
+			setRecentJobs(data.jobs ?? []);
+		} catch (err) {
+			console.error('Failed to load recent jobs', err);
+		} finally {
+			setJobsLoading(false);
+		}
+	}
+
+	function formatJobChannels(channelsJson?: string): string {
+		if (!channelsJson) return '';
+		try {
+			const parsed = JSON.parse(channelsJson) as Array<{ platform?: string; count?: number }>;
+			return parsed.map((row) => `${row.platform ?? '?'}×${row.count ?? 1}`).join(', ');
+		} catch {
+			return '';
+		}
+	}
+
+	async function retryJob(jobId: string) {
+		setRetryingJobId(jobId);
+		setError(null);
+		try {
+			const res = await fetch(`/api/content/generation/${jobId}/retry`, { method: 'POST' });
+			const data = await res.json();
+			if (!res.ok) throw new Error(data.error || 'Retry failed');
+			if (selectedBrand) await loadRecentJobs(selectedBrand);
+		} catch (err: unknown) {
+			setError(err instanceof Error ? err.message : 'Retry failed');
+		} finally {
+			setRetryingJobId(null);
 		}
 	}
 
@@ -183,6 +244,7 @@ export default function ContentGeneratePage() {
 			if (data.generation_job_id) {
 				setGenerationJobId(String(data.generation_job_id));
 			}
+			void loadRecentJobs(selectedBrand);
 			setShowLoading(true);
 		} catch (err: any) {
 			console.error('Content generation error:', err);
@@ -305,6 +367,55 @@ export default function ContentGeneratePage() {
 						<p className="text-danger text-sm">{error}</p>
 					</div>
 				)}
+
+				{selectedBrand ? (
+					<div className="card p-4 space-y-3">
+						<h2 className="text-sm font-semibold">Recent native generation jobs</h2>
+						{jobsLoading ? (
+							<p className="text-sm text-text-dim">Loading jobs…</p>
+						) : recentJobs.length === 0 ? (
+							<p className="text-sm text-text-dim">No generation jobs for this brand yet.</p>
+						) : (
+							<ul className="space-y-2">
+								{recentJobs.map((job) => {
+									const canRetry = ['failed', 'partial', 'stalled'].includes(job.status);
+									return (
+										<li
+											key={job.generation_job_id}
+											className="text-sm border border-edge/60 rounded-xl2 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+										>
+											<div>
+												<p className="font-medium capitalize">
+													{job.status.replace(/_/g, ' ')}{' '}
+													<span className="text-text-dim font-normal">
+														({job.created_count ?? 0}/{job.requested_count ?? '?'} posts)
+													</span>
+												</p>
+												<p className="text-xs text-text-dim">
+													{formatJobChannels(job.channels as string | undefined)}
+													{job.created_at ? ` · ${new Date(job.created_at).toLocaleString()}` : ''}
+												</p>
+												{job.error_message ? (
+													<p className="text-xs text-danger mt-1">{job.error_message}</p>
+												) : null}
+											</div>
+											{canRetry ? (
+												<button
+													type="button"
+													disabled={retryingJobId === job.generation_job_id}
+													onClick={() => void retryJob(job.generation_job_id)}
+													className="px-3 py-1.5 rounded-lg border border-primary/40 text-primary text-xs font-medium disabled:opacity-50"
+												>
+													{retryingJobId === job.generation_job_id ? 'Retrying…' : 'Retry'}
+												</button>
+											) : null}
+										</li>
+									);
+								})}
+							</ul>
+						)}
+					</div>
+				) : null}
 
 				<form onSubmit={handleSubmit} className="card p-6 space-y-6">
 					{/* Brand Selection */}

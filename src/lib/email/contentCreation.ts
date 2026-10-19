@@ -1,6 +1,14 @@
 /**
- * Helper function to trigger content creation webhook when strategy is confirmed
+ * Helper function to trigger content creation when strategy is confirmed
  */
+
+import { isLegacyMakeEnabled } from '@/lib/featureFlags';
+import {
+	createNativeGenerationJob,
+	dispatchNativeContentBatchWorker,
+} from '@/lib/intelligence/content/nativeBatchGeneration';
+import { getIntelligenceStore } from '@/lib/intelligence/actions';
+import { assertStrategyReadyForContent } from '@/lib/intelligence/strategy/strategyCompleteness';
 
 export async function triggerContentCreationForBrand(
 	brandProfileId: string,
@@ -8,6 +16,30 @@ export async function triggerContentCreationForBrand(
 	personUrn?: string | null,
 	organizationUrn?: string | null
 ): Promise<{ success: boolean; error?: string }> {
+	if (!isLegacyMakeEnabled()) {
+		const store = getIntelligenceStore();
+		const brain = await store.getBrandBrain(userId, brandProfileId);
+		const strategy = brain ? await store.getStrategyForBrand(userId, brain.id) : null;
+		const gate = assertStrategyReadyForContent(strategy);
+		if (!gate.ok) {
+			return { success: false, error: gate.message };
+		}
+		try {
+			const { generation_job_id } = await createNativeGenerationJob({
+				userId,
+				brandProfileId,
+				channels: [
+					{ platform: 'LinkedIn', count: 2 },
+					{ platform: 'Blog', count: 1 },
+				],
+			});
+			await dispatchNativeContentBatchWorker(generation_job_id);
+			return { success: true };
+		} catch (error) {
+			return { success: false, error: error instanceof Error ? error.message : 'Native generation failed' };
+		}
+	}
+
 	const webhookUrl = process.env.MAKE_CONTENT_GENERATION_WEBHOOK_URL || process.env.CONTENT_CREATION_WEBHOOK_URL;
 
 	if (!webhookUrl) {

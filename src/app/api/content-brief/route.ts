@@ -298,8 +298,39 @@ export async function POST(request: Request) {
 		// Get brand_type from brand profile
 		const brandType = brandRecord.fields?.brand_type || 'company';
 
-		// Trigger Make.com webhook to process the brief
-		// The Make.com scenario will route to monthly_update path based on mode
+		const { isLegacyMakeEnabled } = await import('@/lib/featureFlags');
+		const { enqueueMonthlyNativeStrategy, patchAirtableBriefStatus } = await import(
+			'@/lib/intelligence/strategy/monthlyNativeFlow'
+		);
+
+		if (!isLegacyMakeEnabled()) {
+			const nativeJobId = await enqueueMonthlyNativeStrategy({
+				ownerUserId: user.id,
+				airtableBrandId: data.brand_profile_id,
+				briefOrUpdateId: briefId,
+				objective: data.objective,
+				themesFocus: data.themes_focus,
+				keyDates: data.key_dates,
+				feedbackNotes: data.feedback_notes,
+				contentPreferences: data.content_preferences,
+				cycleLabel,
+				source: 'monthly_brief',
+			});
+			await patchAirtableBriefStatus({
+				recordId: briefId,
+				status: 'Native Processing',
+				nativeJobId,
+			});
+			return NextResponse.json({
+				ok: true,
+				brief_id: briefId,
+				native_strategy_job_id: nativeJobId,
+				engine: 'native',
+				message: 'Content brief saved. Native monthly strategy generation is running. Review it in Intelligence when ready.',
+			});
+		}
+
+		// Legacy Make.com webhook (rollback only)
 		const webhookUrl = process.env.MAKE_STRATEGY_WEBHOOK_URL;
 		if (webhookUrl) {
 			try {
@@ -391,13 +422,20 @@ export async function POST(request: Request) {
 				// Don't fail the request if webhook setup fails - record is already created
 			}
 		} else {
-			console.warn('[Content Brief] MAKE_STRATEGY_WEBHOOK_URL not configured - brief created but Make.com webhook not triggered');
+			return NextResponse.json(
+				{
+					error: 'Legacy Make strategy webhook is not configured. Set LEGACY_MAKE_ENABLED=false and use native processing (default).',
+					code: 'legacy_make_not_configured',
+				},
+				{ status: 503 },
+			);
 		}
 
 		return NextResponse.json({
 			ok: true,
 			brief_id: briefId,
-			message: 'Content brief submitted successfully. Redirecting to dashboard...',
+			engine: 'legacy_make',
+			message: 'Content brief submitted (legacy Make).',
 		});
 	} catch (error: any) {
 		console.error('Content brief creation error:', error);

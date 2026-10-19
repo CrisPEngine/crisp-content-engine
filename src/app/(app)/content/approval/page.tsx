@@ -88,6 +88,8 @@ export default function ContentApprovalPage() {
 	const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null);
 	const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 	const hasInitializedBrand = useRef(false); // Track if we've set initial brand from URL
+	const [legacyQueueCount, setLegacyQueueCount] = useState(0);
+	const [legacyQueueLoading, setLegacyQueueLoading] = useState(false);
 	
 	// Meta connection state
 	const [metaConnected, setMetaConnected] = useState<boolean>(false);
@@ -128,6 +130,21 @@ export default function ContentApprovalPage() {
 		loadContent();
 		loadQuota();
 	}, [supabase, selectedTab, selectedBrandId]); // Reload when tab or brand changes
+
+	useEffect(() => {
+		if (selectedBrandId === 'all') {
+			setLegacyQueueCount(0);
+			return;
+		}
+		setLegacyQueueLoading(true);
+		void fetch(`/api/content/legacy-queue?brand_profile_id=${encodeURIComponent(selectedBrandId)}`, {
+			cache: 'no-store',
+		})
+			.then(async (res) => (res.ok ? res.json() : { items: [] }))
+			.then((body) => setLegacyQueueCount(Array.isArray(body.items) ? body.items.length : 0))
+			.catch(() => setLegacyQueueCount(0))
+			.finally(() => setLegacyQueueLoading(false));
+	}, [selectedBrandId]);
 
 	// Set initial brand from URL param (only once when brands first load)
 	// Extract the param value outside the effect to avoid searchParams reference changes
@@ -777,6 +794,24 @@ export default function ContentApprovalPage() {
 			</div>
 
 			<ContentBrandFilter brands={brands} value={selectedBrandId} onChange={handleBrandChange} className="mb-6" />
+
+			{selectedBrandId !== 'all' && !legacyQueueLoading && legacyQueueCount > 0 ? (
+				<div className="mb-6 card p-4 border border-warning/30 bg-warning/5 text-sm">
+					<p className="font-medium text-warning">Legacy Make drafts ({legacyQueueCount})</p>
+					<p className="text-text-dim mt-1">
+						These read-only Airtable items are from the old automation. They are not counted in native approval metrics.
+						Regenerate content from{' '}
+						<button
+							type="button"
+							className="text-primary underline"
+							onClick={() => router.push(`/content/generate?brand=${encodeURIComponent(selectedBrandId)}`)}
+						>
+							Generate Content
+						</button>{' '}
+						to get editable native drafts.
+					</p>
+				</div>
+			) : null}
 
 			{/* Channel Tabs */}
 			<div className="mb-6">

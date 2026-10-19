@@ -8,7 +8,7 @@ import { NextResponse, after } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { getSupabaseService } from '@/lib/supabaseService';
-import { isIdeaEngineNativeEnabled } from '@/lib/featureFlags';
+import { isIdeaEngineNativeEnabled, isLegacyMakeEnabled } from '@/lib/featureFlags';
 import { generateSingleItem } from '@/lib/idea-engine';
 
 export const runtime = 'nodejs';
@@ -81,6 +81,14 @@ export async function POST(
 			});
 
 			return NextResponse.json({ ok: true, message: 'Regeneration started', generation: 'native' });
+		}
+
+		if (!isLegacyMakeEnabled()) {
+			await admin.from('idea_engine_items').update({ status: 'pending' }).eq('id', itemId);
+			return NextResponse.json(
+				{ error: 'Native Idea Engine required when legacy Make is disabled.', code: 'legacy_make_disabled' },
+				{ status: 503 },
+			);
 		}
 
 		const MAKE_URL = process.env.MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL;

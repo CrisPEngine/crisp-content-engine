@@ -1,168 +1,107 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { isLegacyMakeEnabled } from '@/lib/featureFlags';
+import { getIntelligenceStore } from '@/lib/intelligence/actions';
+import {
+	createNativeGenerationJob,
+	dispatchNativeContentBatchWorker,
+} from '@/lib/intelligence/content/nativeBatchGeneration';
+import { assertStrategyReadyForContent } from '@/lib/intelligence/strategy/strategyCompleteness';
 
 export const runtime = 'nodejs';
 
-/**
- * Auto-generate content for brands that have auto_generate_content enabled
- * This endpoint should be called when monthly usage renews (e.g., from Stripe webhook)
- * 
- * Can be called with:
- * - userId: to generate for all user's brands with auto_generate enabled
- * - brand_profile_id: to generate for a specific brand
- */
+type BrandTarget = { brandProfileId: string; ownerUserId: string };
+
+async function loadAutoGenerateTargets(input: {
+	userId?: string;
+	brandProfileId?: string;
+}): Promise<BrandTarget[]> {
+	const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
+	const BASE_ID = process.env.AIRTABLE_BASE_ID;
+	const BRANDPROFILES_TABLE = process.env.AIRTABLE_BRANDPROFILES_TABLE;
+	if (!AIRTABLE_TOKEN || !BASE_ID || !BRANDPROFILES_TABLE) {
+		throw new Error('Airtable configuration missing');
+	}
+
+	if (input.brandProfileId) {
+		const brandRes = await fetch(
+			`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}/${input.brandProfileId}`,
+			{ headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' } },
+		);
+		if (!brandRes.ok) return [];
+		const brandRecord = await brandRes.json();
+		if (brandRecord.fields?.auto_generate_content !== true) return [];
+		const ownerUserId = String(brandRecord.fields?.user_id ?? input.userId ?? '');
+		if (!ownerUserId) return [];
+		return [{ brandProfileId: input.brandProfileId, ownerUserId }];
+	}
+
+	if (!input.userId) return [];
+
+	const filter = `AND({user_id} = "${input.userId}", {auto_generate_content} = TRUE())`;
+	const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}`);
+	url.searchParams.set('filterByFormula', filter);
+	const brandsRes = await fetch(url.toString(), {
+		headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' },
+	});
+	if (!brandsRes.ok) return [];
+	const data = await brandsRes.json();
+	return (data.records ?? []).map((record: { id: string }) => ({
+		brandProfileId: record.id,
+		ownerUserId: input.userId!,
+	}));
+}
+
 export async function POST(req: Request) {
 	try {
 		const body = await req.json().catch(() => ({}));
-		const userId = body?.userId;
-		const brandProfileId = body?.brand_profile_id;
+		const userId = body?.userId as string | undefined;
+		const brandProfileId = body?.brand_profile_id as string | undefined;
 
 		if (!userId && !brandProfileId) {
-			return NextResponse.json(
-				{ error: 'Either userId or brand_profile_id is required' },
-				{ status: 400 }
-			);
+			return NextResponse.json({ error: 'Either userId or brand_profile_id is required' }, { status: 400 });
 		}
 
-		const AIRTABLE_TOKEN = process.env.AIRTABLE_PAT;
-		const BASE_ID = process.env.AIRTABLE_BASE_ID;
-		const BRANDPROFILES_TABLE = process.env.AIRTABLE_BRANDPROFILES_TABLE;
-		const CONTENT_WEBHOOK_URL = process.env.MAKE_CONTENT_GENERATION_WEBHOOK_URL;
+		if (!isLegacyMakeEnabled()) {
+			const store = getIntelligenceStore();
+			const targets = await loadAutoGenerateTargets({ userId, brandProfileId });
+			const jobs: Array<{ brand_profile_id: string; generation_job_id?: string; error?: string }> = [];
 
-		if (!AIRTABLE_TOKEN || !BASE_ID || !BRANDPROFILES_TABLE) {
-			return NextResponse.json(
-				{ error: 'Airtable configuration missing' },
-				{ status: 500 }
-			);
-		}
-
-		if (!CONTENT_WEBHOOK_URL) {
-			return NextResponse.json(
-				{ error: 'Content generation webhook not configured' },
-				{ status: 500 }
-			);
-		}
-
-		// Fetch brand profiles with auto_generate_content enabled
-		let brandProfiles: any[] = [];
-
-		if (brandProfileId) {
-			// Fetch specific brand
-			const brandRes = await fetch(
-				`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}/${brandProfileId}`,
-				{
-					headers: {
-						Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-						'Content-Type': 'application/json',
-					},
+			for (const target of targets) {
+				const brain = await store.getBrandBrain(target.ownerUserId, target.brandProfileId);
+				const strategy = brain ? await store.getStrategyForBrand(target.ownerUserId, brain.id) : null;
+				const gate = assertStrategyReadyForContent(strategy);
+				if (!gate.ok) {
+					jobs.push({ brand_profile_id: target.brandProfileId, error: gate.message });
+					continue;
 				}
-			);
-
-			if (brandRes.ok) {
-				const brandRecord = await brandRes.json();
-				if (brandRecord.fields?.auto_generate_content === true) {
-					brandProfiles.push(brandRecord);
-				}
-			}
-		} else if (userId) {
-			// Fetch all user's brands with auto_generate_content enabled
-			const filter = `AND({user_id} = "${userId}", {auto_generate_content} = TRUE())`;
-			const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}`);
-			url.searchParams.set('filterByFormula', filter);
-
-			const brandsRes = await fetch(url.toString(), {
-				headers: {
-					Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-					'Content-Type': 'application/json',
-				},
-			});
-
-			if (brandsRes.ok) {
-				const brandsData = await brandsRes.json();
-				brandProfiles = brandsData.records || [];
-			}
-		}
-
-		if (brandProfiles.length === 0) {
-			return NextResponse.json({
-				ok: true,
-				message: 'No brands found with auto-generation enabled',
-				generated: 0,
-			});
-		}
-
-		// Trigger content generation for each brand
-		const results = await Promise.allSettled(
-			brandProfiles.map(async (brandRecord) => {
-				const fields = brandRecord.fields || {};
-				const brandProfileId = brandRecord.id;
-
-				// Fetch strategy data
-				const strategyJson = fields.strategy_json || fields.strategy_payload;
-				const strategySummary = fields.strategy_summary || '';
-
-				if (!strategyJson) {
-					console.warn(`Brand ${brandProfileId} has no strategy_json, skipping`);
-					return { brandProfileId, success: false, reason: 'No strategy found' };
-				}
-
-				// Get LinkedIn connection if available
-				// This would need to be fetched from connections table
-				// For now, we'll pass null and let Make handle it
-				const personUrn = null; // TODO: Fetch from connections table
-
-				const contentPayload = {
-					brand_profile_id: brandProfileId,
-					user_id: userId || fields.user_id,
-					person_urn: personUrn,
-					brand_type: fields.brand_type || 'company',
-					strategy_json: typeof strategyJson === 'string' ? JSON.parse(strategyJson) : strategyJson,
-					strategy_summary: strategySummary,
-					triggered_at: new Date().toISOString(),
-					auto_generated: true, // Flag to indicate this was auto-generated
-				};
-
-				const webhookRes = await fetch(CONTENT_WEBHOOK_URL, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						...(process.env.MAKE_API_KEY && {
-							'x-api-key': process.env.MAKE_API_KEY,
-						}),
-						...(process.env.MAKE_CONTENT_WEBHOOK_SECRET || process.env.MAKE_SHARED_SECRET ? {
-							'x-make-secret': process.env.MAKE_CONTENT_WEBHOOK_SECRET || process.env.MAKE_SHARED_SECRET,
-						} : {}),
-					},
-					body: JSON.stringify(contentPayload),
+				const { generation_job_id } = await createNativeGenerationJob({
+					userId: target.ownerUserId,
+					brandProfileId: target.brandProfileId,
+					channels: [
+						{ platform: 'LinkedIn', count: 2 },
+						{ platform: 'Blog', count: 1 },
+					],
 				});
+				await dispatchNativeContentBatchWorker(generation_job_id).catch((err) => {
+					console.error('[Auto-generate native] dispatch failed:', err);
+				});
+				jobs.push({ brand_profile_id: target.brandProfileId, generation_job_id });
+			}
 
-				if (!webhookRes.ok) {
-					const errorText = await webhookRes.text();
-					console.error(`Content generation webhook failed for ${brandProfileId}:`, errorText);
-					return { brandProfileId, success: false, reason: errorText };
-				}
+			return NextResponse.json({ ok: true, engine: 'native', jobs });
+		}
 
-				return { brandProfileId, success: true };
-			})
-		);
-
-		const successful = results.filter((r) => r.status === 'fulfilled' && r.value.success).length;
-		const failed = results.length - successful;
-
-		return NextResponse.json({
-			ok: true,
-			message: `Content generation triggered for ${successful} brand(s)`,
-			generated: successful,
-			failed,
-			results: results.map((r) => (r.status === 'fulfilled' ? r.value : { success: false, reason: r.reason })),
-		});
-	} catch (error: any) {
-		console.error('Auto-content generation error:', error);
 		return NextResponse.json(
-			{ error: error?.message || 'Server error' },
-			{ status: 500 }
+			{
+				error: 'Legacy Make auto-generate is disabled. Use native renewal generation or Quick Generate.',
+				code: 'legacy_make_disabled',
+			},
+			{ status: 503 },
+		);
+	} catch (error: unknown) {
+		return NextResponse.json(
+			{ error: error instanceof Error ? error.message : 'Auto-generate failed' },
+			{ status: 500 },
 		);
 	}
 }
-

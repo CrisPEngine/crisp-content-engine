@@ -21,6 +21,13 @@ type BrandProfile = {
 	strategy_meta?: any;
 };
 
+type NativeBrandSummary = {
+	displayStatus: string;
+	strategyHref: string;
+	complete: boolean;
+	nativePhase: string;
+};
+
 interface BrandProfilesListProps {
 	maxBrands?: number;
 	currentBrandCount?: number;
@@ -34,6 +41,7 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 	const [brandToDelete, setBrandToDelete] = useState<BrandProfile | null>(null);
 	const [isDeleting, setIsDeleting] = useState(false);
 	const [showBrandLimitModal, setShowBrandLimitModal] = useState(false);
+	const [nativeByBrand, setNativeByBrand] = useState<Record<string, NativeBrandSummary>>({});
 
 	useEffect(() => {
 		loadProfiles();
@@ -52,6 +60,10 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 					...profile,
 					status: normaliseStatus(profile.status),
 				})));
+				void fetch('/api/brands/native-summary', { cache: 'no-store' })
+					.then(async (nativeRes) => nativeRes.json())
+					.then((nativeBody) => setNativeByBrand(nativeBody.brands ?? {}))
+					.catch(() => setNativeByBrand({}));
 				// Check if billing limit error was returned
 				if (data.billingLimitExceeded) {
 					setBillingLimitError(true);
@@ -240,15 +252,27 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 				) : (
 					<div className="space-y-3">
 						{profiles.map((profile) => {
+							const native = nativeByBrand[profile.id];
+							const displayStatus = native?.displayStatus ?? normaliseStatus(profile.status);
+							const strategyHref =
+								native?.strategyHref ?? `/intelligence?brand_profile_id=${encodeURIComponent(profile.id)}`;
+							const isStrategyActive = native?.nativePhase === 'active' || displayStatus === 'Strategy active';
+							const isStrategyReadyNative =
+								native?.nativePhase === 'draft_ready' || displayStatus === 'Strategy ready for review';
 							const normalisedStatus = normaliseStatus(profile.status);
 							const isContentReview = normalisedStatus === 'Content Review';
-							// Strategy is ready if it's ready status AND not already approved
-							const isStrategyReady = (normalisedStatus === 'Strategy Ready' || normalisedStatus === 'Strategy Ready For Approval') && profile.original_status !== 'Strategy Approved';
-							const isStrategyApproved = profile.original_status === 'Strategy Approved' || normalisedStatus === 'Strategy Approved';
+							const isStrategyReady =
+								isStrategyReadyNative ||
+								((normalisedStatus === 'Strategy Ready' || normalisedStatus === 'Strategy Ready For Approval') &&
+									profile.original_status !== 'Strategy Approved');
+							const isStrategyApproved =
+								isStrategyActive ||
+								profile.original_status === 'Strategy Approved' ||
+								normalisedStatus === 'Strategy Approved';
 							const hasPendingContent = profile.has_pending_content === true;
 							
 							// Determine href and action button
-							let href = `/strategy/${profile.id}`;
+							let href = strategyHref;
 							let actionButton = null;
 
 							// Priority 1: If content exists to review, always show Review Content (even if strategy is ready)
@@ -275,15 +299,14 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 									</Link>
 								);
 							} else if (isStrategyReady) {
-								// Strategy Ready - show "Strategy Ready For Approval" button with tooltip
 								actionButton = (
 									<Link
-										href={href}
+										href={strategyHref}
 										onClick={(e) => e.stopPropagation()}
 										className="px-3 md:px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm text-primary font-medium flex items-center gap-2 relative group"
 										title="Review and approve your strategy to generate content"
 									>
-										Strategy Ready For Approval
+										Open strategy in Intelligence
 										<AlertCircle className="w-3.5 h-3.5 opacity-60" />
 										{/* Tooltip */}
 										<div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-surface border border-edge/60 rounded-lg text-xs text-text-soft whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10 shadow-lg">
@@ -305,11 +328,11 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 										<Link href={href} className="flex-1 min-w-0">
 											<div className="flex flex-wrap items-center gap-2 md:gap-3 mb-2">
 												<h3 className="font-semibold text-base md:text-lg break-words">{profile.client_name}</h3>
-												{getStatusIcon(profile.status)}
+												{getStatusIcon(displayStatus)}
 												<span
-													className={`px-2 md:px-3 py-1 rounded-full text-xs font-medium border flex items-center justify-center min-w-[80px] md:min-w-[100px] text-center ${getStatusColor(profile.status)}`}
+													className={`px-2 md:px-3 py-1 rounded-full text-xs font-medium border flex items-center justify-center min-w-[80px] md:min-w-[100px] text-center ${getStatusColor(displayStatus)}`}
 												>
-													{normalisedStatus}
+													{displayStatus}
 												</span>
 											</div>
 											{profile.platforms_requested && profile.platforms_requested.length > 0 && (
