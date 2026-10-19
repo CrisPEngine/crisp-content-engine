@@ -7,6 +7,8 @@ import { brandChannelRows } from '@/lib/social/brandChannels';
 import { scoreStrategyCompleteness, strategyGenerationPhase } from '@/lib/intelligence/strategy/strategyCompleteness';
 import { listNativeQueueForUser } from '@/lib/content/listNativeQueue';
 import { humanStepLabel } from '@/lib/onboarding/stepLabels';
+import { contentApprovalHref } from '@/lib/brands/workingBrand';
+import { computeGetStartedCurrentStep, computeGetStartedStepDone } from '@/lib/dashboard/getStartedProgress';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,9 +43,9 @@ export async function GET(request: Request) {
 		return NextResponse.json({
 			brandName: null,
 			currentStep: 1,
-			steps: [
-				{ id: 'questionnaire', label: humanStepLabel('questionnaire'), done: false, href: '/onboarding' },
-			],
+			hasApprovedStrategy: false,
+			hasContentToReview: false,
+			steps: [{ id: 'questionnaire', label: humanStepLabel('questionnaire'), done: false, href: '/onboarding' }],
 		});
 	}
 
@@ -56,33 +58,42 @@ export async function GET(request: Request) {
 	const nativeQueue = await listNativeQueueForUser(user.id, { brandProfileId: brain.airtableBrandId, stage: 'approval' });
 	const pendingNative = nativeQueue.length;
 
-	const strategyDone = strategy?.status === 'active' && completeness.complete;
-	const strategyReview =
-		phase === 'draft_ready' && completeness.complete ? true : strategyDone;
-	const reviewDone = strategyDone && pendingNative === 0;
+	const strategyApproved = strategy?.status === 'active' && completeness.complete && !completeness.isSkeleton;
+	const progressInput = {
+		strategyApproved,
+		phase,
+		pendingNative,
+		assetCount: assets.length,
+		connected,
+	};
+	const stepDone = computeGetStartedStepDone(progressInput);
+
+	const intelligenceHref = `/intelligence?brand_profile_id=${encodeURIComponent(brain.airtableBrandId)}&tab=strategy`;
+	const approvalHref = contentApprovalHref(brain.airtableBrandId);
+
 	const steps = [
 		{
 			id: 'questionnaire',
 			label: humanStepLabel('questionnaire'),
-			done: true,
+			done: stepDone.questionnaire,
 			href: '/onboarding',
 		},
 		{
 			id: 'approve_strategy',
 			label: humanStepLabel('approve_strategy'),
-			done: strategyDone,
-			href: `/intelligence?brand_profile_id=${encodeURIComponent(brain.airtableBrandId)}`,
+			done: stepDone.approve_strategy,
+			href: intelligenceHref,
 		},
 		{
 			id: 'generate_content',
 			label: humanStepLabel('generate_content'),
-			done: pendingNative > 0,
+			done: stepDone.generate_content,
 			href: `/content/generate?brand=${encodeURIComponent(brain.airtableBrandId)}`,
 		},
 		{
 			id: 'connect_social',
 			label: humanStepLabel('connect_social'),
-			done: connected > 0,
+			done: stepDone.connect_social,
 			href: `/connections?brand=${encodeURIComponent(brain.id)}`,
 		},
 		{
@@ -91,18 +102,12 @@ export async function GET(request: Request) {
 				pendingNative > 0
 					? `${humanStepLabel('review_content')} (${pendingNative} pending)`
 					: humanStepLabel('review_content'),
-			done: reviewDone,
-			href: `/content/approval?brand_profile_id=${encodeURIComponent(brain.airtableBrandId)}`,
+			done: stepDone.review_content,
+			href: approvalHref,
 		},
 	];
 
-	let currentStep = 1;
-	if (!strategyReview && phase !== 'generating') currentStep = 2;
-	else if (strategyDone && pendingNative === 0 && connected === 0) currentStep = 4;
-	else if (strategyDone && pendingNative === 0) currentStep = 3;
-	else if (pendingNative > 0) currentStep = 5;
-	else if (strategyDone && reviewDone) currentStep = 0;
-	else if (strategyDone) currentStep = 3;
+	const currentStep = computeGetStartedCurrentStep(progressInput);
 
 	return NextResponse.json({
 		brandBrainId: brain.id,
@@ -112,6 +117,9 @@ export async function GET(request: Request) {
 		nativePhase: phase,
 		completeness,
 		pendingApprovals: pendingNative,
+		hasContentToReview: pendingNative > 0,
+		hasApprovedStrategy: strategyApproved,
+		hasBrandProfiles: true,
 		connectedChannels: connected,
 		assetCount: assets.length,
 		steps: steps.map((step) => ({ ...step, label: humanStepLabel(step.id, step.label) })),

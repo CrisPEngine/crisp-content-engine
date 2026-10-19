@@ -7,6 +7,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Check, X, Eye, Calendar, Loader2, Edit2, Save, Clock, Upload, Image as ImageIcon, Copy } from 'lucide-react';
 import { Skeleton, ContentItemSkeleton } from '@/components/skeletons/Skeleton';
 import { ContentBrandFilter, fetchIntelligenceBrandOptions } from '@/components/content/ContentBrandFilter';
+import {
+	readApprovalBrandFromSearch,
+	readWorkingBrandId,
+	writeWorkingBrandId,
+} from '@/lib/brands/workingBrand';
 
 // Check if Meta publishing is enabled (client-side)
 const isMetaPublishingEnabled = () => {
@@ -148,18 +153,30 @@ export default function ContentApprovalPage() {
 
 	// Set initial brand from URL param (only once when brands first load)
 	// Extract the param value outside the effect to avoid searchParams reference changes
-	const brandParamFromUrl = searchParams.get('brand_profile_id');
-	
+	const brandParamFromUrl = readApprovalBrandFromSearch(searchParams);
+
 	useEffect(() => {
 		if (brands.length === 0 || hasInitializedBrand.current) return;
-		
-		if (brandParamFromUrl && brands.some((b) => b.id === brandParamFromUrl)) {
-			setSelectedBrandId(brandParamFromUrl);
+
+		const fromUrl =
+			brandParamFromUrl && brands.some((b) => b.id === brandParamFromUrl) ? brandParamFromUrl : null;
+		const stored = readWorkingBrandId();
+		const fromStored = stored && brands.some((b) => b.id === stored) ? stored : null;
+		const pick = fromUrl ?? fromStored;
+		if (pick) {
+			setSelectedBrandId(pick);
+			writeWorkingBrandId(pick);
+			if (!fromUrl) {
+				const params = new URLSearchParams(searchParams.toString());
+				params.set('brand', pick);
+				params.delete('brand_profile_id');
+				const qs = params.toString();
+				router.replace(`/content/approval${qs ? `?${qs}` : ''}`, { scroll: false });
+			}
 		}
-		hasInitializedBrand.current = true; // Mark as initialized
-		// After this runs once, manual selections won't be overridden
+		hasInitializedBrand.current = true;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [brands]); // Only depend on brands, not searchParams
+	}, [brands]);
 
 	// Poll for content if generating
 	useEffect(() => {
@@ -174,12 +191,13 @@ export default function ContentApprovalPage() {
 
 	function handleBrandChange(brandId: string) {
 		setSelectedBrandId(brandId);
-		// Update URL to persist selection across re-renders and page refreshes
 		const params = new URLSearchParams(searchParams.toString());
+		params.delete('brand_profile_id');
 		if (brandId === 'all') {
-			params.delete('brand_profile_id');
+			params.delete('brand');
 		} else {
-			params.set('brand_profile_id', brandId);
+			params.set('brand', brandId);
+			writeWorkingBrandId(brandId);
 		}
 		const qs = params.toString();
 		router.replace(`/content/approval${qs ? `?${qs}` : ''}`, { scroll: false });

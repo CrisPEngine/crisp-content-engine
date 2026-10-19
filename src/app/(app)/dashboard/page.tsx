@@ -5,7 +5,7 @@ import { BrandProfilesList } from '@/components/BrandProfilesList';
 import { DashboardTabs } from '@/components/DashboardTabs';
 import { OnboardingDebug } from '@/components/OnboardingDebug';
 import { GenerateContentActions } from '@/components/GenerateContentActions';
-import { RecommendedNextStep } from '@/components/RecommendedNextStep';
+import { DashboardRecommendedNextStep } from '@/components/dashboard/DashboardRecommendedNextStep';
 import { StrategyCard } from '@/components/StrategyCard';
 import { CardSkeleton, UsageCardSkeleton } from '@/components/skeletons/Skeleton';
 import { AuthLoadingHandler } from '@/components/AuthLoadingHandler';
@@ -343,16 +343,7 @@ export default async function Dashboard({
 		{activeTab === 'overview' && (
 			<>
 				{/* Recommended next step — always shown for subscribed users */}
-				{hasSubscription && (
-					<RecommendedNextStep
-						currentStep={currentStep}
-						hasContentToReview={hasContentToReview}
-						hasBrandProfiles={hasBrandProfiles}
-						hasApprovedStrategies={hasApprovedStrategies}
-						hasSubscription={hasSubscription}
-						brandProfileId={brandProfiles[0]?.id}
-					/>
-				)}
+				{hasSubscription && <DashboardRecommendedNextStep hasSubscription={hasSubscription} />}
 
 				{/* Plan and Get Started/Content Actions boxes side by side */}
 					<div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">

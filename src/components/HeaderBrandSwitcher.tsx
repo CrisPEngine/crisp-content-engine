@@ -41,7 +41,8 @@ export function HeaderBrandSwitcher() {
 			const fromUrl =
 				typeof window !== 'undefined'
 					? new URLSearchParams(window.location.search).get('brand_profile_id') ||
-						new URLSearchParams(window.location.search).get('brand')
+						new URLSearchParams(window.location.search).get('brand') ||
+						new URLSearchParams(window.location.search).get('airtableBrandId')
 					: null;
 			const stored = readWorkingBrandId();
 			const pick = (fromUrl && rows.some((r) => r.id === fromUrl) ? fromUrl : null) || (stored && rows.some((r) => r.id === stored) ? stored : rows[0]?.id) || '';

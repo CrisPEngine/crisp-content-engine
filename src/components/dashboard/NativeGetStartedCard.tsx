@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { readWorkingBrandId } from '@/lib/brands/workingBrand';
 import { humanStepLabel } from '@/lib/onboarding/stepLabels';
 
@@ -13,7 +13,8 @@ export function NativeGetStartedCard() {
 	const [steps, setSteps] = useState<Step[]>([]);
 	const [brandName, setBrandName] = useState<string | null>(null);
 
-	useEffect(() => {
+	const reload = useCallback(() => {
+		setLoading(true);
 		const working = readWorkingBrandId();
 		const query = working ? `?airtableBrandId=${encodeURIComponent(working)}` : '';
 		void fetch(`/api/dashboard/get-started${query}`, { cache: 'no-store' })
@@ -30,6 +31,17 @@ export function NativeGetStartedCard() {
 			})
 			.finally(() => setLoading(false));
 	}, []);
+
+	useEffect(() => {
+		reload();
+		const onBrand = () => reload();
+		window.addEventListener('cce-working-brand', onBrand);
+		window.addEventListener('storage', onBrand);
+		return () => {
+			window.removeEventListener('cce-working-brand', onBrand);
+			window.removeEventListener('storage', onBrand);
+		};
+	}, [reload]);
 
 	if (loading) {
 		return (

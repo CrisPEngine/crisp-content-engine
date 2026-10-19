@@ -4,7 +4,11 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FileText, Clock, CheckCircle, XCircle, Plus, Trash2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import {
+	contentApprovalHref,
+	intelligenceStrategyHref,
+	writeWorkingBrandId,
+} from '@/lib/brands/workingBrand';
 import { Skeleton } from '@/components/skeletons/Skeleton';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
@@ -14,6 +18,7 @@ type BrandProfile = {
 	status: string;
 	original_status?: string;
 	has_pending_content?: boolean;
+	needs_approval_count?: number;
 	created_time: string;
 	platforms_requested?: string[];
 	strategy_summary?: string;
@@ -33,8 +38,11 @@ interface BrandProfilesListProps {
 	currentBrandCount?: number;
 }
 
+function selectBrand(profileId: string) {
+	writeWorkingBrandId(profileId);
+}
+
 export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: BrandProfilesListProps) {
-	const router = useRouter();
 	const [loading, setLoading] = useState(true);
 	const [profiles, setProfiles] = useState<BrandProfile[]>([]);
 	const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -254,8 +262,9 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 						{profiles.map((profile) => {
 							const native = nativeByBrand[profile.id];
 							const displayStatus = native?.displayStatus ?? normaliseStatus(profile.status);
-							const strategyHref =
-								native?.strategyHref ?? `/intelligence?brand_profile_id=${encodeURIComponent(profile.id)}`;
+							const strategyHref = native?.strategyHref ?? intelligenceStrategyHref(profile.id);
+							const approvalHref = contentApprovalHref(profile.id);
+							const pendingCount = Number(profile.needs_approval_count ?? 0);
 							const isStrategyActive = native?.nativePhase === 'active' || displayStatus === 'Strategy active';
 							const isStrategyReadyNative =
 								native?.nativePhase === 'draft_ready' || displayStatus === 'Strategy ready for review';
@@ -269,30 +278,33 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 								isStrategyActive ||
 								profile.original_status === 'Strategy Approved' ||
 								normalisedStatus === 'Strategy Approved';
-							const hasPendingContent = profile.has_pending_content === true;
-							
-							// Determine href and action button
-							let href = strategyHref;
+							const hasPendingContent =
+								pendingCount > 0 || profile.has_pending_content === true;
+
+							let href = hasPendingContent || isContentReview ? approvalHref : strategyHref;
 							let actionButton = null;
 
-							// Priority 1: If content exists to review, always show Review Content (even if strategy is ready)
 							if (hasPendingContent || isContentReview) {
-								href = '/content/approval';
 								actionButton = (
 									<Link
-										href="/content/approval"
-										onClick={(e) => e.stopPropagation()}
+										href={approvalHref}
+										onClick={(e) => {
+											e.stopPropagation();
+											selectBrand(profile.id);
+										}}
 										className="px-3 md:px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm text-accent font-medium flex items-center gap-2"
 									>
 										Review Content
 									</Link>
 								);
-							} else if (isStrategyApproved) {
-								// Strategy approved - show Review Content button (even if no content yet)
+							} else if (isStrategyApproved && pendingCount > 0) {
 								actionButton = (
 									<Link
-										href="/content/approval"
-										onClick={(e) => e.stopPropagation()}
+										href={approvalHref}
+										onClick={(e) => {
+											e.stopPropagation();
+											selectBrand(profile.id);
+										}}
 										className="px-3 md:px-4 py-2 rounded-xl2 border border-accent/40 bg-accent/10 hover:bg-accent/20 text-sm text-accent font-medium flex items-center gap-2"
 									>
 										Review Content
@@ -302,7 +314,10 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 								actionButton = (
 									<Link
 										href={strategyHref}
-										onClick={(e) => e.stopPropagation()}
+										onClick={(e) => {
+											e.stopPropagation();
+											selectBrand(profile.id);
+										}}
 										className="px-3 md:px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm text-primary font-medium flex items-center gap-2 relative group"
 										title="Review and approve your strategy to generate content"
 									>
@@ -325,7 +340,11 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 									className="border border-edge/60 rounded-xl2 p-3 md:p-4 hover:bg-surface/30 transition"
 								>
 									<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-										<Link href={href} className="flex-1 min-w-0">
+										<Link
+											href={href}
+											className="flex-1 min-w-0"
+											onClick={() => selectBrand(profile.id)}
+										>
 											<div className="flex flex-wrap items-center gap-2 md:gap-3 mb-2">
 												<h3 className="font-semibold text-base md:text-lg break-words">{profile.client_name}</h3>
 												{getStatusIcon(displayStatus)}
