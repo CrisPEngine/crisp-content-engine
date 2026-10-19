@@ -1,8 +1,11 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { Loader2, Brain, Map, Layers, Activity } from 'lucide-react';
+import { resolveWorkingBrandId, writeWorkingBrandId } from '@/lib/brands/workingBrand';
+import type { StrategyCompletenessResult } from '@/lib/intelligence/strategy/strategyCompleteness';
 import { HumanBrandBrain } from '@/components/HumanBrandBrain';
 
 type BrandProfile = { id: string; name: string };
@@ -31,8 +34,16 @@ type StrategyGenerationMeta = {
 	jobId?: string;
 };
 
+type LegacyStrategyPreview = {
+	status?: string;
+	content?: string;
+	native?: { phase?: string; completeness?: StrategyCompletenessResult };
+};
+
 type IntelligencePayload = {
 	brain?: { identity?: unknown; voice?: unknown; guardrails?: unknown; knowledge?: unknown };
+	completeness?: StrategyCompletenessResult | null;
+	nativePhase?: string;
 	strategy?: {
 		objectives?: unknown;
 		keyMessages?: unknown;
@@ -65,6 +76,7 @@ export default function IntelligencePage() {
 
 function IntelligencePageInner() {
 	const searchParams = useSearchParams();
+	const router = useRouter();
 	const [tab, setTab] = useState<Tab>('brain');
 	const [brands, setBrands] = useState<BrandProfile[]>([]);
 	const [brandId, setBrandId] = useState<string>('');
@@ -84,6 +96,8 @@ function IntelligencePageInner() {
 	const [strategyResearchId, setStrategyResearchId] = useState('');
 	const [strategyEscalate, setStrategyEscalate] = useState(false);
 	const [draftPreview, setDraftPreview] = useState('');
+	const [legacyStrategy, setLegacyStrategy] = useState<LegacyStrategyPreview | null>(null);
+	const [completeness, setCompleteness] = useState<StrategyCompletenessResult | null>(null);
 
 	useEffect(() => {
 		const requested = searchParams.get('tab');
@@ -128,8 +142,10 @@ function IntelligencePageInner() {
 			name: row.client_name || row.brand_name || 'Unnamed Brand',
 		}));
 		setBrands(profiles);
-		const queryBrand = searchParams.get('brand_profile_id');
-		setBrandId(queryBrand && profiles.some((row) => row.id === queryBrand) ? queryBrand : profiles[0]?.id || '');
+		const ids = profiles.map((row) => row.id);
+		const resolved = resolveWorkingBrandId(searchParams, ids, profiles[0]?.id);
+		setBrandId(resolved);
+		if (resolved) writeWorkingBrandId(resolved);
 	}, [searchParams]);
 
 	const loadIntelligence = useCallback(async (id: string) => {
@@ -138,6 +154,7 @@ function IntelligencePageInner() {
 		const data = (await res.json()) as IntelligencePayload & { error?: string };
 		if (!res.ok) throw new Error(data.error || 'Failed to load intelligence');
 		setPayload(data);
+		setCompleteness(data.completeness ?? null);
 		if (data.brain) {
 			setIdentity(JSON.stringify(data.brain.identity ?? {}, null, 2));
 			setVoice(JSON.stringify(data.brain.voice ?? {}, null, 2));
@@ -164,6 +181,16 @@ function IntelligencePageInner() {
 		}
 	}, []);
 
+	const loadLegacyStrategy = useCallback(async (id: string) => {
+		const res = await fetch(`/api/strategy/${encodeURIComponent(id)}`, { cache: 'no-store' });
+		if (!res.ok) {
+			setLegacyStrategy(null);
+			return;
+		}
+		const data = (await res.json()) as LegacyStrategyPreview;
+		setLegacyStrategy(data);
+	}, []);
+
 	useEffect(() => {
 		loadBrands()
 			.catch((err) => setError(err.message))
@@ -173,7 +200,29 @@ function IntelligencePageInner() {
 	useEffect(() => {
 		if (!brandId) return;
 		loadIntelligence(brandId).catch((err) => setError(err.message));
-	}, [brandId, loadIntelligence]);
+		void loadLegacyStrategy(brandId);
+	}, [brandId, loadIntelligence, loadLegacyStrategy]);
+
+	useEffect(() => {
+		if (payload?.strategy?.generationMetadata?.phase !== 'generating') return;
+		const timer = setInterval(() => {
+			loadIntelligence(brandId).catch(() => undefined);
+		}, 4000);
+		return () => clearInterval(timer);
+	}, [payload?.strategy?.generationMetadata?.phase, brandId, loadIntelligence]);
+
+	const needsNativeStrategy = useMemo(() => {
+		if (!completeness) return true;
+		return !completeness.complete || completeness.isSkeleton || completeness.phase === 'missing' || completeness.phase === 'failed';
+	}, [completeness]);
+
+	function onBrandChange(nextBrandId: string) {
+		setBrandId(nextBrandId);
+		writeWorkingBrandId(nextBrandId);
+		const params = new URLSearchParams(searchParams.toString());
+		params.set('brand_profile_id', nextBrandId);
+		router.replace(`/intelligence?${params.toString()}`, { scroll: false });
+	}
 
 	function strategyObject(): Record<string, unknown> {
 		try {
@@ -248,6 +297,41 @@ function IntelligencePageInner() {
 			setError(err instanceof Error ? err.message : 'Save failed');
 		} finally {
 			setSaving(false);
+		}
+	}
+
+	async function regenerateNativeStrategyDeep() {
+		if (!brandId) return;
+		setStrategyGenerating(true);
+		setError(null);
+		setNotice(null);
+		try {
+			const res = await fetch('/api/intelligence/strategy/regenerate-native', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					airtableBrandId: brandId,
+					escalate: true,
+					runWebsiteResearch: true,
+				}),
+			});
+			const data = (await res.json()) as {
+				error?: string;
+				importedSnapshot?: boolean;
+				job?: { status?: string; error?: string; jobId?: string };
+			};
+			if (!res.ok) throw new Error(data.error || 'Native strategy regeneration failed');
+			if (data.job?.status === 'failed') throw new Error(data.job.error || 'Native strategy regeneration failed');
+			setNotice(
+				data.importedSnapshot
+					? 'Regeneration started using your legacy Make strategy as reference input. Watch progress below; nothing is activated until you choose Activate draft.'
+					: 'Regeneration started from brand brain and website research. Watch progress below; nothing is activated until you choose Activate draft.',
+			);
+			await loadIntelligence(brandId);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Native strategy regeneration failed');
+		} finally {
+			setStrategyGenerating(false);
 		}
 	}
 
@@ -385,7 +469,7 @@ function IntelligencePageInner() {
 			{brands.length > 1 && (
 				<select
 					value={brandId}
-					onChange={(event) => setBrandId(event.target.value)}
+					onChange={(event) => onBrandChange(event.target.value)}
 					className="rounded-xl2 border border-edge/60 bg-surface/30 px-3 py-2 text-sm"
 				>
 					{brands.map((brand) => (
@@ -451,9 +535,66 @@ function IntelligencePageInner() {
 
 			{tab === 'strategy' && (
 				<div className="space-y-4">
+					{needsNativeStrategy ? (
+						<div className="card p-4 space-y-3 border-warning/40 bg-warning/10">
+							<h2 className="font-semibold text-base">Native strategy not ready for this brand</h2>
+							<p className="text-sm text-text-soft">
+								{completeness?.isSkeleton || completeness?.phase === 'skeleton'
+									? 'Your native strategy is still a skeleton (platform placeholders only). Regenerate natively to get full pillars, channel cadences, themes, and guardrails.'
+									: completeness?.phase === 'missing'
+										? 'No native strategy draft exists yet for this brand.'
+										: completeness?.phase === 'failed'
+											? `The last native generation failed${payload?.strategy?.generationMetadata?.error ? `: ${payload.strategy.generationMetadata.error}` : '.'}`
+											: 'Your native strategy is incomplete. Regenerate to fill gaps before approving or generating content.'}
+							</p>
+							{completeness?.reasons?.length ? (
+								<ul className="text-xs text-text-dim list-disc pl-5 space-y-1">
+									{completeness.reasons.slice(0, 4).map((reason) => (
+										<li key={reason}>{reason}</li>
+									))}
+								</ul>
+							) : null}
+							<div className="flex flex-wrap gap-2">
+								<button
+									type="button"
+									onClick={() => void regenerateNativeStrategyDeep()}
+									disabled={strategyGenerating || payload?.strategy?.generationMetadata?.phase === 'generating'}
+									className="px-4 py-2 rounded-xl2 bg-primary hover:bg-primary/90 text-white text-sm font-medium disabled:opacity-50"
+								>
+									{strategyGenerating || payload?.strategy?.generationMetadata?.phase === 'generating'
+										? 'Regenerating native strategy…'
+										: 'Regenerate strategy natively (deep)'}
+								</button>
+								<Link
+									href={`/strategy/${encodeURIComponent(brandId)}`}
+									className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 text-sm"
+								>
+									Open legacy strategy approval page
+								</Link>
+							</div>
+						</div>
+					) : null}
+
+					{(legacyStrategy?.content || draftPreview) && (
+						<div className="grid gap-4 md:grid-cols-2">
+							{legacyStrategy?.content ? (
+								<details className="card p-4 border-edge/60" open={needsNativeStrategy}>
+									<summary className="cursor-pointer text-sm font-medium">Legacy Make / Airtable strategy (reference)</summary>
+									<pre className="mt-3 text-xs overflow-auto max-h-80 whitespace-pre-wrap text-text-soft">{legacyStrategy.content}</pre>
+								</details>
+							) : null}
+							{draftPreview ? (
+								<details className="card p-4 border-primary/30" open>
+									<summary className="cursor-pointer text-sm font-medium">Native draft (not active until you activate)</summary>
+									<pre className="mt-3 text-xs overflow-auto max-h-80 whitespace-pre-wrap">{draftPreview}</pre>
+								</details>
+							) : null}
+						</div>
+					)}
+
 					<div className="card p-4 space-y-3 border-primary/30 bg-primary/5">
 						<p className="text-sm text-text-soft">
-							Generate a native AI strategy draft here. Compare it with your existing Make strategy on the strategy approval page. Nothing in Airtable is overwritten until you activate the draft.
+							Generate or refine a native AI strategy draft here. Legacy Make content stays in Airtable until you activate a native draft.
 						</p>
 						<input
 							className="w-full rounded-xl2 border border-edge/60 bg-surface/30 px-3 py-2 text-sm"
@@ -481,14 +622,22 @@ function IntelligencePageInner() {
 								{strategyGenerating ? 'Generating native strategy…' : payload?.strategy?.draftPayload ? 'Regenerate native draft' : 'Generate native strategy'}
 							</button>
 							{payload?.strategy?.draftPayload ? (
-								<button
-									type="button"
-									onClick={() => void activateNativeDraft()}
-									disabled={saving || payload?.strategy?.generationMetadata?.phase === 'generating'}
-									className="px-4 py-2 rounded-xl2 border border-emerald-500/40 bg-emerald-500/10 text-sm"
-								>
-									{saving ? 'Activating…' : 'Activate draft (sync to Airtable)'}
-								</button>
+								<>
+									<button
+										type="button"
+										onClick={() => void activateNativeDraft()}
+										disabled={saving || payload?.strategy?.generationMetadata?.phase === 'generating'}
+										className="px-4 py-2 rounded-xl2 border border-emerald-500/40 bg-emerald-500/10 text-sm"
+									>
+										{saving ? 'Activating…' : 'Activate draft (sync to Airtable)'}
+									</button>
+									<Link
+										href={`/strategy/${encodeURIComponent(brandId)}`}
+										className="px-4 py-2 rounded-xl2 border border-edge/60 bg-surface/30 text-sm inline-flex items-center"
+									>
+										Approve on strategy page
+									</Link>
+								</>
 							) : null}
 						</div>
 						{payload?.strategy?.generationMetadata?.phase === 'generating' && (

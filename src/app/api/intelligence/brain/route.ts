@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { jsonError, requireIntelligenceUser } from '@/lib/intelligence/http';
+import { scoreStrategyCompleteness, strategyGenerationPhase } from '@/lib/intelligence/strategy/strategyCompleteness';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,7 +35,9 @@ export async function GET(request: Request) {
 		const brain = await store.getBrandBrain(userId, airtableBrandId);
 		const strategy = brain ? await store.getStrategyForBrand(userId, brain.id) : null;
 		const themes = brain ? await store.listThemes(userId, brain.id) : [];
-		return NextResponse.json({ brain, strategy, themes });
+		const completeness = strategy ? scoreStrategyCompleteness(strategy) : null;
+		const nativePhase = strategy ? strategyGenerationPhase(strategy) : 'missing';
+		return NextResponse.json({ brain, strategy, themes, completeness, nativePhase });
 	} catch (error) {
 		const mapped = jsonError(error);
 		return NextResponse.json(mapped.body, { status: mapped.status });

@@ -49,10 +49,15 @@ function computeStep(
 		};
 	}
 	if (currentStep === 2) {
+		const strategyHref = brandProfileId
+			? `/intelligence?brand_profile_id=${encodeURIComponent(brandProfileId)}&tab=strategy`
+			: '/intelligence?tab=strategy';
 		return {
 			label: 'Review your strategy',
-			message: 'Your content strategy is ready. Review and approve it to unlock content generation.',
-			href: brandProfileId ? `/strategy/${brandProfileId}` : '/strategy',
+			message: brandProfileId
+				? 'Approve or regenerate your native strategy for this brand to unlock content generation.'
+				: 'Your content strategy is ready. Review and approve it to unlock content generation.',
+			href: strategyHref,
 			icon: <CheckCircle className="w-5 h-5" />,
 			variant: 'primary',
 		};
@@ -75,11 +80,14 @@ function computeStep(
 			variant: 'primary',
 		};
 	}
-	if (currentStep === 5 || hasContentToReview) {
+	if (currentStep === 5 && hasContentToReview) {
+		const approvalHref = brandProfileId
+			? `/content/approval?brand=${encodeURIComponent(brandProfileId)}`
+			: '/content/approval';
 		return {
 			label: 'Review your latest drafts',
 			message: 'You have content waiting for your review. Approve, edit or schedule your posts.',
-			href: '/content/approval',
+			href: approvalHref,
 			icon: <CheckCircle className="w-5 h-5" />,
 			variant: 'primary',
 		};

@@ -56,7 +56,7 @@ export async function GET() {
 			nativePhase: phase,
 			completenessScore: completeness.score,
 			complete: completeness.complete,
-			strategyHref: `/intelligence?brand_profile_id=${encodeURIComponent(brain.airtableBrandId)}`,
+			strategyHref: `/intelligence?brand_profile_id=${encodeURIComponent(brain.airtableBrandId)}&tab=strategy`,
 		};
 	}
 

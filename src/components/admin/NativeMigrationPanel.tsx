@@ -1,6 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { intelligenceStrategyHref } from '@/lib/brands/workingBrand';
 
 type Row = {
 	brandBrainId: string;
@@ -66,14 +68,19 @@ export function NativeMigrationPanel() {
 								{row.complete ? ' · complete' : ''}
 							</div>
 						</div>
-						<button
-							type="button"
-							className="text-primary underline disabled:opacity-50"
-							disabled={busyId === row.airtableBrandId}
-							onClick={() => void regenerate(row.airtableBrandId)}
-						>
-							{busyId === row.airtableBrandId ? 'Enqueueing…' : 'Regenerate native strategy'}
-						</button>
+						<div className="flex flex-wrap items-center gap-3">
+							<Link href={intelligenceStrategyHref(row.airtableBrandId)} className="text-text-soft underline text-xs">
+								Open Intelligence strategy
+							</Link>
+							<button
+								type="button"
+								className="text-primary underline disabled:opacity-50"
+								disabled={busyId === row.airtableBrandId}
+								onClick={() => void regenerate(row.airtableBrandId)}
+							>
+								{busyId === row.airtableBrandId ? 'Enqueueing…' : 'Regenerate native strategy'}
+							</button>
+						</div>
 					</li>
 				))}
 			</ul>
