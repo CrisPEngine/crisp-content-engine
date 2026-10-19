@@ -28,5 +28,14 @@ export function hrefWithWorkingBrand(
 	if (pathname.startsWith('/strategy/')) {
 		return `/strategy/${encodeURIComponent(airtableBrandId)}`;
 	}
+	if (pathname.startsWith('/content/generate')) {
+		return `/content/generate?brand=${encodeURIComponent(airtableBrandId)}`;
+	}
+	if (pathname.startsWith('/content/approval')) {
+		return `/content/approval?brand_profile_id=${encodeURIComponent(airtableBrandId)}`;
+	}
+	if (pathname.startsWith('/content/brand-assets') && brainIdByAirtable?.[airtableBrandId]) {
+		return `/content/brand-assets?brandId=${encodeURIComponent(brainIdByAirtable[airtableBrandId])}`;
+	}
 	return pathname;
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, Check, Sparkles } from 'lucide-react';
+import { Loader2, Check, Sparkles, AlertCircle } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 
 type Step = {
@@ -11,53 +11,41 @@ type Step = {
 };
 
 const steps: Step[] = [
-	{ id: 'approve', label: 'Approving...', status: 'pending' },
-	{ id: 'generate', label: 'AI generating content...', status: 'pending' },
-	{ id: 'schedule', label: 'Scheduling posts...', status: 'pending' },
-	{ id: 'complete', label: 'Content generation complete', status: 'pending' },
+	{ id: 'queue', label: 'Starting generation job...', status: 'pending' },
+	{ id: 'generate', label: 'AI writing drafts...', status: 'pending' },
+	{ id: 'queue_write', label: 'Saving to approval queue...', status: 'pending' },
+	{ id: 'complete', label: 'Generation complete', status: 'pending' },
 ];
 
 type ContentGenerationLoadingProps = {
 	onComplete?: () => void;
-	/** Poll function that returns true when generation is complete */
-	pollForCompletion?: () => Promise<boolean>;
-	/** Brief ID to check status for (optional) */
-	briefId?: string;
-	/** Brand profile ID to check content for (optional) */
-	brandProfileId?: string;
+	/** Poll function that returns job outcome */
+	pollForCompletion?: () => Promise<'pending' | 'complete' | 'failed' | 'stalled'>;
+	generationJobId?: string;
 };
 
-const POLL_INTERVAL_MS = 5000;
-const MAX_POLLS = 120; // 10 minutes max
-const ESCAPE_HATCH_AFTER_POLLS = 18; // Show "Close anyway" after ~90 seconds
-const MIN_DISPLAY_MS = 20000; // Keep loading screen at least 20s so Make has time; user sees progress
-const POST_COMPLETE_DELAY_MS = 2500; // Show "complete" state briefly before redirecting
+const POLL_INTERVAL_MS = 4000;
+const MAX_POLLS = 120;
+const MIN_DISPLAY_MS = 8000;
+const POST_COMPLETE_DELAY_MS = 2000;
 
-export function ContentGenerationLoading({ 
-	onComplete, 
+export function ContentGenerationLoading({
+	onComplete,
 	pollForCompletion,
-	briefId,
-	brandProfileId,
+	generationJobId,
 }: ContentGenerationLoadingProps) {
 	const [currentStep, setCurrentStep] = useState(0);
 	const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
 	const [isComplete, setIsComplete] = useState(false);
-	const [showEscapeHatch, setShowEscapeHatch] = useState(false);
+	const [isFailed, setIsFailed] = useState(false);
+	const [failureMessage, setFailureMessage] = useState<string | null>(null);
 	const minDisplayReached = useRef(false);
-	const contentReadyRef = useRef(false);
-	const intervalIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-	// Keep latest poll/onComplete in refs so effect runs once and doesn't reset interval on re-render
 	const pollRef = useRef(pollForCompletion);
 	const onCompleteRef = useRef(onComplete);
 	pollRef.current = pollForCompletion;
 	onCompleteRef.current = onComplete;
 
 	const runCompletion = useRef(() => {
-		if (intervalIdRef.current) {
-			clearInterval(intervalIdRef.current);
-			intervalIdRef.current = null;
-		}
 		setCompletedSteps((prev) => new Set([...prev, 'complete']));
 		setCurrentStep(4);
 		setIsComplete(true);
@@ -65,97 +53,73 @@ export function ContentGenerationLoading({
 	});
 
 	useEffect(() => {
-		// Simulate step progression over ~18 seconds so user sees progress while Make runs
-		const timers: NodeJS.Timeout[] = [];
+		const timers: ReturnType<typeof setTimeout>[] = [];
 
-		// Step 1: Approve (1s)
 		timers.push(
 			setTimeout(() => {
-				setCompletedSteps((prev) => new Set([...prev, 'approve']));
+				setCompletedSteps((prev) => new Set([...prev, 'queue']));
 				setCurrentStep(1);
-			}, 1000)
+			}, 800),
 		);
-
-		// Step 2: Generate (6s) – "AI generating content" stays visible longer
 		timers.push(
 			setTimeout(() => {
 				setCompletedSteps((prev) => new Set([...prev, 'generate']));
 				setCurrentStep(2);
-			}, 6000)
+			}, 4000),
 		);
-
-		// Step 3: Schedule (12s)
 		timers.push(
 			setTimeout(() => {
-				setCompletedSteps((prev) => new Set([...prev, 'schedule']));
+				setCompletedSteps((prev) => new Set([...prev, 'queue_write']));
 				setCurrentStep(3);
-			}, 12000)
+			}, 9000),
 		);
 
-		// Enforce minimum display time, then complete if content already ready
 		timers.push(
 			setTimeout(() => {
 				minDisplayReached.current = true;
-				if (contentReadyRef.current) {
-					runCompletion.current();
-				}
-			}, MIN_DISPLAY_MS)
+			}, MIN_DISPLAY_MS),
 		);
 
-		// Poll for completion if pollForCompletion is provided
-		if (pollForCompletion) {
+		if (pollRef.current) {
 			let pollCount = 0;
-
-			const tryComplete = () => {
-				if (!contentReadyRef.current || !minDisplayReached.current) return;
-				runCompletion.current();
-			};
-
 			const tick = async () => {
-				pollCount++;
-				if (pollCount >= ESCAPE_HATCH_AFTER_POLLS) {
-					setShowEscapeHatch(true);
-				}
-
+				pollCount += 1;
 				try {
-					const completed = await (pollRef.current?.() ?? Promise.resolve(false));
-					if (completed) {
-						contentReadyRef.current = true;
-						tryComplete();
+					const outcome = await (pollRef.current?.() ?? Promise.resolve('pending' as const));
+					if (outcome === 'complete' && minDisplayReached.current) {
+						runCompletion.current();
+						return;
+					}
+					if (outcome === 'failed') {
+						setIsFailed(true);
+						setFailureMessage('Content generation failed. You can retry from Quick Generate.');
+						return;
+					}
+					if (outcome === 'stalled' || pollCount >= MAX_POLLS) {
+						setIsFailed(true);
+						setFailureMessage(
+							generationJobId
+								? `Generation is taking longer than expected. Job id: ${generationJobId}. Check Approval or retry.`
+								: 'Generation timed out. Check Approval or retry.',
+						);
 						return;
 					}
 				} catch (error) {
 					console.error('Error polling for completion:', error);
 				}
-
-				if (pollCount >= MAX_POLLS) {
-					runCompletion.current();
-				}
 			};
-
 			const id = setInterval(tick, POLL_INTERVAL_MS);
-			intervalIdRef.current = id;
-			timers.push(id);
-		} else {
-			// Fallback: show for minimum time then complete
-			timers.push(
-				setTimeout(() => {
-					runCompletion.current();
-				}, MIN_DISPLAY_MS + 1000)
-			);
+			timers.push(id as unknown as ReturnType<typeof setTimeout>);
+			void tick();
 		}
 
 		return () => {
 			timers.forEach((timer) => {
-				if (typeof timer === 'number') {
-					clearTimeout(timer);
-				} else {
-					clearInterval(timer);
-				}
+				if (typeof timer === 'number') clearTimeout(timer);
+				else clearInterval(timer);
 			});
-			intervalIdRef.current = null;
 		};
-	}, []); // Run once; we use refs for latest callbacks
+	}, [generationJobId]);
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-bg/95 backdrop-blur-sm">
@@ -173,25 +137,16 @@ export function ContentGenerationLoading({
 						<Sparkles className="w-12 h-12 text-primary" />
 					</motion.div>
 					<h2 className="text-2xl font-semibold mb-2">Creating Your Content</h2>
-					<p className="text-text-dim text-sm mb-1">This usually takes 20–60 seconds. We’ll take you to the content when it’s ready.</p>
-					<p className="text-text-dim text-xs">Please keep this tab open while we generate your posts. Closing the browser or tab can interrupt content creation.</p>
+					<p className="text-text-dim text-sm mb-1">Native generation usually takes 30 seconds to a few minutes per channel.</p>
+					{generationJobId ? (
+						<p className="text-text-dim text-xs font-mono">Job {generationJobId.slice(0, 8)}…</p>
+					) : null}
 				</div>
 
-				{showEscapeHatch && !isComplete && (
-					<div className="mb-4 p-3 rounded-xl2 border border-edge/60 bg-surface/30">
-						<p className="text-sm text-text-dim mb-2">Taking longer than usual?</p>
-						<button
-							type="button"
-							onClick={() => {
-								setIsComplete(true);
-								setCompletedSteps((prev) => new Set([...prev, 'complete']));
-								setCurrentStep(4);
-								onComplete?.();
-							}}
-							className="text-sm text-primary hover:underline"
-						>
-							Close and go to content
-						</button>
+				{isFailed && (
+					<div className="mb-4 p-3 rounded-xl2 border border-warning/40 bg-warning/10 flex gap-2">
+						<AlertCircle className="w-5 h-5 text-warning shrink-0" />
+						<p className="text-sm text-text-dim">{failureMessage}</p>
 					</div>
 				)}
 
@@ -199,58 +154,54 @@ export function ContentGenerationLoading({
 					<AnimatePresence>
 						{steps.map((step, index) => {
 							const isActive = currentStep === index;
-							const isComplete = completedSteps.has(step.id);
-							const isPending = !isActive && !isComplete;
-
+							const stepComplete = completedSteps.has(step.id);
 							return (
 								<motion.div
 									key={step.id}
 									initial={{ opacity: 0, x: -20 }}
 									animate={{ opacity: 1, x: 0 }}
-									exit={{ opacity: 0 }}
 									className={`flex items-center gap-3 p-3 rounded-xl2 border transition-colors ${
 										isActive
 											? 'border-primary/40 bg-primary/10'
-											: isComplete
+											: stepComplete
 												? 'border-accent/40 bg-accent/10'
 												: 'border-edge/60 bg-surface/30'
 									}`}
 								>
 									<div className="flex-shrink-0">
-										{isComplete ? (
-											<motion.div
-												initial={{ scale: 0 }}
-												animate={{ scale: 1 }}
-												className="w-6 h-6 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center"
-											>
+										{stepComplete ? (
+											<div className="w-6 h-6 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center">
 												<Check className="w-4 h-4 text-accent" />
-											</motion.div>
+											</div>
 										) : isActive ? (
 											<Loader2 className="w-6 h-6 text-primary animate-spin" />
 										) : (
 											<div className="w-6 h-6 rounded-full border border-edge/60 bg-surface/50" />
 										)}
 									</div>
-									<div className="flex-1">
-										<p
-											className={`text-sm ${
-												isActive
-													? 'text-primary font-medium'
-													: isComplete
-														? 'text-accent'
-														: 'text-text-dim'
-											}`}
-										>
-											{step.label}
-										</p>
-									</div>
+									<p
+										className={`text-sm ${
+											isActive ? 'text-primary font-medium' : stepComplete ? 'text-accent' : 'text-text-dim'
+										}`}
+									>
+										{step.label}
+									</p>
 								</motion.div>
 							);
 						})}
 					</AnimatePresence>
 				</div>
+
+				{isFailed && (
+					<button
+						type="button"
+						className="mt-6 w-full text-sm text-primary hover:underline"
+						onClick={() => onComplete?.()}
+					>
+						Continue to approval queue
+					</button>
+				)}
 			</motion.div>
 		</div>
 	);
 }
-

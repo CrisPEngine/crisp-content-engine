@@ -11,6 +11,13 @@ import type { MultiChannelMakePayload, BrandVoiceContext, MonthlyBrief, Previous
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { resolvePlan } from '@/lib/planResolver';
+import { isLegacyMakeEnabled } from '@/lib/featureFlags';
+import {
+	createNativeGenerationJob,
+	dispatchNativeContentBatchWorker,
+} from '@/lib/intelligence/content/nativeBatchGeneration';
+import { getIntelligenceStore } from '@/lib/intelligence/actions';
+import { assertStrategyReadyForContent } from '@/lib/intelligence/strategy/strategyCompleteness';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -244,6 +251,57 @@ export async function POST(req: Request) {
 				requested: channels.map((ch) => ch.platform),
 				allowed: filteredChannels.map((ch) => ch.platform),
 				plan,
+			});
+		}
+
+		if (!isLegacyMakeEnabled()) {
+			const store = getIntelligenceStore();
+			const brain = await store.getBrandBrain(user.id, brandProfileId);
+			if (!brain) {
+				return NextResponse.json(
+					{
+						error: 'Brand brain not found. Finish onboarding or open Intelligence to activate this brand.',
+						code: 'brand_brain_missing',
+					},
+					{ status: 400 },
+				);
+			}
+			const strategy = await store.getStrategyForBrand(user.id, brain.id);
+			const gate = assertStrategyReadyForContent(strategy);
+			if (!gate.ok) {
+				return NextResponse.json(
+					{
+						error: gate.message,
+						code: gate.code,
+						next_action_href: `/intelligence?brand_profile_id=${encodeURIComponent(brandProfileId)}`,
+						completeness: gate.completeness,
+					},
+					{ status: 400 },
+				);
+			}
+
+			const { generation_job_id } = await createNativeGenerationJob({
+				userId: user.id,
+				brandProfileId,
+				channels: filteredChannels.map((ch) => ({
+					platform: ch.platform,
+					count: ch.count,
+				})),
+			});
+
+			try {
+				await dispatchNativeContentBatchWorker(generation_job_id);
+			} catch (dispatchError) {
+				console.error('[Content Generate] Native worker dispatch failed:', dispatchError);
+			}
+
+			return NextResponse.json({
+				ok: true,
+				engine: 'native',
+				generation_job_id,
+				message: `Generating ${filteredChannels.reduce((sum, ch) => sum + ch.count, 0)} posts natively. Drafts will appear in Approval when the job completes.`,
+				channels: filteredChannels.map((ch) => ({ platform: ch.platform, count: ch.count })),
+				status_href: `/api/content/generation/${generation_job_id}`,
 			});
 		}
 

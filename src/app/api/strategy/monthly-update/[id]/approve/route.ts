@@ -12,6 +12,14 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { getSupabaseService } from '@/lib/supabaseService';
+import { isLegacyMakeEnabled } from '@/lib/featureFlags';
+import { getIntelligenceStore } from '@/lib/intelligence/actions';
+import { activateNativeStrategyDraft } from '@/lib/intelligence/strategy/activateNativeStrategy';
+import {
+	createNativeGenerationJob,
+	dispatchNativeContentBatchWorker,
+} from '@/lib/intelligence/content/nativeBatchGeneration';
+import { assertStrategyReadyForContent } from '@/lib/intelligence/strategy/strategyCompleteness';
 
 export const runtime = 'nodejs';
 
@@ -184,92 +192,63 @@ export async function POST(
 			// Don't fail the request if this fails - the brand profile is already updated
 		}
 
-		// Trigger content generation with the updated strategy
-		const admin = getSupabaseService();
-		const { data: linkedInConnections } = await admin
-			.from('social_connections')
-			.select('person_urn, organization_urn, connection_type, brand_profile_id')
-			.eq('user_id', user.id)
-			.eq('provider', 'linkedin');
+		const triggerContent = Boolean(body?.triggerContent);
+		let generation_job_id: string | undefined;
+		let generation_error: string | undefined;
 
-		// Get brand type
-		const brandRes = await fetch(
-			`https://api.airtable.com/v0/${BASE_ID}/${BRANDPROFILES_TABLE}/${brandProfileId}`,
-			{
-				headers: {
-					Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-					'Content-Type': 'application/json',
-				},
-			}
-		);
-
-		let brandType = 'company';
-		let linkedInConnection: any = null;
-
-		if (brandRes.ok && linkedInConnections && linkedInConnections.length > 0) {
-			const brandRecord = await brandRes.json();
-			brandType = brandRecord.fields?.brand_type || 'company';
-
-			// Find appropriate LinkedIn connection
-			if (brandType === 'company') {
-				linkedInConnection = linkedInConnections.find(
-					(conn: any) => conn.connection_type === 'organization' && 
-						(conn.brand_profile_id === brandProfileId || !conn.brand_profile_id)
-				) || linkedInConnections.find((conn: any) => conn.connection_type === 'organization');
-			} else {
-				linkedInConnection = linkedInConnections.find(
-					(conn: any) => conn.connection_type === 'member' && 
-						(conn.brand_profile_id === brandProfileId || !conn.brand_profile_id)
-				) || linkedInConnections.find((conn: any) => conn.connection_type === 'member');
+		if (!isLegacyMakeEnabled()) {
+			const store = getIntelligenceStore();
+			const brain = await store.getBrandBrain(user.id, brandProfileId);
+			if (brain) {
+				const existing = await store.getStrategyForBrand(user.id, brain.id);
+				if (existing?.draftPayload) {
+					await activateNativeStrategyDraft({ userId: user.id, airtableBrandId: brandProfileId });
+				} else if (existing && existing.status !== 'active') {
+					await store.upsertStrategy(user.id, { ...existing, status: 'active' });
+				}
 			}
 
-			if (!linkedInConnection) {
-				linkedInConnection = linkedInConnections[0];
+			if (triggerContent) {
+				const strategy = brain ? await store.getStrategyForBrand(user.id, brain.id) : null;
+				const gate = assertStrategyReadyForContent(strategy);
+				if (!gate.ok) {
+					generation_error = gate.message;
+				} else {
+					try {
+						const job = await createNativeGenerationJob({
+							userId: user.id,
+							brandProfileId,
+							channels: [
+								{ platform: 'LinkedIn', count: 2 },
+								{ platform: 'Blog', count: 1 },
+							],
+						});
+						generation_job_id = job.generation_job_id;
+						await dispatchNativeContentBatchWorker(generation_job_id);
+					} catch (err) {
+						generation_error = err instanceof Error ? err.message : 'Native generation failed';
+					}
+				}
 			}
-		}
 
-		// Trigger content generation webhook if configured
-		const MAKE_CONTENT_WEBHOOK_URL = process.env.MAKE_CONTENT_GENERATION_WEBHOOK_URL;
-		if (MAKE_CONTENT_WEBHOOK_URL && linkedInConnection) {
-			try {
-				const personUrn = linkedInConnection.person_urn || null;
-				const organizationUrn = linkedInConnection.organization_urn || null;
-
-				const contentPayload = {
-					brand_profile_id: brandProfileId,
-					user_id: user.id,
-					person_urn: personUrn,
-					organization_urn: organizationUrn,
-					brand_type: brandType,
-					strategy_json: strategyJson,
-					triggered_at: new Date().toISOString(),
-				};
-
-				await fetch(MAKE_CONTENT_WEBHOOK_URL, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						...(process.env.MAKE_API_KEY && {
-							'x-api-key': process.env.MAKE_API_KEY,
-						}),
-						...(process.env.MAKE_CONTENT_WEBHOOK_SECRET || process.env.MAKE_SHARED_SECRET ? {
-							'x-make-secret': process.env.MAKE_CONTENT_WEBHOOK_SECRET || process.env.MAKE_SHARED_SECRET,
-						} : {}),
-					},
-					body: JSON.stringify(contentPayload),
-				}).catch((err) => {
-					console.error('Failed to trigger content generation:', err);
-					// Don't fail the request
-				});
-			} catch (error) {
-				console.error('Error triggering content generation:', error);
-				// Don't fail the request
-			}
+			return NextResponse.json({
+				ok: true,
+				engine: 'native',
+				message: generation_error
+					? 'Monthly update approved. Content was not started.'
+					: triggerContent
+						? 'Monthly update approved. Native content generation started.'
+						: 'Monthly update approved.',
+				generation_job_id,
+				generation_error,
+			});
 		}
 
 		return NextResponse.json({
 			ok: true,
-			message: 'Monthly strategy update approved. Content generation started.',
+			engine: 'legacy_mirror',
+			message:
+				'Monthly update mirror saved. With LEGACY_MAKE_ENABLED, trigger content manually or switch to native default.',
 		});
 	} catch (error: any) {
 		console.error('Error approving monthly strategy update:', error);

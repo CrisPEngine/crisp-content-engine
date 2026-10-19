@@ -20,13 +20,16 @@ export async function POST(request: Request) {
 	}
 	const metadata = await readClientMetadata(body.clientId);
 	if (!metadata.redirect_uris.includes(body.redirectUri)) return NextResponse.json({ error: 'That redirect is not registered for this client.' }, { status: 400 });
+	let allBrands = Boolean(body.allBrands);
 	const brandIds = Array.isArray(body.brandIds) ? body.brandIds.filter((id) => typeof id === 'string') : [];
-	if (!body.allBrands) {
+	if (!allBrands && brandIds.length === 0) {
+		allBrands = true;
+	}
+	if (!allBrands) {
 		for (const brandId of brandIds) {
 			const brain = await getIntelligenceStore().getBrandBrainById(userId, brandId);
 			if (!brain) return NextResponse.json({ error: 'One of the selected brands is not available.' }, { status: 403 });
 		}
-		if (brandIds.length === 0) return NextResponse.json({ error: 'Select at least one brand, or all brands.' }, { status: 400 });
 	}
 	const scopes = scopesFromRequest(body.scope);
 	const issued = createAuthorizationCode({
@@ -36,8 +39,8 @@ export async function POST(request: Request) {
 		redirectUri: body.redirectUri,
 		challenge: body.codeChallenge,
 		scopes,
-		brandIds: body.allBrands ? [] : brandIds,
-		credentialScope: body.allBrands ? 'OWNER_ACCOUNT' : brandIds.length > 1 ? 'SELECTED_BRANDS' : 'BRAND',
+		brandIds: allBrands ? [] : brandIds,
+		credentialScope: allBrands ? 'OWNER_ACCOUNT' : brandIds.length > 1 ? 'SELECTED_BRANDS' : 'BRAND',
 	});
 	await supabaseOauthStore.saveCode(issued.code);
 	const redirect = new URL(body.redirectUri);

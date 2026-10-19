@@ -5,6 +5,8 @@
  */
 
 import { getSupabaseService } from '@/lib/supabaseService';
+import { isLegacyMakeEnabled } from '@/lib/featureFlags';
+import { triggerNativeContentFromBrief } from '@/lib/content/nativeBriefGeneration';
 
 /**
  * Trigger content generation from an approved content brief
@@ -22,11 +24,6 @@ export async function triggerContentGenerationFromBrief(briefId: string): Promis
 
 	if (!AIRTABLE_TOKEN || !BASE_ID || !CONTENTBRIEFS_TABLE || !BRANDPROFILES_TABLE) {
 		throw new Error('Airtable configuration missing');
-	}
-
-	const MAKE_WEBHOOK_URL = process.env.MAKE_CONTENT_GENERATION_WEBHOOK_URL;
-	if (!MAKE_WEBHOOK_URL) {
-		throw new Error('MAKE_CONTENT_GENERATION_WEBHOOK_URL is not configured');
 	}
 
 	// Fetch the brief record
@@ -80,6 +77,20 @@ export async function triggerContentGenerationFromBrief(briefId: string): Promis
 	const userId = fields.user_id;
 	if (!userId) {
 		throw new Error('Brief missing user_id');
+	}
+
+	if (!isLegacyMakeEnabled()) {
+		await triggerNativeContentFromBrief({
+			userId,
+			brandProfileId,
+			briefId,
+		});
+		return;
+	}
+
+	const MAKE_WEBHOOK_URL = process.env.MAKE_CONTENT_GENERATION_WEBHOOK_URL;
+	if (!MAKE_WEBHOOK_URL) {
+		throw new Error('MAKE_CONTENT_GENERATION_WEBHOOK_URL is not configured. Enable LEGACY_MAKE_ENABLED for rollback or use native generation.');
 	}
 
 	// Parse strategy snapshot

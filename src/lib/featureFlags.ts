@@ -69,11 +69,21 @@ export const isSidecarEnabledClient = (): boolean => {
 };
 
 /**
+ * Legacy Make.com webhooks for strategy/content onboarding batches.
+ * Default off. Set LEGACY_MAKE_ENABLED=true for one-release rollback only.
+ */
+export function isLegacyMakeEnabled(): boolean {
+	return process.env.LEGACY_MAKE_ENABLED === 'true';
+}
+
+/**
  * Native Idea Engine generation (replaces Make.com for series + regenerate).
- * When false, falls back to MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL.
+ * Defaults to native when legacy Make is off.
  */
 export const isIdeaEngineNativeEnabled = (): boolean => {
-	return process.env.IDEA_ENGINE_NATIVE_ENABLED === 'true';
+	if (process.env.IDEA_ENGINE_NATIVE_ENABLED === 'false') return false;
+	if (process.env.IDEA_ENGINE_NATIVE_ENABLED === 'true') return true;
+	return !isLegacyMakeEnabled();
 };
 
 /**

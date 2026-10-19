@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { z } from 'zod';
 import { isNativeStrategyEngine } from '@/lib/intelligence/strategy/strategyEngine';
+import { isLegacyMakeEnabled } from '@/lib/featureFlags';
 
 export const runtime = 'nodejs';
 
@@ -70,11 +71,13 @@ const inferMimeType = (url: string) => {
 
 export async function POST(req: Request) {
 	try {
-		if (isNativeStrategyEngine()) {
+		if (isNativeStrategyEngine() || !isLegacyMakeEnabled()) {
 			return NextResponse.json(
 				{
-					error: 'Native strategy engine is enabled. Generate strategy from Brand Intelligence.',
+					error: 'Native strategy engine is enabled. Generate and approve strategy from Brand Intelligence.',
 					code: 'strategy_engine_native',
+					next_action_href: '/intelligence',
+					legacy_flag: 'LEGACY_MAKE_ENABLED',
 				},
 				{ status: 400 },
 			);

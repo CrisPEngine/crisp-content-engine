@@ -9,6 +9,7 @@ import { useUsage } from '@/lib/useUsage';
 import type { PlanId } from '@/config/pricing';
 import { CAPS, PER_CHANNEL_REQUEST_CAPS } from '@/config/pricing';
 import { UpgradeModal } from '@/components/UpgradeModal';
+import { readWorkingBrandId, writeWorkingBrandId } from '@/lib/brands/workingBrand';
 
 type BrandProfile = {
 	id: string;
@@ -41,6 +42,21 @@ export default function ContentGeneratePage() {
 	const [userPlan, setUserPlan] = useState<PlanId | null>(null);
 	const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 	const [upgradeReason, setUpgradeReason] = useState<string>('');
+	const [generationJobId, setGenerationJobId] = useState<string | null>(null);
+	const [recentJobs, setRecentJobs] = useState<
+		Array<{
+			generation_job_id: string;
+			status: string;
+			created_at?: string;
+			error_message?: string | null;
+			requested_count?: number;
+			created_count?: number;
+			engine?: string | null;
+			channels?: string;
+		}>
+	>([]);
+	const [jobsLoading, setJobsLoading] = useState(false);
+	const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
 
 	// Load user plan
 	useEffect(() => {
@@ -53,6 +69,14 @@ export default function ContentGeneratePage() {
 		if (!supabase) return;
 		loadBrands();
 	}, [supabase]);
+
+	useEffect(() => {
+		if (!selectedBrand) {
+			setRecentJobs([]);
+			return;
+		}
+		void loadRecentJobs(selectedBrand);
+	}, [selectedBrand]);
 
 	async function loadUserPlan() {
 		try {
@@ -67,25 +91,67 @@ export default function ContentGeneratePage() {
 		}
 	}
 
+	async function loadRecentJobs(brandProfileId: string) {
+		setJobsLoading(true);
+		try {
+			const res = await fetch(
+				`/api/content/generation/jobs?brand_profile_id=${encodeURIComponent(brandProfileId)}&limit=8`,
+				{ cache: 'no-store' },
+			);
+			if (!res.ok) return;
+			const data = await res.json();
+			setRecentJobs(data.jobs ?? []);
+		} catch (err) {
+			console.error('Failed to load recent jobs', err);
+		} finally {
+			setJobsLoading(false);
+		}
+	}
+
+	function formatJobChannels(channelsJson?: string): string {
+		if (!channelsJson) return '';
+		try {
+			const parsed = JSON.parse(channelsJson) as Array<{ platform?: string; count?: number }>;
+			return parsed.map((row) => `${row.platform ?? '?'}×${row.count ?? 1}`).join(', ');
+		} catch {
+			return '';
+		}
+	}
+
+	async function retryJob(jobId: string) {
+		setRetryingJobId(jobId);
+		setError(null);
+		try {
+			const res = await fetch(`/api/content/generation/${jobId}/retry`, { method: 'POST' });
+			const data = await res.json();
+			if (!res.ok) throw new Error(data.error || 'Retry failed');
+			if (selectedBrand) await loadRecentJobs(selectedBrand);
+		} catch (err: unknown) {
+			setError(err instanceof Error ? err.message : 'Retry failed');
+		} finally {
+			setRetryingJobId(null);
+		}
+	}
+
 	async function loadBrands() {
 		try {
 			const res = await fetch('/api/brands', { cache: 'no-store' });
 			if (!res.ok) throw new Error('Failed to load brands');
 			const data = await res.json();
-			const profiles = (data.profiles || []).filter((p: BrandProfile) => {
-				const status = (p.status || '').toLowerCase();
-				return status.includes('approved') || status === 'strategy approved';
-			});
+			const profiles = (data.profiles || []) as BrandProfile[];
 			setBrands(profiles);
 
-			// Auto-select brand from query param or first brand
 			const brandParam = searchParams.get('brand');
-			if (brandParam && profiles.some((p: BrandProfile) => p.id === brandParam)) {
+			const workingBrand = readWorkingBrandId();
+			if (brandParam && profiles.some((p) => p.id === brandParam)) {
 				setSelectedBrand(brandParam);
+				writeWorkingBrandId(brandParam);
+			} else if (workingBrand && profiles.some((p) => p.id === workingBrand)) {
+				setSelectedBrand(workingBrand);
 			} else if (profiles.length === 1) {
 				setSelectedBrand(profiles[0].id);
+				writeWorkingBrandId(profiles[0].id);
 			} else if (profiles.length > 0) {
-				// Default to most recently created
 				setSelectedBrand(profiles[0].id);
 			}
 		} catch (err: any) {
@@ -171,9 +237,14 @@ export default function ContentGeneratePage() {
 			const data = await res.json();
 
 			if (!res.ok) {
-				throw new Error(data.error || 'Failed to generate content');
+				const hint = data.next_action_href ? ` Open Intelligence to fix strategy.` : '';
+				throw new Error((data.error || 'Failed to generate content') + hint);
 			}
 
+			if (data.generation_job_id) {
+				setGenerationJobId(String(data.generation_job_id));
+			}
+			void loadRecentJobs(selectedBrand);
 			setShowLoading(true);
 		} catch (err: any) {
 			console.error('Content generation error:', err);
@@ -182,19 +253,18 @@ export default function ContentGeneratePage() {
 		}
 	}
 
-	async function pollForCompletion(): Promise<boolean> {
-		if (!selectedBrand) return false;
+	async function pollForCompletion(): Promise<'pending' | 'complete' | 'failed' | 'stalled'> {
+		if (!generationJobId) return 'stalled';
 		try {
-			const res = await fetch(
-				`/api/content/queue?stage=approval&brand_profile_id=${selectedBrand}`,
-				{ cache: 'no-store' }
-			);
-			if (!res.ok) return false;
+			const res = await fetch(`/api/content/generation/${generationJobId}`, { cache: 'no-store' });
+			if (!res.ok) return 'pending';
 			const data = await res.json();
-			const items = Array.isArray(data.items) ? data.items : [];
-			return items.length > 0;
+			const status = data.job?.status as string | undefined;
+			if (status === 'completed' || status === 'partial') return 'complete';
+			if (status === 'failed') return 'failed';
+			return 'pending';
 		} catch {
-			return false;
+			return 'pending';
 		}
 	}
 
@@ -207,7 +277,7 @@ export default function ContentGeneratePage() {
 			<ContentGenerationLoading
 				onComplete={handleContentGenerationComplete}
 				pollForCompletion={pollForCompletion}
-				brandProfileId={selectedBrand}
+				generationJobId={generationJobId ?? undefined}
 			/>
 		);
 	}
@@ -228,9 +298,9 @@ export default function ContentGeneratePage() {
 			<main className="p-6">
 				<div className="max-w-2xl mx-auto card p-8 text-center">
 					<AlertCircle className="w-12 h-12 text-warning mx-auto mb-4" />
-					<h2 className="text-xl font-semibold mb-2">No Approved Strategies</h2>
+					<h2 className="text-xl font-semibold mb-2">No brands yet</h2>
 					<p className="text-text-dim mb-4">
-						You need to create and approve a brand strategy before generating content.
+						Create a brand and activate a native strategy in Intelligence before generating content.
 					</p>
 					<button
 						onClick={() => router.push('/onboarding')}
@@ -298,6 +368,55 @@ export default function ContentGeneratePage() {
 					</div>
 				)}
 
+				{selectedBrand ? (
+					<div className="card p-4 space-y-3">
+						<h2 className="text-sm font-semibold">Recent native generation jobs</h2>
+						{jobsLoading ? (
+							<p className="text-sm text-text-dim">Loading jobs…</p>
+						) : recentJobs.length === 0 ? (
+							<p className="text-sm text-text-dim">No generation jobs for this brand yet.</p>
+						) : (
+							<ul className="space-y-2">
+								{recentJobs.map((job) => {
+									const canRetry = ['failed', 'partial', 'stalled'].includes(job.status);
+									return (
+										<li
+											key={job.generation_job_id}
+											className="text-sm border border-edge/60 rounded-xl2 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+										>
+											<div>
+												<p className="font-medium capitalize">
+													{job.status.replace(/_/g, ' ')}{' '}
+													<span className="text-text-dim font-normal">
+														({job.created_count ?? 0}/{job.requested_count ?? '?'} posts)
+													</span>
+												</p>
+												<p className="text-xs text-text-dim">
+													{formatJobChannels(job.channels as string | undefined)}
+													{job.created_at ? ` · ${new Date(job.created_at).toLocaleString()}` : ''}
+												</p>
+												{job.error_message ? (
+													<p className="text-xs text-danger mt-1">{job.error_message}</p>
+												) : null}
+											</div>
+											{canRetry ? (
+												<button
+													type="button"
+													disabled={retryingJobId === job.generation_job_id}
+													onClick={() => void retryJob(job.generation_job_id)}
+													className="px-3 py-1.5 rounded-lg border border-primary/40 text-primary text-xs font-medium disabled:opacity-50"
+												>
+													{retryingJobId === job.generation_job_id ? 'Retrying…' : 'Retry'}
+												</button>
+											) : null}
+										</li>
+									);
+								})}
+							</ul>
+						)}
+					</div>
+				) : null}
+
 				<form onSubmit={handleSubmit} className="card p-6 space-y-6">
 					{/* Brand Selection */}
 					<div>
@@ -308,7 +427,8 @@ export default function ContentGeneratePage() {
 							value={selectedBrand}
 							onChange={(e) => {
 								setSelectedBrand(e.target.value);
-								setQuantities({}); // Reset quantities when brand changes
+								writeWorkingBrandId(e.target.value);
+								setQuantities({});
 							}}
 							className="w-full px-4 py-3 rounded-xl2 border border-edge/60 bg-bg/80 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
 							required

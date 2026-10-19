@@ -4,6 +4,8 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { getNativeContentStore } from '@/lib/media/store';
 import { brandChannelRows } from '@/lib/social/brandChannels';
+import { scoreStrategyCompleteness, strategyGenerationPhase } from '@/lib/intelligence/strategy/strategyCompleteness';
+import { humanStepLabel } from '@/lib/onboarding/stepLabels';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,6 +52,8 @@ export async function GET(request: Request) {
 	}
 
 	const strategy = await store.getStrategyForBrand(user.id, brain.id);
+	const completeness = scoreStrategyCompleteness(strategy);
+	const phase = strategyGenerationPhase(strategy);
 	const assets = await getNativeContentStore().listAssets(user.id, brain.id);
 	const channels = await brandChannelRows(user.id, brain.id);
 	const connectedChannels = channels.filter((row) => row.phase === 'READY' || row.phase === 'ASSIGNED').length;
@@ -67,34 +71,36 @@ export async function GET(request: Request) {
 			return allowed.includes(brain.id);
 		}) ?? false;
 
+	const steps = [
+		{
+			id: 'strategy',
+			label: humanStepLabel('strategy'),
+			href: `/intelligence?brand_profile_id=${encodeURIComponent(brain.airtableBrandId)}`,
+			done: strategy?.status === 'active' || (phase === 'draft_ready' && completeness.complete),
+		},
+		{
+			id: 'connections',
+			label: humanStepLabel('connections'),
+			href: `/connections?brand=${encodeURIComponent(brain.id)}`,
+			done: connectedChannels > 0,
+		},
+		{
+			id: 'assets',
+			label: humanStepLabel('assets'),
+			href: `/content/brand-assets?brandId=${encodeURIComponent(brain.id)}`,
+			done: assets.length > 0,
+		},
+		{
+			id: 'agents',
+			label: humanStepLabel('agents'),
+			href: '/settings/ai-connections',
+			done: agentAccess,
+		},
+	];
+
 	return NextResponse.json({
 		brandBrainId: brain.id,
 		brandName: brain.identity.name,
-		steps: [
-			{
-				id: 'strategy',
-				label: 'Review brand strategy in Intelligence',
-				href: `/intelligence?brand_profile_id=${encodeURIComponent(brain.airtableBrandId)}`,
-				done: Boolean(strategy && (strategy.objectives?.length || strategy.positioning)),
-			},
-			{
-				id: 'connections',
-				label: 'Connect publishing channels',
-				href: `/connections?brand=${encodeURIComponent(brain.id)}`,
-				done: connectedChannels > 0,
-			},
-			{
-				id: 'assets',
-				label: 'Upload brand assets',
-				href: `/content/brand-assets?brandId=${encodeURIComponent(brain.id)}`,
-				done: assets.length > 0,
-			},
-			{
-				id: 'agents',
-				label: 'Grant agent access (use Allow all my brands for MCP OAuth)',
-				href: '/settings/ai-connections',
-				done: agentAccess,
-			},
-		],
+		steps: steps.map((step) => ({ ...step, label: humanStepLabel(step.id, step.label) })),
 	});
 }

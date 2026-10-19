@@ -16,7 +16,7 @@ import { resolvePlan } from '@/lib/planResolver';
 import { getChannelUsage, getIdeaEngineRunsUsed, getMonthlyChannelQuotaRemaining, incrementIdeaEngineRunsUsed } from '@/lib/enforceCaps';
 import { CAPS } from '@/config/pricing';
 import { computeIdeaEngineRequestedCounts } from '@/lib/ideaEngineQuota';
-import { isIdeaEngineNativeEnabled } from '@/lib/featureFlags';
+import { isIdeaEngineNativeEnabled, isLegacyMakeEnabled } from '@/lib/featureFlags';
 import { dispatchGenerationJob } from '@/lib/idea-engine/dispatchGeneration';
 import { logIdeaEngineLifecycle } from '@/lib/idea-engine/observability/lifecycle';
 import {
@@ -334,7 +334,18 @@ export async function POST(request: Request) {
 			});
 		}
 
-		// ── Fire Make webhook (legacy fallback) ───────────────────
+		// ── Fire Make webhook (legacy rollback only) ───────────────────
+		if (!isLegacyMakeEnabled()) {
+			await admin
+				.from('idea_engine_runs')
+				.update({ status: 'failed', error: 'Native Idea Engine required when legacy Make is disabled.' })
+				.eq('id', run.id);
+			return NextResponse.json(
+				{ error: 'Idea Engine runs natively. Legacy Make is disabled.', code: 'legacy_make_disabled' },
+				{ status: 503 },
+			);
+		}
+
 		const MAKE_URL = process.env.MAKE_IDEA_ENGINE_SERIES_WEBHOOK_URL;
 		if (!MAKE_URL) {
 			await admin

@@ -2,6 +2,14 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { z } from 'zod';
+import { isLegacyMakeEnabled } from '@/lib/featureFlags';
+import { enqueueMonthlyNativeStrategy, patchAirtableBriefStatus } from '@/lib/intelligence/strategy/monthlyNativeFlow';
+import { getIntelligenceStore } from '@/lib/intelligence/actions';
+import {
+	createNativeGenerationJob,
+	dispatchNativeContentBatchWorker,
+} from '@/lib/intelligence/content/nativeBatchGeneration';
+import { assertStrategyReadyForContent } from '@/lib/intelligence/strategy/strategyCompleteness';
 
 export const runtime = 'nodejs';
 
@@ -129,30 +137,30 @@ export async function POST(req: Request) {
 
 				// If renewal is today or in the past, trigger content generation immediately
 				if (shouldTriggerNow) {
-					console.log('Renewal date is today or past, triggering content generation immediately');
-					const autoGenerateUrl = `${process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/content/auto-generate`;
-					
-					// Trigger in background (don't wait)
-					fetch(autoGenerateUrl, {
-						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json',
-							...(process.env.MAKE_API_KEY && {
-								'x-api-key': process.env.MAKE_API_KEY,
-							}),
-						},
-						body: JSON.stringify({
-							userId: user.id,
-							brand_profile_id: data.brand_profile_id,
-						}),
-					}).catch((err) => {
-						console.error('Failed to trigger auto-content generation:', err);
-						// Don't fail the request if this fails
-					});
+					console.log('Renewal date is today or past, triggering native content generation immediately');
+					if (!isLegacyMakeEnabled()) {
+						const store = getIntelligenceStore();
+						const brain = await store.getBrandBrain(user.id, data.brand_profile_id);
+						const strategy = brain ? await store.getStrategyForBrand(user.id, brain.id) : null;
+						const gate = assertStrategyReadyForContent(strategy);
+						if (gate.ok) {
+							const { generation_job_id } = await createNativeGenerationJob({
+								userId: user.id,
+								brandProfileId: data.brand_profile_id,
+								channels: [
+									{ platform: 'LinkedIn', count: 2 },
+									{ platform: 'Blog', count: 1 },
+								],
+							});
+							await dispatchNativeContentBatchWorker(generation_job_id).catch((err) => {
+								console.error('Native renewal generation dispatch failed:', err);
+							});
+						}
+					}
 
 					return NextResponse.json({
 						ok: true,
-						message: 'Preference saved. Content generation has been triggered for your renewal.',
+						message: 'Preference saved. Native content generation has been triggered for your renewal.',
 					});
 				}
 
@@ -221,11 +229,41 @@ export async function POST(req: Request) {
 			);
 		}
 
+		if (!isLegacyMakeEnabled()) {
+			const nativeJobId = await enqueueMonthlyNativeStrategy({
+				ownerUserId: user.id,
+				airtableBrandId: data.brand_profile_id,
+				briefOrUpdateId: airtableResult.id,
+				objective: data.objective,
+				themesFocus: data.themes_focus,
+				keyDates: data.key_dates,
+				feedbackNotes: data.feedback_notes,
+				contentPreferences: data.content_preferences,
+				cycleLabel,
+				source: 'monthly_update',
+			});
+			await patchAirtableBriefStatus({
+				recordId: airtableResult.id,
+				status: 'Native Processing',
+				nativeJobId,
+			});
+			return NextResponse.json({
+				ok: true,
+				strategy_update_id: airtableResult.id,
+				native_strategy_job_id: nativeJobId,
+				engine: 'native',
+				message: 'Monthly update queued for native strategy generation. Review in Intelligence when ready.',
+			});
+		}
+
 		const webhookUrl = process.env.MAKE_STRATEGY_WEBHOOK_URL;
 		if (!webhookUrl) {
 			return NextResponse.json(
-				{ error: 'MAKE_STRATEGY_WEBHOOK_URL is not configured' },
-				{ status: 500 }
+				{
+					error: 'Legacy Make is enabled but MAKE_STRATEGY_WEBHOOK_URL is not configured.',
+					code: 'legacy_make_not_configured',
+				},
+				{ status: 503 },
 			);
 		}
 

@@ -126,30 +126,22 @@ export default function StrategyReviewPage() {
 	}
 
 	// Poll function for ContentGenerationLoading
-	async function pollForCompletion(): Promise<boolean> {
-		if (!strategy) return false;
-		
+	async function pollForCompletion(): Promise<'pending' | 'complete' | 'failed' | 'stalled'> {
+		if (!strategy) return 'pending';
 		try {
-			// Check if content has been created for this brand
 			const contentRes = await fetch(
 				`/api/content/queue?stage=approval&brand_profile_id=${strategy.id}`,
-				{ cache: 'no-store' }
+				{ cache: 'no-store' },
 			);
-			
 			if (contentRes.ok) {
 				const contentData = await contentRes.json();
 				const items = contentData.items || [];
-				
-				// If content exists, generation is complete
-				if (items.length > 0) {
-					return true;
-				}
+				if (items.length > 0) return 'complete';
 			}
-			
-			return false;
+			return 'pending';
 		} catch (error) {
 			console.error('Error polling for completion:', error);
-			return false;
+			return 'pending';
 		}
 	}
 
@@ -293,7 +285,6 @@ export default function StrategyReviewPage() {
 			<ContentGenerationLoading 
 				onComplete={handleContentGenerationComplete}
 				pollForCompletion={pollForCompletion}
-				brandProfileId={strategy?.id}
 			/>
 		);
 	}

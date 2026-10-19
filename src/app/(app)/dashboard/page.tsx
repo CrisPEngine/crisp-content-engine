@@ -11,6 +11,7 @@ import { CardSkeleton, UsageCardSkeleton } from '@/components/skeletons/Skeleton
 import { AuthLoadingHandler } from '@/components/AuthLoadingHandler';
 import { WelcomeOnboarding } from '@/components/WelcomeOnboarding';
 import { NewBrandCallout } from '@/components/NewBrandCallout';
+import { NativeGetStartedCard } from '@/components/dashboard/NativeGetStartedCard';
 import { Suspense } from 'react';
 
 export const dynamic = 'force-dynamic';
@@ -360,90 +361,9 @@ export default async function Dashboard({
 							<PlanUsageCard />
 						</div>
 
-						{/* Get Started box - Right side (during onboarding) */}
-						{currentStep > 0 && (
-							<div className="flex">
-								<div className="w-full card p-3 md:p-4 bg-primary/5 border border-primary/20 flex flex-col">
-									<h3 className="font-semibold mb-3 text-sm md:text-base">Get Started</h3>
-									<div className="space-y-2 flex-1">
-										{/* Step 1: Complete questionnaire */}
-										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 1 ? 'bg-primary/10 border border-primary/30' : currentStep < 1 ? 'opacity-40' : 'opacity-60'}`}>
-											<div className="font-medium">Step 1. Complete your brand questionnaire to generate your content strategy</div>
-											{currentStep === 1 && (
-												<a
-													href="/onboarding"
-													className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
-												>
-													Complete Questionnaire Now
-												</a>
-											)}
-											{currentStep > 1 && <span className="text-xs text-accent font-medium">✓ Complete</span>}
-											{currentStep < 1 && <span className="text-xs text-text-dim">Locked</span>}
-										</div>
-
-										{/* Step 2: Approve strategy */}
-										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 2 ? 'bg-primary/10 border border-primary/30' : currentStep < 2 ? 'opacity-40' : 'opacity-60'}`}>
-											<div className="font-medium">Step 2. Approve your bespoke content strategy</div>
-											{currentStep === 2 && brandProfiles.length > 0 && (
-												<a
-													href={`/strategy/${brandProfiles[0].id}`}
-													className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
-												>
-													Approve Strategy
-												</a>
-											)}
-											{currentStep > 2 && <span className="text-xs text-accent font-medium">✓ Complete</span>}
-											{currentStep < 2 && <span className="text-xs text-text-dim">Locked</span>}
-										</div>
-
-										{/* Step 3: Generate content */}
-										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 3 ? 'bg-primary/10 border border-primary/30' : currentStep < 3 ? 'opacity-40' : 'opacity-60'}`}>
-											<div className="font-medium">Step 3. Generate content for your brand and channels</div>
-											{currentStep === 3 && brandProfiles.length > 0 && (
-												<a
-													href={`/content/generate?brand=${brandProfiles[0].id}`}
-													className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
-												>
-													Generate Content
-												</a>
-											)}
-											{currentStep > 3 && <span className="text-xs text-accent font-medium">✓ Complete</span>}
-											{currentStep < 3 && <span className="text-xs text-text-dim">Locked</span>}
-										</div>
-
-										{/* Step 4: Connect social */}
-										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 4 ? 'bg-primary/10 border border-primary/30' : currentStep < 4 ? 'opacity-40' : 'opacity-60'}`}>
-											<div className="font-medium">Step 4. Connect your social media account(s)</div>
-											{currentStep === 4 && (
-												<a
-													href="/connections"
-													className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
-												>
-													Connect Accounts Now
-												</a>
-											)}
-											{currentStep > 4 && <span className="text-xs text-accent font-medium">✓ Complete</span>}
-											{currentStep < 4 && <span className="text-xs text-text-dim">Locked</span>}
-										</div>
-
-										{/* Step 5: Review/schedule content */}
-										<div className={`flex flex-col gap-2 p-2 rounded-lg text-xs ${currentStep === 5 ? 'bg-primary/10 border border-primary/30' : currentStep < 5 ? 'opacity-40' : 'opacity-60'}`}>
-											<div className="font-medium">Step 5. Human Oversight - Review, Edit/Approve and Schedule your Content</div>
-											{currentStep === 5 && (
-												<a
-													href="/content/approval"
-													className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-medium text-center text-xs"
-												>
-													Review Content
-												</a>
-											)}
-											{currentStep > 5 && <span className="text-xs text-accent font-medium">✓ Complete</span>}
-											{currentStep < 5 && <span className="text-xs text-text-dim">Locked</span>}
-										</div>
-									</div>
-								</div>
-							</div>
-						)}
+						<div className="flex">
+							<NativeGetStartedCard />
+						</div>
 
 						{/* Generate Content Actions - Right side (after onboarding complete) */}
 						{currentStep === 0 && hasApprovedStrategies && brandProfiles.length > 0 && (
