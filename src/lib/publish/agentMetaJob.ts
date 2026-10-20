@@ -13,6 +13,7 @@ import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 import { resolveAgentThreadsAttachedImageUrl } from '@/lib/publish/agentThreadsJob';
 import { composeAgentPublishText } from '@/lib/content/socialPublishBody';
 import { isStalePublishingJob } from '@/lib/publish/publishJobLifecycle';
+import { applyPublishTargetSpacing } from '@/lib/publish/publishJobSpacing';
 
 export type AgentMetaPlatform = 'facebook' | 'instagram';
 
@@ -78,23 +79,6 @@ function normalizeScheduledTime(publishAt: string | undefined): Date {
 		throw new AgentError('invalid_input', 'publishAt must be a valid ISO timestamp.', 400);
 	}
 	if (scheduledTime < now) scheduledTime = now;
-	return scheduledTime;
-}
-
-async function applyPublishSpacing(admin: ReturnType<typeof getSupabaseService>, platform: string, targetId: string, scheduledTime: Date) {
-	const { data: recentJobs } = await admin
-		.from('publish_jobs')
-		.select('scheduled_time')
-		.eq('platform', platform)
-		.eq('target_id', targetId)
-		.order('scheduled_time', { ascending: false })
-		.limit(1);
-
-	if (recentJobs?.length) {
-		const lastScheduledTime = new Date(recentJobs[0].scheduled_time);
-		const sixtySecondsAfterLast = new Date(lastScheduledTime.getTime() + 60 * 1000);
-		if (scheduledTime < sixtySecondsAfterLast) return sixtySecondsAfterLast;
-	}
 	return scheduledTime;
 }
 
@@ -221,12 +205,21 @@ export async function syncAgentMetaPublishJob(input: {
 	const admin = getSupabaseService();
 	const targetId = resolved.providerDestinationId;
 	const contentItemKey = input.memory.id;
-	let scheduledTime = await applyPublishSpacing(admin, platform, targetId, normalizeScheduledTime(input.publishAt));
+
+	await cancelAgentMetaPublishJob(input.userId, contentItemKey, platform);
+
+	let scheduledTime = normalizeScheduledTime(input.publishAt);
+	scheduledTime = await applyPublishTargetSpacing(admin, {
+		platform,
+		targetId,
+		scheduledTime,
+		excludeContentItemKey: contentItemKey,
+	});
 	const payload = buildAgentMetaPayload(input.memory, platform, targetId, resolved.destinationId, attachedImageUrl);
 
 	const { data: existing } = await admin
 		.from('publish_jobs')
-		.select('id, status, updated_at, remote_post_id')
+		.select('id, status, updated_at, remote_post_id, scheduled_time')
 		.eq('platform', platform)
 		.eq('content_item_key', contentItemKey)
 		.in('status', ['published', 'publishing'])
@@ -235,14 +228,18 @@ export async function syncAgentMetaPublishJob(input: {
 	if (existing?.status === 'published') {
 		return { armed: false, platform };
 	}
-	if (existing?.status === 'publishing' && !isStalePublishingJob(existing)) {
-		return { armed: true, platform };
-	}
-	if (existing?.status === 'publishing' && isStalePublishingJob(existing)) {
+	if (existing?.status === 'publishing') {
+		const desiredMs = scheduledTime.getTime();
+		const jobMs = existing.scheduled_time ? new Date(String(existing.scheduled_time)).getTime() : NaN;
+		const rescheduleMismatch =
+			input.publishAt &&
+			Number.isFinite(jobMs) &&
+			Math.abs(jobMs - desiredMs) > 60 * 1000;
+		if (!isStalePublishingJob(existing) && !rescheduleMismatch) {
+			return { armed: true, platform };
+		}
 		await admin.from('publish_jobs').delete().eq('id', existing.id).eq('status', 'publishing');
 	}
-
-	await cancelAgentMetaPublishJob(input.userId, contentItemKey, platform);
 
 	const row = {
 		user_id: input.userId,
