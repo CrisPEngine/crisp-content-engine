@@ -9,7 +9,7 @@ import {
 	repairAgentMetaPublishJobIfMissing,
 } from '@/lib/publish/agentMetaJob';
 import { isAgentThreadsMemory, syncAgentThreadsPublishJob } from '@/lib/publish/agentThreadsJob';
-import { isStalePublishingJob } from '@/lib/publish/publishJobLifecycle';
+import { hasActiveQueueablePublishJob } from '@/lib/publish/publishJobActive';
 import type { ContentMemoryRecord } from '@/lib/intelligence/types';
 import { needsApprovedScheduleRepair, repairApprovedScheduleMemory } from '@/lib/content/nativeQueueSchedule';
 
@@ -37,52 +37,27 @@ export async function promoteMemoryForPublishReconcile(
 }
 
 async function jobIsArmedForMemory(userId: string, memory: ContentMemoryRecord): Promise<boolean> {
+	const publishAt = memory.publicationDate;
 	if (isAgentThreadsMemory(memory)) {
-		return agentThreadsJobIsArmedWithStaleCheck(userId, memory.id);
+		const check = await hasActiveQueueablePublishJob({
+			userId,
+			contentItemKey: memory.id,
+			platform: 'threads',
+			publishAt,
+		});
+		return check.active;
 	}
 	const platform = agentMetaPlatformFromChannel(String(memory.channel));
 	if (platform && isAgentMetaMemory(memory)) {
-		return agentMetaJobIsArmedWithStaleCheck(userId, memory.id, platform);
+		const check = await hasActiveQueueablePublishJob({
+			userId,
+			contentItemKey: memory.id,
+			platform,
+			publishAt,
+		});
+		return check.active;
 	}
 	return false;
-}
-
-async function agentMetaJobIsArmedWithStaleCheck(
-	userId: string,
-	memoryId: string,
-	platform: NonNullable<ReturnType<typeof agentMetaPlatformFromChannel>>,
-): Promise<boolean> {
-	const admin = getSupabaseService();
-	const { data: job } = await admin
-		.from('publish_jobs')
-		.select('status, updated_at')
-		.eq('user_id', userId)
-		.eq('platform', platform)
-		.eq('content_item_key', memoryId)
-		.in('status', ['queued', 'retrying', 'publishing'])
-		.order('updated_at', { ascending: false })
-		.limit(1)
-		.maybeSingle();
-	if (!job) return false;
-	if (job.status === 'publishing' && isStalePublishingJob(job)) return false;
-	return true;
-}
-
-async function agentThreadsJobIsArmedWithStaleCheck(userId: string, memoryId: string): Promise<boolean> {
-	const admin = getSupabaseService();
-	const { data: job } = await admin
-		.from('publish_jobs')
-		.select('status, updated_at')
-		.eq('user_id', userId)
-		.eq('platform', 'threads')
-		.eq('content_item_key', memoryId)
-		.in('status', ['queued', 'retrying', 'publishing'])
-		.order('updated_at', { ascending: false })
-		.limit(1)
-		.maybeSingle();
-	if (!job) return false;
-	if (job.status === 'publishing' && isStalePublishingJob(job)) return false;
-	return Boolean(job);
 }
 
 async function repairThreadsIfMissing(input: {
@@ -94,14 +69,58 @@ async function repairThreadsIfMissing(input: {
 	if (!isAgentThreadsMemory(input.memory) || input.memory.publicationStatus !== 'scheduled') {
 		return { repaired: false };
 	}
-	const armed = await agentThreadsJobIsArmedWithStaleCheck(input.userId, input.memory.id);
-	if (armed) return { repaired: false };
+	const publishAt = input.publishAt ?? input.memory.publicationDate;
+	const armed = await hasActiveQueueablePublishJob({
+		userId: input.userId,
+		contentItemKey: input.memory.id,
+		platform: 'threads',
+		publishAt,
+	});
+	if (armed.active) return { repaired: false };
 	try {
-		await syncAgentThreadsPublishJob({
+		const syncResult = await syncAgentThreadsPublishJob({
 			userId: input.userId,
 			memory: input.memory,
 			publishAt: input.publishAt,
 		});
+		if (!syncResult.armed) {
+			const message = syncResult.reason ?? syncResult.skipped ?? 'Threads publish queue sync did not arm publisher';
+			if (input.recordFailure) {
+				const store = getIntelligenceStore();
+				await store.saveMemory(input.userId, {
+					...input.memory,
+					publicationStatus: 'failed',
+					metadata: {
+						...(input.memory.metadata ?? {}),
+						lastPublishError: message,
+						scheduleRepairFailedAt: new Date().toISOString(),
+					},
+				});
+			}
+			return { repaired: false, error: message };
+		}
+		const verified = await hasActiveQueueablePublishJob({
+			userId: input.userId,
+			contentItemKey: input.memory.id,
+			platform: 'threads',
+			publishAt,
+		});
+		if (!verified.active) {
+			const message = verified.reason ?? 'no_publish_job';
+			if (input.recordFailure) {
+				const store = getIntelligenceStore();
+				await store.saveMemory(input.userId, {
+					...input.memory,
+					publicationStatus: 'failed',
+					metadata: {
+						...(input.memory.metadata ?? {}),
+						lastPublishError: message,
+						scheduleRepairFailedAt: new Date().toISOString(),
+					},
+				});
+			}
+			return { repaired: false, error: message };
+		}
 		return { repaired: true };
 	} catch (error: unknown) {
 		const message =

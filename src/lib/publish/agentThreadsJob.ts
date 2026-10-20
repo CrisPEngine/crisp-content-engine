@@ -11,8 +11,11 @@ import { AgentError } from '@/lib/agent/errors';
 import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 import { getNativeContentStore } from '@/lib/media/store';
 import { composeAgentPublishText } from '@/lib/content/socialPublishBody';
-import { isStalePublishingJob } from '@/lib/publish/publishJobLifecycle';
 import { applyPublishTargetSpacing } from '@/lib/publish/publishJobSpacing';
+import {
+	clearNonTerminalPublishJobsForContent,
+	hasActiveQueueablePublishJob,
+} from '@/lib/publish/publishJobActive';
 
 export function isAgentThreadsMemory(memory: Pick<ContentMemoryRecord, 'channel'>): boolean {
 	return String(memory.channel).toLowerCase() === 'threads';
@@ -98,7 +101,7 @@ export async function syncAgentThreadsPublishJob(input: {
 	userId: string;
 	memory: ContentMemoryRecord;
 	publishAt?: string;
-}): Promise<{ armed: boolean; skipped?: string }> {
+}): Promise<{ armed: boolean; skipped?: string; reason?: string }> {
 	if (!isAgentThreadsMemory(input.memory)) {
 		return { armed: false, skipped: 'not_threads' };
 	}
@@ -137,7 +140,18 @@ export async function syncAgentThreadsPublishJob(input: {
 	const targetId = resolved.providerDestinationId;
 	const contentItemKey = input.memory.id;
 
-	await cancelAgentThreadsPublishJob(input.userId, contentItemKey);
+	const { data: publishedRow } = await admin
+		.from('publish_jobs')
+		.select('id, status')
+		.eq('platform', 'threads')
+		.eq('content_item_key', contentItemKey)
+		.eq('status', 'published')
+		.maybeSingle();
+	if (publishedRow) {
+		return { armed: false, reason: 'already_published' };
+	}
+
+	await clearNonTerminalPublishJobsForContent({ platform: 'threads', contentItemKey });
 
 	let scheduledTime = normalizeScheduledTime(input.publishAt);
 	scheduledTime = await applyPublishTargetSpacing(admin, {
@@ -148,30 +162,7 @@ export async function syncAgentThreadsPublishJob(input: {
 	});
 	const attachedImageUrl = await resolveAgentThreadsAttachedImageUrl(input.userId, input.memory.id);
 	const payload = buildAgentThreadsPayload(input.memory, targetId, resolved.destinationId, attachedImageUrl);
-
-	const { data: existing } = await admin
-		.from('publish_jobs')
-		.select('id, status, updated_at, scheduled_time')
-		.eq('platform', 'threads')
-		.eq('content_item_key', contentItemKey)
-		.in('status', ['published', 'publishing'])
-		.maybeSingle();
-
-	if (existing?.status === 'published') {
-		return { armed: false };
-	}
-	if (existing?.status === 'publishing') {
-		const desiredMs = scheduledTime.getTime();
-		const jobMs = existing.scheduled_time ? new Date(String(existing.scheduled_time)).getTime() : NaN;
-		const rescheduleMismatch =
-			input.publishAt &&
-			Number.isFinite(jobMs) &&
-			Math.abs(jobMs - desiredMs) > 60 * 1000;
-		if (!isStalePublishingJob(existing) && !rescheduleMismatch) {
-			return { armed: true };
-		}
-		await admin.from('publish_jobs').delete().eq('id', existing.id).eq('status', 'publishing');
-	}
+	const publishAtIso = scheduledTime.toISOString();
 
 	const row = {
 		user_id: input.userId,
@@ -191,6 +182,17 @@ export async function syncAgentThreadsPublishJob(input: {
 	const { error } = await admin.from('publish_jobs').insert(row);
 	if (error) {
 		throw new AgentError('publish_queue_failed', `Failed to create Threads publish job: ${error.message}`, 502);
+	}
+
+	const armedCheck = await hasActiveQueueablePublishJob({
+		userId: input.userId,
+		contentItemKey,
+		platform: 'threads',
+		publishAt: publishAtIso,
+	});
+	if (!armedCheck.active) {
+		const reason = armedCheck.reason ?? 'no_publish_job';
+		throw new AgentError('publish_queue_failed', `Publish job was not queued for threads: ${reason}`, 502, { reason });
 	}
 
 	return { armed: true };
@@ -243,17 +245,12 @@ export async function applyThreadsJobOutcomeToAgentContent(job: {
 	return false;
 }
 
-export async function agentThreadsJobIsArmed(userId: string, memoryId: string): Promise<boolean> {
-	const admin = getSupabaseService();
-	const { data } = await admin
-		.from('publish_jobs')
-		.select('status, updated_at')
-		.eq('user_id', userId)
-		.eq('platform', 'threads')
-		.eq('content_item_key', memoryId)
-		.in('status', ['queued', 'retrying', 'publishing'])
-		.maybeSingle();
-	if (!data) return false;
-	if (data.status === 'publishing' && isStalePublishingJob(data)) return false;
-	return true;
+export async function agentThreadsJobIsArmed(userId: string, memoryId: string, publishAt?: string): Promise<boolean> {
+	const check = await hasActiveQueueablePublishJob({
+		userId,
+		contentItemKey: memoryId,
+		platform: 'threads',
+		publishAt,
+	});
+	return check.active;
 }
