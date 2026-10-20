@@ -5,6 +5,7 @@ import type { ContentMemoryRecord } from '@/lib/intelligence/types';
 import { workflowStatus, type WorkflowStatus } from '@/lib/content/workflow';
 import type { ContentPublishDiagnostics } from '@/lib/publish/contentPublishDiagnostics';
 import type { PublishJobRow } from '@/lib/publish/contentPublishDiagnostics';
+import { schedulePublishWarning } from '@/lib/publish/schedulePublishWarning';
 import { brainMatchesBrandFilter, effectiveBrandProfileId } from '@/lib/content/brandFilter';
 import { memoryBlocksQueueConfirm } from '@/lib/intelligence/queueBridge';
 
@@ -31,6 +32,7 @@ export type NativeQueueListItem = {
 	last_publish_error: string | null;
 	publish_job_status: string | null;
 	is_overdue: boolean;
+	publish_schedule_warning?: string | null;
 	hashtags?: string;
 	image_prompt?: string;
 	image_reference_url?: string;
@@ -135,6 +137,7 @@ export function mapMemoryToQueueItem(
 	extra?: {
 		linkedImageUrl?: string | null;
 		destinationLabel?: string | null;
+		publishJob?: PublishJobRow;
 		linkedAssetId?: string | null;
 		mediaPath?: string | null;
 		mediaSelectionReason?: string | null;
@@ -171,6 +174,7 @@ export function mapMemoryToQueueItem(
 		last_publish_error: diagnostics?.lastPublishError ?? null,
 		publish_job_status: diagnostics?.publishJobStatus ?? null,
 		is_overdue: overdue,
+		publish_schedule_warning: schedulePublishWarning(memory, extra?.publishJob),
 		hashtags: metadataString(metadata, 'hashtags'),
 		image_prompt: metadataString(metadata, 'image_prompt') || metadataString(metadata, 'imagePrompt'),
 		image_reference_url: imageUrl || undefined,

@@ -11,6 +11,7 @@ import { AgentError } from '@/lib/agent/errors';
 import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 import { getNativeContentStore } from '@/lib/media/store';
 import { composeAgentPublishText } from '@/lib/content/socialPublishBody';
+import { isStalePublishingJob } from '@/lib/publish/publishJobLifecycle';
 
 export function isAgentThreadsMemory(memory: Pick<ContentMemoryRecord, 'channel'>): boolean {
 	return String(memory.channel).toLowerCase() === 'threads';
@@ -157,14 +158,20 @@ export async function syncAgentThreadsPublishJob(input: {
 
 	const { data: existing } = await admin
 		.from('publish_jobs')
-		.select('id, status')
+		.select('id, status, updated_at')
 		.eq('platform', 'threads')
 		.eq('content_item_key', contentItemKey)
 		.in('status', ['published', 'publishing'])
 		.maybeSingle();
 
-	if (existing?.status === 'published' || existing?.status === 'publishing') {
-		return { armed: existing.status === 'publishing' };
+	if (existing?.status === 'published') {
+		return { armed: false };
+	}
+	if (existing?.status === 'publishing' && !isStalePublishingJob(existing)) {
+		return { armed: true };
+	}
+	if (existing?.status === 'publishing' && isStalePublishingJob(existing)) {
+		await admin.from('publish_jobs').delete().eq('id', existing.id).eq('status', 'publishing');
 	}
 
 	await cancelAgentThreadsPublishJob(input.userId, contentItemKey);
@@ -243,11 +250,13 @@ export async function agentThreadsJobIsArmed(userId: string, memoryId: string): 
 	const admin = getSupabaseService();
 	const { data } = await admin
 		.from('publish_jobs')
-		.select('status')
+		.select('status, updated_at')
 		.eq('user_id', userId)
 		.eq('platform', 'threads')
 		.eq('content_item_key', memoryId)
 		.in('status', ['queued', 'retrying', 'publishing'])
 		.maybeSingle();
-	return Boolean(data);
+	if (!data) return false;
+	if (data.status === 'publishing' && isStalePublishingJob(data)) return false;
+	return true;
 }

@@ -58,6 +58,49 @@ describe('Meta agent scheduling', () => {
 		setIntelligenceStoreForTests(undefined);
 	});
 
+	it('queues a publish job when cce_approve_content finalizes a pre-approval schedule preference', async () => {
+		const store = (await import('@/lib/intelligence/actions')).getIntelligenceStore();
+		const approverSecret = (
+			await issueAgentCredential({
+				name: 'Folian approver',
+				ownerUserId: FOLIAN_USER_ID,
+				allowedBrandIds: [folianId],
+				capabilities: [...FOLIAN_GROK_CAPABILITIES, 'content:approve'],
+				scope: 'BRAND',
+				environment: 'test',
+				rateLimit: FOLIAN_GROK_RATE_LIMIT,
+			})
+		).secret;
+		const draft = await store.saveMemory(FOLIAN_USER_ID, {
+			brandBrainId: folianId,
+			channel: 'instagram',
+			body: 'Instagram copy',
+			publicationStatus: 'review',
+			metadata: {
+				proposedScheduleAt: '2026-10-21T07:43:00.000Z',
+				proposedScheduleLabel: 'Tue 21 Oct, 11:43 AM GST',
+			},
+		});
+		const approved = await call(
+			approverSecret,
+			'cce_approve_content',
+			{ brandId: folianId, contentId: draft.id },
+			'ig-mcp-approve-schedule',
+		);
+		expect(approved.body.ok).toBe(true);
+		expect((approved.body.result as { publisherArmed: boolean }).publisherArmed).toBe(true);
+		expect((approved.body.result as { scheduled: boolean }).scheduled).toBe(true);
+		expect(syncAgentMetaPublishJob).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: FOLIAN_USER_ID,
+				publishAt: '2026-10-21T07:43:00.000Z',
+			}),
+		);
+		const saved = await store.getMemory(FOLIAN_USER_ID, draft.id);
+		expect(saved?.publicationStatus).toBe('scheduled');
+		expect(saved?.publicationDate).toBe('2026-10-21T07:43:00.000Z');
+	});
+
 	it('queues a publish job when a human approves approve_and_schedule for Instagram', async () => {
 		const store = (await import('@/lib/intelligence/actions')).getIntelligenceStore();
 		const draft = await store.saveMemory(FOLIAN_USER_ID, {

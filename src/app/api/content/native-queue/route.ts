@@ -126,21 +126,23 @@ export async function POST(request: Request) {
 		}
 
 		const finalized = finalizeApprovalSchedule(memory);
-		const approvedMemory = await store.saveMemory(userId, {
+		const pendingMemory = {
 			...memory,
 			publicationStatus: finalized.publicationStatus,
 			publicationDate: finalized.publicationDate,
 			metadata: finalized.metadata,
-		});
-		assertMemoryChannelConstraints(approvedMemory);
+		};
+		assertMemoryChannelConstraints(pendingMemory);
 
 		if (finalized.scheduled && finalized.publishAt) {
-			if (isAgentThreadsMemory(approvedMemory)) {
-				await syncAgentThreadsPublishJob({ userId, memory: approvedMemory, publishAt: finalized.publishAt });
-			} else if (isAgentMetaMemory(approvedMemory)) {
-				await syncAgentMetaPublishJob({ userId, memory: approvedMemory, publishAt: finalized.publishAt });
+			if (isAgentThreadsMemory(pendingMemory)) {
+				await syncAgentThreadsPublishJob({ userId, memory: pendingMemory, publishAt: finalized.publishAt });
+			} else if (isAgentMetaMemory(pendingMemory)) {
+				await syncAgentMetaPublishJob({ userId, memory: pendingMemory, publishAt: finalized.publishAt });
 			}
 		}
+
+		const approvedMemory = await store.saveMemory(userId, pendingMemory);
 
 		const ws = workflowStatus({
 			publicationStatus: approvedMemory.publicationStatus,
@@ -219,7 +221,7 @@ export async function PATCH(request: Request) {
 			cta: memory.cta,
 			metadata,
 		});
-		const updated = await store.saveMemory(userId, {
+		const pendingMemory = {
 			...memory,
 			hook: body.title !== undefined ? body.title : memory.hook,
 			body: sanitized.body,
@@ -227,8 +229,18 @@ export async function PATCH(request: Request) {
 			publicationStatus,
 			publicationDate,
 			metadata: sanitized.metadata,
-		});
-		assertMemoryChannelConstraints(updated);
+		};
+		assertMemoryChannelConstraints(pendingMemory);
+
+		if (schedulePatch.shouldSyncPublishJob && schedulePatch.publishAt) {
+			if (isAgentThreadsMemory(pendingMemory)) {
+				await syncAgentThreadsPublishJob({ userId, memory: pendingMemory, publishAt: schedulePatch.publishAt });
+			} else if (isAgentMetaMemory(pendingMemory)) {
+				await syncAgentMetaPublishJob({ userId, memory: pendingMemory, publishAt: schedulePatch.publishAt });
+			}
+		}
+
+		const updated = await store.saveMemory(userId, pendingMemory);
 
 		if (body.content !== undefined && beforeBody.trim() !== sanitized.body.trim()) {
 			const drafts = await store.listDrafts(userId, memory.id);
@@ -245,14 +257,6 @@ export async function PATCH(request: Request) {
 				beforeBody,
 				afterBody: sanitized.body,
 			});
-		}
-
-		if (schedulePatch.shouldSyncPublishJob && schedulePatch.publishAt) {
-			if (isAgentThreadsMemory(updated)) {
-				await syncAgentThreadsPublishJob({ userId, memory: updated, publishAt: schedulePatch.publishAt });
-			} else if (isAgentMetaMemory(updated)) {
-				await syncAgentMetaPublishJob({ userId, memory: updated, publishAt: schedulePatch.publishAt });
-			}
 		}
 
 		const ws = workflowStatus({

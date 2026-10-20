@@ -103,6 +103,60 @@ Content-Type: application/json
 
 **Note**: Content auto-publish has been disabled. Content must be explicitly approved by users via email actions. Do not set up this cron job.
 
+### 5. Meta publish worker (Instagram + Facebook)
+
+**Purpose**: Publish due native Meta jobs from the `publish_jobs` table.
+
+**Schedule**: Every 1 to 5 minutes (use the shortest interval your cron provider allows).
+
+**Endpoint**: `GET https://app.crispdigital.io/api/publish/meta-due`
+
+**Headers** (either form works):
+
+```
+Authorization: Bearer your-cron-secret-value
+```
+
+or
+
+```
+X-Cron-Secret: your-cron-secret-value
+```
+
+**Environment (Vercel production)**:
+
+- `CRON_SECRET` must match the header value above.
+- `META_PUBLISHING_ENABLED` defaults to on; set to `false` only to disable Meta publishing.
+
+**Health**: `cce_get_system_status` reports `publishWorkers.meta-due` heartbeats and warnings when the worker has not run recently.
+
+### 6. Threads publish worker
+
+**Purpose**: Publish due native Threads jobs from the `publish_jobs` table.
+
+**Schedule**: Every 1 to 5 minutes.
+
+**Endpoint**: `GET https://app.crispdigital.io/api/publish/threads-due`
+
+**Headers**: Same as Meta (`Authorization: Bearer` or `X-Cron-Secret`).
+
+**Environment**:
+
+- `CRON_SECRET` (required)
+- `THREADS_APP_ID` and related Threads OAuth env vars (see Threads connection docs)
+
+### 7. LinkedIn publish worker (legacy Airtable queue)
+
+**Endpoint**: `GET https://app.crispdigital.io/api/publish/linkedin-due`
+
+**Headers**: `X-Cron-Secret: your-cron-secret-value` (Bearer also works on intelligence-style routes; LinkedIn worker accepts `X-Cron-Secret`).
+
+### Vercel Cron
+
+This repo does **not** define Vercel Cron entries in `vercel.json`. Production relies on an external scheduler (for example cron-job.org). Do not enable Vercel Cron for the same URLs unless you disable the external jobs, or workers may run twice.
+
+After deploy, apply Supabase migration `036_publish_worker_heartbeats.sql` so worker heartbeats and health checks work.
+
 ## Security Notes
 
 - **Never commit `CRON_SECRET` to git** - Keep it in environment variables only
