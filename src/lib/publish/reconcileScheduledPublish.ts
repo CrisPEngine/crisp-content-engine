@@ -11,6 +11,7 @@ import {
 import { isAgentThreadsMemory, syncAgentThreadsPublishJob } from '@/lib/publish/agentThreadsJob';
 import { isStalePublishingJob } from '@/lib/publish/publishJobLifecycle';
 import type { ContentMemoryRecord } from '@/lib/intelligence/types';
+import { needsApprovedScheduleRepair, repairApprovedScheduleMemory } from '@/lib/content/nativeQueueSchedule';
 
 export type ReconcileScheduledPublishStats = {
 	scanned: number;
@@ -23,6 +24,17 @@ const NATIVE_PUBLISH_CHANNELS = ['instagram', 'facebook', 'threads'] as const;
 
 /** Look ahead so missing jobs are created before the slot, not only after overdue. */
 export const RECONCILE_LOOKAHEAD_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Promote legacy approved rows with a publish time to scheduled before reconcile/repair. */
+export async function promoteMemoryForPublishReconcile(
+	userId: string,
+	memory: ContentMemoryRecord,
+): Promise<ContentMemoryRecord> {
+	if (!needsApprovedScheduleRepair(memory)) return memory;
+	const store = getIntelligenceStore();
+	const repaired = repairApprovedScheduleMemory(memory);
+	return store.saveMemory(userId, repaired);
+}
 
 async function jobIsArmedForMemory(userId: string, memory: ContentMemoryRecord): Promise<boolean> {
 	if (isAgentThreadsMemory(memory)) {
@@ -131,7 +143,7 @@ export async function reconcileScheduledNativePublishJobs(input?: {
 	let query = admin
 		.from('content_memory')
 		.select('id, user_id, channel, publication_status, publication_date, brand_brain_id')
-		.eq('publication_status', 'scheduled')
+		.in('publication_status', ['scheduled', 'approved'])
 		.in('channel', [...NATIVE_PUBLISH_CHANNELS])
 		.not('publication_date', 'is', null)
 		.lte('publication_date', lookaheadEnd)
@@ -150,8 +162,13 @@ export async function reconcileScheduledNativePublishJobs(input?: {
 
 	for (const row of rows ?? []) {
 		stats.scanned += 1;
-		const memory = await store.getMemory(row.user_id, row.id);
-		if (!memory || memory.publicationStatus !== 'scheduled') {
+		let memory = await store.getMemory(row.user_id, row.id);
+		if (!memory) {
+			stats.skipped += 1;
+			continue;
+		}
+		memory = await promoteMemoryForPublishReconcile(row.user_id, memory);
+		if (memory.publicationStatus !== 'scheduled') {
 			stats.skipped += 1;
 			continue;
 		}
@@ -216,8 +233,8 @@ export async function scanScheduledPublishHealthIssues(input?: { userId?: string
 
 	let memoryQuery = admin
 		.from('content_memory')
-		.select('id, user_id, channel, publication_date')
-		.eq('publication_status', 'scheduled')
+		.select('id, user_id, channel, publication_date, publication_status')
+		.in('publication_status', ['scheduled', 'approved'])
 		.in('channel', [...NATIVE_PUBLISH_CHANNELS])
 		.lt('publication_date', nowIso)
 		.limit(limit);
@@ -228,8 +245,10 @@ export async function scanScheduledPublishHealthIssues(input?: { userId?: string
 	let overdueWithoutJob = 0;
 
 	for (const row of overdueRows ?? []) {
-		const memory = await store.getMemory(row.user_id, row.id);
-		if (!memory || memory.publicationStatus !== 'scheduled') continue;
+		let memory = await store.getMemory(row.user_id, row.id);
+		if (!memory) continue;
+		memory = await promoteMemoryForPublishReconcile(row.user_id, memory);
+		if (memory.publicationStatus !== 'scheduled') continue;
 		const armed = await jobIsArmedForMemory(row.user_id, memory);
 		if (!armed) overdueWithoutJob += 1;
 	}

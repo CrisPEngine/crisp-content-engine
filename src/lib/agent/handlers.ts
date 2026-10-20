@@ -42,6 +42,7 @@ import { selectSearchProvider } from '@/lib/research/search';
 import { MONITOR_TYPES, type ResearchProjectType } from '@/lib/research/types';
 import type { AgentCredential, MarketingOpportunity } from './types';
 import { mcpBrandChannelSummary } from '@/lib/social/brandChannels';
+import { finalizeApprovalSchedule } from '@/lib/content/nativeQueueSchedule';
 import { getPublishWorkerHeartbeats, PUBLISH_CRON_STALE_AFTER_MS } from '@/lib/publish/workerHeartbeat';
 import { scanScheduledPublishHealthIssues } from '@/lib/publish/reconcileScheduledPublish';
 import { countStalePublishingJobs } from '@/lib/publish/publishJobLifecycle';
@@ -1139,8 +1140,8 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			if (!contentId) throw new AgentError('invalid_input', 'contentId is required.', 400);
 			const memory = await requireContent(ctx, contentId);
 			const reason = inputString(input, 'reason');
+			const store = getIntelligenceStore();
 			if (name === 'cce_reject_content') {
-				const store = getIntelligenceStore();
 				const { captureNativeLearningEvent } = await import('@/lib/intelligence/learningLoop');
 				await captureNativeLearningEvent(store, {
 					userId: ctx.credential.ownerUserId,
@@ -1151,15 +1152,63 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 					feedbackText: reason,
 					beforeBody: memory.body ?? '',
 				});
+				const next = await store.saveMemory(ctx.credential.ownerUserId, {
+					...memory,
+					publicationStatus: 'rejected',
+					metadata: { ...(memory.metadata ?? {}), decisionBy: ctx.credential.id, decision: name, reason },
+				});
+				await emit(ctx, memory.brandBrainId, 'content.rejected', { contentId });
+				return { content: publicContent(next), publisherArmed: false };
 			}
-			const status = name === 'cce_approve_content' ? 'approved' : 'rejected';
-			const next = await getIntelligenceStore().saveMemory(ctx.credential.ownerUserId, {
+
+			const finalized = finalizeApprovalSchedule(memory);
+			const pendingMemory: ContentMemoryRecord = {
 				...memory,
-				publicationStatus: status,
-				metadata: { ...(memory.metadata ?? {}), decisionBy: ctx.credential.id, decision: name, reason },
-			});
-			await emit(ctx, memory.brandBrainId, name === 'cce_approve_content' ? 'content.approved' : 'content.rejected', { contentId });
-			return { content: publicContent(next), publisherArmed: false };
+				publicationStatus: finalized.publicationStatus,
+				publicationDate: finalized.publicationDate,
+				metadata: {
+					...finalized.metadata,
+					decisionBy: ctx.credential.id,
+					decision: name,
+					...(reason ? { reason } : {}),
+				},
+			};
+			assertMemoryChannelConstraints(pendingMemory);
+
+			let publisherArmed = false;
+			let note: string | undefined;
+			if (finalized.scheduled && finalized.publishAt) {
+				if (isAgentThreadsMemory(pendingMemory)) {
+					const queued = await syncAgentThreadsPublishJob({
+						userId: ctx.credential.ownerUserId,
+						memory: pendingMemory,
+						publishAt: finalized.publishAt,
+					});
+					publisherArmed = queued.armed;
+					if (!publisherArmed && queued.skipped === 'threads_disabled') {
+						note = 'Threads publishing is disabled; content is scheduled in CCE only until THREADS_APP_ID is configured.';
+					}
+				} else if (isAgentMetaMemory(pendingMemory)) {
+					const queued = await syncAgentMetaPublishJob({
+						userId: ctx.credential.ownerUserId,
+						memory: pendingMemory,
+						publishAt: finalized.publishAt,
+					});
+					publisherArmed = queued.armed;
+					if (!publisherArmed && queued.skipped === 'meta_disabled') {
+						note = 'Meta publishing is disabled; content is scheduled in CCE only until META_PUBLISHING_ENABLED is on.';
+					}
+				}
+			}
+
+			const next = await store.saveMemory(ctx.credential.ownerUserId, pendingMemory);
+			await emit(ctx, memory.brandBrainId, 'content.approved', { contentId });
+			return {
+				content: publicContent(next),
+				publisherArmed,
+				scheduled: finalized.scheduled,
+				...(note ? { note } : {}),
+			};
 		}
 		case 'cce_get_schedule_recommendation': {
 			const brain = await requireBrand(ctx, brandId);
