@@ -1,3 +1,4 @@
+import { embedAssetRecord } from './assetEmbeddings';
 import { analyzeAssetImage, assetVisionStatus } from './assetVision';
 import type { ContentAssetRecord } from './types';
 import { getNativeContentStore } from './store';
@@ -46,7 +47,7 @@ export async function runAssetVisionAnalysis(input: {
 	}
 
 	const mergedTags = Array.from(new Set([...(asset.tags ?? []), ...analysis.searchTags])).slice(0, 40);
-	return store.saveAsset({
+	const withVision: ContentAssetRecord = {
 		...asset,
 		visionAnalysis: analysis,
 		visionAnalysisStatus: 'complete',
@@ -54,5 +55,12 @@ export async function runAssetVisionAnalysis(input: {
 		altText: asset.visionUserLocked ? asset.altText : asset.altText || analysis.altText,
 		tags: asset.visionUserLocked ? asset.tags : mergedTags,
 		updatedAt: new Date().toISOString(),
-	});
+	};
+	const embedded = await embedAssetRecord(withVision);
+	if (embedded) {
+		withVision.searchEmbedding = embedded.embedding;
+		withVision.embeddingModel = embedded.model;
+		withVision.embeddingUpdatedAt = new Date().toISOString();
+	}
+	return store.saveAsset(withVision);
 }

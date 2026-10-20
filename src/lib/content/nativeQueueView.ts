@@ -36,6 +36,9 @@ export type NativeQueueListItem = {
 	hashtags?: string;
 	image_prompt?: string;
 	image_reference_url?: string;
+	linked_asset_id?: string;
+	media_path?: string;
+	media_selection_reason?: string;
 	proposedSchedule?: string | null;
 	proposedScheduleKind?: string;
 	proposedScheduleAt?: string;
@@ -131,7 +134,14 @@ export function mapMemoryToQueueItem(
 	brain: BrandBrain,
 	memory: ContentMemoryRecord,
 	diagnostics: ContentPublishDiagnostics | null,
-	extra?: { linkedImageUrl?: string | null; destinationLabel?: string | null; publishJob?: PublishJobRow },
+	extra?: {
+		linkedImageUrl?: string | null;
+		destinationLabel?: string | null;
+		publishJob?: PublishJobRow;
+		linkedAssetId?: string | null;
+		mediaPath?: string | null;
+		mediaSelectionReason?: string | null;
+	},
 ): NativeQueueListItem {
 	const ws = workflowStatus(memory);
 	const overdue = isScheduledOverdue(memory);
@@ -168,6 +178,9 @@ export function mapMemoryToQueueItem(
 		hashtags: metadataString(metadata, 'hashtags'),
 		image_prompt: metadataString(metadata, 'image_prompt') || metadataString(metadata, 'imagePrompt'),
 		image_reference_url: imageUrl || undefined,
+		linked_asset_id: extra?.linkedAssetId ?? metadataString(metadata, 'linkedAssetId'),
+		media_path: extra?.mediaPath ?? metadataString(metadata, 'mediaPath'),
+		media_selection_reason: extra?.mediaSelectionReason ?? metadataString(metadata, 'mediaSelectionReason'),
 		proposedSchedule: proposedScheduleLabelFromMetadata(metadata),
 		proposedScheduleKind:
 			typeof metadata.proposedScheduleKind === 'string' ? metadata.proposedScheduleKind : undefined,

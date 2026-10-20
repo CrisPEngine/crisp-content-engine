@@ -61,6 +61,9 @@ export function publicAsset(asset: ContentAssetRecord): PublicAsset {
 		url: asset.url,
 		visionAnalysis: asset.visionAnalysis,
 		visionAnalysisStatus: asset.visionAnalysisStatus,
+		collectionId: asset.collectionId,
+		sourceAttribution: asset.sourceAttribution,
+		rightsNotes: asset.rightsNotes,
 	};
 }
 

@@ -76,6 +76,23 @@ export async function POST(request: Request) {
 		const feedback = (body.feedback ?? '').trim();
 
 		if (body.decision === 'reject') {
+			const nativeStore = (await import('@/lib/media/store')).getNativeContentStore();
+			const { SIGNAL_WEIGHTS } = await import('@/lib/media/assetLearning');
+			const rejectLinks = await nativeStore.listLinks(userId, 'content', memory.id);
+			for (const link of rejectLinks) {
+				await nativeStore.saveSelectionSignal({
+					id: crypto.randomUUID(),
+					ownerUserId: userId,
+					brandId: memory.brandBrainId,
+					assetId: link.assetId,
+					contentId: memory.id,
+					channel: String(memory.channel),
+					signalType: 'reject',
+					weight: SIGNAL_WEIGHTS.reject,
+					note: feedback || 'Content rejected in approval queue.',
+					createdAt: new Date().toISOString(),
+				});
+			}
 			await captureNativeLearningEvent(store, {
 				userId,
 				brandBrainId: memory.brandBrainId,

@@ -4,13 +4,21 @@ import type { MediaDecision, MediaType, PublicAsset } from './types';
 
 const VISUAL_TOPIC = /\b(diagram|screenshot|chart|infographic|before and after|interface|canvas|timeline)\b/i;
 
+const DIRECT_LIBRARY_TYPES = new Set(['PRODUCT_SCREENSHOT', 'PRODUCT_UI', 'PRODUCT_PHOTO', 'FOUNDER_PHOTO', 'SOCIAL_IMAGE']);
+
+function canUseExistingDirect(asset: PublicAsset): boolean {
+	if (asset.approvalStatus !== 'approved') return false;
+	if (asset.verifiedReference) return true;
+	return Boolean(asset.libraryType && DIRECT_LIBRARY_TYPES.has(asset.libraryType));
+}
+
 function bestAsset(topic: string, assets: PublicAsset[]): { asset: PublicAsset; matchReason: string; score: number } | undefined {
 	const match = bestAssetForTopic(
 		topic,
-		assets,
+		assets.filter((asset) => asset.approvalStatus === 'approved'),
 		new Map(assets.filter((asset) => asset.visionAnalysis).map((asset) => [asset.id, asset.visionAnalysis!])),
 	);
-	if (!match || !match.asset.verifiedReference) return undefined;
+	if (!match || !canUseExistingDirect(match.asset)) return undefined;
 	return match;
 }
 

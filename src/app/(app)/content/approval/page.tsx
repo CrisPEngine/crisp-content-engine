@@ -56,6 +56,10 @@ type ContentItem = {
 	image_generation_source?: string;
 	image_reference_url?: string;
 	image_cloudinary_id?: string;
+	linked_asset_id?: string;
+	media_path?: string;
+	media_selection_reason?: string;
+	brand_profile_id?: string;
 	source?: 'native';
 	workflowStatus?: string;
 	proposedSchedule?: string | null;
@@ -118,6 +122,8 @@ export default function ContentApprovalPage() {
 	const [imageUploadSuccess, setImageUploadSuccess] = useState<Record<string, boolean>>({});
 	const [copySuccess, setCopySuccess] = useState<Record<string, boolean>>({});
 	const [copyContentSuccess, setCopyContentSuccess] = useState<Record<string, boolean>>({});
+	const [libraryAssets, setLibraryAssets] = useState<Record<string, Array<{ id: string; title?: string; url?: string }>>>({});
+	const [assetActionLoading, setAssetActionLoading] = useState<string | null>(null);
 	const [expandedImagePrompts, setExpandedImagePrompts] = useState<Set<string>>(new Set());
 	const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null);
 	const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -825,6 +831,85 @@ export default function ContentApprovalPage() {
 		}
 	}
 
+	async function ensureLibraryAssets(item: ContentItem) {
+		const brainId = resolveContentBrandBrainId(brands, item.brand_profile_id ?? selectedBrandId);
+		if (!brainId || libraryAssets[item.id]) return;
+		const res = await fetch(`/api/brand-assets?brandId=${encodeURIComponent(brainId)}&approvalStatus=approved`);
+		if (!res.ok) return;
+		const data = (await res.json()) as { assets?: Array<{ id: string; title?: string; url?: string }> };
+		setLibraryAssets((prev) => ({ ...prev, [item.id]: data.assets ?? [] }));
+	}
+
+	async function swapLibraryAsset(contentId: string, assetId: string) {
+		setAssetActionLoading(contentId);
+		try {
+			const res = await fetch('/api/content/native-queue/asset', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ contentId, action: 'swap_library', assetId }),
+			});
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				throw new Error(data?.error || 'Could not swap asset.');
+			}
+			const data = (await res.json()) as { linkedAsset?: { id?: string; url?: string }; mediaPath?: string; mediaSelectionReason?: string };
+			setContentItems((items) =>
+				items.map((item) =>
+					item.id === contentId
+						? {
+								...item,
+								image_reference_url: data.linkedAsset?.url ?? item.image_reference_url,
+								linked_asset_id: data.linkedAsset?.id ?? item.linked_asset_id,
+								media_path: data.mediaPath ?? item.media_path,
+								media_selection_reason: data.mediaSelectionReason ?? item.media_selection_reason,
+							}
+						: item,
+				),
+			);
+		} catch (err: unknown) {
+			const message = err instanceof Error ? err.message : 'Could not swap asset.';
+			setImageUploadError((prev) => ({ ...prev, [contentId]: message }));
+		} finally {
+			setAssetActionLoading(null);
+		}
+	}
+
+	async function generateQueueImage(contentId: string) {
+		setAssetActionLoading(contentId);
+		try {
+			const res = await fetch('/api/content/native-queue/asset', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ contentId, action: 'generate' }),
+			});
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				throw new Error(data?.error || 'Image generation failed.');
+			}
+			const data = (await res.json()) as { linkedAsset?: { id?: string; url?: string }; mediaPath?: string; mediaSelectionReason?: string };
+			setContentItems((items) =>
+				items.map((item) =>
+					item.id === contentId
+						? {
+								...item,
+								image_reference_url: data.linkedAsset?.url ?? item.image_reference_url,
+								linked_asset_id: data.linkedAsset?.id ?? item.linked_asset_id,
+								media_path: data.mediaPath ?? 'generated',
+								media_selection_reason: data.mediaSelectionReason ?? item.media_selection_reason,
+							}
+						: item,
+				),
+			);
+		} catch (err: unknown) {
+			const message = err instanceof Error ? err.message : 'Image generation failed.';
+			setImageUploadError((prev) => ({ ...prev, [contentId]: message }));
+		} finally {
+			setAssetActionLoading(null);
+		}
+	}
+
 	function handleImagePanelClick(contentId: string) {
 		if (uploadingImage === contentId) {
 			console.log('Upload in progress, ignoring click');
@@ -1489,6 +1574,42 @@ export default function ContentApprovalPage() {
 										{imageUploadError[item.id] && (
 											<div className="mt-2 text-xs text-danger">{imageUploadError[item.id]}</div>
 										)}
+										{item.source === 'native' && (item.media_path || item.media_selection_reason) ? (
+											<div className="mt-2 space-y-1 text-[11px] text-text-dim">
+												{item.media_path ? <p>Media path: {item.media_path}</p> : null}
+												{item.media_selection_reason ? <p className="line-clamp-3">{item.media_selection_reason}</p> : null}
+											</div>
+										) : null}
+										{item.source === 'native' ? (
+											<div className="mt-2 space-y-1">
+												<button
+													type="button"
+													className="text-xs underline"
+													onClick={() => void ensureLibraryAssets(item)}
+												>
+													Load brand library
+												</button>
+												{(libraryAssets[item.id] ?? []).slice(0, 6).map((asset) => (
+													<button
+														key={asset.id}
+														type="button"
+														disabled={assetActionLoading === item.id}
+														className="block w-full truncate text-left text-[11px] underline"
+														onClick={() => void swapLibraryAsset(item.id, asset.id)}
+													>
+														Use: {asset.title || asset.id}
+													</button>
+												))}
+												<button
+													type="button"
+													className="text-xs underline"
+													disabled={assetActionLoading === item.id}
+													onClick={() => void generateQueueImage(item.id)}
+												>
+													Generate AI image instead
+												</button>
+											</div>
+										) : null}
 									</div>
 								</div>
 

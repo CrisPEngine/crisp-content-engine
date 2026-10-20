@@ -10,6 +10,9 @@ import { generateArticle, reviseArticle } from '@/lib/articles/pipeline';
 import { mediaSpecFor } from '@/lib/media/channelMedia';
 import { generateAssetFromProposal, imageProviderStatus, publicAsset } from '@/lib/media/images';
 import { rankAssetsForTopic } from '@/lib/media/assetMatching';
+import { rankAssetsForGeneration, searchAssetsLocal } from '@/lib/media/assetSelection';
+import { runAssetVisionAnalysis } from '@/lib/media/runAssetVision';
+import { embedAssetRecord } from '@/lib/media/assetEmbeddings';
 import { planMedia } from '@/lib/media/planner';
 import { publicAssetsWithVision } from '@/lib/media/plannerAssets';
 import { getNativeContentStore } from '@/lib/media/store';
@@ -82,6 +85,9 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 			'cce_get_assets',
 			'cce_get_asset',
 			'cce_find_assets',
+			'cce_register_asset',
+			'cce_update_asset',
+			'cce_delete_asset',
 			'cce_detach_asset',
 			'cce_propose_media',
 			'cce_get_media_plan',
@@ -124,15 +130,33 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 			const brain = await brand(ctx, text(input, 'brandId'));
 			const query = text(input, 'query') ?? text(input, 'topic') ?? '';
 			const topic = text(input, 'topic') ?? query;
-			const { publicAssets: assets, visionByAssetId } = publicAssetsWithVision(await store.listAssets(ctx.credential.ownerUserId, brain.id));
+			const channel = text(input, 'channel');
+			const records = await store.listAssets(ctx.credential.ownerUserId, brain.id);
+			const { publicAssets: assets, visionByAssetId } = publicAssetsWithVision(records);
+			if (channel && topic.trim()) {
+				const ranked = await rankAssetsForGeneration({
+					ownerUserId: ctx.credential.ownerUserId,
+					brandId: brain.id,
+					channel,
+					topic,
+					assets: records,
+					visionByAssetId,
+					recentLinks: [],
+				});
+				return {
+					assets: ranked.map((row) => row.asset),
+					ranked: ranked.map((row) => ({
+						assetId: row.asset.id,
+						score: row.score,
+						matchReason: row.matchReason,
+						staleScreenshot: row.staleScreenshot,
+					})),
+				};
+			}
 			if (topic.trim()) {
 				const ranked = rankAssetsForTopic(topic, assets, visionByAssetId);
 				const filtered = query
-					? ranked.filter((row) =>
-							`${row.asset.title ?? ''} ${row.asset.description ?? ''} ${(row.asset.tags ?? []).join(' ')}`
-								.toLowerCase()
-								.includes(query.toLowerCase()),
-						)
+					? ranked.filter((row) => searchAssetsLocal(query, [row.asset], visionByAssetId).length > 0)
 					: ranked;
 				return {
 					assets: filtered.map((row) => row.asset),
@@ -143,16 +167,84 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 					})),
 				};
 			}
-			const q = query.toLowerCase();
-			return {
-				assets: assets.filter(
-					(asset) =>
-						!q ||
-						`${asset.title ?? ''} ${asset.altText ?? ''} ${asset.caption ?? ''} ${asset.description ?? ''} ${asset.productFeature ?? ''} ${(asset.tags ?? []).join(' ')} ${asset.visionAnalysis?.summary ?? ''}`
-							.toLowerCase()
-							.includes(q),
-				),
-			};
+			return { assets: searchAssetsLocal(query, assets, visionByAssetId) };
+		}
+		case 'cce_register_asset': {
+			const brain = await brand(ctx, text(input, 'brandId'));
+			const assetId = text(input, 'assetId');
+			const url = text(input, 'url');
+			if (!assetId && !url) throw new AgentError('invalid_input', 'assetId or url is required.', 400);
+			let record = assetId ? await store.getAsset(ctx.credential.ownerUserId, assetId) : null;
+			if (!record && url) {
+				const now = new Date().toISOString();
+				record = await store.saveAsset({
+					id: crypto.randomUUID(),
+					ownerUserId: ctx.credential.ownerUserId,
+					brandId: brain.id,
+					assetType: 'image',
+					sourceType: 'external',
+					storageProvider: 'cloudinary',
+					url,
+					provenance: { registeredBy: 'agent', url },
+					approvalStatus: 'draft',
+					createdAt: now,
+					updatedAt: now,
+				});
+			}
+			if (!record) throw new AgentError('not_found', 'Asset was not found.', 404);
+			const saved = await store.saveAsset({
+				...record,
+				brandId: brain.id,
+				libraryType: (text(input, 'libraryType') as never) ?? record.libraryType ?? 'OTHER',
+				title: text(input, 'title') ?? record.title,
+				description: text(input, 'description') ?? record.description,
+				sourceAttribution: text(input, 'sourceAttribution') ?? record.sourceAttribution,
+				rightsNotes: text(input, 'rightsNotes') ?? record.rightsNotes,
+				approvalStatus: input.approvalStatus === 'approved' ? 'approved' : record.approvalStatus,
+				updatedAt: new Date().toISOString(),
+			});
+			const analysed = (await runAssetVisionAnalysis({ ownerUserId: ctx.credential.ownerUserId, assetId: saved.id, brandName: brain.identity.name })) ?? saved;
+			return { asset: publicAsset(analysed), enriched: analysed.visionAnalysisStatus === 'complete' };
+		}
+		case 'cce_update_asset': {
+			const brain = await brand(ctx, text(input, 'brandId'));
+			const assetId = text(input, 'assetId');
+			if (!assetId) throw new AgentError('invalid_input', 'assetId is required.', 400);
+			const record = await store.getAsset(ctx.credential.ownerUserId, assetId);
+			if (!record || record.brandId !== brain.id) throw new AgentError('brand_not_accessible', 'This agent cannot access that asset.', 403);
+			const saved = await store.saveAsset({
+				...record,
+				title: text(input, 'title') ?? record.title,
+				description: text(input, 'description') ?? record.description,
+				tags: Array.isArray(input.tags) ? (input.tags as string[]) : record.tags,
+				approvalStatus: typeof input.approvalStatus === 'string' ? (input.approvalStatus as never) : record.approvalStatus,
+				sourceAttribution: text(input, 'sourceAttribution') ?? record.sourceAttribution,
+				rightsNotes: text(input, 'rightsNotes') ?? record.rightsNotes,
+				collectionId: text(input, 'collectionId') ?? record.collectionId,
+				visionUserLocked: true,
+				updatedAt: new Date().toISOString(),
+			});
+			if (input.refreshEmbedding === true) {
+				const embedded = await embedAssetRecord(saved);
+				if (embedded) {
+					await store.saveAsset({
+						...saved,
+						searchEmbedding: embedded.embedding,
+						embeddingModel: embedded.model,
+						embeddingUpdatedAt: new Date().toISOString(),
+					});
+				}
+			}
+			return { asset: publicAsset(saved) };
+		}
+		case 'cce_delete_asset': {
+			const brain = await brand(ctx, text(input, 'brandId'));
+			const assetId = text(input, 'assetId');
+			if (!assetId) throw new AgentError('invalid_input', 'assetId is required.', 400);
+			const record = await store.getAsset(ctx.credential.ownerUserId, assetId);
+			if (!record || record.brandId !== brain.id) throw new AgentError('brand_not_accessible', 'This agent cannot access that asset.', 403);
+			await store.deleteAsset(ctx.credential.ownerUserId, assetId);
+			return { assetId, deleted: true };
 		}
 		case 'cce_detach_asset': {
 			const assetId = text(input, 'assetId');

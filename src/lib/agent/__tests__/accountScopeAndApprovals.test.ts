@@ -188,7 +188,11 @@ describe('account scope, assets, and human approval', () => {
 		const instagram = planMedia({ channel: 'INSTAGRAM_FEED', topic: 'Why authors should control what enters canon', assets: [screenshot] });
 		expect(instagram.preferredSource).toBe('existing');
 		expect(instagram.mediaRequired).toBe(true);
-		const unverified = planMedia({ channel: 'INSTAGRAM_FEED', topic: 'Why authors should control what enters canon', assets: [{ ...screenshot, verifiedReference: false }] });
+		const unverified = planMedia({
+			channel: 'INSTAGRAM_FEED',
+			topic: 'Why authors should control what enters canon',
+			assets: [{ ...screenshot, verifiedReference: false, approvalStatus: 'draft' }],
+		});
 		expect(unverified.mediaChoice).toBe('generate');
 		expect(unverified.existingAssetId).toBeNull();
 		const reference = planMedia({

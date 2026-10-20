@@ -22,6 +22,8 @@ function sanitizeAnalysis(raw: Record<string, unknown>): AssetVisionAnalysis {
 		orientation,
 		cropSuitability: typeof raw.cropSuitability === 'string' ? raw.cropSuitability.trim() : '',
 		suggestedTopics: asStrings(raw.suggestedTopics),
+		suggestedChannels: asStrings(raw.suggestedChannels),
+		detectedText: asStrings(raw.detectedText),
 		altText: typeof raw.altText === 'string' ? raw.altText.trim() : '',
 		searchTags: asStrings(raw.searchTags),
 		analyzedAt: new Date().toISOString(),
@@ -52,7 +54,9 @@ export async function analyzeAssetImage(input: {
 		'- Only state product specifics (model name, scale, colour, brand) if clearly visible or explicitly provided in user metadata.',
 		'- If unsure, use generic wording and leave brandEntities empty rather than guessing.',
 		'- Do not use em dashes.',
-		'- Return strict JSON with keys: summary, subjects, brandEntities, setting, colours, mood, orientation, cropSuitability, suggestedTopics, altText, searchTags.',
+		'- Return strict JSON with keys: summary, subjects, brandEntities, setting, colours, mood, orientation, cropSuitability, suggestedTopics, suggestedChannels, detectedText, altText, searchTags.',
+		'- suggestedChannels: short channel names where this image fits (examples: instagram, linkedin, threads, blog).',
+		'- detectedText: visible text in the image, empty array if none.',
 		'- orientation must be portrait, landscape, square, or unknown.',
 	].join('\n');
 

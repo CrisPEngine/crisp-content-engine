@@ -25,6 +25,8 @@ function visionText(analysis?: AssetVisionAnalysis | null): string {
 		...analysis.brandEntities,
 		...analysis.colours,
 		...analysis.suggestedTopics,
+		...(analysis.suggestedChannels ?? []),
+		...(analysis.detectedText ?? []),
 		...analysis.searchTags,
 		analysis.altText,
 	].join(' ');
