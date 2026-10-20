@@ -4,6 +4,10 @@ import { isMetaPublishingEnabled } from '@/lib/featureFlags';
 import { publishToFacebookPage, publishToInstagram, decryptMetaToken, type MetaGraphErrorDetail } from '@/lib/meta/graph';
 import { duePublishJobsQuery, META_PUBLISH_PLATFORMS } from '@/lib/publish/dueJobsQuery';
 import { applyMetaJobOutcomeToAgentContent, reconcileDueAgentMetaScheduledContent } from '@/lib/publish/agentMetaJob';
+import { requirePublishCronAuth } from '@/lib/publish/cronAuth';
+import { recoverStalePublishingJobs } from '@/lib/publish/publishJobLifecycle';
+import { recordPublishWorkerRun } from '@/lib/publish/workerHeartbeat';
+import { getIntelligenceStore } from '@/lib/intelligence/actions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,28 +36,25 @@ export const dynamic = 'force-dynamic';
  * 4. On failure: retry with exponential backoff, or mark failed permanently
  */
 export async function GET(request: Request) {
+	let processed = 0;
 	try {
 		// Feature flag guard
 		if (!isMetaPublishingEnabled()) {
 			return NextResponse.json({ error: 'Meta publishing is disabled' }, { status: 404 });
 		}
 
-		// Cron secret guard
-		const authHeader = request.headers.get('authorization');
-		const cronSecret = process.env.CRON_SECRET;
-
-		if (!cronSecret) {
-			console.error('[Meta Worker] CRON_SECRET not configured');
-			return NextResponse.json({ error: 'Worker not configured' }, { status: 500 });
-		}
-
-		if (authHeader !== `Bearer ${cronSecret}`) {
-			console.error('[Meta Worker] Unauthorized: Invalid cron secret');
-			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+		const auth = requirePublishCronAuth(request);
+		if (!auth.ok) {
+			if (auth.status === 401) console.error('[Meta Worker] Unauthorized cron request');
+			else console.error('[Meta Worker] CRON_SECRET not configured');
+			return NextResponse.json({ error: auth.error }, { status: auth.status });
 		}
 
 		const admin = getSupabaseService();
 		const now = new Date().toISOString();
+
+		const staleRecovery = await recoverStalePublishingJobs({ platforms: META_PUBLISH_PLATFORMS });
+		console.log('[Meta Worker] Stale publishing recovery:', staleRecovery);
 
 		const reconcile = await reconcileDueAgentMetaScheduledContent({ now: new Date(now) });
 		console.log('[Meta Worker] Reconcile due scheduled content:', reconcile);
@@ -71,7 +72,8 @@ export async function GET(request: Request) {
 		}
 
 		if (!dueJobs || dueJobs.length === 0) {
-			return NextResponse.json({ ok: true, processed: 0 });
+			await recordPublishWorkerRun({ worker: 'meta-due', ok: true, processed: 0 });
+			return NextResponse.json({ ok: true, processed: 0, staleRecovery, reconcile });
 		}
 
 		console.log(`[Meta Worker] Processing ${dueJobs.length} due jobs`);
@@ -133,12 +135,24 @@ export async function GET(request: Request) {
 			}
 		}
 
+		processed = results.processed;
 		console.log('[Meta Worker] Processing complete:', results);
-		return NextResponse.json({ ok: true, reconcile, results });
+		await recordPublishWorkerRun({ worker: 'meta-due', ok: true, processed: results.processed });
+		return NextResponse.json({ ok: true, staleRecovery, reconcile, results });
 	} catch (error: any) {
 		console.error('[Meta Worker] Critical error:', error);
+		await recordPublishWorkerRun({
+			worker: 'meta-due',
+			ok: false,
+			processed,
+			error: error.message || 'Server error',
+		});
 		return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
 	}
+}
+
+export async function POST(request: Request) {
+	return GET(request);
 }
 
 /**
@@ -177,6 +191,51 @@ async function publishJob(
 
 	try {
 		const { platform, target_id, payload_json, user_id } = job;
+
+		if (typeof job.remote_post_id === 'string' && job.remote_post_id.trim()) {
+			await admin
+				.from('publish_jobs')
+				.update({
+					status: 'published',
+					error_message: null,
+					updated_at: new Date().toISOString(),
+				})
+				.eq('id', job.id);
+			await applyMetaJobOutcomeToAgentContent({
+				user_id: job.user_id,
+				content_item_key: job.content_item_key,
+				payload_json: job.payload_json,
+				status: 'published',
+				remote_post_id: job.remote_post_id.trim(),
+			});
+			return { success: true, retry: false };
+		}
+
+		const payload = payload_json as { source?: string; memoryId?: string } | undefined;
+		if (payload?.source === 'agent') {
+			const memoryId = payload.memoryId || job.content_item_key;
+			const memory = await getIntelligenceStore().getMemory(user_id, memoryId);
+			const externalId = memory?.externalPostId?.trim();
+			if (externalId) {
+				await admin
+					.from('publish_jobs')
+					.update({
+						status: 'published',
+						remote_post_id: externalId,
+						error_message: null,
+						updated_at: new Date().toISOString(),
+					})
+					.eq('id', job.id);
+				await applyMetaJobOutcomeToAgentContent({
+					user_id: job.user_id,
+					content_item_key: job.content_item_key,
+					payload_json: job.payload_json,
+					status: 'published',
+					remote_post_id: externalId,
+				});
+				return { success: true, retry: false };
+			}
+		}
 
 		// Get access token
 		let accessToken: string | null = null;

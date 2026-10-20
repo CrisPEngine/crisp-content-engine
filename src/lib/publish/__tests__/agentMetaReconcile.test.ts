@@ -31,8 +31,12 @@ function supabaseChain() {
 	builder.eq = vi.fn(() => builder);
 	builder.in = vi.fn(() => builder);
 	builder.lte = vi.fn(() => builder);
+	builder.not = vi.fn(() => builder);
 	builder.order = vi.fn(() => builder);
-	builder.limit = contentMemoryRows;
+	builder.limit = vi.fn((n?: number) => {
+		if (n === 1) return builder;
+		return contentMemoryRows();
+	});
 	builder.maybeSingle = vi.fn(async () => ({ data: null }));
 	return builder;
 }

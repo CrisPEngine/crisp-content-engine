@@ -5,6 +5,11 @@ import { publishThreadsPost } from '@/lib/threads/oauth';
 import { getAuthorizationSecrets } from '@/lib/social/authorizationSecrets';
 import { applyThreadsJobOutcomeToAgentContent } from '@/lib/publish/agentThreadsJob';
 import { duePublishJobsQuery } from '@/lib/publish/dueJobsQuery';
+import { requirePublishCronAuth } from '@/lib/publish/cronAuth';
+import { recoverStalePublishingJobs } from '@/lib/publish/publishJobLifecycle';
+import { reconcileScheduledNativePublishJobs } from '@/lib/publish/reconcileScheduledPublish';
+import { recordPublishWorkerRun } from '@/lib/publish/workerHeartbeat';
+import { getIntelligenceStore } from '@/lib/intelligence/actions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,22 +19,22 @@ export const dynamic = 'force-dynamic';
  * Security: Authorization: Bearer {CRON_SECRET}
  */
 export async function GET(request: Request) {
+	let processed = 0;
 	try {
 		if (!isThreadsPublishingEnabled()) {
 			return NextResponse.json({ error: 'Threads publishing is disabled' }, { status: 404 });
 		}
 
-		const authHeader = request.headers.get('authorization');
-		const cronSecret = process.env.CRON_SECRET;
-		if (!cronSecret) {
-			return NextResponse.json({ error: 'Worker not configured' }, { status: 500 });
-		}
-		if (authHeader !== `Bearer ${cronSecret}`) {
-			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+		const auth = requirePublishCronAuth(request);
+		if (!auth.ok) {
+			return NextResponse.json({ error: auth.error }, { status: auth.status });
 		}
 
 		const admin = getSupabaseService();
 		const now = new Date().toISOString();
+
+		const staleRecovery = await recoverStalePublishingJobs({ platforms: ['threads'] });
+		const reconcile = await reconcileScheduledNativePublishJobs({ now: new Date(now) });
 
 		const { data: dueJobs, error: fetchError } = await duePublishJobsQuery(admin, {
 			platforms: ['threads'],
@@ -41,7 +46,8 @@ export async function GET(request: Request) {
 		}
 
 		if (!dueJobs?.length) {
-			return NextResponse.json({ ok: true, processed: 0 });
+			await recordPublishWorkerRun({ worker: 'threads-due', ok: true, processed: 0 });
+			return NextResponse.json({ ok: true, processed: 0, staleRecovery, reconcile });
 		}
 
 		const results = { processed: 0, published: 0, retrying: 0, failed: 0, skipped: 0 };
@@ -65,6 +71,54 @@ export async function GET(request: Request) {
 
 			try {
 				const { target_id, payload_json, user_id } = job;
+
+				if (typeof job.remote_post_id === 'string' && job.remote_post_id.trim()) {
+					await admin
+						.from('publish_jobs')
+						.update({
+							status: 'published',
+							error_message: null,
+							updated_at: new Date().toISOString(),
+						})
+						.eq('id', job.id);
+					await applyThreadsJobOutcomeToAgentContent({
+						user_id: job.user_id,
+						content_item_key: job.content_item_key,
+						payload_json: job.payload_json,
+						status: 'published',
+						remote_post_id: job.remote_post_id.trim(),
+					});
+					results.published++;
+					continue;
+				}
+
+				const payload = payload_json as { source?: string; memoryId?: string } | undefined;
+				if (payload?.source === 'agent') {
+					const memoryId = payload.memoryId || job.content_item_key;
+					const memory = await getIntelligenceStore().getMemory(user_id, memoryId);
+					const externalId = memory?.externalPostId?.trim();
+					if (externalId) {
+						await admin
+							.from('publish_jobs')
+							.update({
+								status: 'published',
+								remote_post_id: externalId,
+								error_message: null,
+								updated_at: new Date().toISOString(),
+							})
+							.eq('id', job.id);
+						await applyThreadsJobOutcomeToAgentContent({
+							user_id: job.user_id,
+							content_item_key: job.content_item_key,
+							payload_json: job.payload_json,
+							status: 'published',
+							remote_post_id: externalId,
+						});
+						results.published++;
+						continue;
+					}
+				}
+
 				const { data: dest } = await admin
 					.from('social_destinations')
 					.select('authorization_id')
@@ -153,9 +207,12 @@ export async function GET(request: Request) {
 			}
 		}
 
-		return NextResponse.json({ ok: true, results });
+		processed = results.processed;
+		await recordPublishWorkerRun({ worker: 'threads-due', ok: true, processed: results.processed });
+		return NextResponse.json({ ok: true, staleRecovery, reconcile, results });
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : 'Server error';
+		await recordPublishWorkerRun({ worker: 'threads-due', ok: false, processed, error: message });
 		return NextResponse.json({ error: message }, { status: 500 });
 	}
 }

@@ -42,6 +42,9 @@ import { selectSearchProvider } from '@/lib/research/search';
 import { MONITOR_TYPES, type ResearchProjectType } from '@/lib/research/types';
 import type { AgentCredential, MarketingOpportunity } from './types';
 import { mcpBrandChannelSummary } from '@/lib/social/brandChannels';
+import { getPublishWorkerHeartbeats, PUBLISH_CRON_STALE_AFTER_MS } from '@/lib/publish/workerHeartbeat';
+import { scanScheduledPublishHealthIssues } from '@/lib/publish/reconcileScheduledPublish';
+import { countStalePublishingJobs } from '@/lib/publish/publishJobLifecycle';
 
 export type AgentContext = {
 	credential: AgentCredential;
@@ -551,9 +554,57 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 					metrics: snapshots.length === 0 ? 'missing' : 'present',
 				});
 			}
+
+			const publishWorkers = await getPublishWorkerHeartbeats(['meta-due', 'threads-due']);
+			const scheduleHealth = await scanScheduledPublishHealthIssues({ userId: ctx.credential.ownerUserId });
+			const stalePublishingJobs = await countStalePublishingJobs();
+			const cronConfigured = Boolean(process.env.CRON_SECRET?.trim());
+			const publishWarnings: string[] = [...scheduleHealth.issues.map((issue) => issue.message)];
+			if (!cronConfigured) {
+				publishWarnings.push('CRON_SECRET is not set. Publish workers will return 500 until it is configured in production.');
+			}
+			for (const worker of publishWorkers) {
+				if (worker.stale) {
+					publishWarnings.push(
+						`Publish worker ${worker.worker} has not run recently (expected at least every ${Math.round(PUBLISH_CRON_STALE_AFTER_MS / 60000)} minutes). Check cron-job.org or your scheduler.`,
+					);
+				}
+			}
+
+			const { data: failedPublishJobs } = await (async () => {
+				try {
+					const { getSupabaseService } = await import('@/lib/supabaseService');
+					const admin = getSupabaseService();
+					return admin
+						.from('publish_jobs')
+						.select('id, platform, status, error_message, content_item_key, updated_at')
+						.eq('user_id', ctx.credential.ownerUserId)
+						.eq('status', 'failed')
+						.order('updated_at', { ascending: false })
+						.limit(10);
+				} catch {
+					return { data: [] };
+				}
+			})();
+
+			const status = publishWarnings.length > 0 ? 'degraded' : 'ok';
+
 			return {
-				status: 'ok',
+				status,
 				failedJobs: jobs.filter((job) => job.status === 'failed').slice(0, 10).map((job) => ({ id: job.id, type: job.jobType, error: job.lastError ?? null })),
+				failedPublishJobs: (failedPublishJobs ?? []).map((job) => ({
+					id: job.id,
+					platform: job.platform,
+					contentItemKey: job.content_item_key,
+					error: job.error_message ?? null,
+				})),
+				publishWorkers,
+				publishScheduleHealth: {
+					overdueWithoutJob: scheduleHealth.overdueWithoutJob,
+					stalePublishingJobs,
+					cronSecretConfigured: cronConfigured,
+				},
+				publishWarnings,
 				integrations: channelCatalog().map((channel) => ({ channel: channel.id, publish: channel.capabilities.publish, analytics: channel.capabilities.analytics })),
 				brands,
 				models: MODEL_ROLES.map((role) => ({ role, model: resolveModelForRole(role) })),

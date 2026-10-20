@@ -95,6 +95,7 @@ export async function listNativeQueueForUser(
 			const item = mapMemoryToQueueItem(brain, displayMemory, diagnostics, {
 				linkedImageUrl,
 				destinationLabel: publishTarget.ready ? publishTarget.label : null,
+				publishJob: job,
 			});
 			if (!filterNativeQueueItem(item, memory, input)) return;
 			items.push(item);
