@@ -42,6 +42,10 @@ import { selectSearchProvider } from '@/lib/research/search';
 import { MONITOR_TYPES, type ResearchProjectType } from '@/lib/research/types';
 import type { AgentCredential, MarketingOpportunity } from './types';
 import { mcpBrandChannelSummary } from '@/lib/social/brandChannels';
+import { finalizeApprovalSchedule } from '@/lib/content/nativeQueueSchedule';
+import { getPublishWorkerHeartbeats, PUBLISH_CRON_STALE_AFTER_MS } from '@/lib/publish/workerHeartbeat';
+import { scanScheduledPublishHealthIssues } from '@/lib/publish/reconcileScheduledPublish';
+import { countStalePublishingJobs } from '@/lib/publish/publishJobLifecycle';
 
 export type AgentContext = {
 	credential: AgentCredential;
@@ -551,9 +555,57 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 					metrics: snapshots.length === 0 ? 'missing' : 'present',
 				});
 			}
+
+			const publishWorkers = await getPublishWorkerHeartbeats(['meta-due', 'threads-due']);
+			const scheduleHealth = await scanScheduledPublishHealthIssues({ userId: ctx.credential.ownerUserId });
+			const stalePublishingJobs = await countStalePublishingJobs();
+			const cronConfigured = Boolean(process.env.CRON_SECRET?.trim());
+			const publishWarnings: string[] = [...scheduleHealth.issues.map((issue) => issue.message)];
+			if (!cronConfigured) {
+				publishWarnings.push('CRON_SECRET is not set. Publish workers will return 500 until it is configured in production.');
+			}
+			for (const worker of publishWorkers) {
+				if (worker.stale) {
+					publishWarnings.push(
+						`Publish worker ${worker.worker} has not run recently (expected at least every ${Math.round(PUBLISH_CRON_STALE_AFTER_MS / 60000)} minutes). Check cron-job.org or your scheduler.`,
+					);
+				}
+			}
+
+			const { data: failedPublishJobs } = await (async () => {
+				try {
+					const { getSupabaseService } = await import('@/lib/supabaseService');
+					const admin = getSupabaseService();
+					return admin
+						.from('publish_jobs')
+						.select('id, platform, status, error_message, content_item_key, updated_at')
+						.eq('user_id', ctx.credential.ownerUserId)
+						.eq('status', 'failed')
+						.order('updated_at', { ascending: false })
+						.limit(10);
+				} catch {
+					return { data: [] };
+				}
+			})();
+
+			const status = publishWarnings.length > 0 ? 'degraded' : 'ok';
+
 			return {
-				status: 'ok',
+				status,
 				failedJobs: jobs.filter((job) => job.status === 'failed').slice(0, 10).map((job) => ({ id: job.id, type: job.jobType, error: job.lastError ?? null })),
+				failedPublishJobs: (failedPublishJobs ?? []).map((job) => ({
+					id: job.id,
+					platform: job.platform,
+					contentItemKey: job.content_item_key,
+					error: job.error_message ?? null,
+				})),
+				publishWorkers,
+				publishScheduleHealth: {
+					overdueWithoutJob: scheduleHealth.overdueWithoutJob,
+					stalePublishingJobs,
+					cronSecretConfigured: cronConfigured,
+				},
+				publishWarnings,
 				integrations: channelCatalog().map((channel) => ({ channel: channel.id, publish: channel.capabilities.publish, analytics: channel.capabilities.analytics })),
 				brands,
 				models: MODEL_ROLES.map((role) => ({ role, model: resolveModelForRole(role) })),
@@ -1088,8 +1140,8 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			if (!contentId) throw new AgentError('invalid_input', 'contentId is required.', 400);
 			const memory = await requireContent(ctx, contentId);
 			const reason = inputString(input, 'reason');
+			const store = getIntelligenceStore();
 			if (name === 'cce_reject_content') {
-				const store = getIntelligenceStore();
 				const { captureNativeLearningEvent } = await import('@/lib/intelligence/learningLoop');
 				await captureNativeLearningEvent(store, {
 					userId: ctx.credential.ownerUserId,
@@ -1100,15 +1152,63 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 					feedbackText: reason,
 					beforeBody: memory.body ?? '',
 				});
+				const next = await store.saveMemory(ctx.credential.ownerUserId, {
+					...memory,
+					publicationStatus: 'rejected',
+					metadata: { ...(memory.metadata ?? {}), decisionBy: ctx.credential.id, decision: name, reason },
+				});
+				await emit(ctx, memory.brandBrainId, 'content.rejected', { contentId });
+				return { content: publicContent(next), publisherArmed: false };
 			}
-			const status = name === 'cce_approve_content' ? 'approved' : 'rejected';
-			const next = await getIntelligenceStore().saveMemory(ctx.credential.ownerUserId, {
+
+			const finalized = finalizeApprovalSchedule(memory);
+			const pendingMemory: ContentMemoryRecord = {
 				...memory,
-				publicationStatus: status,
-				metadata: { ...(memory.metadata ?? {}), decisionBy: ctx.credential.id, decision: name, reason },
-			});
-			await emit(ctx, memory.brandBrainId, name === 'cce_approve_content' ? 'content.approved' : 'content.rejected', { contentId });
-			return { content: publicContent(next), publisherArmed: false };
+				publicationStatus: finalized.publicationStatus,
+				publicationDate: finalized.publicationDate,
+				metadata: {
+					...finalized.metadata,
+					decisionBy: ctx.credential.id,
+					decision: name,
+					...(reason ? { reason } : {}),
+				},
+			};
+			assertMemoryChannelConstraints(pendingMemory);
+
+			let publisherArmed = false;
+			let note: string | undefined;
+			if (finalized.scheduled && finalized.publishAt) {
+				if (isAgentThreadsMemory(pendingMemory)) {
+					const queued = await syncAgentThreadsPublishJob({
+						userId: ctx.credential.ownerUserId,
+						memory: pendingMemory,
+						publishAt: finalized.publishAt,
+					});
+					publisherArmed = queued.armed;
+					if (!publisherArmed && queued.skipped === 'threads_disabled') {
+						note = 'Threads publishing is disabled; content is scheduled in CCE only until THREADS_APP_ID is configured.';
+					}
+				} else if (isAgentMetaMemory(pendingMemory)) {
+					const queued = await syncAgentMetaPublishJob({
+						userId: ctx.credential.ownerUserId,
+						memory: pendingMemory,
+						publishAt: finalized.publishAt,
+					});
+					publisherArmed = queued.armed;
+					if (!publisherArmed && queued.skipped === 'meta_disabled') {
+						note = 'Meta publishing is disabled; content is scheduled in CCE only until META_PUBLISHING_ENABLED is on.';
+					}
+				}
+			}
+
+			const next = await store.saveMemory(ctx.credential.ownerUserId, pendingMemory);
+			await emit(ctx, memory.brandBrainId, 'content.approved', { contentId });
+			return {
+				content: publicContent(next),
+				publisherArmed,
+				scheduled: finalized.scheduled,
+				...(note ? { note } : {}),
+			};
 		}
 		case 'cce_get_schedule_recommendation': {
 			const brain = await requireBrand(ctx, brandId);
