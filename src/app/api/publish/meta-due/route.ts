@@ -9,6 +9,7 @@ import { recoverStalePublishingJobs } from '@/lib/publish/publishJobLifecycle';
 import { recordPublishWorkerRun } from '@/lib/publish/workerHeartbeat';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { buildMetaDueDiagnostics } from '@/lib/publish/metaDueDiagnostics';
+import { healFailedPublishScheduleMismatch } from '@/lib/publish/reconcileScheduledPublish';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -59,6 +60,9 @@ export async function GET(request: Request) {
 		const staleRecovery = await recoverStalePublishingJobs({ platforms: META_PUBLISH_PLATFORMS });
 		console.log('[Meta Worker] Stale publishing recovery:', staleRecovery);
 
+		const healMismatch = await healFailedPublishScheduleMismatch({ now: new Date(now) });
+		console.log('[Meta Worker] Heal failed schedule mismatch:', healMismatch);
+
 		const reconcile = await reconcileDueAgentMetaScheduledContent({ now: new Date(now) });
 		console.log('[Meta Worker] Reconcile due scheduled content:', reconcile);
 
@@ -92,6 +96,7 @@ export async function GET(request: Request) {
 				dueJobsFound: 0,
 				processed: 0,
 				staleRecovery,
+				healMismatch,
 				reconcile,
 				diagnostics,
 			});
@@ -170,6 +175,7 @@ export async function GET(request: Request) {
 			metaPublishingEnabled,
 			dueJobsFound,
 			staleRecovery,
+			healMismatch,
 			reconcile,
 			diagnostics,
 			results,

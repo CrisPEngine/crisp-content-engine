@@ -153,13 +153,15 @@ export async function syncAgentThreadsPublishJob(input: {
 
 	await clearNonTerminalPublishJobsForContent({ platform: 'threads', contentItemKey });
 
-	let scheduledTime = normalizeScheduledTime(input.publishAt);
-	scheduledTime = await applyPublishTargetSpacing(admin, {
+	const requestedInstant = normalizeScheduledTime(input.publishAt);
+	const spacing = await applyPublishTargetSpacing(admin, {
 		platform: 'threads',
 		targetId,
-		scheduledTime,
+		scheduledTime: requestedInstant,
 		excludeContentItemKey: contentItemKey,
+		requestedCeiling: requestedInstant,
 	});
+	const scheduledTime = spacing.scheduledTime;
 	const attachedImageUrl = await resolveAgentThreadsAttachedImageUrl(input.userId, input.memory.id);
 	const payload = buildAgentThreadsPayload(input.memory, targetId, resolved.destinationId, attachedImageUrl);
 	const publishAtIso = scheduledTime.toISOString();

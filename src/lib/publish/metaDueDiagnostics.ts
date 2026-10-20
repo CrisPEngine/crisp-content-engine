@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { getSupabaseService } from '@/lib/supabaseService';
 import { META_PUBLISH_PLATFORMS } from '@/lib/publish/dueJobsQuery';
+import { publishInstantMs } from '@/lib/publish/publishInstant';
 
 export type MetaDueJobRowSummary = {
 	id: string;
@@ -45,8 +46,11 @@ function notDueReason(row: {
 		if (row.status === 'failed') return 'status_is_failed';
 		return `status_${row.status}`;
 	}
-	if (row.scheduled_time > row.now) return 'scheduled_time_in_future';
-	if (row.next_attempt_at && row.next_attempt_at > row.now) return 'next_attempt_at_in_future';
+	const nowMs = publishInstantMs(row.now);
+	const scheduledMs = publishInstantMs(row.scheduled_time);
+	if (nowMs != null && scheduledMs != null && scheduledMs > nowMs) return 'scheduled_time_in_future';
+	const nextMs = row.next_attempt_at ? publishInstantMs(row.next_attempt_at) : null;
+	if (nowMs != null && nextMs != null && nextMs > nowMs) return 'next_attempt_at_in_future';
 	return undefined;
 }
 

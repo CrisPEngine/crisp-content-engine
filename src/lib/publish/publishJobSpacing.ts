@@ -15,8 +15,10 @@ export async function applyPublishTargetSpacing(
 		targetId: string;
 		scheduledTime: Date;
 		excludeContentItemKey?: string;
+		/** Never return a slot later than this instant (user-requested publish time). */
+		requestedCeiling?: Date;
 	},
-): Promise<Date> {
+): Promise<{ scheduledTime: Date; spacingCapped: boolean }> {
 	let query = admin
 		.from('publish_jobs')
 		.select('scheduled_time')
@@ -29,10 +31,18 @@ export async function applyPublishTargetSpacing(
 	}
 
 	const { data: recentJobs } = await query.order('scheduled_time', { ascending: false }).limit(1);
-	if (!recentJobs?.length) return input.scheduledTime;
+	if (!recentJobs?.length) {
+		return { scheduledTime: input.scheduledTime, spacingCapped: false };
+	}
 
 	const lastScheduledTime = new Date(recentJobs[0].scheduled_time);
 	const sixtySecondsAfterLast = new Date(lastScheduledTime.getTime() + 60 * 1000);
-	if (input.scheduledTime < sixtySecondsAfterLast) return sixtySecondsAfterLast;
-	return input.scheduledTime;
+	let result = input.scheduledTime;
+	if (result < sixtySecondsAfterLast) result = sixtySecondsAfterLast;
+	let spacingCapped = false;
+	if (input.requestedCeiling && result.getTime() > input.requestedCeiling.getTime()) {
+		result = input.requestedCeiling;
+		spacingCapped = true;
+	}
+	return { scheduledTime: result, spacingCapped };
 }

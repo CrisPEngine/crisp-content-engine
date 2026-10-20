@@ -10,6 +10,7 @@ import {
 } from '@/lib/publish/agentMetaJob';
 import { isAgentThreadsMemory, syncAgentThreadsPublishJob } from '@/lib/publish/agentThreadsJob';
 import { hasActiveQueueablePublishJob } from '@/lib/publish/publishJobActive';
+import { realignQueuedPublishJobToPublicationDate } from '@/lib/publish/realignPublishJob';
 import type { ContentMemoryRecord } from '@/lib/intelligence/types';
 import { needsApprovedScheduleRepair, repairApprovedScheduleMemory } from '@/lib/content/nativeQueueSchedule';
 
@@ -34,6 +35,31 @@ export async function promoteMemoryForPublishReconcile(
 	const store = getIntelligenceStore();
 	const repaired = repairApprovedScheduleMemory(memory);
 	return store.saveMemory(userId, repaired);
+}
+
+async function alignPublishJobToMemoryPublicationDate(userId: string, memory: ContentMemoryRecord): Promise<boolean> {
+	const publishAt = memory.publicationDate;
+	if (!publishAt) return false;
+	if (isAgentThreadsMemory(memory)) {
+		const outcome = await realignQueuedPublishJobToPublicationDate({
+			userId,
+			contentItemKey: memory.id,
+			platform: 'threads',
+			publicationDate: publishAt,
+		});
+		return outcome.realigned;
+	}
+	const platform = agentMetaPlatformFromChannel(String(memory.channel));
+	if (platform && isAgentMetaMemory(memory)) {
+		const outcome = await realignQueuedPublishJobToPublicationDate({
+			userId,
+			contentItemKey: memory.id,
+			platform,
+			publicationDate: publishAt,
+		});
+		return outcome.realigned;
+	}
+	return false;
 }
 
 async function jobIsArmedForMemory(userId: string, memory: ContentMemoryRecord): Promise<boolean> {
@@ -83,6 +109,15 @@ async function repairThreadsIfMissing(input: {
 			memory: input.memory,
 			publishAt: input.publishAt,
 		});
+		if (publishAt) {
+			const realigned = await realignQueuedPublishJobToPublicationDate({
+				userId: input.userId,
+				contentItemKey: input.memory.id,
+				platform: 'threads',
+				publicationDate: publishAt,
+			});
+			if (realigned.realigned) return { repaired: true };
+		}
 		if (!syncResult.armed) {
 			const message = syncResult.reason ?? syncResult.skipped ?? 'Threads publish queue sync did not arm publisher';
 			if (input.recordFailure) {
@@ -196,6 +231,8 @@ export async function reconcileScheduledNativePublishJobs(input?: {
 		const overdue =
 			publishAt && !Number.isNaN(new Date(publishAt).getTime()) && new Date(publishAt).getTime() < now.getTime();
 
+		await alignPublishJobToMemoryPublicationDate(row.user_id, memory);
+
 		const armed = await jobIsArmedForMemory(row.user_id, memory);
 		if (armed) {
 			stats.skipped += 1;
@@ -232,6 +269,55 @@ export async function reconcileScheduledNativePublishJobs(input?: {
 	}
 
 	return stats;
+}
+
+/** Restore content wrongly marked failed when a queueable job exists but times diverged. */
+export async function healFailedPublishScheduleMismatch(input?: {
+	userId?: string;
+	now?: Date;
+	limit?: number;
+}): Promise<{ scanned: number; healed: number }> {
+	const admin = getSupabaseService();
+	const now = input?.now ?? new Date();
+	const nowIso = now.toISOString();
+	const limit = input?.limit ?? 50;
+
+	let query = admin
+		.from('content_memory')
+		.select('id, user_id, channel, publication_status, publication_date, metadata')
+		.eq('publication_status', 'failed')
+		.in('channel', [...NATIVE_PUBLISH_CHANNELS])
+		.not('publication_date', 'is', null)
+		.lte('publication_date', nowIso)
+		.limit(limit);
+	if (input?.userId) query = query.eq('user_id', input.userId);
+
+	const { data: rows } = await query;
+	const store = getIntelligenceStore();
+	let healed = 0;
+
+	for (const row of rows ?? []) {
+		const memory = await store.getMemory(row.user_id, row.id);
+		if (!memory) continue;
+		const lastError = String(memory.metadata?.lastPublishError ?? '');
+		if (lastError !== 'scheduled_time_mismatch' && !lastError.includes('scheduled_time_mismatch')) continue;
+
+		const realigned = await alignPublishJobToMemoryPublicationDate(row.user_id, memory);
+		if (!realigned) continue;
+
+		await store.saveMemory(row.user_id, {
+			...memory,
+			publicationStatus: 'scheduled',
+			metadata: {
+				...(memory.metadata ?? {}),
+				lastPublishError: undefined,
+				scheduleRepairFailedAt: undefined,
+			},
+		});
+		healed += 1;
+	}
+
+	return { scanned: rows?.length ?? 0, healed };
 }
 
 export type ScheduledPublishHealthIssue = {
