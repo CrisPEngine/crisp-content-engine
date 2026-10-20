@@ -47,17 +47,56 @@ const insert = vi.fn(async () => ({ error: null }));
 const update = vi.fn(async () => ({ error: null }));
 const del = vi.fn(async () => ({ error: null }));
 const maybeSingle = vi.fn(async () => ({ data: null }));
+const insertedJob = {
+	id: 'job-1',
+	user_id: 'user-1',
+	platform: 'threads',
+	status: 'queued',
+	scheduled_time: '2030-06-01T12:00:00.000Z',
+	next_attempt_at: null,
+	content_item_key: 'mem-1',
+};
 
 function chain() {
 	const builder: Record<string, unknown> = {};
-	const terminal = () => builder;
-	builder.select = vi.fn(() => builder);
+	let mode: 'select' | 'delete' = 'select';
+	builder.select = vi.fn(() => {
+		mode = 'select';
+		return builder;
+	});
 	builder.eq = vi.fn(() => builder);
-	builder.in = vi.fn(() => builder);
+	builder.in = vi.fn((_col: string, _vals: string[]) => {
+		if (mode === 'delete') {
+			del();
+			return Promise.resolve({ error: null });
+		}
+		return builder;
+	});
 	builder.neq = vi.fn(() => builder);
 	builder.order = vi.fn(() => builder);
-	builder.limit = vi.fn(async () => ({ data: [] }));
-	builder.maybeSingle = maybeSingle;
+	builder.limit = vi.fn(() => ({
+		maybeSingle: builder.maybeSingle,
+		then: (onFulfilled?: (v: { data: unknown[] }) => unknown) =>
+			Promise.resolve({ data: [] }).then(onFulfilled as (v: { data: unknown[] }) => unknown),
+	}));
+	builder.maybeSingle = vi.fn(async () => {
+		if (insert.mock.calls.length > 0) {
+			const row = insert.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+			return {
+				data: {
+					...insertedJob,
+					user_id: row.user_id,
+					platform: row.platform,
+					content_item_key: row.content_item_key,
+					scheduled_time: row.scheduled_time,
+					status: row.status,
+				},
+				error: null,
+			};
+		}
+		const custom = await maybeSingle();
+		return custom ?? { data: null, error: null };
+	});
 	builder.insert = insert;
 	builder.update = vi.fn((...args: unknown[]) => {
 		update(...args);
@@ -66,6 +105,7 @@ function chain() {
 		};
 	});
 	builder.delete = vi.fn(() => {
+		mode = 'delete';
 		del();
 		return builder;
 	});
@@ -205,8 +245,6 @@ describe('agent Threads publish jobs', () => {
 			targetId: 'mem-2',
 			createdAt: now,
 		});
-		maybeSingle.mockResolvedValue({ data: { id: 'job-1', status: 'queued' } });
-
 		const { syncAgentThreadsPublishJob } = await import('@/lib/publish/agentThreadsJob');
 		const memory: ContentMemoryRecord = {
 			id: 'mem-2',

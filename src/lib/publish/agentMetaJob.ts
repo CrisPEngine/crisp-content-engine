@@ -12,8 +12,11 @@ import { AgentError } from '@/lib/agent/errors';
 import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 import { resolveAgentThreadsAttachedImageUrl } from '@/lib/publish/agentThreadsJob';
 import { composeAgentPublishText } from '@/lib/content/socialPublishBody';
-import { isStalePublishingJob } from '@/lib/publish/publishJobLifecycle';
 import { applyPublishTargetSpacing } from '@/lib/publish/publishJobSpacing';
+import {
+	clearNonTerminalPublishJobsForContent,
+	hasActiveQueueablePublishJob,
+} from '@/lib/publish/publishJobActive';
 
 export type AgentMetaPlatform = 'facebook' | 'instagram';
 
@@ -160,7 +163,7 @@ export async function syncAgentMetaPublishJob(input: {
 	userId: string;
 	memory: ContentMemoryRecord;
 	publishAt?: string;
-}): Promise<{ armed: boolean; skipped?: string; platform?: AgentMetaPlatform }> {
+}): Promise<{ armed: boolean; skipped?: string; reason?: string; platform?: AgentMetaPlatform }> {
 	const platform = agentMetaPlatformFromChannel(input.memory.channel);
 	if (!platform) {
 		return { armed: false, skipped: 'not_meta' };
@@ -206,7 +209,18 @@ export async function syncAgentMetaPublishJob(input: {
 	const targetId = resolved.providerDestinationId;
 	const contentItemKey = input.memory.id;
 
-	await cancelAgentMetaPublishJob(input.userId, contentItemKey, platform);
+	const { data: publishedRow } = await admin
+		.from('publish_jobs')
+		.select('id, status')
+		.eq('platform', platform)
+		.eq('content_item_key', contentItemKey)
+		.eq('status', 'published')
+		.maybeSingle();
+	if (publishedRow) {
+		return { armed: false, platform, reason: 'already_published' };
+	}
+
+	await clearNonTerminalPublishJobsForContent({ platform, contentItemKey });
 
 	let scheduledTime = normalizeScheduledTime(input.publishAt);
 	scheduledTime = await applyPublishTargetSpacing(admin, {
@@ -216,30 +230,7 @@ export async function syncAgentMetaPublishJob(input: {
 		excludeContentItemKey: contentItemKey,
 	});
 	const payload = buildAgentMetaPayload(input.memory, platform, targetId, resolved.destinationId, attachedImageUrl);
-
-	const { data: existing } = await admin
-		.from('publish_jobs')
-		.select('id, status, updated_at, remote_post_id, scheduled_time')
-		.eq('platform', platform)
-		.eq('content_item_key', contentItemKey)
-		.in('status', ['published', 'publishing'])
-		.maybeSingle();
-
-	if (existing?.status === 'published') {
-		return { armed: false, platform };
-	}
-	if (existing?.status === 'publishing') {
-		const desiredMs = scheduledTime.getTime();
-		const jobMs = existing.scheduled_time ? new Date(String(existing.scheduled_time)).getTime() : NaN;
-		const rescheduleMismatch =
-			input.publishAt &&
-			Number.isFinite(jobMs) &&
-			Math.abs(jobMs - desiredMs) > 60 * 1000;
-		if (!isStalePublishingJob(existing) && !rescheduleMismatch) {
-			return { armed: true, platform };
-		}
-		await admin.from('publish_jobs').delete().eq('id', existing.id).eq('status', 'publishing');
-	}
+	const publishAtIso = scheduledTime.toISOString();
 
 	const row = {
 		user_id: input.userId,
@@ -259,6 +250,22 @@ export async function syncAgentMetaPublishJob(input: {
 	const { error } = await admin.from('publish_jobs').insert(row);
 	if (error) {
 		throw new AgentError('publish_queue_failed', `Failed to create ${platform} publish job: ${error.message}`, 502);
+	}
+
+	const armedCheck = await hasActiveQueueablePublishJob({
+		userId: input.userId,
+		contentItemKey,
+		platform,
+		publishAt: publishAtIso,
+	});
+	if (!armedCheck.active) {
+		const reason = armedCheck.reason ?? 'no_publish_job';
+		throw new AgentError(
+			'publish_queue_failed',
+			`Publish job was not queued for ${platform}: ${reason}`,
+			502,
+			{ reason },
+		);
 	}
 
 	return { armed: true, platform };
@@ -317,19 +324,15 @@ export async function agentMetaJobIsArmed(
 	userId: string,
 	memoryId: string,
 	platform: AgentMetaPlatform,
+	publishAt?: string,
 ): Promise<boolean> {
-	const admin = getSupabaseService();
-	const { data } = await admin
-		.from('publish_jobs')
-		.select('status, updated_at')
-		.eq('user_id', userId)
-		.eq('platform', platform)
-		.eq('content_item_key', memoryId)
-		.in('status', ['queued', 'retrying', 'publishing'])
-		.maybeSingle();
-	if (!data) return false;
-	if (data.status === 'publishing' && isStalePublishingJob(data)) return false;
-	return true;
+	const check = await hasActiveQueueablePublishJob({
+		userId,
+		contentItemKey: memoryId,
+		platform,
+		publishAt,
+	});
+	return check.active;
 }
 
 export async function recordAgentMetaScheduleFailure(
@@ -361,10 +364,31 @@ export async function repairAgentMetaPublishJobIfMissing(input: {
 	if (!platform || input.memory.publicationStatus !== 'scheduled') {
 		return { repaired: false };
 	}
-	const armed = await agentMetaJobIsArmed(input.userId, input.memory.id, platform);
+	const publishAt = input.publishAt ?? input.memory.publicationDate;
+	const armed = await agentMetaJobIsArmed(input.userId, input.memory.id, platform, publishAt);
 	if (armed) return { repaired: false };
 	try {
-		await syncAgentMetaPublishJob(input);
+		const syncResult = await syncAgentMetaPublishJob(input);
+		if (!syncResult.armed) {
+			const message = syncResult.reason ?? syncResult.skipped ?? 'Meta publish queue sync did not arm publisher';
+			if (input.recordFailure) {
+				await recordAgentMetaScheduleFailure(input.userId, input.memory, message);
+			}
+			return { repaired: false, error: message };
+		}
+		const verified = await hasActiveQueueablePublishJob({
+			userId: input.userId,
+			contentItemKey: input.memory.id,
+			platform,
+			publishAt,
+		});
+		if (!verified.active) {
+			const message = verified.reason ?? 'no_publish_job';
+			if (input.recordFailure) {
+				await recordAgentMetaScheduleFailure(input.userId, input.memory, message);
+			}
+			return { repaired: false, error: message };
+		}
 		return { repaired: true };
 	} catch (error: unknown) {
 		const message =

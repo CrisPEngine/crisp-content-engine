@@ -47,28 +47,80 @@ vi.mock('@/lib/intelligence/actions', () => ({
 const insert = vi.fn(async () => ({ error: null }));
 const update = vi.fn(async () => ({ error: null }));
 const maybeSingle = vi.fn(async () => ({ data: null }));
+const insertedJob = {
+	id: 'job-1',
+	user_id: 'user-1',
+	platform: 'instagram',
+	status: 'queued',
+	scheduled_time: '2026-10-08T15:30:00.000Z',
+	next_attempt_at: null,
+	content_item_key: 'mem-1',
+};
 
 function chain() {
 	const builder: Record<string, unknown> = {};
-	builder.select = vi.fn(() => builder);
+	builder.select = vi.fn(() => {
+		mode = 'select';
+		return builder;
+	});
 	builder.eq = vi.fn(() => builder);
-	builder.in = vi.fn(() => builder);
+	let mode: 'select' | 'delete' = 'select';
+	builder.in = vi.fn((_col: string, _vals: string[]) => {
+		if (mode === 'delete') return Promise.resolve({ error: null });
+		return builder;
+	});
 	builder.neq = vi.fn(() => builder);
 	builder.order = vi.fn(() => builder);
-	builder.limit = vi.fn(async () => ({ data: [] }));
-	builder.maybeSingle = maybeSingle;
+	builder.limit = vi.fn(() => ({
+		maybeSingle: builder.maybeSingle,
+		then: (onFulfilled?: (v: { data: unknown[] }) => unknown) =>
+			Promise.resolve({ data: [] }).then(onFulfilled as (v: { data: unknown[] }) => unknown),
+	}));
+	builder.maybeSingle = vi.fn(async () => {
+		if (insert.mock.calls.length > 0) {
+			const row = insert.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+			return {
+				data: {
+					...insertedJob,
+					user_id: row.user_id,
+					platform: row.platform,
+					content_item_key: row.content_item_key,
+					scheduled_time: row.scheduled_time,
+					status: row.status,
+				},
+				error: null,
+			};
+		}
+		const fromMaybeSingle = maybeSingle.getMockImplementation();
+		if (fromMaybeSingle) return fromMaybeSingle();
+		return { data: null, error: null };
+	});
 	builder.insert = insert;
 	builder.update = vi.fn((...args: unknown[]) => {
 		update(...args);
 		return { eq: vi.fn(async () => ({ error: null })) };
 	});
-	builder.delete = vi.fn(() => builder);
+	builder.delete = vi.fn(() => {
+		mode = 'delete';
+		return builder;
+	});
 	return builder;
 }
 
 vi.mock('@/lib/supabaseService', () => ({
 	getSupabaseService: vi.fn(() => ({
-		from: vi.fn(() => chain()),
+		from: vi.fn((table: string) => {
+			if (table === 'social_destinations') {
+				return {
+					select: vi.fn(() => ({
+						eq: vi.fn(() => ({
+							maybeSingle: vi.fn(async () => ({ data: { destination_type: 'instagram_professional' } })),
+						})),
+					})),
+				};
+			}
+			return chain();
+		}),
 	})),
 }));
 
@@ -78,9 +130,8 @@ describe('agent Meta publish jobs', () => {
 		insert.mockClear();
 		update.mockClear();
 		maybeSingle.mockReset();
-		maybeSingle
-			.mockResolvedValueOnce({ data: { destination_type: 'instagram_professional' } })
-			.mockResolvedValue({ data: null });
+		insert.mockClear();
+		maybeSingle.mockResolvedValue({ data: null });
 	});
 
 	it('queues instagram job with caption and image', async () => {
@@ -119,7 +170,7 @@ describe('agent Meta publish jobs', () => {
 		const result = await syncAgentMetaPublishJob({
 			userId: 'user-1',
 			memory,
-			publishAt: '2026-10-08T15:30:00.000Z',
+			publishAt: '2030-06-01T15:30:00.000Z',
 		});
 
 		expect(result.armed).toBe(true);
@@ -178,7 +229,7 @@ describe('agent Meta publish jobs', () => {
 			syncAgentMetaPublishJob({
 				userId: 'user-1',
 				memory,
-				publishAt: '2026-10-08T15:30:00.000Z',
+				publishAt: '2030-06-01T15:30:00.000Z',
 			}),
 		).rejects.toMatchObject({
 			code: 'publish_queue_failed',
