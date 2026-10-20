@@ -7,6 +7,7 @@ import { generateAssetFromProposal } from '@/lib/media/images';
 import { planMedia } from '@/lib/media/planner';
 import { publicAssetsWithVision } from '@/lib/media/plannerAssets';
 import { SIGNAL_WEIGHTS } from '@/lib/media/assetLearning';
+import { DEFAULT_RATE_LIMIT } from '@/lib/agent/policy';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -84,7 +85,7 @@ export async function POST(request: Request) {
 				targetType: 'content',
 				targetId: memory.id,
 				decision,
-				rateLimit: {},
+				rateLimit: DEFAULT_RATE_LIMIT,
 				channel: String(memory.channel),
 				topic: memory.topic ?? undefined,
 				excerpt: memory.body?.slice(0, 400),

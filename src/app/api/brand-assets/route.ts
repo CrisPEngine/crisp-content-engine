@@ -55,22 +55,24 @@ export async function GET(request: Request) {
 	const records = await store.listAssets(userId, brandId);
 	const { publicAssets, visionByAssetId } = publicAssetsWithVision(records);
 
-	let assets = publicAssets.map((asset) => {
+	function withStaleFlag(asset: (typeof publicAssets)[number]) {
 		const record = records.find((row) => row.id === asset.id);
 		return {
 			...asset,
 			staleScreenshot: record ? isStaleScreenshot(record) : false,
 		};
-	});
+	}
+
+	let assets = publicAssets.map(withStaleFlag);
 
 	if (libraryType) assets = assets.filter((asset) => asset.libraryType === libraryType);
 	if (collectionId) assets = assets.filter((asset) => asset.collectionId === collectionId);
 	if (approvalStatus) assets = assets.filter((asset) => asset.approvalStatus === approvalStatus);
 	if (topic?.trim()) {
 		const ranked = rankAssetsForTopic(topic, assets, visionByAssetId);
-		assets = ranked.map((row) => row.asset);
+		assets = ranked.map((row) => withStaleFlag(row.asset));
 	} else if (query.trim()) {
-		assets = searchAssetsLocal(query, assets, visionByAssetId);
+		assets = searchAssetsLocal(query, assets, visionByAssetId).map(withStaleFlag);
 	}
 
 	const collections = brandId ? await store.listCollections(userId, brandId) : [];

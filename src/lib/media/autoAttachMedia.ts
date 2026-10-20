@@ -7,8 +7,16 @@ import { publicAssetsWithVision } from './plannerAssets';
 import { pickBestApprovedAsset } from './assetSelection';
 import { boostsFromSignals } from './assetLearning';
 import { getNativeContentStore } from './store';
-import type { AgentContext } from '@/lib/agent/types';
+import type { RateLimitPolicy } from '@/lib/agent/policy';
 import type { MediaDecision, PublicAsset } from './types';
+
+export type AutoAttachAgentContext = {
+	credential: {
+		id: string;
+		ownerUserId: string;
+		rateLimit: RateLimitPolicy;
+	};
+};
 import { mediaSpecFor } from './channelMedia';
 
 export type AutoMediaResult = {
@@ -33,7 +41,7 @@ async function recentUsageContext(ownerUserId: string, brandId: string) {
 }
 
 export async function resolveMediaForGeneratedContent(input: {
-	ctx: AgentContext;
+	ctx: AutoAttachAgentContext;
 	brandId: string;
 	contentId: string;
 	channel: string;
