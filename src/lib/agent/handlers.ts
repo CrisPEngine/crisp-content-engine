@@ -138,7 +138,11 @@ async function loadLinkedPublicAssets(
 		const asset = await store.getAsset(ownerUserId, link.assetId);
 		if (!asset) continue;
 		if (brandBrainId && asset.brandId && asset.brandId !== brandBrainId) continue;
-		assets.push(publicAsset(asset));
+		assets.push({
+			...publicAsset(asset),
+			matchReason: link.matchReason ?? link.selectionReason,
+			selectionPath: link.selectionPath,
+		});
 	}
 	return assets;
 }
@@ -869,9 +873,23 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			const outputs = [];
 			for (const channel of channels) {
 				const output = await generateForChannel(ctx, brain, { instruction, channel, themeId: brief?.themeId ?? inputString(input, 'themeId'), objective: brief?.objective, researchIds: brief?.researchIds });
+				const topic = output.topic ?? instruction;
+				const { resolveMediaForGeneratedContent } = await import('@/lib/media/autoAttachMedia');
+				const media = await resolveMediaForGeneratedContent({
+					ctx,
+					brandId: brain.id,
+					contentId: output.contentId,
+					channel,
+					topic,
+					objective: brief?.objective,
+					allowGenerate: true,
+				});
 				outputs.push({
 					...output,
-					mediaPlan: planMedia({ channel, topic: output.topic ?? instruction, objective: brief?.objective, contentType: output.channel === 'blog' ? 'article' : 'founder_post' }),
+					mediaPlan: media.mediaPlan,
+					mediaPath: media.mediaPath,
+					linkedAsset: media.asset ?? null,
+					mediaSelectionReason: media.matchReason ?? null,
 				});
 			}
 			if (brief) {
@@ -1458,18 +1476,30 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			const channel = resolveChannel(inputString(input, 'channel'))?.pipelineChannel ?? inputString(input, 'channel') ?? 'other';
 			const contentId = inputString(input, 'contentId');
 			if (contentId) await requireContent(ctx, contentId);
+			const metrics = snapshotFromManualMetrics({
+				channel,
+				memoryId: contentId,
+				impressions: typeof input.impressions === 'number' ? input.impressions : undefined,
+				clicks: typeof input.clicks === 'number' ? input.clicks : undefined,
+				reactions: typeof input.reactions === 'number' ? input.reactions : undefined,
+				comments: typeof input.comments === 'number' ? input.comments : undefined,
+				shares: typeof input.shares === 'number' ? input.shares : undefined,
+			});
 			const snapshot = await getIntelligenceStore().savePerformance(ctx.credential.ownerUserId, {
-				...snapshotFromManualMetrics({
-					channel,
-					memoryId: contentId,
-					impressions: typeof input.impressions === 'number' ? input.impressions : undefined,
-					clicks: typeof input.clicks === 'number' ? input.clicks : undefined,
-					reactions: typeof input.reactions === 'number' ? input.reactions : undefined,
-					comments: typeof input.comments === 'number' ? input.comments : undefined,
-					shares: typeof input.shares === 'number' ? input.shares : undefined,
-				}),
+				...metrics,
 				brandBrainId: brain.id,
 			});
+			if (contentId) {
+				const { recordPerformanceSignalsForContent } = await import('@/lib/media/assetPerformanceLearning');
+				await recordPerformanceSignalsForContent({
+					ownerUserId: ctx.credential.ownerUserId,
+					brandId: brain.id,
+					contentId,
+					channel,
+					engagementRate: metrics.engagementRate,
+					impressions: metrics.impressions,
+				});
+			}
 			return { snapshotId: snapshot.id, source: inputString(input, 'source'), reliability: inputString(input, 'reliability') ?? 'manual', organic: true, completeness: 'partial' };
 		}
 		case 'cce_get_ad_campaigns':
@@ -1596,6 +1626,10 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			const asset = await getNativeContentStore().getAsset(ctx.credential.ownerUserId, assetId);
 			if (!asset || (asset.brandId && !ctx.credential.allowedBrandIds.includes(asset.brandId))) {
 				throw new AgentError('brand_not_accessible', 'This agent cannot access that asset.', 403);
+			}
+			const linkBrandId = inputString(input, 'brandId');
+			if (asset.brandId && linkBrandId && asset.brandId !== linkBrandId) {
+				throw new AgentError('brand_not_accessible', 'This asset belongs to another brand.', 403);
 			}
 			await getNativeContentStore().saveLink({
 				id: crypto.randomUUID(),

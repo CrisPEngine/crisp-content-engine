@@ -1,7 +1,7 @@
 import { getSupabaseService } from '@/lib/supabaseService';
 import type { ArticleRecord } from '@/lib/articles/types';
 import type { AssetVisionAnalysis } from './assetVisionTypes';
-import type { AssetLink, ContentAssetRecord } from './types';
+import type { AssetCollectionRecord, AssetLink, AssetSelectionSignal, ContentAssetRecord } from './types';
 import type { NativeContentStore } from './store';
 
 function db() {
@@ -42,8 +42,41 @@ function assetFromRow(row: Record<string, unknown>): ContentAssetRecord {
 		visionAnalysis: (row.vision_analysis as AssetVisionAnalysis | null) ?? undefined,
 		visionAnalysisStatus: (row.vision_analysis_status as ContentAssetRecord['visionAnalysisStatus']) ?? undefined,
 		visionUserLocked: Boolean(row.vision_user_locked),
+		collectionId: (row.collection_id as string | null) ?? undefined,
+		sourceAttribution: (row.source_attribution as string | null) ?? undefined,
+		searchEmbedding: Array.isArray(row.search_embedding) ? (row.search_embedding as number[]) : undefined,
+		embeddingModel: (row.embedding_model as string | null) ?? undefined,
+		embeddingUpdatedAt: (row.embedding_updated_at as string | null) ?? undefined,
 		createdAt: String(row.created_at),
 		updatedAt: String(row.updated_at),
+	};
+}
+
+function collectionFromRow(row: Record<string, unknown>): AssetCollectionRecord {
+	return {
+		id: String(row.id),
+		ownerUserId: String(row.owner_user_id),
+		brandId: String(row.brand_id),
+		name: String(row.name),
+		parentId: (row.parent_id as string | null) ?? undefined,
+		sortOrder: Number(row.sort_order ?? 0),
+		createdAt: String(row.created_at),
+		updatedAt: String(row.updated_at),
+	};
+}
+
+function signalFromRow(row: Record<string, unknown>): AssetSelectionSignal {
+	return {
+		id: String(row.id),
+		ownerUserId: String(row.owner_user_id),
+		brandId: String(row.brand_id),
+		assetId: (row.asset_id as string | null) ?? undefined,
+		contentId: (row.content_id as string | null) ?? undefined,
+		channel: (row.channel as string | null) ?? undefined,
+		signalType: row.signal_type as AssetSelectionSignal['signalType'],
+		weight: Number(row.weight ?? 0),
+		note: (row.note as string | null) ?? undefined,
+		createdAt: String(row.created_at),
 	};
 }
 
@@ -56,6 +89,8 @@ function linkFromRow(row: Record<string, unknown>): AssetLink {
 		targetId: String(row.target_id),
 		role: (row.role as string | null) ?? undefined,
 		matchReason: (row.match_reason as string | null) ?? undefined,
+		selectionPath: (row.selection_path as AssetLink['selectionPath']) ?? undefined,
+		selectionReason: (row.selection_reason as string | null) ?? undefined,
 		createdAt: String(row.created_at),
 	};
 }
@@ -96,6 +131,11 @@ export function createSupabaseNativeContentStore(): NativeContentStore {
 				vision_analysis: asset.visionAnalysis ?? null,
 				vision_analysis_status: asset.visionAnalysisStatus ?? null,
 				vision_user_locked: asset.visionUserLocked ?? false,
+				collection_id: asset.collectionId ?? null,
+				source_attribution: asset.sourceAttribution ?? null,
+				search_embedding: asset.searchEmbedding ?? null,
+				embedding_model: asset.embeddingModel ?? null,
+				embedding_updated_at: asset.embeddingUpdatedAt ?? null,
 				created_at: asset.createdAt,
 				updated_at: asset.updatedAt,
 			});
@@ -114,6 +154,10 @@ export function createSupabaseNativeContentStore(): NativeContentStore {
 			if (error) throw new Error(error.message);
 			return (data ?? []).map((row) => assetFromRow(row as Record<string, unknown>));
 		},
+		async deleteAsset(ownerUserId, id) {
+			const { error } = await db().from('content_assets').delete().eq('owner_user_id', ownerUserId).eq('id', id);
+			if (error) throw new Error(error.message);
+		},
 		async saveLink(link) {
 			const { error } = await db().from('content_asset_links').upsert({
 				id: link.id,
@@ -123,6 +167,8 @@ export function createSupabaseNativeContentStore(): NativeContentStore {
 				target_id: link.targetId,
 				role: link.role ?? null,
 				match_reason: link.matchReason ?? null,
+				selection_path: link.selectionPath ?? null,
+				selection_reason: link.selectionReason ?? null,
 				created_at: link.createdAt,
 			});
 			if (error) throw new Error(error.message);
@@ -152,6 +198,61 @@ export function createSupabaseNativeContentStore(): NativeContentStore {
 				.eq('target_type', targetType)
 				.eq('target_id', targetId);
 			if (error) throw new Error(error.message);
+		},
+		async saveCollection(collection) {
+			const { error } = await db().from('asset_collections').upsert({
+				id: collection.id,
+				owner_user_id: collection.ownerUserId,
+				brand_id: collection.brandId,
+				name: collection.name,
+				parent_id: collection.parentId ?? null,
+				sort_order: collection.sortOrder,
+				created_at: collection.createdAt,
+				updated_at: collection.updatedAt,
+			});
+			if (error) throw new Error(error.message);
+			return collection;
+		},
+		async listCollections(ownerUserId, brandId) {
+			const { data, error } = await db()
+				.from('asset_collections')
+				.select('*')
+				.eq('owner_user_id', ownerUserId)
+				.eq('brand_id', brandId)
+				.order('sort_order', { ascending: true });
+			if (error) throw new Error(error.message);
+			return (data ?? []).map((row) => collectionFromRow(row as Record<string, unknown>));
+		},
+		async deleteCollection(ownerUserId, id) {
+			const { error } = await db().from('asset_collections').delete().eq('owner_user_id', ownerUserId).eq('id', id);
+			if (error) throw new Error(error.message);
+		},
+		async saveSelectionSignal(signal) {
+			const { error } = await db().from('asset_selection_signals').insert({
+				id: signal.id,
+				owner_user_id: signal.ownerUserId,
+				brand_id: signal.brandId,
+				asset_id: signal.assetId ?? null,
+				content_id: signal.contentId ?? null,
+				channel: signal.channel ?? null,
+				signal_type: signal.signalType,
+				weight: signal.weight,
+				note: signal.note ?? null,
+				created_at: signal.createdAt,
+			});
+			if (error) throw new Error(error.message);
+			return signal;
+		},
+		async listSelectionSignals(ownerUserId, brandId, limit = 500) {
+			const { data, error } = await db()
+				.from('asset_selection_signals')
+				.select('*')
+				.eq('owner_user_id', ownerUserId)
+				.eq('brand_id', brandId)
+				.order('created_at', { ascending: false })
+				.limit(limit);
+			if (error) throw new Error(error.message);
+			return (data ?? []).map((row) => signalFromRow(row as Record<string, unknown>));
 		},
 		async saveArticle(article) {
 			const { error } = await db().from('articles').upsert({

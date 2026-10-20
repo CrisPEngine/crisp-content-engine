@@ -82,6 +82,11 @@ export async function listNativeQueueForUser(
 			const diagnostics = diagnosticsFromPublishJob(displayMemory, job);
 
 			const channel = String(displayMemory.channel);
+			const store = (await import('@/lib/media/store')).getNativeContentStore();
+			const links = await store.listLinks(userId, 'content', displayMemory.id);
+			const primaryLink = links[0];
+			const linkedAsset = primaryLink ? await store.getAsset(userId, primaryLink.assetId) : null;
+
 			const [linkedImageUrl, publishTarget] = await Promise.all([
 				resolveLinkedImageUrlForTarget({
 					ownerUserId: userId,
@@ -93,8 +98,11 @@ export async function listNativeQueueForUser(
 			]);
 
 			const item = mapMemoryToQueueItem(brain, displayMemory, diagnostics, {
-				linkedImageUrl,
+				linkedImageUrl: linkedImageUrl ?? linkedAsset?.url ?? null,
 				destinationLabel: publishTarget.ready ? publishTarget.label : null,
+				linkedAssetId: linkedAsset?.id ?? null,
+				mediaPath: primaryLink?.selectionPath ?? null,
+				mediaSelectionReason: primaryLink?.selectionReason ?? primaryLink?.matchReason ?? null,
 			});
 			if (!filterNativeQueueItem(item, memory, input)) return;
 			items.push(item);

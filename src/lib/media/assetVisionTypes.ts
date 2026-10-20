@@ -8,6 +8,8 @@ export type AssetVisionAnalysis = {
 	orientation: 'portrait' | 'landscape' | 'square' | 'unknown';
 	cropSuitability: string;
 	suggestedTopics: string[];
+	suggestedChannels: string[];
+	detectedText: string[];
 	altText: string;
 	searchTags: string[];
 	analyzedAt: string;

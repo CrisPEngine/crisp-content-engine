@@ -60,6 +60,19 @@ export type LibraryAssetType =
 	| 'SOCIAL_IMAGE'
 	| 'OTHER';
 
+export type AssetCollectionRecord = {
+	id: string;
+	ownerUserId: string;
+	brandId: string;
+	name: string;
+	parentId?: string;
+	sortOrder: number;
+	createdAt: string;
+	updatedAt: string;
+};
+
+export type AssetSelectionPath = 'library' | 'generated' | 'manual';
+
 export type ContentAssetRecord = {
 	id: string;
 	ownerUserId: string;
@@ -93,6 +106,11 @@ export type ContentAssetRecord = {
 	visionAnalysis?: AssetVisionAnalysis;
 	visionAnalysisStatus?: AssetVisionAnalysisStatus;
 	visionUserLocked?: boolean;
+	collectionId?: string;
+	sourceAttribution?: string;
+	searchEmbedding?: number[];
+	embeddingModel?: string;
+	embeddingUpdatedAt?: string;
 	createdAt: string;
 	updatedAt: string;
 };
@@ -105,6 +123,21 @@ export type AssetLink = {
 	targetId: string;
 	role?: string;
 	matchReason?: string;
+	selectionPath?: AssetSelectionPath;
+	selectionReason?: string;
+	createdAt: string;
+};
+
+export type AssetSelectionSignal = {
+	id: string;
+	ownerUserId: string;
+	brandId: string;
+	assetId?: string;
+	contentId?: string;
+	channel?: string;
+	signalType: 'auto_pick' | 'swap' | 'reject' | 'performance_boost' | 'manual_attach';
+	weight: number;
+	note?: string;
 	createdAt: string;
 };
 
@@ -130,6 +163,10 @@ export type PublicAsset = {
 	url?: string;
 	visionAnalysis?: AssetVisionAnalysis;
 	visionAnalysisStatus?: AssetVisionAnalysisStatus;
+	collectionId?: string;
+	sourceAttribution?: string;
+	rightsNotes?: string;
+	staleScreenshot?: boolean;
 };
 
 export type ImageGenerationRequest = {
