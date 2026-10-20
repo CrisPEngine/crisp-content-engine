@@ -142,13 +142,32 @@ export function applyNativeQueueSchedulePatch(input: PatchScheduleInput): PatchS
 
 /** Repair rows approved before the schedule-on-approve fix shipped. */
 export function needsApprovedScheduleRepair(memory: ContentMemoryRecord): boolean {
-	if (memory.publicationStatus !== 'approved') return false;
-	if (memory.publicationDate) return false;
-	return Boolean(metadataString(memory.metadata, 'proposedScheduleAt'));
+	if (memory.publicationStatus === 'published' || memory.publicationStatus === 'rejected') return false;
+	if (memory.publicationStatus === 'approved') {
+		if (memory.publicationDate) return true;
+		return Boolean(metadataString(memory.metadata, 'proposedScheduleAt'));
+	}
+	if (memory.publicationStatus === 'scheduled' && !memory.publicationDate) {
+		return Boolean(metadataString(memory.metadata, 'proposedScheduleAt'));
+	}
+	return false;
 }
 
 export function repairApprovedScheduleMemory(memory: ContentMemoryRecord): ContentMemoryRecord {
 	if (!needsApprovedScheduleRepair(memory)) return memory;
+	if (memory.publicationStatus === 'approved' && memory.publicationDate && !metadataString(memory.metadata, 'proposedScheduleAt')) {
+		const metadata = { ...(memory.metadata ?? {}) };
+		delete metadata.proposedScheduleAt;
+		delete metadata.proposedScheduleLabel;
+		delete metadata.proposedSchedule;
+		delete metadata.userAcceptedProposedSchedule;
+		return {
+			...memory,
+			publicationStatus: 'scheduled',
+			publicationDate: memory.publicationDate,
+			metadata,
+		};
+	}
 	const finalized = finalizeApprovalSchedule(memory);
 	return {
 		...memory,
@@ -156,4 +175,24 @@ export function repairApprovedScheduleMemory(memory: ContentMemoryRecord): Conte
 		publicationDate: finalized.publicationDate,
 		metadata: finalized.metadata,
 	};
+}
+
+export function resolveNativeQueueScheduleIntent(
+	memory: Pick<ContentMemoryRecord, 'publicationStatus'>,
+	explicit?: ScheduleIntent,
+): ScheduleIntent {
+	if (explicit) return explicit;
+	return isAwaitingHumanApproval(memory.publicationStatus) ? 'preference' : 'publish';
+}
+
+/** Approved or scheduled rows with a publish time belong on the schedule stage, not approval. */
+export function shouldExcludeFromApprovalStage(memory: ContentMemoryRecord): boolean {
+	if (memory.publicationStatus === 'scheduled' || memory.publicationStatus === 'publishing' || memory.publicationStatus === 'published') {
+		return true;
+	}
+	if (memory.publicationStatus === 'approved') {
+		if (memory.publicationDate) return true;
+		if (metadataString(memory.metadata, 'proposedScheduleAt')) return true;
+	}
+	return false;
 }

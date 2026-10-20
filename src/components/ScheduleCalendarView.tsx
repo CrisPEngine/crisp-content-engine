@@ -4,7 +4,9 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
-import type { EventDropArg, EventInput } from '@fullcalendar/core';
+import type { EventClickArg, EventDropArg, EventInput } from '@fullcalendar/core';
+import { DateTime } from 'luxon';
+import { gstDatetimeLocalValueToUtcIso, parseUtcPublishAtIso } from '@/lib/datetime/gstSchedule';
 
 type ScheduledItem = {
 	id: string;
@@ -49,6 +51,8 @@ export default function ScheduleCalendarView({ items, onReschedule }: Props) {
 		y: number;
 		item: ScheduledItem;
 	} | null>(null);
+	const [rescheduleEventId, setRescheduleEventId] = useState<string | null>(null);
+	const [rescheduleDraft, setRescheduleDraft] = useState('');
 
 	const events: EventInput[] = items
 		.filter((item) => item.scheduled_date)
@@ -58,7 +62,7 @@ export default function ScheduleCalendarView({ items, onReschedule }: Props) {
 				id: item.id,
 				title: item.title || 'Untitled',
 				start: item.scheduled_date,
-				allDay: true,
+				allDay: false,
 				editable: item.status !== 'Published',
 				backgroundColor: colors.bg,
 				borderColor: colors.border,
@@ -68,13 +72,33 @@ export default function ScheduleCalendarView({ items, onReschedule }: Props) {
 					status: item.status,
 					brand_name: item.brand_name,
 					content_preview: item.content_preview,
+					scheduled_date: item.scheduled_date,
 				},
 			};
 		});
 
+	function combineDropWithExistingTime(existingIso: string, dropStart: Date | null): string | null {
+		if (!dropStart) return null;
+		const existing = parseUtcPublishAtIso(existingIso);
+		if (!existing.isValid) return dropStart.toISOString();
+		const dropped = DateTime.fromJSDate(dropStart, { zone: 'utc' });
+		const merged = dropped.set({
+			hour: existing.hour,
+			minute: existing.minute,
+			second: existing.second,
+			millisecond: existing.millisecond,
+		});
+		return merged.toISO() ?? dropStart.toISOString();
+	}
+
 	const handleEventDrop = useCallback(
 		async (info: EventDropArg) => {
-			const newDate = info.event.startStr;
+			const existingIso = String(info.event.extendedProps.scheduled_date ?? info.event.startStr);
+			const newDate = combineDropWithExistingTime(existingIso, info.event.start);
+			if (!newDate) {
+				info.revert();
+				return;
+			}
 			const ok = await onReschedule(info.event.id, newDate);
 			if (!ok) {
 				info.revert();
@@ -82,6 +106,15 @@ export default function ScheduleCalendarView({ items, onReschedule }: Props) {
 		},
 		[onReschedule]
 	);
+
+	const handleEventClick = useCallback((info: EventClickArg) => {
+		if (info.event.extendedProps.status === 'Published') return;
+		const iso = String(info.event.extendedProps.scheduled_date ?? info.event.startStr);
+		const dt = parseUtcPublishAtIso(iso);
+		if (!dt.isValid) return;
+		setRescheduleEventId(info.event.id);
+		setRescheduleDraft(dt.setZone('Asia/Dubai').toFormat("yyyy-MM-dd'T'HH:mm"));
+	}, []);
 
 	const handleEventMouseEnter = useCallback((info: { el: HTMLElement; event: any }) => {
 		const rect = info.el.getBoundingClientRect();
@@ -129,6 +162,7 @@ export default function ScheduleCalendarView({ items, onReschedule }: Props) {
 				editable
 				droppable={false}
 				eventDrop={handleEventDrop}
+				eventClick={handleEventClick}
 				eventMouseEnter={handleEventMouseEnter}
 				eventMouseLeave={handleEventMouseLeave}
 				headerToolbar={{
@@ -156,6 +190,50 @@ export default function ScheduleCalendarView({ items, onReschedule }: Props) {
 					);
 				}}
 			/>
+
+			{rescheduleEventId ? (
+				<div className="card p-4 mb-4 flex flex-col sm:flex-row sm:items-end gap-3">
+					<div className="flex-1">
+						<p className="text-sm font-medium text-text mb-1">Reschedule publish time (GST)</p>
+						<input
+							type="datetime-local"
+							value={rescheduleDraft}
+							onChange={(e) => setRescheduleDraft(e.target.value)}
+							className="w-full px-3 py-2 text-sm rounded-lg border border-edge/60 bg-surface/30 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+						/>
+					</div>
+					<div className="flex gap-2">
+						<button
+							type="button"
+							className="px-3 py-2 rounded-xl2 bg-primary/10 hover:bg-primary/20 text-primary text-sm"
+							onClick={async () => {
+								try {
+									const iso = gstDatetimeLocalValueToUtcIso(rescheduleDraft);
+									const ok = await onReschedule(rescheduleEventId, iso);
+									if (ok) {
+										setRescheduleEventId(null);
+										setRescheduleDraft('');
+									}
+								} catch {
+									// parent onReschedule sets error state
+								}
+							}}
+						>
+							Save time
+						</button>
+						<button
+							type="button"
+							className="px-3 py-2 rounded-xl2 border border-edge/60 text-text-dim text-sm hover:bg-surface/50"
+							onClick={() => {
+								setRescheduleEventId(null);
+								setRescheduleDraft('');
+							}}
+						>
+							Cancel
+						</button>
+					</div>
+				</div>
+			) : null}
 
 			{tooltip && (
 				<div

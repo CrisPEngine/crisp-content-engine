@@ -5,6 +5,8 @@ import {
 	finalizeApprovalSchedule,
 	needsApprovedScheduleRepair,
 	repairApprovedScheduleMemory,
+	resolveNativeQueueScheduleIntent,
+	shouldExcludeFromApprovalStage,
 } from '@/lib/content/nativeQueueSchedule';
 import { mapMemoryToQueueItem, stageIncludesWorkflowStatus } from '@/lib/content/nativeQueueView';
 import { workflowStatus } from '@/lib/content/workflow';
@@ -118,5 +120,35 @@ describe('nativeQueueSchedule', () => {
 		});
 		expect(patch.publicationStatus).toBe('scheduled');
 		expect(patch.shouldSyncPublishJob).toBe(true);
+	});
+
+	it('repairs approved rows that already have publicationDate but stayed approved', () => {
+		const stuck = reviewMemory({
+			publicationStatus: 'approved',
+			publicationDate: '2026-10-24T08:45:00.000Z',
+		});
+		expect(needsApprovedScheduleRepair(stuck)).toBe(true);
+		const repaired = repairApprovedScheduleMemory(stuck);
+		expect(repaired.publicationStatus).toBe('scheduled');
+		expect(repaired.publicationDate).toBe('2026-10-24T08:45:00.000Z');
+		expect(shouldExcludeFromApprovalStage(repaired)).toBe(true);
+	});
+
+	it('defaults schedule intent to publish after approval', () => {
+		expect(resolveNativeQueueScheduleIntent({ publicationStatus: 'approved' })).toBe('publish');
+		expect(resolveNativeQueueScheduleIntent({ publicationStatus: 'scheduled' })).toBe('publish');
+		expect(resolveNativeQueueScheduleIntent({ publicationStatus: 'review' })).toBe('preference');
+	});
+
+	it('excludes approved rows with pending schedule from approval stage', () => {
+		const memory = reviewMemory({
+			publicationStatus: 'approved',
+			metadata: { proposedScheduleAt: '2026-10-25T08:47:00.000Z' },
+		});
+		expect(shouldExcludeFromApprovalStage(memory)).toBe(true);
+		const reviewWithProposal = reviewMemory({
+			metadata: { proposedScheduleAt: '2026-10-25T08:47:00.000Z' },
+		});
+		expect(shouldExcludeFromApprovalStage(reviewWithProposal)).toBe(false);
 	});
 });
