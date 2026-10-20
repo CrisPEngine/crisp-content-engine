@@ -1,5 +1,6 @@
 -- Brand asset library: collections, enrichment, embeddings, and selection learning.
--- Additive. Existing rows keep working with null collection and empty embedding.
+-- Migration 037. Independent of 036 (publish worker heartbeats on another branch).
+-- Additive only: no ordering requirement relative to 036. Existing rows keep null collection and empty embedding until enriched.
 
 CREATE TABLE IF NOT EXISTS public.asset_collections (
   id              UUID        PRIMARY KEY,
