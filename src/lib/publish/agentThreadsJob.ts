@@ -12,6 +12,7 @@ import { assertMemoryChannelConstraints } from '@/lib/channels/validateMemory';
 import { getNativeContentStore } from '@/lib/media/store';
 import { composeAgentPublishText } from '@/lib/content/socialPublishBody';
 import { isStalePublishingJob } from '@/lib/publish/publishJobLifecycle';
+import { applyPublishTargetSpacing } from '@/lib/publish/publishJobSpacing';
 
 export function isAgentThreadsMemory(memory: Pick<ContentMemoryRecord, 'channel'>): boolean {
 	return String(memory.channel).toLowerCase() === 'threads';
@@ -78,23 +79,6 @@ function normalizeScheduledTime(publishAt: string | undefined): Date {
 	return scheduledTime;
 }
 
-async function applyPublishSpacing(admin: ReturnType<typeof getSupabaseService>, platform: string, targetId: string, scheduledTime: Date) {
-	const { data: recentJobs } = await admin
-		.from('publish_jobs')
-		.select('scheduled_time')
-		.eq('platform', platform)
-		.eq('target_id', targetId)
-		.order('scheduled_time', { ascending: false })
-		.limit(1);
-
-	if (recentJobs?.length) {
-		const lastScheduledTime = new Date(recentJobs[0].scheduled_time);
-		const sixtySecondsAfterLast = new Date(lastScheduledTime.getTime() + 60 * 1000);
-		if (scheduledTime < sixtySecondsAfterLast) return sixtySecondsAfterLast;
-	}
-	return scheduledTime;
-}
-
 export async function cancelAgentThreadsPublishJob(userId: string, memoryId: string): Promise<void> {
 	const admin = getSupabaseService();
 	const { error } = await admin
@@ -152,13 +136,22 @@ export async function syncAgentThreadsPublishJob(input: {
 	const admin = getSupabaseService();
 	const targetId = resolved.providerDestinationId;
 	const contentItemKey = input.memory.id;
-	let scheduledTime = await applyPublishSpacing(admin, 'threads', targetId, normalizeScheduledTime(input.publishAt));
+
+	await cancelAgentThreadsPublishJob(input.userId, contentItemKey);
+
+	let scheduledTime = normalizeScheduledTime(input.publishAt);
+	scheduledTime = await applyPublishTargetSpacing(admin, {
+		platform: 'threads',
+		targetId,
+		scheduledTime,
+		excludeContentItemKey: contentItemKey,
+	});
 	const attachedImageUrl = await resolveAgentThreadsAttachedImageUrl(input.userId, input.memory.id);
 	const payload = buildAgentThreadsPayload(input.memory, targetId, resolved.destinationId, attachedImageUrl);
 
 	const { data: existing } = await admin
 		.from('publish_jobs')
-		.select('id, status, updated_at')
+		.select('id, status, updated_at, scheduled_time')
 		.eq('platform', 'threads')
 		.eq('content_item_key', contentItemKey)
 		.in('status', ['published', 'publishing'])
@@ -167,14 +160,18 @@ export async function syncAgentThreadsPublishJob(input: {
 	if (existing?.status === 'published') {
 		return { armed: false };
 	}
-	if (existing?.status === 'publishing' && !isStalePublishingJob(existing)) {
-		return { armed: true };
-	}
-	if (existing?.status === 'publishing' && isStalePublishingJob(existing)) {
+	if (existing?.status === 'publishing') {
+		const desiredMs = scheduledTime.getTime();
+		const jobMs = existing.scheduled_time ? new Date(String(existing.scheduled_time)).getTime() : NaN;
+		const rescheduleMismatch =
+			input.publishAt &&
+			Number.isFinite(jobMs) &&
+			Math.abs(jobMs - desiredMs) > 60 * 1000;
+		if (!isStalePublishingJob(existing) && !rescheduleMismatch) {
+			return { armed: true };
+		}
 		await admin.from('publish_jobs').delete().eq('id', existing.id).eq('status', 'publishing');
 	}
-
-	await cancelAgentThreadsPublishJob(input.userId, contentItemKey);
 
 	const row = {
 		user_id: input.userId,

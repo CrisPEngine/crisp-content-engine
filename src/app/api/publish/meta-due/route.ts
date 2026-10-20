@@ -8,6 +8,7 @@ import { requirePublishCronAuth } from '@/lib/publish/cronAuth';
 import { recoverStalePublishingJobs } from '@/lib/publish/publishJobLifecycle';
 import { recordPublishWorkerRun } from '@/lib/publish/workerHeartbeat';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
+import { buildMetaDueDiagnostics } from '@/lib/publish/metaDueDiagnostics';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,9 +39,10 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
 	let processed = 0;
 	try {
+		const metaPublishingEnabled = isMetaPublishingEnabled();
 		// Feature flag guard
-		if (!isMetaPublishingEnabled()) {
-			return NextResponse.json({ error: 'Meta publishing is disabled' }, { status: 404 });
+		if (!metaPublishingEnabled) {
+			return NextResponse.json({ error: 'Meta publishing is disabled', metaPublishingEnabled: false }, { status: 404 });
 		}
 
 		const auth = requirePublishCronAuth(request);
@@ -52,6 +54,7 @@ export async function GET(request: Request) {
 
 		const admin = getSupabaseService();
 		const now = new Date().toISOString();
+		const debugContentKey = new URL(request.url).searchParams.get('debugContentKey')?.trim() || undefined;
 
 		const staleRecovery = await recoverStalePublishingJobs({ platforms: META_PUBLISH_PLATFORMS });
 		console.log('[Meta Worker] Stale publishing recovery:', staleRecovery);
@@ -71,9 +74,27 @@ export async function GET(request: Request) {
 			return NextResponse.json({ error: 'Failed to fetch jobs' }, { status: 500 });
 		}
 
+		const dueJobsFound = dueJobs?.length ?? 0;
+		const diagnostics = await buildMetaDueDiagnostics(admin, {
+			now,
+			metaPublishingEnabled,
+			dueJobsFound,
+			contentItemKey: debugContentKey,
+		});
+
 		if (!dueJobs || dueJobs.length === 0) {
 			await recordPublishWorkerRun({ worker: 'meta-due', ok: true, processed: 0 });
-			return NextResponse.json({ ok: true, processed: 0, staleRecovery, reconcile });
+			console.log('[Meta Worker] No due jobs', { now, diagnostics, staleRecovery, reconcile });
+			return NextResponse.json({
+				ok: true,
+				now,
+				metaPublishingEnabled,
+				dueJobsFound: 0,
+				processed: 0,
+				staleRecovery,
+				reconcile,
+				diagnostics,
+			});
 		}
 
 		console.log(`[Meta Worker] Processing ${dueJobs.length} due jobs`);
@@ -84,6 +105,7 @@ export async function GET(request: Request) {
 			retrying: 0,
 			failed: 0,
 			skipped: 0,
+			skippedLockContention: 0,
 		};
 
 		for (const job of dueJobs) {
@@ -102,8 +124,12 @@ export async function GET(request: Request) {
 
 				if (lockError || !locked) {
 					// Another worker already claimed this job, skip
-					console.log(`[Meta Worker] Job ${job.id} already claimed, skipping`);
+					console.log(`[Meta Worker] Job ${job.id} already claimed, skipping`, {
+						contentItemKey: job.content_item_key,
+						platform: job.platform,
+					});
 					results.skipped++;
+					results.skippedLockContention++;
 					continue;
 				}
 
@@ -136,9 +162,18 @@ export async function GET(request: Request) {
 		}
 
 		processed = results.processed;
-		console.log('[Meta Worker] Processing complete:', results);
+		console.log('[Meta Worker] Processing complete:', { results, diagnostics });
 		await recordPublishWorkerRun({ worker: 'meta-due', ok: true, processed: results.processed });
-		return NextResponse.json({ ok: true, staleRecovery, reconcile, results });
+		return NextResponse.json({
+			ok: true,
+			now,
+			metaPublishingEnabled,
+			dueJobsFound,
+			staleRecovery,
+			reconcile,
+			diagnostics,
+			results,
+		});
 	} catch (error: any) {
 		console.error('[Meta Worker] Critical error:', error);
 		await recordPublishWorkerRun({
