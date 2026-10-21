@@ -3,6 +3,7 @@ import 'server-only';
 import { getSupabaseService } from '@/lib/supabaseService';
 import type { AgentMetaPlatform } from '@/lib/publish/agentMetaJob';
 import { isStalePublishingJob } from '@/lib/publish/publishJobLifecycle';
+import { publishInstantsMatch } from '@/lib/publish/publishInstant';
 
 export type PublishJobRow = {
 	id: string;
@@ -48,12 +49,9 @@ export async function findPublishJobForContentAnyUser(input: {
 	return findPublishJobForContent({ ...input, userId: undefined });
 }
 
-export function publishJobMatchesPublishAt(job: PublishJobRow, publishAt: string | undefined, toleranceMs = 60_000): boolean {
+export function publishJobMatchesPublishAt(job: PublishJobRow, publishAt: string | undefined, toleranceMs = 2_000): boolean {
 	if (!publishAt?.trim()) return true;
-	const desired = new Date(publishAt).getTime();
-	const scheduled = new Date(job.scheduled_time).getTime();
-	if (Number.isNaN(desired) || Number.isNaN(scheduled)) return false;
-	return Math.abs(desired - scheduled) <= toleranceMs;
+	return publishInstantsMatch(publishAt, job.scheduled_time, toleranceMs);
 }
 
 export function isPublishJobDue(job: PublishJobRow, now: Date = new Date()): boolean {

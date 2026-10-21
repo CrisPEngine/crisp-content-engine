@@ -17,6 +17,8 @@ import {
 	clearNonTerminalPublishJobsForContent,
 	hasActiveQueueablePublishJob,
 } from '@/lib/publish/publishJobActive';
+import { toPublishInstantIso } from '@/lib/publish/publishInstant';
+import { realignQueuedPublishJobToPublicationDate } from '@/lib/publish/realignPublishJob';
 
 export type AgentMetaPlatform = 'facebook' | 'instagram';
 
@@ -163,7 +165,14 @@ export async function syncAgentMetaPublishJob(input: {
 	userId: string;
 	memory: ContentMemoryRecord;
 	publishAt?: string;
-}): Promise<{ armed: boolean; skipped?: string; reason?: string; platform?: AgentMetaPlatform }> {
+}): Promise<{
+	armed: boolean;
+	skipped?: string;
+	reason?: string;
+	platform?: AgentMetaPlatform;
+	effectivePublicationAt?: string;
+	spacingCapped?: boolean;
+}> {
 	const platform = agentMetaPlatformFromChannel(input.memory.channel);
 	if (!platform) {
 		return { armed: false, skipped: 'not_meta' };
@@ -222,15 +231,18 @@ export async function syncAgentMetaPublishJob(input: {
 
 	await clearNonTerminalPublishJobsForContent({ platform, contentItemKey });
 
-	let scheduledTime = normalizeScheduledTime(input.publishAt);
-	scheduledTime = await applyPublishTargetSpacing(admin, {
+	const requestedInstant = normalizeScheduledTime(input.publishAt);
+	const spacing = await applyPublishTargetSpacing(admin, {
 		platform,
 		targetId,
-		scheduledTime,
+		scheduledTime: requestedInstant,
 		excludeContentItemKey: contentItemKey,
+		requestedCeiling: requestedInstant,
 	});
+	const scheduledTime = spacing.scheduledTime;
 	const payload = buildAgentMetaPayload(input.memory, platform, targetId, resolved.destinationId, attachedImageUrl);
 	const publishAtIso = scheduledTime.toISOString();
+	const normalizedPublicationAt = toPublishInstantIso(input.publishAt) ?? publishAtIso;
 
 	const row = {
 		user_id: input.userId,
@@ -268,7 +280,12 @@ export async function syncAgentMetaPublishJob(input: {
 		);
 	}
 
-	return { armed: true, platform };
+	return {
+		armed: true,
+		platform,
+		effectivePublicationAt: normalizedPublicationAt,
+		spacingCapped: spacing.spacingCapped,
+	};
 }
 
 export async function applyMetaJobOutcomeToAgentContent(job: {
@@ -376,6 +393,17 @@ export async function repairAgentMetaPublishJobIfMissing(input: {
 			}
 			return { repaired: false, error: message };
 		}
+		if (publishAt) {
+			const realigned = await realignQueuedPublishJobToPublicationDate({
+				userId: input.userId,
+				contentItemKey: input.memory.id,
+				platform,
+				publicationDate: publishAt,
+			});
+			if (realigned.realigned) {
+				return { repaired: true };
+			}
+		}
 		const verified = await hasActiveQueueablePublishJob({
 			userId: input.userId,
 			contentItemKey: input.memory.id,
@@ -383,6 +411,15 @@ export async function repairAgentMetaPublishJobIfMissing(input: {
 			publishAt,
 		});
 		if (!verified.active) {
+			if (verified.reason === 'scheduled_time_mismatch' && publishAt) {
+				const realigned = await realignQueuedPublishJobToPublicationDate({
+					userId: input.userId,
+					contentItemKey: input.memory.id,
+					platform,
+					publicationDate: publishAt,
+				});
+				if (realigned.realigned) return { repaired: true };
+			}
 			const message = verified.reason ?? 'no_publish_job';
 			if (input.recordFailure) {
 				await recordAgentMetaScheduleFailure(input.userId, input.memory, message);

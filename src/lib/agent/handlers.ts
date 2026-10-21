@@ -1306,6 +1306,13 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 					publishAt,
 				});
 				publisherArmed = queued.armed;
+				if (queued.effectivePublicationAt) {
+					pendingMemory.publicationDate = queued.effectivePublicationAt;
+				}
+				if (queued.spacingCapped) {
+					note =
+						'Publish time was kept at your requested slot (60s target spacing would have scheduled later).';
+				}
 				if (!publisherArmed && queued.skipped === 'meta_disabled') {
 					note = 'Meta publishing is disabled; content is scheduled in CCE only until META_PUBLISHING_ENABLED is on.';
 				}
