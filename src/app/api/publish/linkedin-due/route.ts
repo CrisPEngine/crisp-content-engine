@@ -30,6 +30,7 @@ import { listRecords, batchUpdate, normalizeLookup } from '@/lib/airtable/client
 import { CONTENTQUEUE_LOOKUP_FIELDS } from '@/lib/airtable/field-mapping';
 import { DateTime } from 'luxon';
 import { CAPS } from '@/config/pricing';
+import { recordPublishWorkerRun } from '@/lib/publish/workerHeartbeat';
 
 /**
  * ContentQueue Lookup Fields
@@ -934,12 +935,18 @@ export async function GET(request: Request) {
 
 	try {
 		const stats = await publishDueContent();
+		await recordPublishWorkerRun({ worker: 'linkedin-due', ok: true, processed: stats.success });
 		return NextResponse.json({
 			ok: true,
 			...stats,
 		});
 	} catch (error: any) {
 		console.error('Publish job error:', error);
+		await recordPublishWorkerRun({
+			worker: 'linkedin-due',
+			ok: false,
+			error: error?.message || 'Failed to run publish job',
+		});
 		return NextResponse.json(
 			{
 				ok: false,

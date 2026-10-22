@@ -151,6 +151,49 @@ X-Cron-Secret: your-cron-secret-value
 
 **Headers**: `X-Cron-Secret: your-cron-secret-value` (Bearer also works on intelligence-style routes; LinkedIn worker accepts `X-Cron-Secret`).
 
+### 8. Publish watchdog (missed runs and silent schedulers)
+
+**Purpose**: Runs on a schedule **separate from** the Meta, Threads, and LinkedIn publish workers. It records a `publish-watchdog` heartbeat, flags stale publish crons, reconciles overdue scheduled content, and marks posts that missed their publish window as failed **without calling the social APIs** (queueable jobs are cancelled first to avoid double posting).
+
+**Schedule**: Every 5 to 10 minutes (for example `*/5 * * * *` or `*/10 * * * *` on cron-job.org).
+
+**Endpoint**: `GET https://app.crispdigital.io/api/publish/watchdog`  
+(`POST` is equivalent.)
+
+**Headers** (use a **different** secret from `CRON_SECRET`):
+
+```
+Authorization: Bearer your-watchdog-cron-secret-value
+```
+
+or
+
+```
+X-Watchdog-Secret: your-watchdog-cron-secret-value
+```
+
+**Environment (Vercel production)**:
+
+- `WATCHDOG_CRON_SECRET` must match the header value above. Generate a long random string (separate from `CRON_SECRET`).
+- `CRON_SECRET` is still required for the Meta/Threads/LinkedIn publish worker URLs.
+
+**Setup steps (cron-job.org)**:
+
+1. In Vercel, add **`WATCHDOG_CRON_SECRET`** to Production (and Preview if you test there). Redeploy after saving.
+2. Go to https://cron-job.org and click **Create cronjob**.
+3. Fill in:
+   - **Title**: Publish watchdog
+   - **Address**: `https://app.crispdigital.io/api/publish/watchdog` (replace with your production URL)
+   - **Schedule**: every 5 or 10 minutes (for example `*/5 * * * *`)
+   - **Request method**: GET (or POST)
+   - **Request headers**:
+     ```
+     Authorization: Bearer your-watchdog-cron-secret-value
+     ```
+4. Save the job and confirm the first run returns HTTP 200 with JSON including `"ok": true`.
+
+**Health**: The app dashboard shows a publish health banner when workers are stale. MCP `cce_get_system_status` includes `publishWorkers` (including `publish-watchdog`) and `publishHealthBanners`.
+
 ### Vercel Cron
 
 This repo does **not** define Vercel Cron entries in `vercel.json`. Production relies on an external scheduler (for example cron-job.org). Do not enable Vercel Cron for the same URLs unless you disable the external jobs, or workers may run twice.

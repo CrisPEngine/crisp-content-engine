@@ -1,11 +1,12 @@
 import 'server-only';
 
 import { getSupabaseService } from '@/lib/supabaseService';
+import { evaluatePublishWorkerStale } from '@/lib/publish/publishWatchdogLogic';
 
-export type PublishWorkerId = 'meta-due' | 'threads-due' | 'linkedin-due';
+export type PublishWorkerId = 'meta-due' | 'threads-due' | 'linkedin-due' | 'publish-watchdog';
 
-/** Warn when publish cron has not run within this window (cron-job.org is typically every 1–5 minutes). */
-export const PUBLISH_CRON_STALE_AFTER_MS = 15 * 60 * 1000;
+/** @deprecated Use publishWorkerStaleThresholdMs(worker) for per-worker thresholds (2x expected interval). */
+export const PUBLISH_CRON_STALE_AFTER_MS = 60 * 60 * 1000;
 
 export async function recordPublishWorkerRun(input: {
 	worker: PublishWorkerId;
@@ -72,11 +73,11 @@ export async function getPublishWorkerHeartbeats(workers: PublishWorkerId[]): Pr
 			};
 		}
 		const lastRunAt = String(row.last_run_at);
-		const ageMs = now - new Date(lastRunAt).getTime();
+		const staleEval = evaluatePublishWorkerStale({ worker, lastRunAt, nowMs: now });
 		return {
 			worker,
 			lastRunAt,
-			stale: Number.isNaN(ageMs) || ageMs > PUBLISH_CRON_STALE_AFTER_MS,
+			stale: staleEval.stale,
 			lastOk: Boolean(row.last_ok),
 			lastError: typeof row.last_error === 'string' ? row.last_error : null,
 			lastProcessed: typeof row.last_processed === 'number' ? row.last_processed : null,

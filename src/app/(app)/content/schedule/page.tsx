@@ -29,6 +29,7 @@ type ScheduledContent = {
 	external_url?: string | null;
 	last_publish_error?: string | null;
 	is_overdue?: boolean;
+	publish_schedule_warning?: string | null;
 };
 
 export default function SchedulingDashboard() {
@@ -159,6 +160,7 @@ export default function SchedulingDashboard() {
 				external_url: item.external_url || null,
 				last_publish_error: item.last_publish_error || null,
 				is_overdue: Boolean(item.is_overdue),
+				publish_schedule_warning: item.publish_schedule_warning || null,
 			}));
 			setScheduledContent(items);
 		} catch (err: any) {
@@ -488,6 +490,9 @@ export default function SchedulingDashboard() {
 											</>
 										)}
 									</div>
+									{item.publish_schedule_warning ? (
+										<p className="text-xs text-amber-600 mb-2">{item.publish_schedule_warning}</p>
+									) : null}
 									{item.last_publish_error ? (
 										<p className="text-xs text-danger mb-2">{item.last_publish_error}</p>
 									) : null}

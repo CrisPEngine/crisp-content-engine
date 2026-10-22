@@ -320,6 +320,23 @@ export async function healFailedPublishScheduleMismatch(input?: {
 	return { scanned: rows?.length ?? 0, healed };
 }
 
+export async function recordScheduledPublishFailure(
+	userId: string,
+	memory: ContentMemoryRecord,
+	errorMessage: string,
+): Promise<void> {
+	const store = getIntelligenceStore();
+	await store.saveMemory(userId, {
+		...memory,
+		publicationStatus: 'failed',
+		metadata: {
+			...(memory.metadata ?? {}),
+			lastPublishError: errorMessage,
+			missedPublishAt: new Date().toISOString(),
+		},
+	});
+}
+
 export type ScheduledPublishHealthIssue = {
 	kind: 'overdue_without_job' | 'stale_publishing' | 'cron_stale';
 	message: string;
@@ -327,7 +344,11 @@ export type ScheduledPublishHealthIssue = {
 	worker?: string;
 };
 
-export async function scanScheduledPublishHealthIssues(input?: { userId?: string; limit?: number }): Promise<{
+export async function scanScheduledPublishHealthIssues(input?: {
+	userId?: string;
+	limit?: number;
+	staleWorkers?: Array<{ worker: string; message: string }>;
+}): Promise<{
 	overdueWithoutJob: number;
 	stalePublishingJobs: number;
 	issues: ScheduledPublishHealthIssue[];
@@ -384,6 +405,16 @@ export async function scanScheduledPublishHealthIssues(input?: { userId?: string
 			message: `${stalePublishingJobs} publish job(s) appear stuck in publishing.`,
 			count: stalePublishingJobs,
 		});
+	}
+
+	if (input?.staleWorkers?.length) {
+		for (const worker of input.staleWorkers) {
+			issues.push({
+				kind: 'cron_stale',
+				message: worker.message,
+				worker: worker.worker,
+			});
+		}
 	}
 
 	return { overdueWithoutJob, stalePublishingJobs, issues };
