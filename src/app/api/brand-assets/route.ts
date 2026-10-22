@@ -6,8 +6,14 @@ import { publicAsset } from '@/lib/media/images';
 import { runAssetVisionAnalysis } from '@/lib/media/runAssetVision';
 import { isStaleScreenshot, searchAssetsLocal } from '@/lib/media/assetSelection';
 import { rankAssetsForTopic } from '@/lib/media/assetMatching';
+import { filterBrandLibraryAssets, type BrandLibrarySourceFilter } from '@/lib/media/brandLibraryList';
 import { publicAssetsWithVision } from '@/lib/media/plannerAssets';
 import type { LibraryAssetType } from '@/lib/media/types';
+
+function parseSourceFilter(value: string | null): BrandLibrarySourceFilter {
+	if (value === 'generated' || value === 'all') return value;
+	return 'upload';
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -46,13 +52,21 @@ export async function GET(request: Request) {
 	const collectionId = url.searchParams.get('collectionId') ?? undefined;
 	const approvalStatus = url.searchParams.get('approvalStatus') ?? undefined;
 	const topic = url.searchParams.get('topic') ?? undefined;
+	const source = parseSourceFilter(url.searchParams.get('source'));
 
 	const brains = await getIntelligenceStore().listBrandBrains(userId);
 	if (brandId && !brains.some((brain) => brain.id === brandId)) {
 		return NextResponse.json({ error: 'That brand is not on this account.' }, { status: 403 });
 	}
 	const store = getNativeContentStore();
-	const records = await store.listAssets(userId, brandId);
+	if (!brandId) {
+		return NextResponse.json({
+			brands: brains.map((brain) => ({ id: brain.id, name: brain.identity.name })),
+			collections: [],
+			assets: [],
+		});
+	}
+	const records = filterBrandLibraryAssets(await store.listAssets(userId, brandId), source);
 	const { publicAssets, visionByAssetId } = publicAssetsWithVision(records);
 
 	function withStaleFlag(asset: (typeof publicAssets)[number]) {
