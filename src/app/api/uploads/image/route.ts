@@ -79,7 +79,7 @@ export async function POST(req: Request) {
 		// Upload to Cloudinary
 		const result = await uploadImageFromBuffer(buffer, file.name);
 
-		let assetId: string | undefined;
+		let assetId: string;
 		try {
 			const { recordUploadedAsset } = await import('@/lib/media/images');
 			const recorded = await recordUploadedAsset({
@@ -88,12 +88,21 @@ export async function POST(req: Request) {
 				providerAssetId: result.public_id,
 				width: result.width,
 				height: result.height,
-				mimeType: resolvedMime,
+				mimeType: resolvedMime === 'image/heic' || resolvedMime === 'image/heif' ? 'image/jpeg' : resolvedMime,
 				fileSize: file.size,
 			});
 			assetId = recorded.id;
-		} catch {
-			// The publisher still receives the Cloudinary URL if asset metadata is unavailable.
+		} catch (recordError) {
+			console.error('recordUploadedAsset failed after Cloudinary upload:', recordError);
+			return NextResponse.json(
+				{
+					error:
+						'Image uploaded to storage but could not be saved in the library. Try again or contact support if this continues.',
+					secureUrl: result.secure_url,
+					publicId: result.public_id,
+				},
+				{ status: 500 },
+			);
 		}
 
 		return NextResponse.json({

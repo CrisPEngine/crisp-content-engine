@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { readJsonResponse } from '@/lib/http/readJsonResponse';
+import { prepareImageFileForUpload } from '@/lib/media/clientImageUpload';
+import { resolveUploadMimeType } from '@/lib/media/uploadMime';
 
 type Brand = { id: string; name: string };
 type Collection = { id: string; name: string; parentId?: string };
@@ -117,12 +120,19 @@ export default function BrandAssetsPage() {
 		void load(brandId);
 	}, [brandId, queryString, load]);
 
+	function fileKind(file: File): 'image' | 'video' {
+		if (file.type.startsWith('video/')) return 'video';
+		const mime = resolveUploadMimeType(file.name, file.type);
+		if (mime?.startsWith('image/')) return 'image';
+		return file.type.startsWith('video/') ? 'video' : 'image';
+	}
+
 	function chooseFiles(files: FileList | null) {
 		setPreviews(
 			[...(files ?? [])].map((file) => ({
 				file,
 				url: URL.createObjectURL(file),
-				kind: file.type.startsWith('video/') ? 'video' : 'image',
+				kind: fileKind(file),
 			})),
 		);
 	}
@@ -154,16 +164,40 @@ export default function BrandAssetsPage() {
 		for (let index = 0; index < previews.length; index += 1) {
 			const preview = previews[index];
 			setUploadRows((rows) => rows.map((row, rowIndex) => (rowIndex === index ? { ...row, status: 'uploading' } : row)));
+
+			let uploadFile = preview.file;
+			if (preview.kind === 'image') {
+				try {
+					const prepared = await prepareImageFileForUpload(preview.file);
+					uploadFile = prepared.file;
+					if (prepared.detail) {
+						setUploadRows((rows) =>
+							rows.map((row, rowIndex) => (rowIndex === index ? { ...row, detail: prepared.detail } : row)),
+						);
+					}
+				} catch (prepareError) {
+					failures += 1;
+					const detail = prepareError instanceof Error ? prepareError.message : 'Could not prepare this image for upload.';
+					setUploadRows((rows) =>
+						rows.map((row, rowIndex) => (rowIndex === index ? { ...row, status: 'error', detail } : row)),
+					);
+					continue;
+				}
+			}
+
 			const form = new FormData();
-			form.set('file', preview.file);
+			form.set('file', uploadFile);
 			const endpoint = preview.kind === 'video' ? '/api/uploads/video' : '/api/uploads/image';
 			const uploaded = await fetch(endpoint, { method: 'POST', body: form });
-			const uploadBody = (await uploaded.json()) as { assetId?: string; error?: string };
-			if (!uploaded.ok || !uploadBody.assetId) {
+			const uploadParsed = await readJsonResponse<{ assetId?: string; error?: string }>(uploaded);
+			const uploadBody = uploadParsed.data;
+			if (!uploadParsed.ok || !uploadBody?.assetId) {
 				failures += 1;
 				setUploadRows((rows) =>
 					rows.map((row, rowIndex) =>
-						rowIndex === index ? { ...row, status: 'error', detail: uploadBody.error ?? 'Upload failed.' } : row,
+						rowIndex === index
+							? { ...row, status: 'error', detail: uploadParsed.errorMessage ?? uploadBody?.error ?? 'Upload failed.' }
+							: row,
 					),
 				);
 				continue;
@@ -189,12 +223,18 @@ export default function BrandAssetsPage() {
 					userEdited: metadataEdited,
 				}),
 			});
-			if (!saved.ok) {
-				const errorBody = (await saved.json()) as { error?: string };
+			const savedParsed = await readJsonResponse<{ error?: string }>(saved);
+			if (!savedParsed.ok) {
 				failures += 1;
 				setUploadRows((rows) =>
 					rows.map((row, rowIndex) =>
-						rowIndex === index ? { ...row, status: 'error', detail: errorBody.error ?? 'Could not save metadata.' } : row,
+						rowIndex === index
+							? {
+									...row,
+									status: 'error',
+									detail: savedParsed.errorMessage ?? savedParsed.data?.error ?? 'Could not save library metadata.',
+								}
+							: row,
 					),
 				);
 				continue;
@@ -316,6 +356,21 @@ export default function BrandAssetsPage() {
 						{saving ? 'Uploading…' : 'Upload to library'}
 					</button>
 					{message ? <p className="text-sm mt-2">{message}</p> : null}
+					{uploadRows.length > 0 ? (
+						<ul className="mt-3 space-y-1 text-sm">
+							{uploadRows.map((row) => (
+								<li key={row.name} className={row.status === 'error' ? 'text-danger' : 'text-text-soft'}>
+									<span className="font-medium">{row.name}</span>
+									{' · '}
+									{row.status === 'pending' ? 'Waiting' : null}
+									{row.status === 'uploading' ? 'Uploading…' : null}
+									{row.status === 'done' ? 'Saved' : null}
+									{row.status === 'error' ? `Failed: ${row.detail ?? 'Unknown error'}` : null}
+									{row.status !== 'error' && row.detail ? ` (${row.detail})` : null}
+								</li>
+							))}
+						</ul>
+					) : null}
 				</div>
 			</div>
 
