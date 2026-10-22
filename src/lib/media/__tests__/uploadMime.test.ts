@@ -15,4 +15,12 @@ describe('uploadMime', () => {
 	it('rejects unknown extensions', () => {
 		expect(resolveUploadMimeType('file.gif', 'image/gif')).toBeNull();
 	});
+
+	it('prefers HEIC extension when browser sends a wrong MIME type', () => {
+		expect(resolveUploadMimeType('IMG_1234.heic', 'application/pdf')).toBe('image/heic');
+	});
+
+	it('accepts HEIC sequence MIME aliases', () => {
+		expect(resolveUploadMimeType('photo.heic', 'image/heic-sequence')).toBe('image/heic');
+	});
 });
