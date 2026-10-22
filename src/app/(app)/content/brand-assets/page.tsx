@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { readJsonResponse } from '@/lib/http/readJsonResponse';
 import { prepareImageFileForUpload } from '@/lib/media/clientImageUpload';
+import { brandAssetCardDetail, brandAssetCardHeadline } from '@/lib/media/brandAssetDisplay';
+import { assetThumbnailUrl } from '@/lib/media/brandLibraryList';
 import { resolveUploadMimeType } from '@/lib/media/uploadMime';
 
 type Brand = { id: string; name: string };
@@ -38,6 +40,7 @@ type Asset = {
 	width?: number;
 	height?: number;
 	assetType?: string;
+	sourceType?: string;
 	staleScreenshot?: boolean;
 };
 
@@ -54,6 +57,7 @@ export default function BrandAssetsPage() {
 	const [search, setSearch] = useState('');
 	const [filterType, setFilterType] = useState('');
 	const [filterApproval, setFilterApproval] = useState('');
+	const [filterSource, setFilterSource] = useState<'upload' | 'generated' | 'all'>('upload');
 	const [description, setDescription] = useState('');
 	const [productFeature, setProductFeature] = useState('');
 	const [sourceAttribution, setSourceAttribution] = useState('');
@@ -78,11 +82,19 @@ export default function BrandAssetsPage() {
 		if (filterType) params.set('libraryType', filterType);
 		if (filterApproval) params.set('approvalStatus', filterApproval);
 		if (collectionId) params.set('collectionId', collectionId);
+		if (filterSource !== 'upload') params.set('source', filterSource);
 		return params.toString();
-	}, [brandId, search, filterType, filterApproval, collectionId]);
+	}, [brandId, search, filterType, filterApproval, collectionId, filterSource]);
 
 	const load = useCallback(async (nextBrandId = brandId) => {
-		const response = await fetch(`/api/brand-assets?${queryString || (nextBrandId ? `brandId=${encodeURIComponent(nextBrandId)}` : '')}`);
+		if (!nextBrandId) {
+			setAssets([]);
+			setCollections([]);
+			return;
+		}
+		const params = new URLSearchParams(queryString);
+		params.set('brandId', nextBrandId);
+		const response = await fetch(`/api/brand-assets?${params.toString()}`);
 		if (response.status === 401) {
 			setMessage('Sign in to manage brand assets.');
 			return;
@@ -104,8 +116,6 @@ export default function BrandAssetsPage() {
 				}
 				const body = (await response.json()) as { brands?: Brand[]; assets?: Asset[]; collections?: Collection[] };
 				setBrands(body.brands ?? []);
-				setAssets(body.assets ?? []);
-				setCollections(body.collections ?? []);
 				const requested = searchParams.get('brandId');
 				if (requested && body.brands?.some((brand) => brand.id === requested)) {
 					setBrandId(requested);
@@ -244,6 +254,7 @@ export default function BrandAssetsPage() {
 		setSaving(false);
 		if (failures === 0) {
 			setPreviews([]);
+			setUploadRows([]);
 			setMessage(`Saved ${previews.length} asset${previews.length === 1 ? '' : 's'}. Vision enrichment runs in the background.`);
 		} else {
 			setMessage(`${failures} file${failures === 1 ? '' : 's'} failed. Successful uploads were saved.`);
@@ -267,15 +278,26 @@ export default function BrandAssetsPage() {
 	}
 
 	return (
-		<div className="mx-auto max-w-6xl p-6 space-y-6">
-			<div>
+		<div className="mx-auto w-full max-w-6xl min-w-0 overflow-x-hidden p-4 sm:p-6 space-y-6">
+			<div className="min-w-0">
 				<h1 className="text-2xl font-semibold">Brand asset library</h1>
-				<p className="text-text-soft mt-2">
+				<p className="text-text-soft mt-2 break-words">
 					Upload real product photos, app screenshots, and short clips per brand. CCE enriches each file with vision metadata and picks approved assets when posts are generated.
 				</p>
+				{brandId ? (
+					<p className="text-sm text-text-dim mt-2 break-words">
+						Showing{' '}
+						{filterSource === 'upload'
+							? 'files you uploaded to the library'
+							: filterSource === 'generated'
+								? 'AI generated post images'
+								: 'all assets'}{' '}
+						for <span className="font-medium text-text-soft">{brands.find((b) => b.id === brandId)?.name ?? 'this brand'}</span>.
+					</p>
+				) : null}
 			</div>
 
-			<div className="card p-4 grid gap-4 md:grid-cols-2">
+			<div className="card min-w-0 p-4 grid gap-4 md:grid-cols-2">
 				<label className="block text-sm md:col-span-2">
 					Brand
 					<select className="mt-1 w-full rounded border px-3 py-2" value={brandId} onChange={(event) => setBrandId(event.target.value)}>
@@ -357,16 +379,23 @@ export default function BrandAssetsPage() {
 					</button>
 					{message ? <p className="text-sm mt-2">{message}</p> : null}
 					{uploadRows.length > 0 ? (
-						<ul className="mt-3 space-y-1 text-sm">
-							{uploadRows.map((row) => (
-								<li key={row.name} className={row.status === 'error' ? 'text-danger' : 'text-text-soft'}>
-									<span className="font-medium">{row.name}</span>
+						<ul className="mt-3 max-w-full space-y-1 text-sm">
+							{uploadRows.map((row, rowIndex) => (
+								<li
+									key={`${rowIndex}-${row.name}`}
+									className={`min-w-0 break-words ${row.status === 'error' ? 'text-danger' : 'text-text-soft'}`}
+								>
+									<span className="font-medium break-all">{row.name}</span>
 									{' · '}
 									{row.status === 'pending' ? 'Waiting' : null}
 									{row.status === 'uploading' ? 'Uploading…' : null}
 									{row.status === 'done' ? 'Saved' : null}
-									{row.status === 'error' ? `Failed: ${row.detail ?? 'Unknown error'}` : null}
-									{row.status !== 'error' && row.detail ? ` (${row.detail})` : null}
+									{row.status === 'error' ? (
+										<span className="break-words">Failed: {row.detail ?? 'Unknown error'}</span>
+									) : null}
+									{row.status !== 'error' && row.detail ? (
+										<span className="break-words"> ({row.detail})</span>
+									) : null}
 								</li>
 							))}
 						</ul>
@@ -374,8 +403,8 @@ export default function BrandAssetsPage() {
 				</div>
 			</div>
 
-			<div className="card p-4 flex flex-wrap gap-3 items-end">
-				<label className="text-sm flex-1 min-w-[12rem]">
+			<div className="card min-w-0 p-4 flex flex-wrap gap-3 items-end">
+				<label className="text-sm min-w-0 flex-1 basis-full sm:basis-[12rem]">
 					Search
 					<input className="mt-1 w-full rounded border px-3 py-2" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ferrari, canon view, red" />
 				</label>
@@ -395,26 +424,65 @@ export default function BrandAssetsPage() {
 						<option value="rejected">Rejected</option>
 					</select>
 				</label>
+				<label className="text-sm min-w-0 basis-full sm:basis-auto">
+					Source
+					<select
+						className="mt-1 w-full max-w-full rounded border px-3 py-2"
+						value={filterSource}
+						onChange={(event) => setFilterSource(event.target.value as 'upload' | 'generated' | 'all')}
+					>
+						<option value="upload">Uploaded to library</option>
+						<option value="generated">AI generated post images</option>
+						<option value="all">All sources</option>
+					</select>
+				</label>
 			</div>
 
-			<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-				{assets.map((asset) => (
-					<div key={asset.id} className="card p-3 space-y-2">
-						{asset.url ? (
-							asset.assetType === 'video' ? (
-								<video src={asset.url} className="mb-2 h-40 w-full object-contain bg-black/20" controls muted />
+			{assets.length === 0 ? (
+				<p className="text-sm text-text-soft break-words">
+					No assets match these filters for {brands.find((b) => b.id === brandId)?.name ?? 'this brand'}.
+					{filterSource === 'upload'
+						? ' Upload photos or videos above, or switch Source to AI generated post images to review images created for social posts.'
+						: null}
+				</p>
+			) : null}
+
+			<div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+				{assets.map((asset) => {
+					const headline = brandAssetCardHeadline(asset);
+					const detail = brandAssetCardDetail(asset);
+					const rawAlt = asset.altText?.trim();
+					const imageAlt = rawAlt && rawAlt.length <= 200 ? rawAlt : headline;
+					const thumbUrl = assetThumbnailUrl(asset.url);
+					return (
+					<div key={asset.id} className="card min-w-0 max-w-full overflow-hidden p-3 space-y-2">
+						<div className="mb-2 flex h-40 w-full max-w-full items-center justify-center overflow-hidden rounded border bg-black/20">
+							{thumbUrl ? (
+								asset.assetType === 'video' ? (
+									<video src={thumbUrl} className="max-h-40 w-full object-contain" controls muted playsInline />
+								) : (
+									<img
+										src={thumbUrl}
+										alt={imageAlt}
+										className="max-h-40 w-full object-contain"
+										loading="lazy"
+										decoding="async"
+									/>
+								)
 							) : (
-								<img src={asset.url} alt={(asset.altText || asset.title) ?? ''} className="mb-2 h-40 w-full object-contain bg-black/20" />
-							)
-						) : null}
-						<div className="font-medium truncate">{asset.title || asset.libraryType || 'Asset'}</div>
-						<p className="text-xs text-text-soft">
-							{asset.libraryType} · {asset.approvalStatus}
+								<span className="px-3 text-center text-xs text-text-soft">Preview unavailable</span>
+							)}
+						</div>
+						<div className="font-medium line-clamp-2 break-words">{headline}</div>
+						<p className="text-xs text-text-soft break-words">
+							{asset.sourceType === 'generated' ? 'AI generated post image' : 'Uploaded file'}
+							{' · '}
+							{asset.libraryType ?? 'OTHER'} · {asset.approvalStatus}
 							{asset.aspectRatio ? ` · ${asset.aspectRatio}` : ''}
 							{asset.visionAnalysisStatus ? ` · vision ${asset.visionAnalysisStatus}` : ''}
 							{asset.staleScreenshot ? ' · possibly stale screenshot' : ''}
 						</p>
-						{asset.description ? <p className="text-sm line-clamp-3">{asset.description}</p> : null}
+						{detail ? <p className="text-sm line-clamp-3 break-words overflow-hidden">{detail}</p> : null}
 						{asset.visionAnalysis?.summary ? <p className="text-sm text-text-dim line-clamp-2">AI: {asset.visionAnalysis.summary}</p> : null}
 						{(asset.tags?.length ?? 0) > 0 ? <p className="text-xs text-text-dim">Tags: {asset.tags?.join(', ')}</p> : null}
 						<div className="flex flex-wrap gap-2 text-sm">
@@ -441,7 +509,8 @@ export default function BrandAssetsPage() {
 							<button type="button" className="underline text-danger" onClick={() => void deleteAsset(asset.id)}>Delete</button>
 						</div>
 					</div>
-				))}
+					);
+				})}
 			</div>
 		</div>
 	);
