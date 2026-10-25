@@ -10,6 +10,7 @@ import {
 } from './truncation';
 import { LONG_FORM_MODEL_ROLE, resolveLongFormMaxTokens, resolveLongFormTimeoutMs } from './longFormConfig';
 import type { ModelRole } from './roles';
+import { coerceModelText } from '@/lib/content/channelBodyLimit';
 
 export type LongFormCompletionMeta = {
 	finishReason?: string | null;
@@ -65,7 +66,7 @@ export async function completeLongFormJson<T>(input: {
 			finishReason: result.finishReason,
 			incompleteReason: result.incompleteReason,
 		};
-		const text = input.extractText(result.data).trim();
+		const text = coerceModelText(input.extractText(result.data)).trim();
 		const truncated = isOutputTruncated({ text, ...lastFinish });
 		if (!truncated || pass >= MAX_CONTINUATIONS) break;
 		continuationPasses += 1;
@@ -87,7 +88,7 @@ export async function completeLongFormJson<T>(input: {
 			maxTokens,
 			timeoutMs,
 		});
-		const piece = input.extractText(continuation.data).trim();
+		const piece = coerceModelText(input.extractText(continuation.data)).trim();
 		result = {
 			...result,
 			data: input.mergeContinuation(result.data, piece),
@@ -98,7 +99,7 @@ export async function completeLongFormJson<T>(input: {
 		};
 	}
 
-	let text = input.extractText(result.data).trim();
+	let text = coerceModelText(input.extractText(result.data)).trim();
 	if (input.wordRange && !wordCountInRange(text, input.wordRange)) {
 		const count = countWords(text);
 		if (count < input.wordRange.min) {
@@ -116,7 +117,7 @@ export async function completeLongFormJson<T>(input: {
 				timeoutMs,
 			});
 			result = { ...result, ...expanded, data: expanded.data };
-			text = input.extractText(result.data).trim();
+			text = coerceModelText(input.extractText(result.data)).trim();
 		}
 	}
 

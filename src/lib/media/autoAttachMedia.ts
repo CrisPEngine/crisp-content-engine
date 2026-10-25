@@ -40,6 +40,10 @@ async function recentUsageContext(ownerUserId: string, brandId: string) {
 	return { links, memoryChannelByContentId };
 }
 
+function isThreadsTextFirstPlan(plan: MediaDecision): boolean {
+	return plan.mediaRole === 'NONE' && !plan.mediaRequired && !plan.mediaRecommended;
+}
+
 export async function resolveMediaForGeneratedContent(input: {
 	ctx: AutoAttachAgentContext;
 	brandId: string;
@@ -48,6 +52,8 @@ export async function resolveMediaForGeneratedContent(input: {
 	topic: string;
 	objective?: string;
 	allowGenerate?: boolean;
+	/** When true, auto library attach or generate may run for optional-image channels. */
+	allowAutoAttach?: boolean;
 }): Promise<AutoMediaResult> {
 	const store = getNativeContentStore();
 	const records = await store.listAssets(input.ctx.credential.ownerUserId, input.brandId);
@@ -78,7 +84,19 @@ export async function resolveMediaForGeneratedContent(input: {
 		assets: publicAssets,
 	});
 
+	const channelKey = String(input.channel).toUpperCase();
+	const threadsTextFirst = channelKey === 'THREADS' && isThreadsTextFirstPlan(basePlan);
+	const autoAttachAllowed = input.allowAutoAttach === true;
+
 	if (!basePlan.mediaRecommended && !basePlan.mediaRequired) {
+		return { mediaPath: 'none', mediaPlan: basePlan };
+	}
+
+	if (threadsTextFirst && !autoAttachAllowed) {
+		return { mediaPath: 'none', mediaPlan: basePlan };
+	}
+
+	if (!autoAttachAllowed && !basePlan.mediaRequired) {
 		return { mediaPath: 'none', mediaPlan: basePlan };
 	}
 

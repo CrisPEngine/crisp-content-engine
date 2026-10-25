@@ -1,5 +1,9 @@
-import { CHANNELS } from '@/lib/channels/registry';
-import type { ChannelId } from '@/lib/channels/types';
+import {
+	channelMaxChars,
+	ensureBodyWithinChannelLimit,
+	type TightenChannelBodyFn,
+	trimBodyAtSentenceBoundary,
+} from '@/lib/content/channelBodyLimit';
 
 const PRODUCTION_SECTION_NAMES = [
 	'VISUAL CONCEPT',
@@ -114,10 +118,38 @@ export function dedupeCtaFromBody(body: string, cta: string | null | undefined):
 }
 
 export function truncateToChannelLimit(body: string, channel: string): { body: string; truncated: boolean } {
-	const channelId = String(channel).toLowerCase() as ChannelId;
-	const max = CHANNELS[channelId]?.constraints.maxCharsPerPost;
+	const max = channelMaxChars(channel);
 	if (!max || body.length <= max) return { body, truncated: false };
-	return { body: body.slice(0, max).trimEnd(), truncated: true };
+	const trimmed = trimBodyAtSentenceBoundary(body, max);
+	return { body: trimmed, truncated: trimmed.length < body.length || trimmed.length >= max };
+}
+
+export async function sanitizeSocialPublishFieldsAsync(input: {
+	channel: string;
+	body: string;
+	cta?: string | null;
+	metadata?: Record<string, unknown>;
+	tighten?: TightenChannelBodyFn;
+}): Promise<{
+	body: string;
+	cta?: string;
+	metadata: Record<string, unknown>;
+	warnings: string[];
+}> {
+	const base = sanitizeSocialPublishFields(input);
+	if (!input.tighten) return base;
+	const max = channelMaxChars(input.channel);
+	if (!max || base.body.length <= max) return base;
+	const enforced = await ensureBodyWithinChannelLimit({
+		channel: input.channel,
+		body: base.body,
+		tighten: input.tighten,
+	});
+	return {
+		...base,
+		body: enforced.body,
+		warnings: [...base.warnings, ...enforced.warnings],
+	};
 }
 
 export function isSocialPublishChannel(channel: string): boolean {
@@ -166,17 +198,27 @@ export function sanitizeSocialPublishFields(input: {
 		}
 	}
 
-	body = dedupeCtaFromBody(body, cta);
+	const channelId = String(input.channel).toLowerCase();
+	if (channelId !== 'threads') {
+		body = dedupeCtaFromBody(body, cta);
+	}
 	const truncated = truncateToChannelLimit(body, input.channel);
-	if (truncated.truncated) {
-		warnings.push(`Body exceeded channel limit and was truncated to ${truncated.body.length} characters.`);
+	if (truncated.truncated && truncated.body !== body) {
+		warnings.push(`Body exceeded channel limit; shortened to ${truncated.body.length} characters at a sentence boundary.`);
 		body = truncated.body;
+	} else if (truncated.truncated) {
+		warnings.push(`Body exceeds the channel limit (${body.length} characters) and needs tightening.`);
 	}
 
 	return { body, cta, metadata, warnings };
 }
 
-export function composeAgentPublishText(memory: Pick<{ body?: string | null; cta?: string | null }, 'body' | 'cta'>): string {
-	const body = dedupeCtaFromBody((memory.body ?? '').trim(), memory.cta);
-	return body;
+export function composeAgentPublishText(
+	memory: Pick<{ body?: string | null; cta?: string | null; channel?: string | null }, 'body' | 'cta' | 'channel'>,
+): string {
+	const raw = (memory.body ?? '').trim();
+	if (String(memory.channel ?? '').toLowerCase() === 'threads') {
+		return raw;
+	}
+	return dedupeCtaFromBody(raw, memory.cta);
 }

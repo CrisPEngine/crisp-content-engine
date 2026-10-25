@@ -927,6 +927,8 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 				const output = await generateForChannel(ctx, brain, { instruction, channel, themeId: brief?.themeId ?? inputString(input, 'themeId'), objective: brief?.objective, researchIds: brief?.researchIds });
 				const topic = output.topic ?? instruction;
 				const { resolveMediaForGeneratedContent } = await import('@/lib/media/autoAttachMedia');
+				const allowAutoAttach =
+					input.attachMedia === true || input.generateImage === true || input.includeImage === true;
 				const media = await resolveMediaForGeneratedContent({
 					ctx,
 					brandId: brain.id,
@@ -934,7 +936,8 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 					channel,
 					topic,
 					objective: brief?.objective,
-					allowGenerate: true,
+					allowGenerate: allowAutoAttach,
+					allowAutoAttach,
 				});
 				outputs.push({
 					...output,
@@ -964,6 +967,48 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			})) as { briefId: string };
 			const generated = await dispatchAgentHandler('cce_generate_content', ctx, { ...input, briefId: brief.briefId });
 			return { generated: true, briefId: brief.briefId, evaluation: evaluation.evaluation, ...(generated as object) };
+		}
+		case 'cce_update_draft_text': {
+			const contentId = inputString(input, 'contentId');
+			const body = inputString(input, 'body');
+			if (!contentId || body == null) throw new AgentError('invalid_input', 'contentId and body are required.', 400);
+			const memory = await requireContent(ctx, contentId);
+			const editable = new Set(['idea', 'draft', 'review']);
+			if (!editable.has(String(memory.publicationStatus))) {
+				throw new AgentError(
+					'content_not_editable',
+					'Draft text can only be edited while status is idea, draft, or review.',
+					409,
+				);
+			}
+			if (memory.publicationStatus === 'published') {
+				throw new AgentError('content_already_published', 'Published content cannot be edited through this tool.', 409);
+			}
+			const brain = await requireBrand(ctx, memory.brandBrainId);
+			assertNative(brain);
+			const sanitized = sanitizeSocialPublishFields({
+				channel: String(memory.channel),
+				body,
+				cta: memory.cta,
+				metadata: memory.metadata,
+			});
+			const updated = {
+				...memory,
+				body: sanitized.body,
+				...(sanitized.cta != null ? { cta: sanitized.cta } : {}),
+				metadata: sanitized.metadata,
+			};
+			assertMemoryChannelConstraints(updated);
+			await getIntelligenceStore().saveDraft({
+				userId: ctx.credential.ownerUserId,
+				brandBrainId: brain.id,
+				memoryId: memory.id,
+				aiVersion: memory.body ?? '',
+				reviewedVersion: sanitized.body,
+				reviewPayload: { actor: ctx.credential.id, manualEdit: true },
+			});
+			await getIntelligenceStore().saveMemory(ctx.credential.ownerUserId, updated);
+			return { contentId: memory.id, body: sanitized.body, warnings: sanitized.warnings };
 		}
 		case 'cce_request_revision': {
 			const contentId = inputString(input, 'contentId');
