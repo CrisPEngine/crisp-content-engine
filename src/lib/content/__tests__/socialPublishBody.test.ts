@@ -79,7 +79,29 @@ ${longCaption}`;
 	});
 });
 
+describe('truncateToChannelLimit via sanitize', () => {
+	it('shortens Threads copy at a sentence boundary instead of mid-word', () => {
+		const body = `${'Detail about canon and continuity. '.repeat(8)}How do you track time? #Folian trailing filler words.`;
+		const result = sanitizeSocialPublishFields({
+			channel: 'threads',
+			body,
+			metadata: {},
+		});
+		expect(result.body.length).toBeLessThanOrEqual(500);
+		expect(result.body).toMatch(/\?\s*#Folian/);
+	});
+});
+
 describe('composeAgentPublishText', () => {
+	it('keeps the full Threads body including the closing question', () => {
+		expect(
+			composeAgentPublishText({
+				channel: 'threads',
+				body: 'Main copy.\n\nHow do you track time? #Folian',
+				cta: 'How do you track time?',
+			}),
+		).toContain('How do you track time?');
+	});
 	it('does not append CTA when body already ends with the same question', () => {
 		expect(
 			composeAgentPublishText({

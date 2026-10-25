@@ -168,7 +168,7 @@ export const AGENT_ACTIONS: AgentActionDefinition[] = [
 		'cce_generate_content',
 		'content:create',
 		1,
-		'Generate channel-native content through the CCE intelligence pipeline.',
+		'Generate channel-native content through the CCE intelligence pipeline. Optional attachMedia/generateImage attaches or generates an image when the channel supports it.',
 		z.object({
 			brandId,
 			briefId: z.string().optional(),
@@ -178,6 +178,9 @@ export const AGENT_ACTIONS: AgentActionDefinition[] = [
 			objective: z.string().optional(),
 			themeId: z.string().optional(),
 			opportunityId: z.string().optional(),
+			attachMedia: z.boolean().optional(),
+			generateImage: z.boolean().optional(),
+			includeImage: z.boolean().optional(),
 		}).passthrough(),
 	),
 	action(
@@ -193,6 +196,13 @@ export const AGENT_ACTIONS: AgentActionDefinition[] = [
 		1,
 		'Revise content. Previous and new versions are kept and reviewed.',
 		z.object({ brandId, contentId: z.string().min(1), instruction: z.string().min(1) }).passthrough(),
+	),
+	action(
+		'cce_update_draft_text',
+		'content:revise',
+		1,
+		'Replace draft post text while status is idea, draft, or review. Does not edit approved, scheduled, or published content.',
+		z.object({ brandId, contentId: z.string().min(1), body: z.string().min(1) }).passthrough(),
 	),
 	action('cce_get_versions', 'content:read', 0, 'Stored versions for one content record.', z.object({ brandId, contentId: z.string().min(1) }).passthrough()),
 	action('cce_compare_versions', 'content:read', 0, 'Compare the latest stored versions.', z.object({ brandId, contentId: z.string().min(1) }).passthrough()),

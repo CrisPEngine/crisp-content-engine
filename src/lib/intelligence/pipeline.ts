@@ -24,7 +24,12 @@ import { validateMemoryChannelConstraints } from '@/lib/channels/validateMemory'
 import { isRedditPipelineChannel } from '@/lib/channels/reddit';
 import { redditDraftFromGenerated, redditWriterMessages, type RedditGeneratedDraft } from './redditGeneration';
 import { postProcessPlainDraft, postProcessWriterDraft } from '@/lib/content/postProcessGeneration';
-import { isSocialPublishChannel, sanitizeSocialPublishFields } from '@/lib/content/socialPublishBody';
+import {
+	isSocialPublishChannel,
+	sanitizeSocialPublishFields,
+	sanitizeSocialPublishFieldsAsync,
+} from '@/lib/content/socialPublishBody';
+import { coerceModelText, threadsDraftTargetMax } from '@/lib/content/channelBodyLimit';
 
 export type IntelligenceCompletion<T> = {
 	data: T;
@@ -89,16 +94,57 @@ function channelDraftLimitLine(channel: string, longForm: boolean): string | nul
 	const channelId = channel.toLowerCase() as ChannelId;
 	const max = CHANNELS[channelId]?.constraints.maxCharsPerPost;
 	if (!max) return null;
+	if (channelId === 'threads') {
+		const target = threadsDraftTargetMax();
+		return [
+			`The draft field is the full Threads post (including the closing question and exactly one topic hashtag).`,
+			`Stay under ${target} characters; hard maximum ${max}. Count every character before returning JSON.`,
+			'End with a complete question and one topical hashtag such as #YourTopic. Never stop mid-sentence.',
+		].join(' ');
+	}
 	return `The full draft (including hashtags and line breaks) must be ${max} characters or fewer. Count carefully before returning JSON.`;
 }
 
 function socialDraftInstruction(channel: string, longForm: boolean): string | null {
 	if (longForm || !isSocialPublishChannel(channel)) return null;
+	if (String(channel).toLowerCase() === 'threads') {
+		return [
+			'The draft field is ONLY the publishable Threads post text.',
+			'Include the closing question and exactly one topic hashtag in draft (not only in cta).',
+			'Do NOT include production headers or image-generation prompts.',
+		].join(' ');
+	}
 	return [
 		'The draft field is ONLY the publishable post copy for this channel (caption or post text).',
 		'Do NOT include production headers or brief material such as VISUAL CONCEPT, IMAGE PROMPT, CAROUSEL COPY, panel instructions, or image-generation prompts.',
 		'Put the closing question in the cta JSON field, not duplicated at the end of draft unless it is inseparable from the caption flow.',
 	].join(' ');
+}
+
+async function tightenDraftToChannelLimit(
+	ai: IntelligenceAi,
+	userId: string | undefined,
+	channel: string,
+	body: string,
+	reason: string,
+): Promise<{ draft: string; completion: IntelligenceCompletion<{ revisedDraft?: string }> }> {
+	const shortened = await ai.completeJson<{ revisedDraft?: string }>(
+		'REVIEW',
+		[
+			{
+				role: 'system',
+				content: [
+					'Shorten the draft to satisfy the channel limit. Preserve meaning, voice, and a complete ending.',
+					'For Threads, keep the closing question and exactly one topic hashtag.',
+					'Return json: { "revisedDraft": string }',
+				].join('\n'),
+			},
+			{ role: 'user', content: `${reason}\n\nDraft:\n${body}` },
+		],
+		'intelligence_channel_limit',
+		userId,
+	);
+	return { draft: (shortened.data.revisedDraft || body).trim(), completion: shortened };
 }
 
 function writerMessages(
@@ -332,7 +378,7 @@ export async function runContentIntelligencePipeline(
 				feature: 'intelligence_draft_long_form',
 				userId: intent.userId,
 				wordRange,
-				extractText: (data) => data.draft ?? '',
+				extractText: (data) => coerceModelText(data.draft),
 				mergeContinuation: (previous, piece) => ({
 					...previous,
 					draft: `${(previous.draft ?? '').trim()}\n\n${piece}`.trim(),
@@ -377,23 +423,9 @@ export async function runContentIntelligencePipeline(
 	});
 	if (!longForm && !channelConstraint.ok) {
 		const reason = channelConstraint.errors.map((error) => error.message).join(' ');
-		const shortened = await ai.completeJson<{ revisedDraft?: string }>(
-			'REVIEW',
-			[
-				{
-					role: 'system',
-					content: [
-						'Shorten the draft to satisfy the channel limit. Preserve meaning and voice.',
-						'Return json: { "revisedDraft": string }',
-					].join('\n'),
-				},
-				{ role: 'user', content: `${reason}\n\nDraft:\n${draftForReview}` },
-			],
-			'intelligence_channel_limit',
-			intent.userId,
-		);
-		usage.push(usageFrom('REVIEW', 'intelligence_channel_limit', shortened));
-		draftForReview = (shortened.data.revisedDraft || draftForReview).trim();
+		const tightened = await tightenDraftToChannelLimit(ai, intent.userId, intent.channel, draftForReview, reason);
+		draftForReview = tightened.draft;
+		usage.push(usageFrom('REVIEW', 'intelligence_channel_limit', tightened.completion));
 	}
 
 	if (longForm) {
@@ -444,13 +476,28 @@ export async function runContentIntelligencePipeline(
 	);
 	const sanitizedCta = postProcessPlainDraft((generatedFields.cta || briefPayload.cta || '').trim());
 	const sanitizedArgument = postProcessPlainDraft((generatedFields.argument || briefPayload.centralArgument || '').trim());
-	const socialSanitized = sanitizeSocialPublishFields({
+	const socialSanitized = await sanitizeSocialPublishFieldsAsync({
 		channel: intent.channel,
 		body: reviewedBodyRaw,
 		cta: sanitizedCta,
 		metadata: redditParsed ? { ...redditParsed.metadata } : {},
+		tighten: async ({ channel, body, reason }) =>
+			(await tightenDraftToChannelLimit(ai, intent.userId, channel, body, reason)).draft,
 	});
-	const reviewedBody = socialSanitized.body;
+	let reviewedBody = socialSanitized.body;
+	const postSanitizeConstraint = validateMemoryChannelConstraints({
+		channel: intent.channel,
+		contentType: intent.contentType || (redditChannel ? 'reddit_post' : longForm ? 'long_form' : 'founder_post'),
+		body: reviewedBody,
+		hook: redditParsed?.title ?? sanitizedHook,
+		metadata: redditParsed ? { reddit: redditParsed.metadata.reddit } : undefined,
+	});
+	if (!longForm && !postSanitizeConstraint.ok) {
+		const reason = postSanitizeConstraint.errors.map((error) => error.message).join(' ');
+		const tightened = await tightenDraftToChannelLimit(ai, intent.userId, intent.channel, reviewedBody, reason);
+		reviewedBody = tightened.draft;
+		usage.push(usageFrom('REVIEW', 'intelligence_channel_limit', tightened.completion));
+	}
 	const finalCta = socialSanitized.cta ?? sanitizedCta;
 	const generationMetadata = socialSanitized.warnings.length
 		? { generationWarnings: socialSanitized.warnings }
