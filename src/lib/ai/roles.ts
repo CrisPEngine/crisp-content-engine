@@ -23,6 +23,8 @@ export const MODEL_ROLES = [
 	'STRATEGY',
 	'RESEARCH',
 	'REVIEW',
+	'SEO',
+	'SOCIAL',
 	'SIDECAR',
 	'DEEP_STRATEGY',
 ] as const;
@@ -118,6 +120,24 @@ const ROLE_DEFAULTS: Record<ModelRole, Omit<ModelRoleConfig, 'role' | 'provider'
 		maxTokens: 3072,
 		timeoutMs: 60_000,
 		description: 'Brand compliance and prose review',
+	},
+	SEO: {
+		preferred: LUNA,
+		fallbacks: [SOL],
+		reasoningEffort: 'none',
+		temperature: 0.2,
+		maxTokens: 1024,
+		timeoutMs: 30_000,
+		description: 'Search titles and meta descriptions',
+	},
+	SOCIAL: {
+		preferred: SOL,
+		fallbacks: [LUNA],
+		reasoningEffort: 'low',
+		temperature: 0.7,
+		maxTokens: 2048,
+		timeoutMs: 60_000,
+		description: 'Social derivatives drafted from a published article',
 	},
 	SIDECAR: {
 		preferred: LUNA,

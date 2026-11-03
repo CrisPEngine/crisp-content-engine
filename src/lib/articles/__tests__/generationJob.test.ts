@@ -11,6 +11,7 @@ import {
 	folianVoice,
 } from '@/lib/intelligence/__tests__/folianFixture';
 import { setNativeContentStoreForTests, createMemoryNativeContentStore } from '@/lib/media/store';
+import { createMemoryAgentStore, setAgentStoreForTests } from '@/lib/agent/controlStore';
 
 function stubAi(): IntelligenceAi {
 	return {
@@ -42,6 +43,7 @@ function stubAi(): IntelligenceAi {
 describe('article generation jobs', () => {
 	beforeEach(async () => {
 		setNativeContentStoreForTests(createMemoryNativeContentStore());
+		setAgentStoreForTests(createMemoryAgentStore());
 		const store = createMemoryIntelligenceStore();
 		setIntelligenceStoreForTests(store);
 		setIntelligenceAiForTests(stubAi());
@@ -57,6 +59,7 @@ describe('article generation jobs', () => {
 		setIntelligenceStoreForTests(undefined);
 		setIntelligenceAiForTests(undefined);
 		setNativeContentStoreForTests(undefined);
+		setAgentStoreForTests(undefined);
 	});
 
 	it('runs inline generation to completion', async () => {
