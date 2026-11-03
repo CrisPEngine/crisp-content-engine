@@ -147,18 +147,18 @@ export default function StrategyPage() {
 	}
 
 	return (
-		<div className="mx-auto max-w-5xl p-6 space-y-6">
+		<div className="mx-auto w-full max-w-5xl min-w-0 overflow-x-hidden p-4 sm:p-6 space-y-6">
 			{/* Header */}
-			<div className="flex items-center justify-between">
-				<div className="flex items-center gap-3">
-					<button onClick={() => router.back()} className="text-text-soft hover:text-text">
+			<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+				<div className="flex items-center gap-3 min-w-0">
+					<button onClick={() => router.back()} className="text-text-soft hover:text-text min-h-[44px] min-w-[44px] flex items-center justify-center">
 						<ArrowLeft className="w-5 h-5" />
 					</button>
-					<h1 className="text-3xl font-semibold">Strategy</h1>
+					<h1 className="text-2xl sm:text-3xl font-semibold truncate">Strategy</h1>
 				</div>
 				<button
 					onClick={() => router.push('/content-brief')}
-					className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm font-medium"
+					className="w-full sm:w-auto px-4 py-2.5 min-h-[44px] rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 text-sm font-medium"
 				>
 					Create Brief
 				</button>

@@ -53,3 +53,23 @@ export function assertGstDatetimeLocalFieldValue(value: string): string {
 	}
 	return value;
 }
+
+/** Earliest publish slot wall time (GST) with 1 hour lead for the 30-minute publisher cadence. */
+export function schedulePublishMinDatetimeLocal(): string {
+	return DateTime.now()
+		.setZone(APPROVAL_SCHEDULE_TIMEZONE)
+		.plus({ hours: 1 })
+		.toFormat(DATETIME_LOCAL_FORMAT);
+}
+
+export function schedulePublishMaxDatetimeLocal(): string {
+	return DateTime.now()
+		.setZone(APPROVAL_SCHEDULE_TIMEZONE)
+		.plus({ days: 30 })
+		.endOf('day')
+		.toFormat(DATETIME_LOCAL_FORMAT);
+}
+
+export function publishScheduleLeadTimeMessage(): string {
+	return 'Publish times must be at least 1 hour from now (GST) so the publisher can pick up the slot.';
+}

@@ -10,41 +10,40 @@ import {
 	formatPublishAtForDisplay,
 	gstDatetimeLocalValueToUtcIso,
 	utcIsoToGstDatetimeLocalValue,
-	APPROVAL_SCHEDULE_TIMEZONE,
+	schedulePublishMaxDatetimeLocal,
+	schedulePublishMinDatetimeLocal,
 } from '@/lib/datetime/gstSchedule';
-import { DateTime } from 'luxon';
+import { useIsMobileViewport } from '@/lib/hooks/useMediaQuery';
+import { ScheduleItemDetailSheet } from '@/components/schedule/ScheduleItemDetailSheet';
+import type { ScheduleCalendarItem } from '@/lib/schedule/schedulePresentation';
+import { statusBadgeClass } from '@/lib/schedule/schedulePresentation';
 import { Skeleton, ContentItemSkeleton } from '@/components/skeletons/Skeleton';
 import { ContentBrandFilter, fetchIntelligenceBrandOptions } from '@/components/content/ContentBrandFilter';
 
 const ScheduleCalendarView = lazy(() => import('@/components/ScheduleCalendarView'));
 
-type ScheduledContent = {
-	id: string;
-	title: string;
-	platform: string;
-	scheduled_date: string;
-	status: string;
-	brand_name: string;
-	content_preview: string;
-	external_url?: string | null;
-	last_publish_error?: string | null;
+type ScheduledContent = ScheduleCalendarItem & {
 	is_overdue?: boolean;
 };
 
 export default function SchedulingDashboard() {
 	const supabase = useSupabase();
 	const router = useRouter();
+	const isMobile = useIsMobileViewport();
 	const [loading, setLoading] = useState(true);
 	const [scheduledContent, setScheduledContent] = useState<ScheduledContent[]>([]);
 	const [filter, setFilter] = useState<'all' | 'scheduled' | 'published' | 'failed'>('all');
 	const [selectedDate, setSelectedDate] = useState<string>('');
 	const [error, setError] = useState<string | null>(null);
-	const [viewMode, setViewMode] = useState<'list' | 'calendar'>('calendar');
+	const [viewModeOverride, setViewModeOverride] = useState<'list' | 'calendar' | null>(null);
+	const viewMode = viewModeOverride ?? (isMobile ? 'list' : 'calendar');
 	const [brands, setBrands] = useState<Array<{ id: string; client_name: string }>>([]);
 	const [selectedBrandId, setSelectedBrandId] = useState<string>('all');
 	const [rescheduleId, setRescheduleId] = useState<string | null>(null);
 	const [rescheduleValue, setRescheduleValue] = useState('');
 	const [rescheduleSaving, setRescheduleSaving] = useState(false);
+	const [detailItem, setDetailItem] = useState<ScheduledContent | null>(null);
+	const [detailOpen, setDetailOpen] = useState(false);
 
 	function formatScheduledDateTime(dateString: string | null | undefined): string {
 		if (!dateString) return 'Not scheduled';
@@ -52,15 +51,16 @@ export default function SchedulingDashboard() {
 	}
 
 	function scheduleMinLocal(): string {
-		return DateTime.now().setZone(APPROVAL_SCHEDULE_TIMEZONE).toFormat("yyyy-MM-dd'T'HH:mm");
+		return schedulePublishMinDatetimeLocal();
 	}
 
 	function scheduleMaxLocal(): string {
-		return DateTime.now()
-			.setZone(APPROVAL_SCHEDULE_TIMEZONE)
-			.plus({ days: 30 })
-			.endOf('day')
-			.toFormat("yyyy-MM-dd'T'HH:mm");
+		return schedulePublishMaxDatetimeLocal();
+	}
+
+	function openDetail(item: ScheduledContent) {
+		setDetailItem(item);
+		setDetailOpen(true);
 	}
 
 	function startListReschedule(item: ScheduledContent) {
@@ -156,6 +156,9 @@ export default function SchedulingDashboard() {
 				status: item.status,
 				brand_name: item.brand_name,
 				content_preview: item.summary || item.content || '',
+				content: item.content || item.summary || '',
+				image_reference_url: item.image_reference_url || null,
+				brand_profile_id: item.brand_profile_id,
 				external_url: item.external_url || null,
 				last_publish_error: item.last_publish_error || null,
 				is_overdue: Boolean(item.is_overdue),
@@ -214,6 +217,33 @@ export default function SchedulingDashboard() {
 		}
 	}, []);
 
+	const handleUnschedule = useCallback(async (contentId: string): Promise<boolean> => {
+		try {
+			const res = await fetch('/api/content/native-queue', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ contentId, scheduled_time: null, scheduleIntent: 'publish' }),
+			});
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				setError(data?.error || 'Failed to unschedule');
+				return false;
+			}
+			setScheduledContent((prev) => prev.filter((item) => item.id !== contentId));
+			return true;
+		} catch {
+			setError('Failed to unschedule');
+			return false;
+		}
+	}, []);
+
+	const patchScheduledItem = useCallback((contentId: string, patch: Partial<ScheduledContent>) => {
+		setScheduledContent((prev) =>
+			prev.map((item) => (item.id === contentId ? { ...item, ...patch } : item)),
+		);
+	}, []);
+
 	const getStatusIcon = (status: string) => {
 		switch (status) {
 			case 'Scheduled':
@@ -231,7 +261,7 @@ export default function SchedulingDashboard() {
 
 	if (loading) {
 		return (
-			<div className="mx-auto max-w-6xl space-y-4">
+			<div className="mx-auto w-full max-w-6xl min-w-0 overflow-x-hidden px-4 pb-8 sm:px-6 space-y-4">
 				<div className="mb-6">
 					<Skeleton height="20px" width="80px" />
 				</div>
@@ -259,29 +289,29 @@ export default function SchedulingDashboard() {
 	}
 
 	return (
-		<div className="mx-auto max-w-6xl">
-			<div className="mb-6">
+		<div className="mx-auto w-full max-w-6xl min-w-0 overflow-x-hidden px-4 pb-8 sm:px-6">
+			<div className="mb-4 sm:mb-6">
 				<button
 					onClick={() => router.back()}
-					className="text-text-soft hover:text-text text-sm inline-flex items-center gap-1"
+					className="text-text-soft hover:text-text text-sm inline-flex items-center gap-1 min-h-[44px]"
 				>
 					← Back
 				</button>
 			</div>
 
 			<div className="mb-6 space-y-3">
-				<div className="flex items-center justify-between mb-4">
-					<div>
-						<h1 className="text-3xl font-semibold mb-2">Scheduling Dashboard</h1>
-						<p className="text-text-dim">
+				<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-2">
+					<div className="min-w-0">
+						<h1 className="text-2xl sm:text-3xl font-semibold mb-1 sm:mb-2">Scheduling Dashboard</h1>
+						<p className="text-text-dim text-sm sm:text-base">
 							View and manage your scheduled content
 						</p>
 					</div>
-					<div className="flex items-center gap-3">
-						<div className="flex rounded-xl2 border border-edge/60 overflow-hidden">
+					<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full sm:w-auto shrink-0">
+						<div className="flex rounded-xl2 border border-edge/60 overflow-hidden w-full sm:w-auto">
 							<button
-								onClick={() => setViewMode('list')}
-								className={`px-3 py-2 flex items-center gap-1.5 text-sm transition ${
+								onClick={() => setViewModeOverride('list')}
+								className={`flex-1 sm:flex-none px-3 py-2.5 min-h-[44px] flex items-center justify-center gap-1.5 text-sm transition ${
 									viewMode === 'list'
 										? 'bg-primary/15 text-primary'
 										: 'bg-surface/30 text-text-dim hover:text-text'
@@ -291,8 +321,8 @@ export default function SchedulingDashboard() {
 								List
 							</button>
 							<button
-								onClick={() => setViewMode('calendar')}
-								className={`px-3 py-2 flex items-center gap-1.5 text-sm transition ${
+								onClick={() => setViewModeOverride('calendar')}
+								className={`flex-1 sm:flex-none px-3 py-2.5 min-h-[44px] flex items-center justify-center gap-1.5 text-sm transition ${
 									viewMode === 'calendar'
 										? 'bg-primary/15 text-primary'
 										: 'bg-surface/30 text-text-dim hover:text-text'
@@ -304,7 +334,7 @@ export default function SchedulingDashboard() {
 						</div>
 						<button
 							onClick={() => router.push('/content/create')}
-							className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 flex items-center gap-2"
+							className="w-full sm:w-auto px-4 py-2.5 min-h-[44px] rounded-xl2 border border-primary/40 bg-primary/10 hover:bg-primary/20 flex items-center justify-center gap-2 text-sm font-medium"
 						>
 							<Plus className="w-4 h-4" />
 							Create Content
@@ -322,10 +352,10 @@ export default function SchedulingDashboard() {
 				<ContentBrandFilter brands={brands} value={selectedBrandId} onChange={setSelectedBrandId} />
 
 				{viewMode === 'list' && (
-					<div className="flex gap-3 flex-wrap">
+					<div className="flex gap-2 flex-wrap">
 						<button
 							onClick={() => setFilter('all')}
-							className={`px-4 py-2 rounded-xl2 border text-sm transition ${
+							className={`px-3 sm:px-4 py-2 min-h-[44px] rounded-xl2 border text-sm transition ${
 								filter === 'all'
 									? 'border-primary/40 bg-primary/10 text-primary'
 									: 'border-edge/60 bg-surface/30 text-text hover:bg-surface/50'
@@ -335,7 +365,7 @@ export default function SchedulingDashboard() {
 						</button>
 						<button
 							onClick={() => setFilter('scheduled')}
-							className={`px-4 py-2 rounded-xl2 border text-sm transition ${
+							className={`px-3 sm:px-4 py-2 min-h-[44px] rounded-xl2 border text-sm transition ${
 								filter === 'scheduled'
 									? 'border-primary/40 bg-primary/10 text-primary'
 									: 'border-edge/60 bg-surface/30 text-text hover:bg-surface/50'
@@ -345,7 +375,7 @@ export default function SchedulingDashboard() {
 						</button>
 						<button
 							onClick={() => setFilter('published')}
-							className={`px-4 py-2 rounded-xl2 border text-sm transition ${
+							className={`px-3 sm:px-4 py-2 min-h-[44px] rounded-xl2 border text-sm transition ${
 								filter === 'published'
 									? 'border-primary/40 bg-primary/10 text-primary'
 									: 'border-edge/60 bg-surface/30 text-text hover:bg-surface/50'
@@ -355,7 +385,7 @@ export default function SchedulingDashboard() {
 						</button>
 						<button
 							onClick={() => setFilter('failed')}
-							className={`px-4 py-2 rounded-xl2 border text-sm transition ${
+							className={`px-3 sm:px-4 py-2 min-h-[44px] rounded-xl2 border text-sm transition ${
 								filter === 'failed'
 									? 'border-primary/40 bg-primary/10 text-primary'
 									: 'border-edge/60 bg-surface/30 text-text hover:bg-surface/50'
@@ -367,7 +397,7 @@ export default function SchedulingDashboard() {
 							type="date"
 							value={selectedDate}
 							onChange={(e) => setSelectedDate(e.target.value)}
-							className="px-4 py-2 rounded-xl2 border border-edge/60 bg-bg/80 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+							className="w-full sm:w-auto px-4 py-2 min-h-[44px] rounded-xl2 border border-edge/60 bg-bg/80 text-text focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
 						/>
 					</div>
 				)}
@@ -375,7 +405,12 @@ export default function SchedulingDashboard() {
 
 			{viewMode === 'calendar' ? (
 				<Suspense fallback={<div className="card p-8 text-center text-text-dim">Loading calendar...</div>}>
-					<ScheduleCalendarView items={scheduledContent} onReschedule={handleReschedule} />
+					<ScheduleCalendarView
+						items={scheduledContent}
+						onReschedule={handleReschedule}
+						onUnschedule={handleUnschedule}
+						onItemUpdated={patchScheduledItem}
+					/>
 				</Suspense>
 		) : filteredContent.length === 0 ? (
 			<div className="card p-10 text-center flex flex-col items-center gap-4">
@@ -408,23 +443,19 @@ export default function SchedulingDashboard() {
 							key={item.id}
 							initial={{ opacity: 0, y: 20 }}
 							animate={{ opacity: 1, y: 0 }}
-							className="card p-6"
+							className="card p-4 sm:p-6 min-w-0 overflow-hidden"
 						>
-							<div className="flex items-start justify-between">
-								<div className="flex-1">
-									<div className="flex items-center gap-3 mb-2">
+							<div className="flex items-start justify-between min-w-0">
+								<div className="flex-1 min-w-0">
+									<div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
 										{getStatusIcon(item.status)}
-										<h3 className="text-lg font-semibold">{item.title}</h3>
-										<span className="px-2 py-1 rounded-full text-xs bg-primary/15 border border-primary/30 text-primary">
+										<h3 className="text-base sm:text-lg font-semibold break-words min-w-0 flex-1 basis-full sm:basis-auto">
+											{item.title}
+										</h3>
+										<span className="px-2 py-1 rounded-full text-xs bg-primary/15 border border-primary/30 text-primary shrink-0">
 											{item.platform}
 										</span>
-										<span className={`px-2 py-1 rounded-full text-xs border ${
-											item.status === 'Scheduled' || item.status === 'Ready To Publish' || item.status === 'Publishing'
-												? 'bg-primary/15 border-primary/30 text-primary'
-												: item.status === 'Published'
-												? 'bg-accent/15 border-accent/30 text-accent'
-												: 'bg-danger/15 border-danger/30 text-danger'
-										}`}>
+										<span className={`px-2 py-1 rounded-full text-xs border shrink-0 ${statusBadgeClass(item.status)}`}>
 											{item.status}
 										</span>
 									</div>
@@ -496,15 +527,44 @@ export default function SchedulingDashboard() {
 											View published post
 										</a>
 									) : null}
-									<p className="text-sm text-text-soft line-clamp-2">
+									<p className="text-sm text-text-soft line-clamp-2 break-words">
 										{item.content_preview}
 									</p>
+									<button
+										type="button"
+										onClick={() => openDetail(item)}
+										className="mt-3 text-sm text-primary hover:underline min-h-[44px] inline-flex items-center"
+									>
+										View details
+									</button>
 								</div>
 							</div>
 						</motion.div>
 					))}
 				</div>
 			)}
+
+			<ScheduleItemDetailSheet
+				item={detailItem}
+				open={detailOpen}
+				onClose={() => {
+					setDetailOpen(false);
+					setDetailItem(null);
+				}}
+				onReschedule={handleReschedule}
+				onUnschedule={handleUnschedule}
+				onContentUpdated={(contentId, next) => {
+					patchScheduledItem(contentId, {
+						content: next.content,
+						content_preview: next.content.slice(0, 280),
+					});
+					setDetailItem((prev) =>
+						prev && prev.id === contentId
+							? { ...prev, content: next.content, content_preview: next.content.slice(0, 280) }
+							: prev,
+					);
+				}}
+			/>
 		</div>
 	);
 }

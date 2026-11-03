@@ -105,15 +105,15 @@ export function AppHeader() {
 
 	return (
 		<div className="fixed top-0 left-0 right-0 z-50" ref={navRef}>
-		<header className="backdrop-blur-md bg-[#080808]/90 border-b border-white/[0.08] h-[96px] flex items-center">
-			<div className="mx-auto max-w-7xl px-4 sm:px-6 w-full flex items-center gap-4">
+		<header className="backdrop-blur-md bg-[#080808]/90 border-b border-white/[0.08] min-h-[4.25rem] md:h-[96px] flex items-center pt-[env(safe-area-inset-top,0px)]">
+			<div className="mx-auto max-w-7xl px-3 sm:px-6 w-full min-w-0 flex items-center gap-2 sm:gap-4">
 
 				{/* Logo */}
-				<Link href="/dashboard" className="flex items-center shrink-0 mr-2">
+				<Link href="/dashboard" className="flex items-center shrink-0 min-w-0 mr-1 sm:mr-2">
 				<img
 					src={LOGO_URL}
 					alt="CRISP Content Engine"
-					className="h-14 w-auto"
+					className="h-9 sm:h-14 w-auto max-w-[min(52vw,220px)] object-contain object-left"
 					width={1200}
 					height={627}
 				/>

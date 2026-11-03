@@ -155,7 +155,7 @@ export default function PublishedContentPage() {
 	}
 
 	return (
-		<div className="mx-auto max-w-6xl">
+		<div className="mx-auto w-full max-w-6xl min-w-0 overflow-x-hidden px-4 pb-8 sm:px-6">
 			<div className="mb-6">
 				<button
 					onClick={() => router.back()}
@@ -166,7 +166,7 @@ export default function PublishedContentPage() {
 			</div>
 
 			<div className="mb-6 space-y-2">
-				<h1 className="text-3xl font-semibold">Published Content</h1>
+				<h1 className="text-2xl sm:text-3xl font-semibold">Published Content</h1>
 				<p className="text-text-dim">
 					All published posts (newest first)
 				</p>
@@ -207,7 +207,7 @@ export default function PublishedContentPage() {
 			) : (
 				<div className="space-y-4">
 					{pagedItems.map((item) => (
-						<div key={item.id} className="card p-6">
+						<div key={item.id} className="card p-4 sm:p-6 min-w-0 overflow-hidden">
 							<div className="flex items-start justify-between">
 								<div className="flex-1 min-w-0">
 									<div className="flex items-center gap-3 mb-2">
