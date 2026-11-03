@@ -11,7 +11,7 @@ import { editorialDestinationForBrand, loadDestinationTaxonomy } from '@/lib/pub
 import type { ResearchRecord } from '@/lib/agent/types';
 import { getNativeContentStore } from '@/lib/media/store';
 import { publicAsset } from '@/lib/media/images';
-import type { ArticleRecord, ArticleSection } from './types';
+import type { ArticleRecord, ArticleResearch, ArticleSection } from './types';
 import { postProcessPlainDraft } from '@/lib/content/postProcessGeneration';
 
 const TARGETS = [1500, 3000, 5000] as const;
@@ -28,6 +28,10 @@ function sectionCount(target: number): number {
 	if (target >= 5000) return 8;
 	if (target >= 3000) return 6;
 	return 4;
+}
+
+function researchSourceHasUrl(source: ArticleResearch['sources'][number]): source is ArticleResearch['sources'][number] & { url: string } {
+	return 'url' in source && Boolean(source.url);
 }
 
 function slugify(title: string): string {
@@ -106,7 +110,7 @@ async function draftArticleSection(input: {
 	return body;
 }
 
-function researchFromBrand(brain: BrandBrain, strategy: BrandStrategy | null, packets: ResearchRecord[] = []) {
+function researchFromBrand(brain: BrandBrain, strategy: BrandStrategy | null, packets: ResearchRecord[] = []): ArticleResearch {
 	const claims = [
 		...(brain.knowledge.brandFacts ?? []),
 		...(brain.knowledge.productFacts ?? []),
@@ -120,7 +124,7 @@ function researchFromBrand(brain: BrandBrain, strategy: BrandStrategy | null, pa
 	];
 	const packetSources = packets.flatMap((packet) =>
 		packet.sources
-			.filter((source) => source.url)
+			.filter((source) => 'url' in source && Boolean(source.url))
 			.map((source) => ({
 				label: source.title || packet.request,
 				kind: 'supplied' as const,
@@ -316,7 +320,7 @@ export async function generateArticle(input: {
 		updatedAt: now,
 	};
 	article.performanceContentId = article.id;
-	const externalSources = research.sources.filter((source) => source.url).length;
+	const externalSources = research.sources.filter(researchSourceHasUrl).length;
 	const reviewStandards = taxonomy ?? {
 		destination: 'generic',
 		schemaVersion: 1,
