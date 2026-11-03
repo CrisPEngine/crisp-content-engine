@@ -4,7 +4,10 @@ import { countWords } from '@/lib/ai/truncation';
 import { getIntelligenceAi } from '@/lib/intelligence/actions';
 import { completeReview } from '@/lib/intelligence/review';
 import type { BrandBrain, BrandStrategy, ContentBrief, ContentTheme } from '@/lib/intelligence/types';
+import { reviewArticleDraft } from '@/lib/articles/editorialReview';
 import { articleInlinePlan, planMedia } from '@/lib/media/planner';
+import { classifyFolianTopic, FOLIAN_CATEGORIES } from '@/lib/publishing/folianClassify';
+import type { ResearchRecord } from '@/lib/agent/types';
 import { getNativeContentStore } from '@/lib/media/store';
 import { publicAsset } from '@/lib/media/images';
 import type { ArticleRecord, ArticleSection } from './types';
@@ -102,7 +105,7 @@ async function draftArticleSection(input: {
 	return body;
 }
 
-function researchFromBrand(brain: BrandBrain, strategy: BrandStrategy | null) {
+function researchFromBrand(brain: BrandBrain, strategy: BrandStrategy | null, packets: ResearchRecord[] = []) {
 	const claims = [
 		...(brain.knowledge.brandFacts ?? []),
 		...(brain.knowledge.productFacts ?? []),
@@ -114,10 +117,26 @@ function researchFromBrand(brain: BrandBrain, strategy: BrandStrategy | null) {
 		'Founder biography and measured proof are incomplete.',
 		'Current or numerical claims need a dated research source before they are stated as fact.',
 	];
+	const packetSources = packets.flatMap((packet) =>
+		packet.sources
+			.filter((source) => source.url)
+			.map((source) => ({
+				label: source.title || packet.request,
+				kind: 'supplied' as const,
+				url: source.url,
+				retrievedAt: source.retrievedAt,
+			})),
+	);
+	const packetClaims = packets.flatMap((packet) =>
+		packet.claims
+			.filter((claim) => claim.text && claim.sourceUrl)
+			.map((claim) => ({ text: claim.text, sourceLabel: claim.sourceUrl as string, confidence: 'supplied' as const })),
+	);
 	return {
-		sources: [{ label: 'Brand Brain', kind: 'brand_brain' as const }],
-		claims: claims.map((text) => ({ text, sourceLabel: 'Brand Brain', confidence: 'stored' as const })),
+		sources: [{ label: 'Brand Brain', kind: 'brand_brain' as const }, ...packetSources],
+		claims: [...claims.map((text) => ({ text, sourceLabel: 'Brand Brain', confidence: 'stored' as const })), ...packetClaims],
 		gaps,
+		usedExternalResearch: packetSources.length > 0,
 	};
 }
 
@@ -146,10 +165,11 @@ export async function generateArticle(input: {
 	topic?: string;
 	targetWords?: number;
 	instruction?: string;
+	researchRecords?: ResearchRecord[];
 }): Promise<ArticleRecord> {
 	const targetWords = normaliseTargetWords(input.targetWords);
 	const theme = input.themes.find((item) => item.status === 'active') ?? input.themes[0];
-	const research = researchFromBrand(input.brand, input.strategy);
+	const research = researchFromBrand(input.brand, input.strategy, input.researchRecords ?? []);
 	const topic = input.topic ?? theme?.title ?? input.strategy?.objectives[0] ?? input.brand.identity.name;
 	const ai = getIntelligenceAi();
 	const outlineCompletion = await ai.completeJson<{ title?: string; searchIntent?: string; sections?: Array<{ heading?: string; purpose?: string }> }>(
@@ -183,6 +203,7 @@ export async function generateArticle(input: {
 		});
 		sections.push({ ...item, body, claims: research.claims.map((claim) => claim.text).slice(0, 3) });
 	}
+	const classification = classifyFolianTopic(topic, outlineCompletion.data.searchIntent ?? '');
 	const title = outlineCompletion.data.title?.trim() || `${topic}`;
 	const body = sections.map((section) => `## ${section.heading}\n\n${section.body}`).join('\n\n');
 	const excerpt = sections[0]?.body.split(/(?<=\.)\s/).slice(0, 2).join(' ').slice(0, 280) ?? '';
@@ -258,8 +279,8 @@ export async function generateArticle(input: {
 			secondaryTopics: input.strategy?.contentPillars ?? [],
 		},
 		author: null,
-		categories: theme ? [theme.title] : [],
-		tags: theme?.keywords ?? [],
+		categories: [classification.category],
+		tags: [...classification.tags, ...(theme?.keywords ?? [])],
 		inlineAssetIds: [],
 		mediaPlan: { hero, inline, note: 'Images are proposed, not generated, until an approved media action runs.' },
 		internalLinkOpportunities: [],
@@ -280,8 +301,56 @@ export async function generateArticle(input: {
 		updatedAt: now,
 	};
 	article.performanceContentId = article.id;
-	await getNativeContentStore().saveArticle(article);
-	return article;
+	const externalSources = research.sources.filter((source) => 'url' in source && source.url).length;
+	const editorial = reviewArticleDraft({
+		body: article.body,
+		wordCount: article.wordCount,
+		targetWords,
+		category: classification.category,
+		allowedCategories: FOLIAN_CATEGORIES,
+		sourceCount: externalSources,
+		claimsExternalResearch: research.usedExternalResearch === true,
+		toolSlugs: classification.toolSlugs,
+	});
+	const maxCycles = process.env.VITEST === 'true' ? 0 : Number(process.env.CCE_ARTICLE_REVIEW_CYCLES ?? 2);
+	let cyclesUsed = 0;
+	let current = article;
+	while (!editorial.ready && cyclesUsed < maxCycles) {
+		const instruction = editorial.findings.map((finding) => finding.instruction).join('\n');
+		current = await reviseArticle({
+			ownerUserId: input.ownerUserId,
+			article: current,
+			brand: input.brand,
+			instruction,
+		});
+		cyclesUsed += 1;
+		const again = reviewArticleDraft({
+			body: current.body,
+			wordCount: current.wordCount,
+			targetWords,
+			category: classification.category,
+			allowedCategories: FOLIAN_CATEGORIES,
+			sourceCount: externalSources,
+			claimsExternalResearch: research.usedExternalResearch === true,
+			toolSlugs: classification.toolSlugs,
+		});
+		editorial.findings = again.findings;
+		editorial.ready = again.ready;
+	}
+	current.review = {
+		...current.review,
+		materialPassed: editorial.ready && Boolean(current.review?.materialPassed),
+		note: editorial.ready
+			? (current.review?.note ?? 'Reviewed against Brand Brain guardrails.')
+			: `Editorial review left critical issues after ${cyclesUsed} revision cycle(s). Human review required.`,
+		coherenceFindings: [
+			...(current.review?.coherenceFindings ?? []),
+			...editorial.findings.map((finding) => `${finding.severity}:${finding.code}`),
+		],
+	};
+	current.tags = classification.tags;
+	await getNativeContentStore().saveArticle(current);
+	return current;
 }
 
 export async function reviseArticle(input: {

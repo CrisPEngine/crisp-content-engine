@@ -344,15 +344,24 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 			if (sync) {
 				const strategy = await getIntelligenceStore().getStrategyForBrand(ctx.credential.ownerUserId, brain.id);
 				const themes = await getIntelligenceStore().listThemes(ctx.credential.ownerUserId, brain.id);
+				const { selectRelevantResearch } = await import('@/lib/research/retrieve');
+				const { getAgentStore } = await import('@/lib/agent/controlStore');
+				const topic = text(input, 'topic');
+				const instruction = text(input, 'instruction');
+				const researchRecords = selectRelevantResearch(
+					await getAgentStore().listResearch(ctx.credential.ownerUserId, brain.id),
+					`${topic ?? ''} ${instruction ?? ''}`,
+				);
 				const article = await generateArticle({
 					ownerUserId: ctx.credential.ownerUserId,
 					brand: brain,
 					strategy,
 					themes,
 					objective: text(input, 'objective'),
-					topic: text(input, 'topic'),
+					topic,
 					targetWords: typeof input.targetWords === 'number' ? input.targetWords : undefined,
-					instruction: text(input, 'instruction'),
+					instruction,
+					researchRecords,
 				});
 				return { article: publicArticle(article), published: false, async: false };
 			}

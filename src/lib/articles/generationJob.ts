@@ -42,6 +42,12 @@ export async function runArticleGenerationJob(job: WorkflowJob): Promise<Article
 	if (!brain) throw new Error('Brand brain not found for article generation job.');
 	const strategy = await store.getStrategyForBrand(job.userId, brain.id);
 	const themes = await store.listThemes(job.userId, brain.id);
+	const { getAgentStore } = await import('@/lib/agent/controlStore');
+	const { selectRelevantResearch } = await import('@/lib/research/retrieve');
+	const researchRecords = selectRelevantResearch(
+		await getAgentStore().listResearch(job.userId, brain.id),
+		`${payload.topic ?? ''} ${payload.instruction ?? ''}`,
+	);
 	const article = await generateArticle({
 		ownerUserId: job.userId,
 		brand: brain,
@@ -51,6 +57,7 @@ export async function runArticleGenerationJob(job: WorkflowJob): Promise<Article
 		topic: payload.topic,
 		targetWords: payload.targetWords,
 		instruction: payload.instruction,
+		researchRecords,
 	});
 	return { articleId: article.id };
 }
