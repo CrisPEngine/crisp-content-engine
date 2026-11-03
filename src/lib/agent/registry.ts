@@ -434,6 +434,7 @@ export const AGENT_ACTIONS: AgentActionDefinition[] = [
 	action('cce_request_article_revision', 'content:revise', 1, 'Revise an article and keep the previous version.', z.object({ brandId, articleId: z.string().min(1), instruction: z.string().min(1), sectionId: z.string().optional() }).passthrough()),
 	action('cce_submit_article_for_approval', 'content:submit_for_approval', 2, 'Submit an article for human approval. Does not publish.', z.object({ brandId, articleId: z.string().min(1) }).passthrough()),
 	action('cce_get_article_media_plan', 'media:read', 0, 'Hero and inline media proposals for an article.', z.object({ brandId, articleId: z.string().min(1) }).passthrough()),
+	action('cce_send_draft_to_folian', 'content:create', 1, 'Send a stored article draft to Folian Payload for human review. Does not publish the live site.', z.object({ brandId, articleId: z.string().min(1), externalId: z.string().optional(), baseRevision: z.number().optional(), heroImageUrl: z.string().optional() }).passthrough()),
 	action('cce_publish_article', 'content:publish', 3, 'Publish an approved article. Not granted to the Folian operator, and this phase does not call a CMS.'),
 ];
 

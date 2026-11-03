@@ -45,6 +45,10 @@ export async function publishArticle(request: ArticlePublishRequest): Promise<Ar
 		const { linkedinArticlePublisher } = await import('./linkedin');
 		publisher = linkedinArticlePublisher;
 	}
+	if (!publisher && destination === 'folian') {
+		const { folianPayloadPublisher } = await import('./folian');
+		publisher = folianPayloadPublisher;
+	}
 	if (!publisher) {
 		return {
 			ok: false,

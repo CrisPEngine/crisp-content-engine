@@ -1584,6 +1584,23 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 			});
 			return diagnostic;
 		}
+		case 'cce_send_draft_to_folian': {
+			const articleId = inputString(input, 'articleId');
+			if (!articleId) throw new AgentError('invalid_input', 'articleId is required.', 400);
+			const article = await getNativeContentStore().getArticle(ctx.credential.ownerUserId, articleId);
+			if (!article || !ctx.credential.allowedBrandIds.includes(article.brandId)) {
+				throw new AgentError('brand_not_accessible', 'This agent cannot access that article.', 403);
+			}
+			const { submitFolianDraftFromRecord } = await import('@/lib/publishing/folian');
+			const result = await submitFolianDraftFromRecord(article, {
+				externalId: inputString(input, 'externalId') || `cce_${article.id}`,
+				baseRevision: typeof input.baseRevision === 'number' ? input.baseRevision : undefined,
+				heroImageUrl: inputString(input, 'heroImageUrl'),
+				heroAlt: article.title,
+			});
+			if (!result.ok) throw new AgentError('folian_submit_failed', result.error || 'Folian rejected the draft.', 422);
+			return { submitted: true, published: false, externalId: result.externalId, reviewUrl: result.url };
+		}
 		case 'cce_record_external_publish': {
 			const contentId = inputString(input, 'contentId') ?? inputString(input, 'articleId');
 			const externalUrl = inputString(input, 'externalUrl');
