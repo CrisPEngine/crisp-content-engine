@@ -4,9 +4,10 @@ import { countWords } from '@/lib/ai/truncation';
 import { getIntelligenceAi } from '@/lib/intelligence/actions';
 import { completeReview } from '@/lib/intelligence/review';
 import type { BrandBrain, BrandStrategy, ContentBrief, ContentTheme } from '@/lib/intelligence/types';
-import { reviewArticleDraft } from '@/lib/articles/editorialReview';
+import { mergeEditorialReviews, runDeterministicArticleReview, runLlmEditorialReview } from '@/lib/articles/editorialReview';
 import { articleInlinePlan, planMedia } from '@/lib/media/planner';
-import { classifyFolianTopic, FOLIAN_CATEGORIES } from '@/lib/publishing/folianClassify';
+import { classifyArticleForDestination } from '@/lib/publishing/classifyForDestination';
+import { editorialDestinationForBrand, loadDestinationTaxonomy } from '@/lib/publishing/destinationRegistry';
 import type { ResearchRecord } from '@/lib/agent/types';
 import { getNativeContentStore } from '@/lib/media/store';
 import { publicAsset } from '@/lib/media/images';
@@ -203,7 +204,21 @@ export async function generateArticle(input: {
 		});
 		sections.push({ ...item, body, claims: research.claims.map((claim) => claim.text).slice(0, 3) });
 	}
-	const classification = classifyFolianTopic(topic, outlineCompletion.data.searchIntent ?? '');
+	const searchIntent = outlineCompletion.data.searchIntent?.trim() || 'informational';
+	const destinationId = editorialDestinationForBrand(input.brand.id);
+	const taxonomy = destinationId ? await loadDestinationTaxonomy(destinationId) : null;
+	const classification = taxonomy
+		? await classifyArticleForDestination({
+				ai,
+				ownerUserId: input.ownerUserId,
+				topic,
+				searchIntent,
+				audience: input.strategy?.audiences[0]?.name,
+				objective: input.objective ?? input.strategy?.objectives[0],
+				taxonomy,
+			})
+		: null;
+	const categoryLabel = classification?.categoryId ?? theme?.title ?? 'general';
 	const title = outlineCompletion.data.title?.trim() || `${topic}`;
 	const body = sections.map((section) => `## ${section.heading}\n\n${section.body}`).join('\n\n');
 	const excerpt = sections[0]?.body.split(/(?<=\.)\s/).slice(0, 2).join(' ').slice(0, 280) ?? '';
@@ -258,7 +273,7 @@ export async function generateArticle(input: {
 		objective: input.objective ?? input.strategy?.objectives[0] ?? 'Support the active strategy',
 		audience: input.strategy?.audiences[0]?.name,
 		topic,
-		searchIntent: outlineCompletion.data.searchIntent?.trim() || 'informational',
+		searchIntent,
 		primaryKeyword: theme?.keywords[0],
 		secondaryTopics: input.strategy?.contentPillars ?? [],
 		research,
@@ -279,8 +294,8 @@ export async function generateArticle(input: {
 			secondaryTopics: input.strategy?.contentPillars ?? [],
 		},
 		author: null,
-		categories: [classification.category],
-		tags: [...classification.tags, ...(theme?.keywords ?? [])],
+		categories: [categoryLabel],
+		tags: classification ? [...classification.tags, ...(theme?.keywords ?? [])] : (theme?.keywords ?? []),
 		inlineAssetIds: [],
 		mediaPlan: { hero, inline, note: 'Images are proposed, not generated, until an approved media action runs.' },
 		internalLinkOpportunities: [],
@@ -301,17 +316,36 @@ export async function generateArticle(input: {
 		updatedAt: now,
 	};
 	article.performanceContentId = article.id;
-	const externalSources = research.sources.filter((source) => 'url' in source && source.url).length;
-	const editorial = reviewArticleDraft({
+	const externalSources = research.sources.filter((source) => source.url).length;
+	const reviewStandards = taxonomy ?? {
+		destination: 'generic',
+		schemaVersion: 1,
+		categoryCreationPolicy: 'open' as const,
+		categories: [{ id: categoryLabel, name: categoryLabel, description: categoryLabel }],
+		contentTypes: ['guide'],
+		tags: { policy: 'open' as const },
+		tools: [],
+	};
+	const deterministic = runDeterministicArticleReview({
 		body: article.body,
 		wordCount: article.wordCount,
 		targetWords,
-		category: classification.category,
-		allowedCategories: FOLIAN_CATEGORIES,
+		categoryId: categoryLabel,
+		taxonomy: reviewStandards,
 		sourceCount: externalSources,
 		claimsExternalResearch: research.usedExternalResearch === true,
-		toolSlugs: classification.toolSlugs,
+		toolSlugs: classification?.toolSlugs ?? [],
 	});
+	const llmReview = await runLlmEditorialReview({
+		ai,
+		ownerUserId: input.ownerUserId,
+		brain: input.brand,
+		topic,
+		searchIntent,
+		body: article.body,
+		categoryId: categoryLabel,
+	});
+	const editorial = mergeEditorialReviews(deterministic, llmReview);
 	const maxCycles = process.env.VITEST === 'true' ? 0 : Number(process.env.CCE_ARTICLE_REVIEW_CYCLES ?? 2);
 	let cyclesUsed = 0;
 	let current = article;
@@ -324,16 +358,26 @@ export async function generateArticle(input: {
 			instruction,
 		});
 		cyclesUsed += 1;
-		const again = reviewArticleDraft({
+		const againDeterministic = runDeterministicArticleReview({
 			body: current.body,
 			wordCount: current.wordCount,
 			targetWords,
-			category: classification.category,
-			allowedCategories: FOLIAN_CATEGORIES,
+			categoryId: categoryLabel,
+			taxonomy: reviewStandards,
 			sourceCount: externalSources,
 			claimsExternalResearch: research.usedExternalResearch === true,
-			toolSlugs: classification.toolSlugs,
+			toolSlugs: classification?.toolSlugs ?? [],
 		});
+		const againLlm = await runLlmEditorialReview({
+			ai,
+			ownerUserId: input.ownerUserId,
+			brain: input.brand,
+			topic,
+			searchIntent,
+			body: current.body,
+			categoryId: categoryLabel,
+		});
+		const again = mergeEditorialReviews(againDeterministic, againLlm);
 		editorial.findings = again.findings;
 		editorial.ready = again.ready;
 	}
@@ -348,7 +392,7 @@ export async function generateArticle(input: {
 			...editorial.findings.map((finding) => `${finding.severity}:${finding.code}`),
 		],
 	};
-	current.tags = classification.tags;
+	current.tags = classification?.tags ?? current.tags;
 	await getNativeContentStore().saveArticle(current);
 	return current;
 }

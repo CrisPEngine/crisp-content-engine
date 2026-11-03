@@ -1,3 +1,5 @@
+import type { DestinationTaxonomy } from './destinationTaxonomy';
+
 const ALLOWED_IMAGE_HOSTS = new Set(['res.cloudinary.com']);
 const MAX_BYTES = 8 * 1024 * 1024;
 
@@ -53,6 +55,17 @@ export async function uploadImageToFolian(input: {
 		return { ok: false, error: String(payload.message ?? payload.code ?? `Folian media ${response.status}`) };
 	}
 	return { ok: true, mediaId: String(payload.mediaId) };
+}
+
+export async function fetchFolianTaxonomy(): Promise<DestinationTaxonomy | null> {
+	const base = folianBaseUrl();
+	const headers = folianHeaders(true);
+	if (!base || !headers) return null;
+	const response = await fetch(`${base}/api/content/v1/taxonomy`, { headers, cache: 'no-store' });
+	if (!response.ok) return null;
+	const payload = (await response.json().catch(() => ({}))) as { ok?: boolean } & DestinationTaxonomy;
+	if (!payload.ok || !payload.categories?.length) return null;
+	return payload;
 }
 
 export async function fetchAllowedImage(url: string): Promise<{ ok: true; bytes: Buffer; mimeType: string } | { ok: false; error: string }> {

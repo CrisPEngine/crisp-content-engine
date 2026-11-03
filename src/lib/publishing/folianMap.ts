@@ -1,5 +1,6 @@
 import type { ArticleRecord } from '@/lib/articles/types';
-import { assertFolianCategory } from './folianClassify';
+import { assertDestinationCategory } from './destinationTaxonomy';
+import { folianTaxonomyFallback } from './folian/taxonomyFallback';
 
 type FolianDraftPayload = Record<string, unknown>;
 
@@ -8,6 +9,13 @@ function sectionBlocks(article: ArticleRecord) {
 		type: 'richText',
 		markdown: `## ${section.heading}\n\n${section.body}`,
 	}));
+}
+
+function relatedToolSlugs(article: ArticleRecord): string[] {
+	const haystack = `${article.topic} ${article.body}`;
+	return folianTaxonomyFallback.tools
+		.filter((tool) => tool.linkWhenTopicMatches && new RegExp(tool.linkWhenTopicMatches, 'i').test(haystack))
+		.map((tool) => tool.slug);
 }
 
 export function mapArticleRecordToFolianDraft(
@@ -22,16 +30,14 @@ export function mapArticleRecordToFolianDraft(
 		title: article.title,
 		slug: article.slug,
 		dek: article.excerpt,
-		category: assertFolianCategory(article.categories[0] ?? 'writing-a-book'),
+		category: assertDestinationCategory(folianTaxonomyFallback, article.categories[0] ?? 'writing-a-book'),
 		tags: article.tags,
 		contentType: article.tags.includes('pillar') ? 'pillar' : 'guide',
 		searchIntent: article.searchIntent,
 		seoTitle: article.seo.seoTitle,
 		seoDescription: article.seo.metaDescription,
-		relatedArticleSlugs: article.internalLinkOpportunities,
-		relatedToolSlugs: article.tags.some((tag) => /novel|draft|word/i.test(tag)) || article.categories.includes('writing-a-book')
-			? ['word-count-planner']
-			: [],
+		relatedArticleSlugs: article.internalLinkOpportunities.filter((slug) => !slug.startsWith('/tools/')),
+		relatedToolSlugs: relatedToolSlugs(article),
 		sources: article.research.sources
 			.filter((source) => source.url)
 			.map((source) => ({

@@ -10,6 +10,7 @@ export type ArticleResearch = {
 	sources: Array<{ label: string; kind: 'brand_brain' | 'supplied' | 'opportunity'; url?: string; retrievedAt?: string }>;
 	claims: Array<{ text: string; sourceLabel: string; confidence: 'stored' | 'supplied' }>;
 	gaps: string[];
+	usedExternalResearch?: boolean;
 };
 
 export type ArticleSeo = {
