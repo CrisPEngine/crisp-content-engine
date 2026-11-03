@@ -4,6 +4,7 @@ import {
 	formatPublishAtForDisplay,
 	gstDatetimeLocalValueToUtcIso,
 	parseUtcPublishAtIso,
+	schedulePublishMinDatetimeLocal,
 	utcIsoToGstDatetimeLocalValue,
 } from './gstSchedule';
 
@@ -34,5 +35,9 @@ describe('gstSchedule', () => {
 		const withZ = parseUtcPublishAtIso('2026-10-14T13:30:00Z');
 		const noZ = parseUtcPublishAtIso('2026-10-14T13:30:00');
 		expect(withZ.toMillis()).toBe(noZ.toMillis());
+	});
+
+	it('schedulePublishMinDatetimeLocal returns datetime-local shape', () => {
+		expect(schedulePublishMinDatetimeLocal()).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
 	});
 });

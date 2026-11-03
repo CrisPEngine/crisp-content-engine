@@ -22,7 +22,7 @@ export function ContentBrandFilter({ brands, value, onChange, className }: Props
 			<select
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
-				className="w-full max-w-sm px-4 py-3 rounded-xl2 border-2 border-white/40 bg-surface/50 text-text font-medium focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 shadow-sm"
+				className="w-full max-w-full sm:max-w-sm px-4 py-3 min-h-[44px] rounded-xl2 border-2 border-white/40 bg-surface/50 text-text font-medium focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 shadow-sm"
 			>
 				<option value="all">All Brands</option>
 				{brands.map((brand) => (

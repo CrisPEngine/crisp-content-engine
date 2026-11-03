@@ -966,7 +966,7 @@ export default function ContentApprovalPage() {
 	}
 
 	return (
-		<div className="mx-auto max-w-7xl">
+		<div className="mx-auto w-full max-w-7xl min-w-0 overflow-x-hidden px-4 pb-8 sm:px-6">
 			<div className="mb-6">
 				<button
 					onClick={() => router.back()}
@@ -977,15 +977,15 @@ export default function ContentApprovalPage() {
 			</div>
 
 			<div className="mb-6 space-y-3">
-				<div className="flex items-center justify-between">
-					<div>
-						<h1 className="text-3xl font-semibold mb-2">Content Approval Queue</h1>
-						<p className="text-text-dim">
+				<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+					<div className="min-w-0">
+						<h1 className="text-2xl sm:text-3xl font-semibold mb-1 sm:mb-2">Content Approval Queue</h1>
+						<p className="text-text-dim text-sm sm:text-base">
 							Review and approve content before it's published.
 						</p>
 					</div>
 					{quotaRemaining !== null && (
-						<div className="text-right">
+						<div className="text-left sm:text-right shrink-0">
 							<div className="text-2xl font-bold text-primary">{quotaRemaining}</div>
 							<div className="text-xs text-text-dim">Posts remaining</div>
 						</div>
@@ -1019,8 +1019,8 @@ export default function ContentApprovalPage() {
 			) : null}
 
 			{/* Channel Tabs */}
-			<div className="mb-6">
-				<div className="flex gap-2 border-b border-edge/60">
+			<div className="mb-6 -mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto">
+				<div className="flex gap-1 sm:gap-2 border-b border-edge/60 min-w-max sm:min-w-0">
 					{(['LinkedIn', 'X', 'Meta', 'Blog'] as ChannelTab[]).map((tab) => (
 						<button
 							key={tab}
@@ -1031,7 +1031,7 @@ export default function ContentApprovalPage() {
 								setQueueLoadError(null);
 								setIsGenerating(false);
 							}}
-							className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+							className={`px-3 sm:px-4 py-2.5 min-h-[44px] text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
 								selectedTab === tab
 									? 'border-primary text-text'
 									: 'border-transparent text-text-dim hover:text-text-soft'
