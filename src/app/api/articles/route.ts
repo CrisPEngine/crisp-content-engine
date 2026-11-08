@@ -14,6 +14,10 @@ function fail(error: unknown) {
 	return NextResponse.json({ error: message }, { status });
 }
 
+function text(value: unknown): string | undefined {
+	return typeof value === 'string' ? value : undefined;
+}
+
 export async function GET(request: Request) {
 	try {
 		const { userId } = await requireIntelligenceUser();
@@ -33,40 +37,30 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
 	try {
 		const { userId } = await requireIntelligenceUser();
-		const body = (await request.json()) as {
-			brandId?: string;
-			destinationId?: string;
-			topic?: string;
-			workingTitle?: string;
-			primaryKeyword?: string;
-			searchIntent?: string;
-			audience?: string;
-			contentType?: string;
-			targetWords?: number;
-			researchRequirements?: string;
-			internalLinking?: string;
-			imageRequirements?: string;
-			externalId?: string;
-		};
-		if (!body.brandId || !body.topic?.trim()) {
+		const body = (await request.json()) as Record<string, unknown>;
+		const brandId = text(body.brandId);
+		const topic = text(body.topic);
+		if (!brandId || !topic?.trim()) {
 			return NextResponse.json({ error: 'Brand and topic are required.' }, { status: 400 });
 		}
-		const article = await createArticleBrief(userId, {
-			brandId: body.brandId,
-			destinationId: body.destinationId,
-			topic: body.topic,
-			workingTitle: body.workingTitle,
-			primaryKeyword: body.primaryKeyword,
-			searchIntent: body.searchIntent,
-			audience: body.audience,
-			contentType: body.contentType,
-			targetWords: body.targetWords,
-			researchRequirements: body.researchRequirements,
-			internalLinking: body.internalLinking,
-			imageRequirements: body.imageRequirements,
-			externalId: body.externalId,
+		const brief = body.brief && typeof body.brief === 'object' ? (body.brief as Record<string, unknown>) : {};
+		const result = await createArticleBrief(userId, {
+			brandId,
+			destinationId: text(body.destinationId),
+			topic,
+			workingTitle: text(body.workingTitle),
+			primaryKeyword: text(body.primaryKeyword),
+			searchIntent: text(body.searchIntent),
+			audience: text(body.audience),
+			contentType: text(body.contentType),
+			targetWords: typeof body.targetWords === 'number' ? body.targetWords : undefined,
+			researchRequirements: text(body.researchRequirements),
+			internalLinking: text(body.internalLinking),
+			imageRequirements: text(body.imageRequirements),
+			externalId: text(body.externalId),
+			brief: Object.fromEntries(Object.entries(brief).filter(([, value]) => typeof value === 'string')) as Record<string, string>,
 		});
-		return NextResponse.json({ article });
+		return NextResponse.json(result);
 	} catch (error) {
 		return fail(error);
 	}

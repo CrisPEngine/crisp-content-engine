@@ -171,6 +171,8 @@ export async function runResearch(input: {
 	fetchPage?: PageFetcher;
 	search?: SearchProvider;
 	searchDepth?: SearchDepth;
+	/** Reads this many search result pages and keeps the sentences that match the query. */
+	readPages?: number;
 	now?: number;
 }): Promise<ResearchPacket> {
 	const started = input.now ?? Date.now();
@@ -199,7 +201,8 @@ export async function runResearch(input: {
 			searches += 1;
 			try {
 				const depth: SearchDepth = input.searchDepth ?? 'basic';
-				const hits = await search.search(`${input.brandName} ${input.query}`.trim(), 6, { depth });
+				const query = input.projectType === 'ARTICLE_RESEARCH' ? input.query.trim() : `${input.brandName} ${input.query}`.trim();
+				const hits = await search.search(query, input.projectType === 'ARTICLE_RESEARCH' ? 8 : 6, { depth });
 				for (const hit of hits) {
 					if (sources.length >= RESEARCH_LIMITS.maxSourcesStored) break;
 					if (sources.some((source) => source.url === hit.url)) continue;
@@ -222,6 +225,39 @@ export async function runResearch(input: {
 				}
 			} catch (error) {
 				gaps.push(error instanceof Error ? error.message : 'search_failed');
+			}
+		}
+	}
+
+	if (input.readPages && input.readPages > 0) {
+		const queryTerms = new Set(
+			input.query
+				.toLowerCase()
+				.split(/[^a-z0-9]+/)
+				.filter((word) => word.length > 3),
+		);
+		const targets = sources.filter((source) => !source.rejected && source.sourceClass !== 'FIRST_PARTY').slice(0, input.readPages);
+		for (const source of targets) {
+			if (!withinBudget(searches, pagesFetched + 1)) break;
+			try {
+				const page = await fetchPage(source.url);
+				pagesFetched += 1;
+				if (page.status >= 400 || !/html|text\/plain/i.test(page.contentType)) continue;
+				const visible = extractVisibleText(page.body);
+				source.verifiedAt = new Date().toISOString();
+				source.excerpt = visible.text.slice(0, RESEARCH_LIMITS.maxExcerptChars);
+				const scored = sentences(visible.text)
+					.filter((sentence) => sentence.length >= 60 && sentence.length <= 400)
+					.map((sentence) => {
+						const words = sentence.toLowerCase().split(/[^a-z0-9]+/);
+						return { sentence, score: words.filter((word) => queryTerms.has(word)).length };
+					})
+					.filter((entry) => entry.score > 0)
+					.sort((a, b) => b.score - a.score)
+					.slice(0, 3);
+				scored.forEach((entry, index) => claims.push(claimFromSentence(entry.sentence, source, index + 2)));
+			} catch (error) {
+				gaps.push(`Could not read ${source.domain}: ${error instanceof Error ? error.message : 'fetch_failed'}`);
 			}
 		}
 	}

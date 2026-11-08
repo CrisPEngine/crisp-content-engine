@@ -1,6 +1,7 @@
 import type { DestinationTaxonomy } from '@/lib/publishing/destinationTaxonomy';
 import type { BrandBrain } from '@/lib/intelligence/types';
 import type { IntelligenceAi } from '@/lib/intelligence/pipeline';
+import { plainText, validateArticleStructure, type StructureReport } from './structure';
 
 export type ReviewFinding = {
 	severity: 'critical' | 'major' | 'minor';
@@ -8,6 +9,8 @@ export type ReviewFinding = {
 	instruction: string;
 	source: 'deterministic' | 'llm';
 	dimension?: string;
+	/** False for structural defects that every revision is re-checked against. */
+	rejectable?: boolean;
 };
 
 export type EditorialReview = {
@@ -15,72 +18,256 @@ export type EditorialReview = {
 	findings: ReviewFinding[];
 };
 
-export function runDeterministicArticleReview(input: {
+export const MAX_REVIEW_CHARS = 120_000;
+
+const STRUCTURE_DIMENSION: Record<string, string> = {
+	duplicate_adjacent_heading: 'writing_quality',
+	duplicate_heading: 'writing_quality',
+	empty_section: 'topic_completeness',
+	truncated_ending: 'publication_readiness',
+	ends_with_heading: 'publication_readiness',
+	unclosed_code_fence: 'publication_readiness',
+	missing_sections: 'topic_completeness',
+	empty_document: 'publication_readiness',
+};
+
+export type DeterministicReviewInput = {
 	body: string;
 	wordCount: number;
 	targetWords: number;
-	categoryId: string;
-	taxonomy: DestinationTaxonomy;
+	categoryId: string | null;
+	taxonomy: DestinationTaxonomy | null;
 	sourceCount: number;
 	claimsExternalResearch: boolean;
 	toolSlugs: string[];
-}): EditorialReview {
+	brandName?: string;
+	title?: string;
+	seoTitle?: string;
+	metaDescription?: string;
+	requiredLinks?: string[];
+	imageRequired?: boolean;
+	heroReady?: boolean;
+	expectedSections?: number;
+};
+
+function lengthFinding(actual: number, target: number): ReviewFinding | null {
+	if (!target || !actual) return null;
+	const deviation = (actual - target) / target;
+	if (Math.abs(deviation) <= 0.2) return null;
+	const percent = Math.round(Math.abs(deviation) * 100);
+	const under = deviation < 0;
+	return {
+		severity: 'major',
+		code: under ? 'too_short' : 'too_long',
+		source: 'deterministic',
+		dimension: 'topic_completeness',
+		instruction: under
+			? `The draft has ${actual.toLocaleString()} words against a target of ${target.toLocaleString()} (${percent}% under). That is acceptable if every question in the brief is answered. If a reader question is unanswered, add depth there. Do not add filler to reach the number.`
+			: `The draft has ${actual.toLocaleString()} words against a target of ${target.toLocaleString()} (${percent}% over). Cut repetition and digressions; keep every step the reader needs.`,
+	};
+}
+
+function paragraphsOf(body: string): string[] {
+	return body
+		.split(/\n\s*\n/)
+		.map((part) => part.trim())
+		.filter((part) => part && !part.startsWith('#'));
+}
+
+const STAT_RE = /\b\d+(?:\.\d+)?\s?(?:%|percent\b|per cent\b)|\b\d+(?:\.\d+)?\s?(?:million|billion)\b|\b(?:studies|research|surveys?|data) (?:show|shows|found|finds|suggests?)\b|\baccording to\b/i;
+
+export function runDeterministicArticleReview(input: DeterministicReviewInput): EditorialReview {
 	const findings: ReviewFinding[] = [];
-	const allowed = input.taxonomy.categories.map((item) => item.id);
-	const min = Math.round(input.targetWords * 0.75);
-	if (input.wordCount < min) {
+	const structure = validateArticleStructure(input.body, { expectedSections: input.expectedSections });
+	for (const issue of structure.issues) {
 		findings.push({
-			severity: 'critical',
-			code: 'too_short',
+			severity: issue.severity,
+			code: issue.code,
 			source: 'deterministic',
-			instruction: `Expand the draft to at least ${min} words with practical steps. Do not add filler or invented statistics.`,
+			dimension: STRUCTURE_DIMENSION[issue.code] ?? 'publication_readiness',
+			instruction: `${issue.message} Fix the document structure.`,
+			rejectable: false,
 		});
 	}
-	if (!allowed.includes(input.categoryId)) {
-		findings.push({
-			severity: 'critical',
-			code: 'unknown_category',
-			source: 'deterministic',
-			instruction: `Set category to one of: ${allowed.join(', ')}.`,
-		});
+	const length = lengthFinding(input.wordCount, input.targetWords);
+	if (length) findings.push(length);
+
+	if (input.taxonomy) {
+		const allowed = input.taxonomy.categories.map((item) => item.id);
+		if (!input.categoryId) {
+			findings.push({
+				severity: 'major',
+				code: 'category_missing',
+				source: 'deterministic',
+				dimension: 'category_accuracy',
+				instruction: 'Choose a category that the destination returned before sending the draft.',
+			});
+		} else if (!allowed.includes(input.categoryId)) {
+			findings.push({
+				severity: 'critical',
+				code: 'unknown_category',
+				source: 'deterministic',
+				dimension: 'category_accuracy',
+				instruction: `The category “${input.categoryId}” does not exist in the destination. Choose one of: ${allowed.join(', ')}.`,
+				rejectable: false,
+			});
+		}
 	}
 	if (input.claimsExternalResearch && input.sourceCount === 0) {
 		findings.push({
 			severity: 'critical',
 			code: 'uncited_research',
 			source: 'deterministic',
+			dimension: 'sources',
 			instruction: 'Remove claims that cite external research, or attach the stored source URL. Do not invent citations.',
 		});
 	}
-	const paragraphs = input.body.split(/\n\n+/).map((part) => part.trim()).filter(Boolean);
-	const seen = new Set<string>();
+
+	const paragraphs = paragraphsOf(input.body);
+	const seenParagraphs = new Set<string>();
 	for (const paragraph of paragraphs) {
 		const key = paragraph.toLowerCase();
-		if (seen.has(key) && paragraph.length > 80) {
+		if (seenParagraphs.has(key) && paragraph.length > 80) {
 			findings.push({
 				severity: 'major',
 				code: 'repetition',
 				source: 'deterministic',
-				instruction: 'Remove the repeated paragraph and replace it with a distinct practical step.',
+				dimension: 'writing_quality',
+				instruction: `Remove the repeated paragraph beginning “${plainText(paragraph).slice(0, 80)}…”.`,
 			});
 			break;
 		}
-		seen.add(key);
+		seenParagraphs.add(key);
 	}
-	for (const tool of input.taxonomy.tools) {
+	const sentenceCounts = new Map<string, { text: string; count: number }>();
+	for (const sentence of plainText(input.body).split(/(?<=[.!?])\s+/)) {
+		if (sentence.length < 60) continue;
+		const key = sentence.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+		const entry = sentenceCounts.get(key) ?? { text: sentence, count: 0 };
+		entry.count += 1;
+		sentenceCounts.set(key, entry);
+	}
+	const repeatedSentences = [...sentenceCounts.values()].filter((entry) => entry.count > 1);
+	if (repeatedSentences.length && !findings.some((finding) => finding.code === 'repetition')) {
+		findings.push({
+			severity: 'major',
+			code: 'repeated_sentences',
+			source: 'deterministic',
+			dimension: 'writing_quality',
+			instruction: `These sentences appear more than once: ${repeatedSentences.slice(0, 2).map((entry) => `“${entry.text.slice(0, 90)}”`).join('; ')}. Keep one and vary or cut the rest.`,
+		});
+	}
+
+	const unsupported = paragraphs.filter((paragraph) => STAT_RE.test(paragraph) && !/\]\(https?:\/\//.test(paragraph));
+	if (unsupported.length) {
+		findings.push({
+			severity: input.sourceCount === 0 ? 'critical' : 'major',
+			code: 'unsupported_claim',
+			source: 'deterministic',
+			dimension: 'accuracy',
+			instruction: `${unsupported.length} paragraph${unsupported.length === 1 ? '' : 's'} state a statistic or cite research without a linked source, for example “${plainText(unsupported[0]).slice(0, 120)}…”. Link an approved source or remove the claim.`,
+		});
+	}
+
+	if (input.brandName?.trim()) {
+		const pattern = new RegExp(`\\b${input.brandName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+		const mentions = (plainText(input.body).match(pattern) ?? []).length;
+		const perThousand = input.wordCount ? (mentions / input.wordCount) * 1000 : 0;
+		if (mentions > 6 && perThousand > 2.5) {
+			findings.push({
+				severity: 'major',
+				code: 'promotional_overuse',
+				source: 'deterministic',
+				dimension: 'brand_voice',
+				instruction: `${input.brandName} is named ${mentions} times. Keep brand mentions to where they help the reader, usually the close and one practical example.`,
+			});
+		}
+	}
+
+	const meta = (input.metaDescription ?? '').trim();
+	const metaProblems: string[] = [];
+	if (!input.title?.trim()) metaProblems.push('the title is empty');
+	if (!meta) metaProblems.push('the meta description is empty');
+	else if (/^#|##/.test(meta)) metaProblems.push('the meta description contains markdown');
+	else if (meta.length > 160) metaProblems.push(`the meta description is ${meta.length} characters (keep it under 160)`);
+	if ((input.seoTitle ?? '').length > 70) metaProblems.push(`the SEO title is ${input.seoTitle?.length} characters (keep it under 70)`);
+	if (metaProblems.length) {
+		findings.push({
+			severity: 'major',
+			code: 'metadata_incomplete',
+			source: 'deterministic',
+			dimension: 'seo',
+			instruction: `Fix the metadata: ${metaProblems.join('; ')}.`,
+		});
+	}
+
+	const missingLinks = (input.requiredLinks ?? []).filter((link) => link.trim() && !input.body.includes(link.trim()));
+	if (missingLinks.length) {
+		findings.push({
+			severity: 'major',
+			code: 'missing_required_link',
+			source: 'deterministic',
+			dimension: 'internal_linking',
+			instruction: `Link these required pages where they are relevant: ${missingLinks.join(', ')}.`,
+		});
+	}
+	for (const tool of input.taxonomy?.tools ?? []) {
 		if (!tool.linkWhenTopicMatches) continue;
 		if (new RegExp(tool.linkWhenTopicMatches, 'i').test(input.body) && !input.toolSlugs.includes(tool.slug)) {
 			findings.push({
-				severity: 'major',
+				severity: 'minor',
 				code: 'missing_destination_resource',
 				source: 'deterministic',
+				dimension: 'internal_linking',
 				instruction: `Link ${tool.label} where the draft discusses that topic.`,
 			});
 		}
 	}
+
+	if (input.imageRequired && !input.heroReady) {
+		findings.push({
+			severity: 'major',
+			code: 'image_not_ready',
+			source: 'deterministic',
+			dimension: 'publication_readiness',
+			instruction: 'Generate or choose a hero image and verify that the destination can fetch it.',
+		});
+	}
+
+	const cmsProblems: string[] = [];
+	if (/<\s*(script|iframe|style|div|span)\b/i.test(input.body)) cmsProblems.push('raw HTML');
+	if (/^#\s+/m.test(input.body)) cmsProblems.push('an H1 inside the body (the CMS renders the title as H1)');
+	if (/!\[[^\]]*\]\((?!https:\/\/)[^)]*\)/.test(input.body)) cmsProblems.push('an inline image without an https URL');
+	if (cmsProblems.length) {
+		findings.push({
+			severity: 'major',
+			code: 'cms_incompatible_markup',
+			source: 'deterministic',
+			dimension: 'publication_readiness',
+			instruction: `Remove ${cmsProblems.join(', ')}. The CMS accepts headings, paragraphs, lists, quotes and links.`,
+		});
+	}
+
 	const ready = !findings.some((finding) => finding.severity === 'critical');
 	return { ready, findings };
 }
+
+export type ReviewBrief = {
+	title: string;
+	topic: string;
+	searchIntent: string;
+	audience?: string;
+	primaryKeyword?: string;
+	contentType: string;
+	secondaryKeywords?: string;
+	questions?: string;
+	avoid?: string;
+	tone?: string;
+	cta?: string;
+	instructions?: string;
+};
+
+const TRUNCATION_RE = /truncat|mid-sentence|mid sentence|cut off|cuts off|ends abruptly|incomplete (ending|sentence)|unfinished sentence/i;
 
 export async function runLlmEditorialReview(input: {
 	ai: IntelligenceAi;
@@ -89,26 +276,42 @@ export async function runLlmEditorialReview(input: {
 	topic: string;
 	searchIntent: string;
 	body: string;
-	categoryId: string;
+	categoryId: string | null;
+	brief?: ReviewBrief;
+	targetWords?: number;
+	research?: Array<{ text: string; source: string }>;
+	structure?: StructureReport;
 }): Promise<EditorialReview> {
 	if (process.env.VITEST === 'true') return { ready: true, findings: [] };
+	if (input.body.length > MAX_REVIEW_CHARS) {
+		throw new Error(`The article is ${input.body.length.toLocaleString()} characters, which is more than one review pass can read (${MAX_REVIEW_CHARS.toLocaleString()}). Split it before review.`);
+	}
+	const structure = input.structure ?? validateArticleStructure(input.body);
 	const completion = await input.ai.completeJson<{ ready?: boolean; findings?: Array<{ severity?: string; code?: string; instruction?: string; dimension?: string }> }>(
 		'REVIEW',
 		[
 			{
 				role: 'system',
-				content:
-					'Review the article for editorial readiness. Return JSON with ready (boolean) and findings (array of severity, code, dimension, instruction). dimension must be one of search_intent, topic_completeness, accuracy, sources, writing_quality, brand_voice, seo, category_accuracy, internal_linking, publication_readiness. Do not rewrite the article. Do not invent sources.',
+				content: [
+					'Review the complete article against the approved brief. Return JSON with ready (boolean) and findings (array of severity, code, dimension, instruction).',
+					'dimension must be one of search_intent, topic_completeness, accuracy, sources, writing_quality, brand_voice, seo, category_accuracy, internal_linking, publication_readiness.',
+					'severity critical means the article must not be published as is. Use it only for factual errors, unsupported claims stated as fact, missing answers to the brief questions, or content that contradicts the brief.',
+					'You receive the full document. Structure, truncation and word count are checked separately; do not report them.',
+					'Each instruction must say exactly what to change and where (quote the heading or a short phrase). Do not rewrite the article. Do not invent sources.',
+				].join(' '),
 			},
 			{
 				role: 'user',
 				content: JSON.stringify({
-					topic: input.topic,
-					searchIntent: input.searchIntent,
+					brief: input.brief ?? { topic: input.topic, searchIntent: input.searchIntent },
 					categoryId: input.categoryId,
+					targetWords: input.targetWords,
+					actualWords: structure.wordCount,
+					documentEndsWith: structure.finalSentence,
 					voice: input.brain.voice,
 					guardrails: input.brain.guardrails,
-					body: input.body.slice(0, 12000),
+					approvedResearch: (input.research ?? []).slice(0, 30),
+					body: input.body,
 				}),
 			},
 		],
@@ -117,6 +320,8 @@ export async function runLlmEditorialReview(input: {
 	);
 	const findings: ReviewFinding[] = (completion.data.findings ?? [])
 		.filter((item) => item.instruction && item.code)
+		.filter((item) => !(structure.endsCleanly && TRUNCATION_RE.test(`${item.code} ${item.instruction}`)))
+		.filter((item) => !/word count|too short|too long|\b\d{3,5} words\b/i.test(`${item.code} ${item.instruction}`))
 		.map((item) => ({
 			severity: item.severity === 'critical' || item.severity === 'major' ? item.severity : 'minor',
 			code: String(item.code),
@@ -124,12 +329,12 @@ export async function runLlmEditorialReview(input: {
 			source: 'llm' as const,
 			dimension: typeof item.dimension === 'string' ? item.dimension : undefined,
 		}));
-	const ready = completion.data.ready === true && !findings.some((finding) => finding.severity === 'critical');
+	const ready = !findings.some((finding) => finding.severity === 'critical');
 	return { ready, findings };
 }
 
 export function mergeEditorialReviews(...reviews: EditorialReview[]): EditorialReview {
 	const findings = reviews.flatMap((review) => review.findings);
-	const ready = reviews.every((review) => review.ready) && !findings.some((finding) => finding.severity === 'critical');
+	const ready = !findings.some((finding) => finding.severity === 'critical');
 	return { ready, findings };
 }

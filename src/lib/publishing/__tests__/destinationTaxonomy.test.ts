@@ -24,7 +24,7 @@ describe('destination taxonomy and review', () => {
 		expect(result.toolSlugs).toContain('word-count-planner');
 	});
 
-	it('rejects drafts that are too short after deterministic review', () => {
+	it('explains a length deviation without treating the target as a hard gate', () => {
 		const review = runDeterministicArticleReview({
 			body: 'A short note.',
 			wordCount: 3,
@@ -35,7 +35,23 @@ describe('destination taxonomy and review', () => {
 			claimsExternalResearch: false,
 			toolSlugs: [],
 		});
+		const length = review.findings.find((finding) => finding.code === 'too_short');
+		expect(length?.severity).toBe('major');
+		expect(length?.instruction).toContain('3 words against a target of 3,000');
+	});
+
+	it('rejects an unknown category as critical', () => {
+		const review = runDeterministicArticleReview({
+			body: 'A complete paragraph.',
+			wordCount: 3,
+			targetWords: 3,
+			categoryId: 'not-a-category',
+			taxonomy: folianTaxonomyFallback,
+			sourceCount: 0,
+			claimsExternalResearch: false,
+			toolSlugs: [],
+		});
 		expect(review.ready).toBe(false);
-		expect(review.findings.some((finding) => finding.code === 'too_short')).toBe(true);
+		expect(review.findings.find((finding) => finding.code === 'unknown_category')?.rejectable).toBe(false);
 	});
 });

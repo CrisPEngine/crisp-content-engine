@@ -1,5 +1,6 @@
 import type { ReviewFinding } from '@/lib/articles/editorialReview';
 import type {
+	ArticleBriefDetails,
 	ArticleEditorialFinding,
 	ArticleRecord,
 	ArticleWorkspace,
@@ -19,6 +20,26 @@ export function imagesRequired(imageRequirements: string | undefined): boolean {
 	return !/^(none|no image|text only|text-only)$/i.test(value);
 }
 
+export function emptyBriefDetails(): ArticleBriefDetails {
+	return {
+		secondaryKeywords: '',
+		questions: '',
+		avoid: '',
+		tone: '',
+		cta: '',
+		requiredLinks: '',
+		referenceMaterial: '',
+		instructions: '',
+	};
+}
+
+export function splitLines(value: string | undefined): string[] {
+	return (value ?? '')
+		.split(/\n|;/)
+		.map((line) => line.replace(/^[-*•\d.)\s]+/, '').trim())
+		.filter(Boolean);
+}
+
 export function emptyWorkspace(partial?: Partial<ArticleWorkspace>): ArticleWorkspace {
 	return {
 		destinationId: partial?.destinationId ?? null,
@@ -28,10 +49,26 @@ export function emptyWorkspace(partial?: Partial<ArticleWorkspace>): ArticleWork
 		internalLinking: partial?.internalLinking ?? '',
 		imageRequirements: partial?.imageRequirements ?? '',
 		briefApprovedAt: partial?.briefApprovedAt ?? null,
+		briefChangedAfterApproval: partial?.briefChangedAfterApproval ?? false,
+		brief: { ...emptyBriefDetails(), ...(partial?.brief ?? {}) },
+		briefSuggestions: partial?.briefSuggestions ?? null,
 		externalId: partial?.externalId ?? null,
 		researchId: partial?.researchId ?? null,
+		research: partial?.research,
 		assignedModelRole: partial?.assignedModelRole ?? 'LONG_FORM_WRITING',
 		assignedModel: partial?.assignedModel ?? null,
+		revision: partial?.revision ?? null,
+		revisionJob: partial?.revisionJob ?? {
+			jobId: null,
+			status: 'idle',
+			stage: null,
+			startedAt: null,
+			updatedAt: null,
+			error: null,
+			baseRevisionId: null,
+			resultRevisionId: null,
+		},
+		categorySuggestion: partial?.categorySuggestion ?? null,
 		generation: partial?.generation ?? {
 			jobId: null,
 			model: null,
@@ -122,21 +159,36 @@ export function dimensionForCode(code: string, hinted?: string): EditorialDimens
 	return DIMENSION_BY_CODE[code] ?? 'publication_readiness';
 }
 
-export function toEditorialFindings(findings: ReviewFinding[]): ArticleEditorialFinding[] {
+export function toEditorialFindings(findings: ReviewFinding[], revisionId: string | null = null): ArticleEditorialFinding[] {
 	return findings.map((finding, index) => ({
-		id: `${finding.source}-${finding.code}-${index + 1}`,
+		id: `${revisionId ? revisionId.slice(0, 8) : 'r'}-${finding.source}-${finding.code}-${index + 1}`,
 		severity: finding.severity,
 		code: finding.code,
-		dimension: dimensionForCode(finding.code, (finding as ReviewFinding & { dimension?: string }).dimension),
+		dimension: dimensionForCode(finding.code, finding.dimension),
 		instruction: finding.instruction,
 		source: finding.source,
 		decision: 'pending' as const,
+		rejectable: finding.rejectable !== false,
+		revisionId,
+		decidedAt: null,
+		appliedInRevisionId: null,
+		note: null,
 	}));
 }
 
+/** Findings that still need action: not rejected, applied or superseded. */
+export function isOpenFinding(finding: ArticleEditorialFinding): boolean {
+	return finding.decision === 'pending' || finding.decision === 'accepted';
+}
+
+export function openCriticalFindings(workspace: ArticleWorkspace): ArticleEditorialFinding[] {
+	return workspace.editorial.findings.filter((finding) => finding.severity === 'critical' && isOpenFinding(finding));
+}
+
 export function editorialStatusFromFindings(findings: ArticleEditorialFinding[], exhausted: boolean): ArticleWorkspace['editorial']['status'] {
-	if (findings.length === 0) return 'ready';
-	if (findings.some((finding) => finding.severity === 'critical')) return exhausted ? 'blocked' : 'findings';
+	const open = findings.filter(isOpenFinding);
+	if (open.length === 0) return 'ready';
+	if (open.some((finding) => finding.severity === 'critical')) return exhausted ? 'blocked' : 'findings';
 	return 'findings';
 }
 
@@ -144,20 +196,43 @@ export type GateResult = { ok: true } | { ok: false; code: string; message: stri
 
 export function articleApprovalGate(article: ArticleRecord): GateResult {
 	const workspace = ensureWorkspace(article);
+	if (workspace.revisionJob?.status === 'queued' || workspace.revisionJob?.status === 'processing') {
+		return { ok: false, code: 'revision_in_progress', message: 'Wait for the revision job to finish.' };
+	}
 	if (workspace.editorial.status === 'not_run') {
 		return { ok: false, code: 'review_required', message: 'Run editorial review before approval.' };
 	}
-	if (workspace.editorial.exhausted && workspace.editorial.status !== 'ready') {
+	if (workspace.revision && workspace.editorial.reviewedRevisionId !== workspace.revision.id) {
 		return {
 			ok: false,
-			code: 'review_not_approval',
-			message: 'The review cycle limit is used up. That is not approval. Edit the draft and rerun review.',
+			code: 'review_stale',
+			message: `The last review covered revision ${workspace.editorial.reviewedRevisionNumber ?? 'unknown'}. The current revision is ${workspace.revision.number}. Rerun review.`,
 		};
 	}
-	if (workspace.editorial.findings.some((finding) => finding.severity === 'critical')) {
-		return { ok: false, code: 'critical_findings', message: 'Critical editorial findings are still open.' };
+	const critical = openCriticalFindings(workspace);
+	if (critical.length) {
+		return {
+			ok: false,
+			code: workspace.editorial.exhausted ? 'review_not_approval' : 'critical_findings',
+			message: workspace.editorial.exhausted
+				? `${critical.length} critical finding${critical.length === 1 ? '' : 's'} remain and the revision cycle limit is used up. Edit the draft yourself and rerun review. Using up the limit is not approval.`
+				: `${critical.length} critical finding${critical.length === 1 ? '' : 's'} remain open. Apply or resolve them before approval.`,
+		};
 	}
 	return { ok: true };
+}
+
+export function articleLifecycle(article: ArticleRecord) {
+	const workspace = ensureWorkspace(article);
+	return {
+		savedInCce: Boolean(article.body.trim()),
+		revisionNumber: workspace.revision?.number ?? null,
+		submittedToCms: Boolean(workspace.cms.lastSyncAt && !workspace.cms.lastError),
+		cmsCurrent: Boolean(workspace.cms.submittedRevisionId && workspace.cms.submittedRevisionId === workspace.revision?.id),
+		approved: article.approval.status === 'approved',
+		scheduled: workspace.schedule.status === 'scheduled' || workspace.schedule.status === 'due',
+		published: article.status === 'published',
+	};
 }
 
 export function articleScheduleGate(article: ArticleRecord, input: { destinationId: string; publishAt: string }): GateResult {
@@ -184,23 +259,26 @@ export function articleScheduleGate(article: ArticleRecord, input: { destination
 	return { ok: true };
 }
 
-export function recommendArticleStructure(topic: string, findingTexts: string[]): Array<{ id: string; heading: string; purpose: string }> {
+/**
+ * Suggests sections from the questions in the brief. Research findings are evidence for sections, not headings,
+ * so they are never copied into the structure.
+ */
+export function recommendArticleStructure(topic: string, questions: string[]): Array<{ id: string; heading: string; purpose: string }> {
 	const subject = topic.trim() || 'the topic';
-	const sourced = findingTexts.map((text) => text.trim()).filter(Boolean).slice(0, 4);
-	const sections = [
-		{ id: 'structure-1', heading: `What ${subject} asks of the reader`, purpose: 'State the search intent in the reader’s words. Do not add proof that is not in the brief.' },
-		...sourced.map((text, index) => ({
-			id: `structure-${index + 2}`,
-			heading: text.length > 80 ? `${text.slice(0, 77)}…` : text,
-			purpose: 'Develop only this stored finding. Keep its source attached.',
-		})),
-		{
-			id: `structure-${sourced.length + 2}`,
-			heading: 'A practical sequence',
-			purpose: 'Turn the approved findings into steps the reader can follow. Leave gaps named when proof is missing.',
-		},
+	const asked = questions.map((question) => question.trim()).filter(Boolean).slice(0, 6);
+	if (asked.length) {
+		return asked.map((question, index) => ({
+			id: `structure-${index + 1}`,
+			heading: question.length > 90 ? `${question.slice(0, 87)}…` : question,
+			purpose: 'Answer this question from the brief with approved research and practical steps.',
+		}));
+	}
+	return [
+		{ id: 'structure-1', heading: `What ${subject} involves`, purpose: 'State what the reader is trying to do and what they will have at the end.' },
+		{ id: 'structure-2', heading: 'A practical sequence', purpose: 'Give the steps in order, using approved research for each step.' },
+		{ id: 'structure-3', heading: 'Common problems and how to fix them', purpose: 'Name the problems readers hit and the fix for each.' },
+		{ id: 'structure-4', heading: 'What to do next', purpose: 'Close with the next action. Keep any brand mention useful to the reader.' },
 	];
-	return sections;
 }
 
 export function matchingTools(taxonomy: DestinationTaxonomy | null, haystack: string): Array<{ slug: string; label: string }> {
@@ -238,6 +316,9 @@ export type ArticleListItem = {
 	publishedUrl: string | null;
 	generationStatus: ArticleWorkspace['generation']['status'];
 	generationError: string | null;
+	revisionNumber: number | null;
+	submittedToCms: boolean;
+	approved: boolean;
 };
 
 export function toListItem(article: ArticleRecord): ArticleListItem {
@@ -258,6 +339,9 @@ export function toListItem(article: ArticleRecord): ArticleListItem {
 		publishedUrl: article.publication?.url ?? null,
 		generationStatus: workspace.generation.status,
 		generationError: workspace.generation.error,
+		revisionNumber: workspace.revision?.number ?? null,
+		submittedToCms: Boolean(workspace.cms.lastSyncAt && !workspace.cms.lastError),
+		approved: article.approval.status === 'approved',
 	};
 }
 
@@ -277,46 +361,71 @@ export function articleNextStep(article: ArticleRecord): { stage: string; action
 			detail: workspace.generation.error || 'The draft was not saved. Retry uses this same article.',
 		};
 	}
-	if (!workspace.researchSummary.retrievedAt) {
+	if (workspace.revisionJob?.status === 'queued' || workspace.revisionJob?.status === 'processing') {
 		return {
-			stage: 'Research',
-			action: 'Research the topic',
-			detail: 'Stored sources and gaps stay attached to this article. Nothing is invented to fill a missing source.',
+			stage: 'Revising',
+			action: 'Wait for the revision',
+			detail: 'Accepted recommendations are being applied as a background job. Review reruns on the new revision.',
 		};
 	}
 	if (!workspace.briefApprovedAt) {
 		return {
 			stage: 'Brief',
-			action: 'Approve the brief',
-			detail: 'Check the title, search intent, and recommended structure, then approve the brief.',
+			action: 'Complete and approve the brief',
+			detail: workspace.briefChangedAfterApproval
+				? 'The brief changed after approval. Approve it again before research and generation use it.'
+				: 'Check the title, search intent, questions and tone, then approve the brief.',
+		};
+	}
+	const research = workspace.research;
+	if (!research || research.status === 'empty') {
+		return {
+			stage: 'Research',
+			action: 'Research the topic',
+			detail: 'Research runs against the approved brief. You can edit, add to and remove findings before approving them.',
+		};
+	}
+	if (!research.approved) {
+		return {
+			stage: 'Research',
+			action: 'Review and approve the research',
+			detail: 'Generation uses only the research version you approve.',
 		};
 	}
 	if (!article.body.trim()) {
 		return {
 			stage: 'Draft',
 			action: 'Generate the draft',
-			detail: `Target ${article.targetWords.toLocaleString()} words. The model is the LONG_FORM_WRITING role.`,
+			detail: `Target ${article.targetWords.toLocaleString()} words, using approved research version ${research.approved.version}.`,
 		};
 	}
-	if (workspace.editorial.status === 'not_run') {
+	if (workspace.editorial.status === 'not_run' || (workspace.revision && workspace.editorial.reviewedRevisionId !== workspace.revision.id)) {
 		return {
 			stage: 'Review',
 			action: 'Run editorial review',
-			detail: 'Review checks search intent, completeness, sources, voice, SEO, and category fit.',
+			detail: `Review checks revision ${workspace.revision?.number ?? 1} against the approved brief.`,
 		};
 	}
-	if (workspace.editorial.exhausted && workspace.editorial.status !== 'ready') {
+	const critical = openCriticalFindings(workspace);
+	if (critical.length && workspace.editorial.exhausted) {
 		return {
 			stage: 'Review blocked',
 			action: 'Edit the draft, then rerun review',
-			detail: 'The review cycle limit is used up. That is not approval.',
+			detail: 'The revision cycle limit is used up and critical findings remain. That is not approval.',
 		};
 	}
-	if (workspace.editorial.findings.some((finding) => finding.severity === 'critical')) {
+	if (critical.length) {
 		return {
 			stage: 'Review',
-			action: 'Revise the open findings',
-			detail: 'Accept the findings you want applied, or edit the draft yourself, then rerun review.',
+			action: 'Resolve the critical findings',
+			detail: 'Accept the findings to fix, then apply accepted revisions. Approval stays blocked until none are open.',
+		};
+	}
+	if (workspace.editorial.findings.some((finding) => finding.decision === 'accepted')) {
+		return {
+			stage: 'Review',
+			action: 'Apply accepted revisions',
+			detail: 'Accepted is not applied. Apply them to create a new revision and rerun review.',
 		};
 	}
 	if (!article.categories[0]) {
@@ -345,6 +454,13 @@ export function articleNextStep(article: ArticleRecord): { stage: string; action
 			stage: 'CMS',
 			action: 'Send to the CMS as a draft',
 			detail: 'This submits an unpublished draft. It does not publish the article.',
+		};
+	}
+	if (workspace.cms.submittedRevisionId && workspace.revision && workspace.cms.submittedRevisionId !== workspace.revision.id) {
+		return {
+			stage: 'CMS',
+			action: 'Update the CMS draft',
+			detail: `The CMS has an older revision. Revision ${workspace.revision.number} is saved in CCE only.`,
 		};
 	}
 	return {

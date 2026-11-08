@@ -79,7 +79,11 @@ export async function classifyArticleForDestination(input: {
 		input.ownerUserId,
 	);
 	const fallbackId = scoreCategory(input.taxonomy, haystack);
-	const categoryId = assertDestinationCategory(input.taxonomy, completion.data.categoryId?.trim() || fallbackId);
+	const proposedId = completion.data.categoryId?.trim() ?? '';
+	const categoryId = assertDestinationCategory(
+		input.taxonomy,
+		input.taxonomy.categories.some((category) => category.id === proposedId) ? proposedId : fallbackId,
+	);
 	const contentType = input.taxonomy.contentTypes.includes(completion.data.contentType ?? '')
 		? (completion.data.contentType as string)
 		: 'guide';

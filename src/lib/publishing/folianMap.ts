@@ -1,13 +1,15 @@
 import type { ArticleRecord } from '@/lib/articles/types';
+import { parseSections } from '@/lib/articles/structure';
 import { assertDestinationCategory, type DestinationTaxonomy } from './destinationTaxonomy';
 import { folianTaxonomyFallback } from './folian/taxonomyFallback';
 
 type FolianDraftPayload = Record<string, unknown>;
 
+/** Blocks come from the saved body so manual edits and applied revisions reach the CMS. */
 function sectionBlocks(article: ArticleRecord) {
-	return article.sections.map((section) => ({
+	return parseSections(article.body).map((section) => ({
 		type: 'richText',
-		markdown: `## ${section.heading}\n\n${section.body}`,
+		markdown: section.heading ? `## ${section.heading}\n\n${section.body}` : section.body,
 	}));
 }
 

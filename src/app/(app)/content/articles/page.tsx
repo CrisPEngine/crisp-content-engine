@@ -20,7 +20,22 @@ type ArticleRow = {
 	publishedUrl: string | null;
 	generationStatus: string;
 	generationError: string | null;
+	revisionNumber: number | null;
+	submittedToCms: boolean;
+	approved: boolean;
 };
+
+function rowBadges(row: ArticleRow): string[] {
+	const badges: string[] = [];
+	if (row.generationStatus === 'queued' || row.generationStatus === 'processing') badges.push('Generating');
+	if (row.generationStatus === 'failed') badges.push('Generation failed');
+	if (row.revisionNumber) badges.push(`Saved in CCE · rev ${row.revisionNumber}`);
+	if (row.submittedToCms) badges.push('Submitted to CMS');
+	if (row.approved) badges.push('Approved');
+	if (row.scheduleStatus === 'scheduled' || row.scheduleStatus === 'due') badges.push('Scheduled');
+	if (row.status === 'published') badges.push('Published');
+	return badges;
+}
 type FailedJob = { jobId: string; articleId: string | null; error: string; createdAt: string };
 
 function responseOk(body: { error?: string }): boolean {
@@ -124,7 +139,13 @@ export default function ArticlesPage() {
 								<td className="p-3">{row.destination || '—'}</td>
 								<td className="p-3">{row.category || '—'}</td>
 								<td className="p-3">{row.contentType}</td>
-								<td className="p-3">{row.scheduleStatus === 'scheduled' || row.scheduleStatus === 'due' ? row.scheduleStatus : row.status}</td>
+								<td className="p-3">
+									<div className="flex flex-wrap gap-1">
+										{(rowBadges(row).length ? rowBadges(row) : [row.status]).map((badge) => (
+											<span key={badge} className="rounded-full border border-edge px-2 py-0.5 text-xs whitespace-nowrap">{badge}</span>
+										))}
+									</div>
+								</td>
 								<td className="p-3">{row.wordCount}</td>
 								<td className="p-3">{new Date(row.updatedAt).toLocaleString()}</td>
 								<td className="p-3">{row.assignedModel || '—'}</td>
