@@ -9,6 +9,8 @@ const SOURCE_LABELS: Record<ArticleRevisionRef['source'], string> = {
 	manual: 'Edited by hand',
 	revision: 'Recommendations applied',
 	legacy: 'Imported',
+	structural_repair: 'Structural repair',
+	improvement: 'AI editorial improvement',
 };
 
 export function DiffView({ before, after }: { before: string; after: string }) {

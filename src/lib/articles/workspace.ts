@@ -35,7 +35,16 @@ import {
 	matchesArticleView,
 	type ArticleListItem,
 } from '@/lib/articles/meta';
-import { normaliseTargetWords } from '@/lib/articles/pipeline';
+import { normaliseTargetWords, previewArticleImprovement, type ArticleImprovementPreview } from '@/lib/articles/pipeline';
+import {
+	applyGeneratedMetadata,
+	generateArticleMetadata,
+	generateArticleMetadataWithAi,
+	metadataFieldIssues,
+	sanitizePlainMetadata,
+	slugifyTitle,
+} from '@/lib/articles/seoMetadata';
+import { previewStructuralRepair, type StructuralRepairPreview } from '@/lib/articles/structuralRepair';
 import {
 	addBrandContext,
 	addUserEvidence,
@@ -53,7 +62,7 @@ import {
 } from '@/lib/articles/researchPackage';
 import { commitRevision, ensureRevision, listRevisions } from '@/lib/articles/revisions';
 import { reviewCurrentRevision } from '@/lib/articles/reviewRun';
-import { validateArticleStructure } from '@/lib/articles/structure';
+import { articleWordCount, validateArticleStructure } from '@/lib/articles/structure';
 import type { ArticleBriefDetails, ArticleRecord, BriefSuggestion, ResearchPackage } from '@/lib/articles/types';
 import { categoryFromMappings, destinationForBrand, destinationTaxonomy, DestinationError, resolveConnection } from '@/lib/destinations/service';
 import { generateAssetFromProposal } from '@/lib/media/images';
@@ -405,16 +414,26 @@ export async function saveArticleDraft(ownerUserId: string, articleId: string, p
 		workspace.externalId = externalId;
 		workspace.cms.externalId = externalId;
 	}
-	if (patch.seoTitle !== undefined) article.seo.seoTitle = patch.seoTitle.trim().slice(0, 200);
-	if (patch.metaDescription !== undefined) article.seo.metaDescription = patch.metaDescription.trim().slice(0, 400);
+	const seoEdited = { ...(workspace.seoEdited ?? {}) };
+	if (patch.seoTitle !== undefined) {
+		article.seo.seoTitle = sanitizePlainMetadata(patch.seoTitle, 70);
+		seoEdited.seoTitle = true;
+	}
+	if (patch.metaDescription !== undefined) {
+		article.seo.metaDescription = sanitizePlainMetadata(patch.metaDescription, 160);
+		seoEdited.metaDescription = true;
+	}
 	if (patch.excerpt !== undefined) {
-		article.excerpt = patch.excerpt.trim().slice(0, 600);
+		article.excerpt = sanitizePlainMetadata(patch.excerpt, 320);
 		article.seo.excerpt = article.excerpt;
+		seoEdited.excerpt = true;
 	}
 	if (patch.slug !== undefined && patch.slug.trim()) {
-		article.slug = slugify(patch.slug);
+		article.slug = slugifyTitle(patch.slug);
 		article.seo.slug = article.slug;
+		seoEdited.slug = true;
 	}
+	if (Object.keys(seoEdited).length) workspace.seoEdited = seoEdited;
 	if (briefChanged && workspace.briefApprovedAt) {
 		workspace.briefApprovedAt = null;
 		workspace.briefChangedAfterApproval = true;
@@ -1049,6 +1068,10 @@ export async function submitArticleDraft(ownerUserId: string, articleId: string)
 	if (!structure.ok) {
 		throw new ArticleWorkflowError(`The draft has structural problems and was not sent: ${structure.issues.filter((issue) => issue.severity === 'critical').map((issue) => issue.message).join(' ')}`, 409, 'structure_invalid');
 	}
+	const seoIssues = metadataFieldIssues(article);
+	if (seoIssues.length) {
+		throw new ArticleWorkflowError(`Fix SEO metadata before sending: ${seoIssues.map((issue) => issue.message).join(' ')}`, 409, 'metadata_invalid');
+	}
 	const { adapter, connection, destination } = await resolveConnection(ownerUserId, article.brandId, workspace.destinationId).catch(asWorkflowError);
 	const taxonomy = await taxonomyFor(article);
 	if (!taxonomy) throw new ArticleWorkflowError('Sync the destination taxonomy before sending.', 422, 'taxonomy_unavailable');
@@ -1107,6 +1130,110 @@ export async function submitArticleDraft(ownerUserId: string, articleId: string)
 		workspace.cms.ogSourceUrl = og ?? null;
 	}
 	article.workspace = workspace;
+	return persist(article);
+}
+
+export function previewArticleStructuralRepair(_ownerUserId: string, article: ArticleRecord): StructuralRepairPreview {
+	if (!article.body.trim()) throw new ArticleWorkflowError('There is no draft to repair.', 400, 'draft_missing');
+	return previewStructuralRepair(article.body);
+}
+
+export async function applyArticleStructuralRepair(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	assertNotApproved(article, 'Structural repair');
+	const preview = previewStructuralRepair(article.body);
+	if (!preview.canApply) {
+		throw new ArticleWorkflowError(
+			preview.changes.length
+				? 'The structural repair cannot be applied safely. Review the preview.'
+				: 'No deterministic structural repairs are available. Use Improve article with AI for the remaining issues.',
+			409,
+			'structure_repair_unavailable',
+		);
+	}
+	const workspace = ensureWorkspace(article);
+	article.workspace = workspace;
+	commitRevision(article, preview.after, 'structural_repair', `Removed ${preview.changes.length} duplicate heading line${preview.changes.length === 1 ? '' : 's'}.`, { refreshMetadata: false });
+	article.approval = { required: true, approver: 'human', status: 'pending' };
+	workspace.approvedAt = null;
+	workspace.approvedRevisionId = null;
+	if (article.status === 'approved') article.status = 'draft';
+	const after = validateArticleStructure(article.body);
+	if (!after.ok) {
+		throw new ArticleWorkflowError(`The repaired draft still fails validation: ${after.issues.map((issue) => issue.message).join(' ')}`, 422, 'structure_still_invalid');
+	}
+	return persist(article);
+}
+
+export async function regenerateArticleSeo(ownerUserId: string, articleId: string, options?: { useAi?: boolean; overwriteEdited?: boolean }): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	if (!article.body.trim()) throw new ArticleWorkflowError('Write or generate a draft before regenerating SEO metadata.', 400, 'draft_missing');
+	const workspace = ensureWorkspace(article);
+	const generated = options?.useAi
+		? (await generateArticleMetadataWithAi(article, getIntelligenceAi(), ownerUserId)).metadata
+		: generateArticleMetadata(article);
+	applyGeneratedMetadata(article, generated, { overwriteEdited: options?.overwriteEdited });
+	if (options?.overwriteEdited) workspace.seoEdited = {};
+	const issues = metadataFieldIssues(article);
+	if (issues.length) throw new ArticleWorkflowError(issues.map((issue) => issue.message).join(' '), 422, 'metadata_invalid');
+	article.workspace = workspace;
+	return persist(article);
+}
+
+export async function previewArticleEditorialImprovement(ownerUserId: string, articleId: string): Promise<ArticleImprovementPreview> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const workspace = ensureWorkspace(article);
+	if (!workspace.briefApprovedAt) throw new ArticleWorkflowError('Approve the brief before using AI improvements.', 400, 'brief_not_approved');
+	if (!workspace.research?.approved) throw new ArticleWorkflowError('Approve the research before using AI improvements.', 400, 'research_not_approved');
+	assertNotApproved(article, 'AI improvement');
+	const revision = ensureRevision(article);
+	if (!revision) throw new ArticleWorkflowError('There is no saved revision to improve.', 400, 'draft_missing');
+	if (await activeJob(ownerUserId, article, 'article_revision')) {
+		throw new ArticleWorkflowError('A revision job is running. Wait for it to finish.', 409, 'revision_in_progress');
+	}
+	const brain = await requireBrand(ownerUserId, article.brandId);
+	const findings = workspace.editorial.findings.filter((finding) => !finding.revisionId || finding.revisionId === revision.id);
+	try {
+		return await previewArticleImprovement({
+			ownerUserId,
+			article,
+			brand: brain,
+			brief: workspace.brief,
+			findings,
+		});
+	} catch (error) {
+		throw new ArticleWorkflowError(error instanceof Error ? error.message : 'Improvement preview failed.', 502, 'improve_preview_failed');
+	}
+}
+
+export async function applyArticleEditorialImprovement(ownerUserId: string, articleId: string, proposedBody: string, baseRevisionId: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	assertNotApproved(article, 'AI improvement');
+	const workspace = ensureWorkspace(article);
+	const revision = ensureRevision(article);
+	if (!revision || revision.id !== baseRevisionId) {
+		throw new ArticleWorkflowError('The article changed since the preview. Run Improve article with AI again.', 409, 'improve_stale');
+	}
+	const after = validateArticleStructure(proposedBody);
+	if (!after.ok) {
+		throw new ArticleWorkflowError(`The improved draft failed structure validation: ${after.issues.filter((issue) => issue.severity === 'critical').map((issue) => issue.message).join(' ')}`, 422, 'structure_invalid');
+	}
+	if (articleWordCount(proposedBody) < revision.wordCount * 0.8) {
+		throw new ArticleWorkflowError('The improved draft is much shorter than the current revision, so it was not saved.', 422, 'improve_too_short');
+	}
+	article.workspace = workspace;
+	commitRevision(article, proposedBody, 'improvement', 'Editorial improvements applied from preview.', { refreshMetadata: false });
+	article.approval = { required: true, approver: 'human', status: 'pending' };
+	workspace.approvedAt = null;
+	workspace.approvedRevisionId = null;
+	if (article.status === 'approved') article.status = 'draft';
+	const brain = await requireBrand(ownerUserId, article.brandId);
+	const taxonomy = await taxonomyFor(article);
+	try {
+		await reviewCurrentRevision({ article, brain, taxonomy, ai: getIntelligenceAi(), ownerUserId });
+	} catch (error) {
+		throw new ArticleWorkflowError(error instanceof Error ? error.message : 'Review failed after improvement.', 502, 'review_failed');
+	}
 	return persist(article);
 }
 

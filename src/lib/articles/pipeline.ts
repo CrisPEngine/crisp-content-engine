@@ -558,6 +558,97 @@ export async function applyArticleRevision(input: {
 	return { article, applied, notApplied, model };
 }
 
+export type ArticleImprovementPreview = {
+	proposedBody: string;
+	summary: string;
+	model: string | null;
+	baseRevisionId: string;
+	instructions: string[];
+};
+
+/**
+ * Proposes a full-article improvement from the current revision and approved brief.
+ * Does not save. Editorial findings must belong to the current revision.
+ */
+export async function previewArticleImprovement(input: {
+	ownerUserId: string;
+	article: ArticleRecord;
+	brand: BrandBrain;
+	brief?: ArticleBriefDetails;
+	findings?: ArticleEditorialFinding[];
+}): Promise<ArticleImprovementPreview> {
+	const article = input.article;
+	const revision = article.workspace?.revision;
+	if (!revision) throw new Error('There is no saved revision to improve.');
+	const ai = getIntelligenceAi();
+	const accepted = (input.findings ?? []).filter(
+		(finding) => finding.revisionId === revision.id && (finding.decision === 'accepted' || (finding.decision === 'pending' && finding.source === 'llm')),
+	);
+	const structural = validateArticleStructure(article.body).issues
+		.filter((issue) => issue.severity === 'critical')
+		.map((issue) => issue.message);
+	const instructions = [
+		'Improve coverage for the brief and search intent without inventing facts or statistics.',
+		'Reduce repetition and weak explanations. Keep Folian mentions restrained (at most one useful brand mention).',
+		...accepted.map((finding) => finding.instruction),
+		...structural.map((message) => `Fix the structural issue: ${message}`),
+	];
+	const messages = [
+		{
+			role: 'system' as const,
+			content: [
+				'Return JSON with body (complete revised markdown) and summary (one sentence on what changed).',
+				'Keep ## for section headings and ### for sub-steps. Do not repeat a section heading inside the section body.',
+				'Do not add sources or statistics that are not in the approved research.',
+				'Preserve factual content unless a recommendation explicitly asks to cut or rewrite it.',
+			].join(' '),
+		},
+		{
+			role: 'user' as const,
+			content: JSON.stringify({
+				topic: article.topic,
+				searchIntent: article.searchIntent,
+				targetWords: article.targetWords,
+				brief: input.brief ?? article.workspace?.brief,
+				approvedResearch: article.research.claims.slice(0, 30).map((claim) => ({ text: claim.text, source: claim.sourceUrl ?? claim.sourceLabel })),
+				instructions,
+				text: article.body,
+			}),
+		},
+	];
+	type ImproveJson = { body?: string; summary?: string };
+	let data: ImproveJson;
+	let model: string | null = null;
+	if (process.env.VITEST === 'true') {
+		const completion = await ai.completeJson<ImproveJson>('WRITING', messages, 'article_improvement', input.ownerUserId);
+		data = completion.data;
+		model = completion.model ?? null;
+	} else {
+		const completion = await completeLongFormJson<ImproveJson>({
+			messages,
+			feature: 'article_improvement',
+			userId: input.ownerUserId,
+			extractText: (value) => value.body ?? '',
+			mergeContinuation: (previous, piece) => ({ ...previous, body: `${(previous.body ?? '').trim()}\n\n${piece}`.trim() }),
+		});
+		data = completion.data;
+		model = completion.model ?? null;
+	}
+	const proposedBody = postProcessPlainDraft(data.body?.trim() ?? '');
+	if (!proposedBody) throw new Error('The improvement returned no text.');
+	const after = validateArticleStructure(proposedBody);
+	if (!after.ok) {
+		throw new Error(`The improved draft failed structure validation: ${after.issues.filter((issue) => issue.severity === 'critical').map((issue) => issue.message).join(' ')}`);
+	}
+	return {
+		proposedBody,
+		summary: data.summary?.trim() || 'Proposed editorial improvements.',
+		model,
+		baseRevisionId: revision.id,
+		instructions,
+	};
+}
+
 /** Compatibility wrapper for agent tools that revise with a free-text instruction. */
 export async function reviseArticle(input: {
 	ownerUserId: string;

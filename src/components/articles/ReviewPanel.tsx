@@ -115,6 +115,10 @@ export function ReviewPanel({
 					{currentRevision ? ` · current revision ${currentRevision.number}` : ''}
 				</p>
 			</div>
+			<p className="text-xs text-text-soft">
+				Structural validation in Draft is automatic and does not use revision cycles. Editorial review below is tied to a saved revision.
+				<strong className="text-text"> Improve article with AI</strong> in Draft is separate from <strong className="text-text">Apply accepted revisions</strong> here.
+			</p>
 			<p className="text-sm">
 				Revision cycles used: <strong>{editorial.cyclesUsed} of {editorial.maxCycles}</strong>.
 				{cyclesLeft === 0 ? ' The limit is reached. That is not approval; a person still decides.' : ` ${cyclesLeft} left.`}

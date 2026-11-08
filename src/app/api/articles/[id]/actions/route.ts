@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import {
 	applyAcceptedRevisions,
+	applyArticleEditorialImprovement,
+	applyArticleStructuralRepair,
 	approveArticleBrief,
 	approveArticleResearch,
 	approveWorkspaceArticle,
@@ -10,9 +12,13 @@ import {
 	editArticleResearch,
 	enhanceArticleBrief,
 	generateArticleMedia,
+	getWorkspaceArticle,
 	lookupArticleDraft,
 	publishWorkspaceArticle,
+	previewArticleEditorialImprovement,
+	previewArticleStructuralRepair,
 	recordArticlePublication,
+	regenerateArticleSeo,
 	replaceArticleMedia,
 	requestArticleApproval,
 	researchArticle,
@@ -77,6 +83,25 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 			case 'apply_revisions':
 			case 'revise':
 				return NextResponse.json(await applyAcceptedRevisions(userId, id));
+			case 'preview_structural_repair': {
+				const detail = await getWorkspaceArticle(userId, id);
+				return NextResponse.json({ preview: previewArticleStructuralRepair(userId, detail.article) });
+			}
+			case 'apply_structural_repair':
+				return NextResponse.json({ article: await applyArticleStructuralRepair(userId, id) });
+			case 'preview_improve':
+				return NextResponse.json({ preview: await previewArticleEditorialImprovement(userId, id) });
+			case 'apply_improve':
+				return NextResponse.json({
+					article: await applyArticleEditorialImprovement(userId, id, text(body.proposedBody), text(body.baseRevisionId)),
+				});
+			case 'regenerate_seo':
+				return NextResponse.json({
+					article: await regenerateArticleSeo(userId, id, {
+						useAi: body.useAi === true,
+						overwriteEdited: body.overwriteEdited === true,
+					}),
+				});
 			case 'classify':
 				return NextResponse.json({ article: await classifyWorkspaceArticle(userId, id, text(body.categoryId) || undefined) });
 			case 'media': {
