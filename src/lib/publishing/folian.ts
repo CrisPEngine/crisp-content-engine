@@ -8,6 +8,26 @@ async function readJson(response: Response) {
 	return (await response.json().catch(() => ({}))) as Record<string, unknown>;
 }
 
+export async function fetchFolianDraftRevision(externalId: string): Promise<number | null> {
+	const url = folianBaseUrl();
+	const headers = folianHeaders(true);
+	if (!url || !headers) return null;
+	const response = await fetch(`${url}/api/content/v1/drafts/${encodeURIComponent(externalId)}`, {
+		headers,
+		cache: 'no-store',
+	});
+	if (response.status === 404) return null;
+	const payload = await readJson(response);
+	if (!response.ok) {
+		throw new Error(String(payload.message ?? payload.code ?? `Folian draft lookup failed (${response.status})`));
+	}
+	const draft = (payload.draft ?? payload) as { revision?: unknown };
+	if (typeof draft.revision !== 'number') {
+		throw new Error('Folian draft has no revision, so it cannot be updated safely.');
+	}
+	return draft.revision;
+}
+
 export async function submitFolianDraftFromRecord(
 	article: ArticleRecord,
 	options: {

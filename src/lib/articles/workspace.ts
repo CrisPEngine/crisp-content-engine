@@ -40,7 +40,7 @@ import { planMedia } from '@/lib/media/planner';
 import { getNativeContentStore } from '@/lib/media/store';
 import { classifyArticleForDestination } from '@/lib/publishing/classifyForDestination';
 import { assertDestinationCategory } from '@/lib/publishing/destinationTaxonomy';
-import { submitFolianDraftFromRecord } from '@/lib/publishing/folian';
+import { fetchFolianDraftRevision, submitFolianDraftFromRecord } from '@/lib/publishing/folian';
 import { fetchAllowedImage } from '@/lib/publishing/folianClient';
 import { taxonomyForDestination, websitePublishingEnabled } from '@/lib/publishing/websiteDestinations';
 import { executeResearch } from '@/lib/research/service';
@@ -695,11 +695,13 @@ export async function submitArticleDraft(ownerUserId: string, articleId: string,
 	if (!externalId) throw new ArticleWorkflowError('An external ID is required so the CMS can update the same draft.', 400, 'external_id_required');
 	if (!article.categories[0]) throw new ArticleWorkflowError('Select a destination category before sending the draft.', 400, 'category_required');
 	if (!article.body.trim()) throw new ArticleWorkflowError('There is no draft to send.', 400, 'draft_missing');
-	const cmsMode = mode === 'update' || workspace.cms.revision != null ? 'proposal' : 'update';
+	let revision = workspace.cms.revision ?? null;
+	if (revision == null) revision = await fetchFolianDraftRevision(externalId);
+	const cmsMode = mode === 'update' || revision != null ? 'proposal' : 'update';
 	const hero = workspace.media.heroUrl && workspace.media.deliveryVerified ? workspace.media.heroUrl : undefined;
 	const result = await submitFolianDraftFromRecord(article, {
 		externalId,
-		baseRevision: workspace.cms.revision ?? undefined,
+		baseRevision: revision ?? undefined,
 		mode: cmsMode,
 		heroImageUrl: hero,
 		heroAlt: workspace.media.heroAlt || article.title,
