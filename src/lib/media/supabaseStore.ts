@@ -255,7 +255,7 @@ export function createSupabaseNativeContentStore(): NativeContentStore {
 			return (data ?? []).map((row) => signalFromRow(row as Record<string, unknown>));
 		},
 		async saveArticle(article) {
-			const { error } = await db().from('articles').upsert({
+			const row = {
 				id: article.id,
 				owner_user_id: article.ownerUserId,
 				brand_id: article.brandId,
@@ -265,7 +265,27 @@ export function createSupabaseNativeContentStore(): NativeContentStore {
 				document: article,
 				updated_at: article.updatedAt,
 				created_at: article.createdAt,
-			});
+				publish_at: article.publishAt ?? article.workspace?.schedule.publishAt ?? null,
+				destination_id: article.workspace?.destinationId ?? article.publishDestination ?? null,
+				external_id: article.workspace?.externalId ?? article.workspace?.cms.externalId ?? null,
+			};
+			const { error } = await db().from('articles').upsert(row);
+			if (error && /publish_at|destination_id|external_id/.test(error.message)) {
+				const base = {
+					id: row.id,
+					owner_user_id: row.owner_user_id,
+					brand_id: row.brand_id,
+					status: row.status,
+					title: row.title,
+					slug: row.slug,
+					document: row.document,
+					updated_at: row.updated_at,
+					created_at: row.created_at,
+				};
+				const retry = await db().from('articles').upsert(base);
+				if (retry.error) throw new Error(retry.error.message);
+				return article;
+			}
 			if (error) throw new Error(error.message);
 			return article;
 		},
@@ -273,6 +293,13 @@ export function createSupabaseNativeContentStore(): NativeContentStore {
 			const { data, error } = await db().from('articles').select('document').eq('owner_user_id', ownerUserId).eq('id', id).maybeSingle();
 			if (error) throw new Error(error.message);
 			return (data?.document as ArticleRecord | undefined) ?? null;
+		},
+		async listArticles(ownerUserId, brandId) {
+			let query = db().from('articles').select('document').eq('owner_user_id', ownerUserId).order('updated_at', { ascending: false });
+			if (brandId) query = query.eq('brand_id', brandId);
+			const { data, error } = await query;
+			if (error) throw new Error(error.message);
+			return (data ?? []).map((row) => row.document as ArticleRecord);
 		},
 	};
 }

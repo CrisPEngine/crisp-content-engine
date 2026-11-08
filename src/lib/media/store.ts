@@ -18,6 +18,7 @@ export type NativeContentStore = {
 	listSelectionSignals(ownerUserId: string, brandId: string, limit?: number): Promise<AssetSelectionSignal[]>;
 	saveArticle(article: ArticleRecord): Promise<ArticleRecord>;
 	getArticle(ownerUserId: string, id: string): Promise<ArticleRecord | null>;
+	listArticles(ownerUserId: string, brandId?: string): Promise<ArticleRecord[]>;
 };
 
 export function createMemoryNativeContentStore(): NativeContentStore {
@@ -86,6 +87,11 @@ export function createMemoryNativeContentStore(): NativeContentStore {
 		async getArticle(ownerUserId, id) {
 			const article = articles.get(id);
 			return article && article.ownerUserId === ownerUserId ? article : null;
+		},
+		async listArticles(ownerUserId, brandId) {
+			return [...articles.values()]
+				.filter((article) => article.ownerUserId === ownerUserId && (!brandId || article.brandId === brandId))
+				.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 		},
 	};
 }

@@ -7,6 +7,7 @@ export type ReviewFinding = {
 	code: string;
 	instruction: string;
 	source: 'deterministic' | 'llm';
+	dimension?: string;
 };
 
 export type EditorialReview = {
@@ -91,13 +92,13 @@ export async function runLlmEditorialReview(input: {
 	categoryId: string;
 }): Promise<EditorialReview> {
 	if (process.env.VITEST === 'true') return { ready: true, findings: [] };
-	const completion = await input.ai.completeJson<{ ready?: boolean; findings?: Array<{ severity?: string; code?: string; instruction?: string }> }>(
+	const completion = await input.ai.completeJson<{ ready?: boolean; findings?: Array<{ severity?: string; code?: string; instruction?: string; dimension?: string }> }>(
 		'REVIEW',
 		[
 			{
 				role: 'system',
 				content:
-					'Review the article for editorial readiness. Return JSON with ready (boolean) and findings (array of severity, code, instruction). Assess search intent, completeness, usefulness, source discipline, voice fit, SEO fit, and category fit. Do not rewrite the article.',
+					'Review the article for editorial readiness. Return JSON with ready (boolean) and findings (array of severity, code, dimension, instruction). dimension must be one of search_intent, topic_completeness, accuracy, sources, writing_quality, brand_voice, seo, category_accuracy, internal_linking, publication_readiness. Do not rewrite the article. Do not invent sources.',
 			},
 			{
 				role: 'user',
@@ -121,6 +122,7 @@ export async function runLlmEditorialReview(input: {
 			code: String(item.code),
 			instruction: String(item.instruction),
 			source: 'llm' as const,
+			dimension: typeof item.dimension === 'string' ? item.dimension : undefined,
 		}));
 	const ready = completion.data.ready === true && !findings.some((finding) => finding.severity === 'critical');
 	return { ready, findings };

@@ -1,10 +1,31 @@
 import type { ArticlePublishRequest, ArticlePublishResult, ArticlePublisher } from './types';
 import type { ArticleRecord } from '@/lib/articles/types';
 import { mapArticleRecordToFolianDraft } from './folianMap';
+import { loadDestinationTaxonomy } from './destinationRegistry';
 import { fetchAllowedImage, folianBaseUrl, folianHeaders, uploadImageToFolian } from './folianClient';
 
 async function readJson(response: Response) {
 	return (await response.json().catch(() => ({}))) as Record<string, unknown>;
+}
+
+export async function fetchFolianDraftRevision(externalId: string): Promise<number | null> {
+	const url = folianBaseUrl();
+	const headers = folianHeaders(true);
+	if (!url || !headers) return null;
+	const response = await fetch(`${url}/api/content/v1/drafts/${encodeURIComponent(externalId)}`, {
+		headers,
+		cache: 'no-store',
+	});
+	if (response.status === 404) return null;
+	const payload = await readJson(response);
+	if (!response.ok) {
+		throw new Error(String(payload.message ?? payload.code ?? `Folian draft lookup failed (${response.status})`));
+	}
+	const draft = (payload.draft ?? payload) as { revision?: unknown };
+	if (typeof draft.revision !== 'number') {
+		throw new Error('Folian draft has no revision, so it cannot be updated safely.');
+	}
+	return draft.revision;
 }
 
 export async function submitFolianDraftFromRecord(
@@ -57,7 +78,8 @@ export async function submitFolianDraftFromRecord(
 		ogMediaId = uploaded.mediaId;
 	}
 
-	const body = mapArticleRecordToFolianDraft(article, { ...options, heroMediaId, ogMediaId });
+	const taxonomy = (await loadDestinationTaxonomy('folian')) ?? undefined;
+	const body = mapArticleRecordToFolianDraft(article, { ...options, heroMediaId, ogMediaId, taxonomy });
 	const response = await fetch(`${url}/api/content/v1/drafts/${encodeURIComponent(options.externalId)}`, {
 		method: 'PUT',
 		headers,
@@ -75,7 +97,9 @@ export async function submitFolianDraftFromRecord(
 		ok: true,
 		destination: 'folian',
 		externalId: options.externalId,
-		url: `${url}/admin/collections/articles`,
+		url: typeof payload.adminUrl === 'string' ? payload.adminUrl : `${url}/admin/collections/articles`,
+		previewUrl: typeof payload.previewUrl === 'string' ? payload.previewUrl : typeof payload.url === 'string' ? payload.url : undefined,
+		revision: typeof payload.revision === 'number' ? payload.revision : undefined,
 	};
 }
 

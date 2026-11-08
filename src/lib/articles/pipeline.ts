@@ -1,6 +1,9 @@
 import { completeLongFormJson } from '@/lib/ai/longFormComplete';
 import { assertLongFormDraftReady } from '@/lib/ai/longFormComplete';
+import { estimateModelCostUsd } from '@/lib/ai/pricing';
+import { resolveModelForRole } from '@/lib/ai/roles';
 import { countWords } from '@/lib/ai/truncation';
+import { editorialStatusFromFindings, emptyWorkspace, ensureWorkspace, reviewCycleLimit, toEditorialFindings } from '@/lib/articles/meta';
 import { getIntelligenceAi } from '@/lib/intelligence/actions';
 import { completeReview } from '@/lib/intelligence/review';
 import type { BrandBrain, BrandStrategy, ContentBrief, ContentTheme } from '@/lib/intelligence/types';
@@ -42,6 +45,8 @@ function articleWordRange(targetWords: number): { min: number; max: number } {
 	return { min: Math.round(targetWords * 0.75), max: Math.round(targetWords * 1.2) };
 }
 
+type SectionDraft = { body: string; model?: string; promptTokens: number; completionTokens: number };
+
 async function draftArticleSection(input: {
 	ai: ReturnType<typeof getIntelligenceAi>;
 	ownerUserId: string;
@@ -50,7 +55,7 @@ async function draftArticleSection(input: {
 	voice: string;
 	claims: string[];
 	gaps: string[];
-}): Promise<string> {
+}): Promise<SectionDraft> {
 	const sectionRange = {
 		min: Math.max(120, Math.round(input.wordsPerSection * 0.65)),
 		max: Math.round(input.wordsPerSection * 1.35),
@@ -83,7 +88,12 @@ async function draftArticleSection(input: {
 		);
 		const body = drafted.data.body?.trim();
 		if (!body) throw new Error('Article section did not return body text.');
-		return body;
+		return {
+			body,
+			model: drafted.model,
+			promptTokens: drafted.promptTokens ?? 0,
+			completionTokens: drafted.completionTokens ?? 0,
+		};
 	}
 
 	const drafted = await completeLongFormJson<{ body?: string }>({
@@ -99,6 +109,8 @@ async function draftArticleSection(input: {
 	});
 	const body = drafted.data.body?.trim();
 	if (!body) throw new Error('Article section did not return body text.');
+	const promptTokens = drafted.rawUsage?.promptTokens ?? 0;
+	const completionTokens = drafted.rawUsage?.completionTokens ?? 0;
 	if (process.env.VITEST !== 'true') {
 		assertLongFormDraftReady({
 			text: body,
@@ -107,7 +119,7 @@ async function draftArticleSection(input: {
 			incompleteReason: drafted.meta.incompleteReason,
 		});
 	}
-	return body;
+	return { body, model: drafted.model, promptTokens, completionTokens };
 }
 
 function researchFromBrand(brain: BrandBrain, strategy: BrandStrategy | null, packets: ResearchRecord[] = []): ArticleResearch {
@@ -171,8 +183,16 @@ export async function generateArticle(input: {
 	targetWords?: number;
 	instruction?: string;
 	researchRecords?: ResearchRecord[];
+	articleId?: string;
+	destinationId?: string;
+	primaryKeyword?: string;
+	audience?: string;
+	searchIntent?: string;
+	contentType?: string;
+	skipAutoRevision?: boolean;
 }): Promise<ArticleRecord> {
 	const targetWords = normaliseTargetWords(input.targetWords);
+	const existing = input.articleId ? await getNativeContentStore().getArticle(input.ownerUserId, input.articleId) : null;
 	const theme = input.themes.find((item) => item.status === 'active') ?? input.themes[0];
 	const research = researchFromBrand(input.brand, input.strategy, input.researchRecords ?? []);
 	const topic = input.topic ?? theme?.title ?? input.strategy?.objectives[0] ?? input.brand.identity.name;
@@ -196,8 +216,11 @@ export async function generateArticle(input: {
 		: fallbackOutline(theme, input.strategy);
 	const wordsPerSection = Math.round(targetWords / outline.length);
 	const sections: ArticleSection[] = [];
+	let promptTokens = outlineCompletion.promptTokens ?? 0;
+	let completionTokens = outlineCompletion.completionTokens ?? 0;
+	let modelUsed = outlineCompletion.model ?? resolveModelForRole('LONG_FORM_WRITING');
 	for (const item of outline) {
-		const body = await draftArticleSection({
+		const drafted = await draftArticleSection({
 			ai,
 			ownerUserId: input.ownerUserId,
 			item,
@@ -206,10 +229,13 @@ export async function generateArticle(input: {
 			claims: research.claims.map((claim) => claim.text),
 			gaps: research.gaps,
 		});
-		sections.push({ ...item, body, claims: research.claims.map((claim) => claim.text).slice(0, 3) });
+		promptTokens += drafted.promptTokens;
+		completionTokens += drafted.completionTokens;
+		if (drafted.model) modelUsed = drafted.model;
+		sections.push({ ...item, body: drafted.body, claims: research.claims.map((claim) => claim.text).slice(0, 3) });
 	}
-	const searchIntent = outlineCompletion.data.searchIntent?.trim() || 'informational';
-	const destinationId = editorialDestinationForBrand(input.brand.id);
+	const searchIntent = input.searchIntent?.trim() || outlineCompletion.data.searchIntent?.trim() || existing?.searchIntent || 'informational';
+	const destinationId = input.destinationId ?? existing?.workspace?.destinationId ?? editorialDestinationForBrand(input.brand.id);
 	const taxonomy = destinationId ? await loadDestinationTaxonomy(destinationId) : null;
 	const classification = taxonomy
 		? await classifyArticleForDestination({
@@ -270,15 +296,16 @@ export async function generateArticle(input: {
 	const hero = planMedia({ channel: 'BLOG', topic, objective: input.objective, contentType: 'article', assets });
 	const inline = articleInlinePlan(sections);
 	const now = new Date().toISOString();
+	const priorWorkspace = existing ? ensureWorkspace(existing) : emptyWorkspace();
 	const article: ArticleRecord = {
-		id: crypto.randomUUID(),
+		id: existing?.id ?? input.articleId ?? crypto.randomUUID(),
 		ownerUserId: input.ownerUserId,
 		brandId: input.brand.id,
 		objective: input.objective ?? input.strategy?.objectives[0] ?? 'Support the active strategy',
-		audience: input.strategy?.audiences[0]?.name,
+		audience: input.audience ?? existing?.audience ?? input.strategy?.audiences[0]?.name,
 		topic,
 		searchIntent,
-		primaryKeyword: theme?.keywords[0],
+		primaryKeyword: input.primaryKeyword ?? existing?.primaryKeyword ?? theme?.keywords[0],
 		secondaryTopics: input.strategy?.contentPillars ?? [],
 		research,
 		outline,
@@ -294,7 +321,7 @@ export async function generateArticle(input: {
 			excerpt,
 			metaDescription,
 			canonical: null,
-			primaryKeyword: theme?.keywords[0] ?? null,
+			primaryKeyword: input.primaryKeyword ?? existing?.primaryKeyword ?? theme?.keywords[0] ?? null,
 			secondaryTopics: input.strategy?.contentPillars ?? [],
 		},
 		author: null,
@@ -316,8 +343,9 @@ export async function generateArticle(input: {
 		},
 		versions: [{ body: finalBody, createdAt: now }],
 		distribution: { disclosure: null, sponsorship: 'none', contentCluster: theme?.title ?? null, authorProfileId: null },
-		createdAt: now,
+		createdAt: existing?.createdAt ?? now,
 		updatedAt: now,
+		workspace: priorWorkspace,
 	};
 	article.performanceContentId = article.id;
 	const externalSources = research.sources.filter(researchSourceHasUrl).length;
@@ -350,7 +378,7 @@ export async function generateArticle(input: {
 		categoryId: categoryLabel,
 	});
 	const editorial = mergeEditorialReviews(deterministic, llmReview);
-	const maxCycles = process.env.VITEST === 'true' ? 0 : Number(process.env.CCE_ARTICLE_REVIEW_CYCLES ?? 2);
+	const maxCycles = input.skipAutoRevision || process.env.VITEST === 'true' ? 0 : reviewCycleLimit();
 	let cyclesUsed = 0;
 	let current = article;
 	while (!editorial.ready && cyclesUsed < maxCycles) {
@@ -397,6 +425,35 @@ export async function generateArticle(input: {
 		],
 	};
 	current.tags = classification?.tags ?? current.tags;
+	const findings = toEditorialFindings(editorial.findings);
+	const exhausted = !editorial.ready && cyclesUsed >= maxCycles && maxCycles > 0;
+	const workspace = ensureWorkspace(current);
+	workspace.destinationId = destinationId;
+	workspace.contentType = input.contentType ?? workspace.contentType;
+	workspace.workingTitle = workspace.workingTitle || current.title;
+	workspace.assignedModelRole = 'LONG_FORM_WRITING';
+	workspace.assignedModel = modelUsed;
+	workspace.researchSummary.searchIntent = searchIntent;
+	workspace.generation = {
+		...workspace.generation,
+		model: modelUsed,
+		promptTokens,
+		completionTokens,
+		estimatedCostUsd: estimateModelCostUsd({ model: modelUsed, inputTokens: promptTokens, outputTokens: completionTokens }),
+		status: 'completed',
+		error: null,
+	};
+	workspace.editorial = {
+		...workspace.editorial,
+		status: editorialStatusFromFindings(findings, exhausted),
+		cyclesUsed,
+		maxCycles: reviewCycleLimit(),
+		findings,
+		lastRunAt: now,
+		exhausted,
+	};
+	current.workspace = workspace;
+	current.publishDestination = destinationId ?? current.publishDestination;
 	await getNativeContentStore().saveArticle(current);
 	return current;
 }

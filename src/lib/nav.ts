@@ -26,6 +26,7 @@ export const APP_NAV: NavItem[] = [
 		label: 'Content',
 		items: [
 			{ label: 'Create', href: '/content/generate' },
+			{ label: 'Articles', href: '/content/articles' },
 			{ label: 'Approval', href: '/content/approval' },
 			{ label: 'Scheduled', href: '/content/schedule' },
 			{ label: 'Published', href: '/content/published' },
@@ -37,6 +38,7 @@ export const APP_NAV: NavItem[] = [
 		label: 'Connections',
 		items: [
 			{ label: 'Channels', href: '/connections' },
+			{ label: 'Websites & CMS', href: '/connections/websites' },
 			{ label: 'AI Assistants', href: '/settings/ai-connections' },
 		],
 	},

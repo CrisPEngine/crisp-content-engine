@@ -82,5 +82,9 @@ describe('article generation jobs', () => {
 		expect(updated?.status).toBe('completed');
 		const result = (updated?.payload as { result?: { articleId?: string } }).result;
 		expect(result?.articleId).toBeTruthy();
+		await dispatchArticleGenerationWorker(job.id);
+		const articles = await (await import('@/lib/media/store')).getNativeContentStore().listArticles(FOLIAN_USER_ID, brain.id);
+		expect(articles).toHaveLength(1);
+		expect(articles[0]?.id).toBe(result?.articleId);
 	});
 });

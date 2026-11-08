@@ -49,7 +49,7 @@ export async function completeLongFormJson<T>(input: {
 	const role = input.role ?? LONG_FORM_MODEL_ROLE;
 	const maxTokens = input.maxTokens ?? resolveLongFormMaxTokens();
 	const timeoutMs = input.timeoutMs ?? resolveLongFormTimeoutMs();
-	let messages = input.messages;
+	const messages = input.messages;
 	let continuationPasses = 0;
 	let lastFinish: { finishReason?: string | null; incompleteReason?: string | null } = {};
 
@@ -60,6 +60,16 @@ export async function completeLongFormJson<T>(input: {
 		maxTokens,
 		timeoutMs,
 	});
+	const usage = {
+		promptTokens: result.rawUsage?.promptTokens ?? 0,
+		completionTokens: result.rawUsage?.completionTokens ?? 0,
+		reasoningTokens: result.rawUsage?.reasoningTokens ?? 0,
+	};
+	const addUsage = (next?: { promptTokens?: number; completionTokens?: number; reasoningTokens?: number }) => {
+		usage.promptTokens += next?.promptTokens ?? 0;
+		usage.completionTokens += next?.completionTokens ?? 0;
+		usage.reasoningTokens += next?.reasoningTokens ?? 0;
+	};
 
 	for (let pass = 0; pass <= MAX_CONTINUATIONS; pass += 1) {
 		lastFinish = {
@@ -89,11 +99,12 @@ export async function completeLongFormJson<T>(input: {
 			timeoutMs,
 		});
 		const piece = coerceModelText(input.extractText(continuation.data)).trim();
+		addUsage(continuation.rawUsage);
 		result = {
 			...result,
 			data: input.mergeContinuation(result.data, piece),
 			model: continuation.model,
-			rawUsage: continuation.rawUsage,
+			rawUsage: usage,
 			finishReason: continuation.finishReason,
 			incompleteReason: continuation.incompleteReason,
 		};
@@ -116,7 +127,8 @@ export async function completeLongFormJson<T>(input: {
 				maxTokens,
 				timeoutMs,
 			});
-			result = { ...result, ...expanded, data: expanded.data };
+			addUsage(expanded.rawUsage);
+			result = { ...result, ...expanded, data: expanded.data, rawUsage: usage };
 			text = coerceModelText(input.extractText(result.data)).trim();
 		}
 	}
@@ -124,7 +136,7 @@ export async function completeLongFormJson<T>(input: {
 	return {
 		data: result.data,
 		model: result.model,
-		rawUsage: result.rawUsage,
+		rawUsage: usage,
 		meta: {
 			...lastFinish,
 			continuationPasses,
