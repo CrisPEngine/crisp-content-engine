@@ -370,7 +370,7 @@ describe('media planning and long-form articles', () => {
 			'article-rev',
 		);
 		expect((revised.body.result as { article: { sections: Array<{ body: string }>; versions: unknown[] } }).article.sections[3].body).toBe(REVISED_SECTION);
-		expect((revised.body.result as { article: { versions: unknown[] } }).article.versions.length).toBe(2);
+		expect((revised.body.result as { article: { versions: unknown[] } }).article.versions.length).toBe(1);
 
 		registerImageProviderForTests({
 			id: 'fixture',

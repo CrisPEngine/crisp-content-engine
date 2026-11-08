@@ -8,9 +8,10 @@ export type ArticleSection = {
 
 export type ArticleResearch = {
 	sources: Array<{ label: string; kind: 'brand_brain' | 'supplied' | 'opportunity'; url?: string; retrievedAt?: string }>;
-	claims: Array<{ text: string; sourceLabel: string; confidence: 'stored' | 'supplied' }>;
+	claims: Array<{ text: string; sourceLabel: string; confidence: 'stored' | 'supplied'; sourceUrl?: string; kind?: ResearchItemKind }>;
 	gaps: string[];
 	usedExternalResearch?: boolean;
+	packageVersion?: number;
 };
 
 export type ArticleSeo = {
@@ -47,6 +48,10 @@ export const EDITORIAL_DIMENSIONS = [
 
 export type EditorialDimension = (typeof EDITORIAL_DIMENSIONS)[number];
 
+export const RECOMMENDATION_STATES = ['pending', 'accepted', 'rejected', 'applied', 'superseded'] as const;
+
+export type RecommendationState = (typeof RECOMMENDATION_STATES)[number];
+
 export type ArticleEditorialFinding = {
 	id: string;
 	severity: 'critical' | 'major' | 'minor';
@@ -54,7 +59,124 @@ export type ArticleEditorialFinding = {
 	dimension: EditorialDimension;
 	instruction: string;
 	source: 'deterministic' | 'llm';
-	decision: 'pending' | 'accepted' | 'rejected';
+	decision: RecommendationState;
+	/** Structural findings are re-checked on every revision and cannot be dismissed by a person. */
+	rejectable?: boolean;
+	revisionId?: string | null;
+	decidedAt?: string | null;
+	appliedInRevisionId?: string | null;
+	note?: string | null;
+};
+
+export type ArticleRevisionRef = {
+	id: string;
+	number: number;
+	contentHash: string;
+	wordCount: number;
+	createdAt: string;
+	source: 'generation' | 'manual' | 'revision' | 'legacy';
+	note?: string;
+};
+
+export type ArticleReviewRun = {
+	revisionId: string;
+	revisionNumber: number;
+	contentHash: string;
+	ranAt: string;
+	findings: ArticleEditorialFinding[];
+};
+
+export type JobState = {
+	jobId: string | null;
+	status: 'idle' | 'queued' | 'processing' | 'completed' | 'failed';
+	stage: string | null;
+	startedAt: string | null;
+	updatedAt: string | null;
+	error: string | null;
+};
+
+export const RESEARCH_ITEM_KINDS = ['topic', 'competitor', 'brand', 'user', 'recommendation'] as const;
+
+export type ResearchItemKind = (typeof RESEARCH_ITEM_KINDS)[number];
+
+export type ResearchPackageSource = {
+	id: string;
+	url: string;
+	title: string;
+	domain: string;
+	retrievedAt: string | null;
+	addedInVersion: number;
+	origin: 'search' | 'page' | 'user';
+	excluded: boolean;
+	excludedReason: string | null;
+};
+
+export type ResearchPackageItem = {
+	id: string;
+	kind: ResearchItemKind;
+	text: string;
+	sourceIds: string[];
+	supported: boolean;
+	relevance: number;
+	addedInVersion: number;
+	excluded: boolean;
+	excludedReason: string | null;
+};
+
+export type ResearchUpdate = {
+	version: number;
+	createdAt: string;
+	kind: 'initial' | 'follow_up' | 'deeper' | 'manual' | 'migrated';
+	question: string | null;
+	researchId: string | null;
+	summary: string;
+};
+
+export type ResearchSnapshot = {
+	version: number;
+	approvedAt: string;
+	sources: ResearchPackageSource[];
+	items: ResearchPackageItem[];
+	notes: string;
+	expertise: string;
+};
+
+export type ResearchPackage = {
+	status: 'empty' | 'draft' | 'approved' | 'changed_since_approval';
+	version: number;
+	updatedAt: string | null;
+	notes: string;
+	expertise: string;
+	sources: ResearchPackageSource[];
+	items: ResearchPackageItem[];
+	gaps: string[];
+	updates: ResearchUpdate[];
+	approved: ResearchSnapshot | null;
+};
+
+export const SEARCH_INTENTS = [
+	'informational',
+	'commercial investigation',
+	'transactional',
+	'navigational',
+	'mixed',
+] as const;
+
+export type ArticleBriefDetails = {
+	secondaryKeywords: string;
+	questions: string;
+	avoid: string;
+	tone: string;
+	cta: string;
+	requiredLinks: string;
+	referenceMaterial: string;
+	instructions: string;
+};
+
+export type BriefSuggestion = {
+	field: keyof ArticleBriefDetails | 'audience' | 'primaryKeyword' | 'workingTitle';
+	value: string;
+	reason: string;
 };
 
 export type ArticleWorkspace = {
@@ -65,10 +187,15 @@ export type ArticleWorkspace = {
 	internalLinking: string;
 	imageRequirements: string;
 	briefApprovedAt: string | null;
+	briefChangedAfterApproval?: boolean;
+	brief?: ArticleBriefDetails;
+	briefSuggestions?: { createdAt: string; suggestions: BriefSuggestion[] } | null;
 	externalId: string | null;
 	researchId: string | null;
+	research?: ResearchPackage;
 	assignedModelRole: string;
 	assignedModel: string | null;
+	revision?: ArticleRevisionRef | null;
 	generation: {
 		jobId: string | null;
 		model: string | null;
@@ -77,7 +204,12 @@ export type ArticleWorkspace = {
 		estimatedCostUsd: number | null;
 		status: 'idle' | 'queued' | 'processing' | 'completed' | 'failed';
 		error: string | null;
+		stage?: string | null;
+		startedAt?: string | null;
+		updatedAt?: string | null;
+		researchVersion?: number | null;
 	};
+	revisionJob?: JobState & { baseRevisionId: string | null; resultRevisionId: string | null };
 	editorial: {
 		status: 'not_run' | 'findings' | 'ready' | 'blocked';
 		cyclesUsed: number;
@@ -85,7 +217,12 @@ export type ArticleWorkspace = {
 		findings: ArticleEditorialFinding[];
 		lastRunAt: string | null;
 		exhausted: boolean;
+		reviewedRevisionId?: string | null;
+		reviewedRevisionNumber?: number | null;
+		reviewedContentHash?: string | null;
+		history?: ArticleReviewRun[];
 	};
+	categorySuggestion?: { categoryId: string; reason: string; source: 'mapping' | 'ai' | 'default'; tags: string[]; createdAt: string } | null;
 	media: {
 		heroAssetId: string | null;
 		ogAssetId: string | null;
@@ -105,7 +242,15 @@ export type ArticleWorkspace = {
 		lastSyncAt: string | null;
 		lastError: string | null;
 		mode: 'update' | 'proposal' | null;
+		submittedRevisionId?: string | null;
+		remoteStatus?: string | null;
+		heroMediaId?: string | null;
+		heroSourceUrl?: string | null;
+		ogMediaId?: string | null;
+		ogSourceUrl?: string | null;
 	};
+	approvedAt?: string | null;
+	approvedRevisionId?: string | null;
 	schedule: {
 		publishAt: string | null;
 		destinationId: string | null;
@@ -121,6 +266,17 @@ export type ArticleWorkspace = {
 		relatedTools: Array<{ slug: string; label: string }>;
 		searchIntent: string;
 	};
+};
+
+export type ArticleVersion = {
+	body: string;
+	createdAt: string;
+	instruction?: string;
+	revisionId?: string;
+	number?: number;
+	contentHash?: string;
+	wordCount?: number;
+	source?: ArticleRevisionRef['source'];
 };
 
 export type ArticleRecord = {
@@ -157,7 +313,7 @@ export type ArticleRecord = {
 	wordCount: number;
 	targetWords: number;
 	review: { materialPassed: boolean; note: string; coherenceFindings?: string[] } | null;
-	versions: Array<{ body: string; createdAt: string; instruction?: string }>;
+	versions: ArticleVersion[];
 	distribution: {
 		disclosure: string | null;
 		sponsorship: 'none' | 'sponsored' | 'partner' | 'affiliate';

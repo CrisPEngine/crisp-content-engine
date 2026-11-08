@@ -1,11 +1,16 @@
 import 'server-only';
 
-import { generateArticle } from './pipeline';
-import { getIntelligenceStore } from '@/lib/intelligence/actions';
+import { applyArticleRevision, generateArticle } from './pipeline';
+import { getIntelligenceAi, getIntelligenceStore } from '@/lib/intelligence/actions';
 import { articleGenerationRunsInline, resolveArticleGenerationWorkerSecret } from '@/lib/ai/longFormConfig';
 import { enqueueWorkflowJob } from '@/lib/intelligence/jobs';
 import { getNativeContentStore } from '@/lib/media/store';
 import type { WorkflowJob } from '@/lib/intelligence/types';
+import { loadDestinationTaxonomy } from '@/lib/publishing/destinationRegistry';
+import { editorialStatusFromFindings, ensureWorkspace, isOpenFinding } from './meta';
+import { articleResearchFromApproved } from './researchPackage';
+import { reviewCurrentRevision } from './reviewRun';
+import type { ArticleRecord } from './types';
 
 export type ArticleGenerationJobPayload = {
 	brandId: string;
@@ -28,6 +33,22 @@ export type ArticleGenerationJobResult = {
 	error?: string;
 };
 
+export type ArticleRevisionJobPayload = {
+	brandId: string;
+	articleId: string;
+	baseRevisionId: string;
+	findingIds: string[];
+	result?: ArticleRevisionJobResult;
+};
+
+export type ArticleRevisionJobResult = {
+	articleId: string;
+	baseRevisionId: string;
+	resultRevisionId: string;
+	applied: Array<{ id: string; change: string }>;
+	notApplied: Array<{ id: string; reason: string }>;
+};
+
 export async function enqueueArticleGenerationJob(input: {
 	ownerUserId: string;
 	brandBrainId: string;
@@ -39,6 +60,28 @@ export async function enqueueArticleGenerationJob(input: {
 		brandBrainId: input.brandBrainId,
 		payload: input.payload,
 	});
+}
+
+export async function enqueueArticleRevisionJob(input: {
+	ownerUserId: string;
+	brandBrainId: string;
+	payload: ArticleRevisionJobPayload;
+}): Promise<WorkflowJob> {
+	return enqueueWorkflowJob(getIntelligenceStore(), input.ownerUserId, {
+		jobType: 'article_revision',
+		brandBrainId: input.brandBrainId,
+		payload: input.payload,
+	});
+}
+
+async function updateArticle(ownerUserId: string, articleId: string, mutate: (article: ArticleRecord) => void): Promise<void> {
+	const store = getNativeContentStore();
+	const article = await store.getArticle(ownerUserId, articleId);
+	if (!article) return;
+	article.workspace = ensureWorkspace(article);
+	mutate(article);
+	article.updatedAt = new Date().toISOString();
+	await store.saveArticle(article);
 }
 
 export async function runArticleGenerationJob(job: WorkflowJob): Promise<ArticleGenerationJobResult> {
@@ -57,12 +100,41 @@ export async function runArticleGenerationJob(job: WorkflowJob): Promise<Article
 	if (!brain) throw new Error('Brand brain not found for article generation job.');
 	const strategy = await store.getStrategyForBrand(job.userId, brain.id);
 	const themes = await store.listThemes(job.userId, brain.id);
-	const { getAgentStore } = await import('@/lib/agent/controlStore');
-	const { selectRelevantResearch } = await import('@/lib/research/retrieve');
-	const researchRecords = selectRelevantResearch(
-		await getAgentStore().listResearch(job.userId, brain.id),
-		`${payload.topic ?? ''} ${payload.instruction ?? ''}`,
-	);
+	const workspaceArticle = priorId ? await getNativeContentStore().getArticle(job.userId, priorId) : null;
+	let research;
+	let brief;
+	let researchRecords;
+	if (workspaceArticle?.workspace) {
+		const pkg = workspaceArticle.workspace.research;
+		if (!pkg?.approved) {
+			throw new Error('Approve the research before generating. Generation uses only the approved research version.');
+		}
+		research = articleResearchFromApproved(pkg);
+		brief = workspaceArticle.workspace.brief;
+	} else {
+		const { getAgentStore } = await import('@/lib/agent/controlStore');
+		const { selectRelevantResearch } = await import('@/lib/research/retrieve');
+		researchRecords = selectRelevantResearch(
+			await getAgentStore().listResearch(job.userId, brain.id),
+			`${payload.topic ?? ''} ${payload.instruction ?? ''}`,
+		);
+	}
+	const startedAt = new Date().toISOString();
+	const onStage = async (stage: string) => {
+		if (!priorId) return;
+		await updateArticle(job.userId, priorId, (article) => {
+			const generation = article.workspace!.generation;
+			article.workspace!.generation = {
+				...generation,
+				jobId: job.id,
+				status: 'processing',
+				stage,
+				startedAt: generation.startedAt && generation.jobId === job.id ? generation.startedAt : startedAt,
+				updatedAt: new Date().toISOString(),
+				error: null,
+			};
+		});
+	};
 	const article = await generateArticle({
 		ownerUserId: job.userId,
 		brand: brain,
@@ -73,6 +145,8 @@ export async function runArticleGenerationJob(job: WorkflowJob): Promise<Article
 		targetWords: payload.targetWords,
 		instruction: payload.instruction,
 		researchRecords,
+		research,
+		brief,
 		articleId: priorId,
 		destinationId: payload.destinationId,
 		primaryKeyword: payload.primaryKeyword,
@@ -80,6 +154,7 @@ export async function runArticleGenerationJob(job: WorkflowJob): Promise<Article
 		searchIntent: payload.searchIntent,
 		contentType: payload.contentType,
 		skipAutoRevision: payload.skipAutoRevision,
+		onStage,
 	});
 	if (article.workspace) article.workspace.generation.jobId = job.id;
 	await getNativeContentStore().saveArticle(article);
@@ -89,14 +164,126 @@ export async function runArticleGenerationJob(job: WorkflowJob): Promise<Article
 export async function noteGenerationFailure(job: WorkflowJob, message: string): Promise<void> {
 	const articleId = (job.payload as ArticleGenerationJobPayload).articleId;
 	if (!articleId) return;
-	const articles = getNativeContentStore();
-	const article = await articles.getArticle(job.userId, articleId);
-	if (!article?.workspace) return;
-	article.workspace.generation.status = 'failed';
-	article.workspace.generation.error = message;
-	article.workspace.generation.jobId = job.id;
-	article.updatedAt = new Date().toISOString();
-	await articles.saveArticle(article);
+	await updateArticle(job.userId, articleId, (article) => {
+		article.workspace!.generation = {
+			...article.workspace!.generation,
+			status: 'failed',
+			error: message,
+			jobId: job.id,
+			stage: 'Failed',
+			updatedAt: new Date().toISOString(),
+		};
+	});
+}
+
+export async function runArticleRevisionJob(job: WorkflowJob): Promise<ArticleRevisionJobResult> {
+	const payload = job.payload as ArticleRevisionJobPayload;
+	if (payload.result) return payload.result;
+	const store = getIntelligenceStore();
+	const content = getNativeContentStore();
+	const article = await content.getArticle(job.userId, payload.articleId);
+	if (!article) throw new Error('Article not found.');
+	const workspace = ensureWorkspace(article);
+	article.workspace = workspace;
+	if (workspace.revision?.id !== payload.baseRevisionId) {
+		throw new Error('The article changed after this revision was requested. Nothing was applied. Apply again on the current revision.');
+	}
+	const brain = (await store.getBrandBrainById(job.userId, payload.brandId)) ?? (await store.getBrandBrain(job.userId, payload.brandId));
+	if (!brain) throw new Error('Brand not found.');
+	const findings = workspace.editorial.findings.filter((finding) => payload.findingIds.includes(finding.id) && finding.decision === 'accepted');
+	if (!findings.length) throw new Error('None of the requested recommendations are still accepted.');
+	const startedAt = new Date().toISOString();
+	const setStage = async (stage: string) => {
+		await updateArticle(job.userId, article.id, (current) => {
+			current.workspace!.revisionJob = {
+				...(current.workspace!.revisionJob ?? { baseRevisionId: payload.baseRevisionId, resultRevisionId: null }),
+				jobId: job.id,
+				status: 'processing',
+				stage,
+				startedAt: current.workspace!.revisionJob?.startedAt ?? startedAt,
+				updatedAt: new Date().toISOString(),
+				error: null,
+				baseRevisionId: payload.baseRevisionId,
+				resultRevisionId: null,
+			};
+		});
+	};
+	await setStage(`Applying ${findings.length} accepted recommendation${findings.length === 1 ? '' : 's'} to revision ${workspace.revision.number}`);
+	const fresh = (await content.getArticle(job.userId, article.id)) ?? article;
+	fresh.workspace = ensureWorkspace(fresh);
+	if (fresh.workspace.revision?.id !== payload.baseRevisionId) {
+		throw new Error('The article changed while the revision was starting. Nothing was applied.');
+	}
+	const outcome = await applyArticleRevision({ ownerUserId: job.userId, article: fresh, brand: brain, findings });
+	const revised = outcome.article;
+	const ws = ensureWorkspace(revised);
+	const newRevision = ws.revision!;
+	const now = new Date().toISOString();
+	const notApplied = new Map(outcome.notApplied.map((item) => [item.id, item.reason]));
+	for (const finding of ws.editorial.findings) {
+		const applied = outcome.applied.find((item) => item.id === finding.id);
+		if (applied) {
+			finding.decision = 'applied';
+			finding.appliedInRevisionId = newRevision.id;
+			finding.decidedAt = now;
+			finding.note = applied.change;
+		} else if (notApplied.has(finding.id)) {
+			finding.note = `Not applied in revision ${newRevision.number}: ${notApplied.get(finding.id)}`;
+		}
+	}
+	ws.editorial.cyclesUsed += 1;
+	ws.revisionJob = { ...ws.revisionJob!, stage: `Reviewing revision ${newRevision.number}`, updatedAt: now, status: 'processing' };
+	revised.workspace = ws;
+	revised.approval = { required: true, approver: 'human', status: 'pending' };
+	if (revised.status === 'approved') revised.status = 'review';
+	revised.updatedAt = now;
+	await content.saveArticle(revised);
+
+	const carried = ws.editorial.findings.filter((finding) => finding.decision === 'accepted' && notApplied.has(finding.id));
+	const taxonomy = ws.destinationId ? await loadDestinationTaxonomy(ws.destinationId) : null;
+	await reviewCurrentRevision({ article: revised, brain, taxonomy, ai: getIntelligenceAi(), ownerUserId: job.userId });
+	const reviewed = ensureWorkspace(revised);
+	for (const finding of carried) {
+		if (reviewed.editorial.findings.some((item) => item.code === finding.code && isOpenFinding(item))) continue;
+		reviewed.editorial.findings.push({ ...finding, revisionId: newRevision.id });
+	}
+	reviewed.editorial.status = editorialStatusFromFindings(reviewed.editorial.findings, reviewed.editorial.exhausted);
+	const result: ArticleRevisionJobResult = {
+		articleId: revised.id,
+		baseRevisionId: payload.baseRevisionId,
+		resultRevisionId: newRevision.id,
+		applied: outcome.applied,
+		notApplied: outcome.notApplied,
+	};
+	reviewed.revisionJob = {
+		...reviewed.revisionJob!,
+		status: 'completed',
+		stage: `Revision ${newRevision.number} saved and reviewed`,
+		updatedAt: new Date().toISOString(),
+		resultRevisionId: newRevision.id,
+		error: null,
+	};
+	revised.workspace = reviewed;
+	revised.updatedAt = new Date().toISOString();
+	await content.saveArticle(revised);
+	return result;
+}
+
+export async function noteRevisionFailure(job: WorkflowJob, message: string): Promise<void> {
+	const payload = job.payload as ArticleRevisionJobPayload;
+	await updateArticle(job.userId, payload.articleId, (article) => {
+		article.workspace!.revisionJob = {
+			...(article.workspace!.revisionJob ?? { baseRevisionId: payload.baseRevisionId, resultRevisionId: null, startedAt: null }),
+			jobId: job.id,
+			status: 'failed',
+			stage: 'Failed',
+			updatedAt: new Date().toISOString(),
+			error: message,
+			baseRevisionId: payload.baseRevisionId,
+			resultRevisionId: null,
+			startedAt: article.workspace!.revisionJob?.startedAt ?? null,
+		};
+	});
 }
 
 export function publicArticleGenerationJob(job: WorkflowJob): Record<string, unknown> {
@@ -124,12 +311,12 @@ export function articleGenerationJobIsStale(job: WorkflowJob, now = Date.now()):
 	return now - stamp > limit;
 }
 
-export async function runArticleGenerationInline(jobId: string): Promise<void> {
+async function runClaimed(jobId: string, run: (job: WorkflowJob) => Promise<object>, onFailure: (job: WorkflowJob, message: string) => Promise<void>): Promise<void> {
 	const store = getIntelligenceStore();
 	const job = await store.claimJobById(jobId);
 	if (!job) return;
 	try {
-		const result = await runArticleGenerationJob(job);
+		const result = await run(job);
 		await store.updateJob(job.id, {
 			status: 'completed',
 			completedAt: new Date().toISOString(),
@@ -137,15 +324,23 @@ export async function runArticleGenerationInline(jobId: string): Promise<void> {
 			lastError: undefined,
 		});
 	} catch (error) {
-		const message = error instanceof Error ? error.message : 'Article generation failed';
+		const message = error instanceof Error ? error.message : 'The article job failed';
 		await store.updateJob(job.id, {
 			status: 'failed',
 			completedAt: new Date().toISOString(),
 			lastError: message,
 		});
-		await noteGenerationFailure(job, message);
+		await onFailure(job, message);
 		throw error;
 	}
+}
+
+export async function runArticleGenerationInline(jobId: string): Promise<void> {
+	await runClaimed(jobId, runArticleGenerationJob, noteGenerationFailure);
+}
+
+export async function runArticleRevisionInline(jobId: string): Promise<void> {
+	await runClaimed(jobId, runArticleRevisionJob, noteRevisionFailure);
 }
 
 export async function dispatchArticleGenerationWorker(jobId: string): Promise<void> {

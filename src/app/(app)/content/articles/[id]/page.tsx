@@ -2,181 +2,391 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
-
-type Finding = {
-	id: string;
-	severity: string;
-	dimension: string;
-	instruction: string;
-	decision: string;
-};
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BriefPanel, type BriefValues } from '@/components/articles/BriefPanel';
+import { JobPanel } from '@/components/articles/JobPanel';
+import { LifecycleBadges, type Lifecycle } from '@/components/articles/LifecycleBadges';
+import { ResearchPanel } from '@/components/articles/ResearchPanel';
+import { ReviewPanel, type RevisionResult } from '@/components/articles/ReviewPanel';
+import { RevisionHistory } from '@/components/articles/RevisionDiff';
+import { validateArticleStructure } from '@/lib/articles/structure';
+import type { ArticleRecord, ArticleRevisionRef } from '@/lib/articles/types';
 
 type ArticleDetail = {
-	article: {
-		id: string;
-		title: string;
-		topic: string;
-		body: string;
-		status: string;
-		wordCount: number;
-		targetWords: number;
-		searchIntent: string;
-		primaryKeyword?: string;
-		audience?: string;
-		categories: string[];
-		approval: { status: string };
-		publication: { url?: string } | null;
-		research: {
-			sources: Array<{ label: string; url?: string; retrievedAt?: string; kind: string }>;
-			gaps: string[];
-			claims: Array<{ text: string; sourceLabel: string }>;
-		};
-		outline: Array<{ id: string; heading: string; purpose: string }>;
-		workspace?: {
-			destinationId: string | null;
-			contentType: string;
-			briefApprovedAt: string | null;
-			externalId: string | null;
-			assignedModel: string | null;
-			assignedModelRole: string;
-			generation: { status: string; error: string | null; promptTokens: number; completionTokens: number; estimatedCostUsd: number | null; model: string | null };
-			editorial: { status: string; cyclesUsed: number; maxCycles: number; exhausted: boolean; findings: Finding[] };
-			media: {
-				heroUrl: string | null;
-				ogUrl: string | null;
-				heroAlt: string;
-				ogAlt: string;
-				credit: string;
-				license: string;
-				deliveryVerified: boolean;
-				deliveryError: string | null;
-			};
-			cms: { draftUrl: string | null; revision: number | null; lastError: string | null; lastSyncAt: string | null };
-			schedule: { status: string; publishAt: string | null; blockedReason: string | null };
-			researchSummary: {
-				retrievedAt: string | null;
-				searchIntent: string;
-				competitors: Array<{ name: string; website?: string; claims: string[] }>;
-				recommendedStructure: Array<{ heading: string; purpose: string }>;
-				relatedArticleSlugs: string[];
-				relatedTools: Array<{ slug: string; label: string }>;
-			};
-		};
-	};
+	article: ArticleRecord;
 	model: { role: string; resolved: string };
 	job: { status: string; error: string | null } | null;
 	nextStep?: { stage: string; action: string; detail: string };
-	taxonomy: { categories: Array<{ id: string; name: string }>; contentTypes: string[]; requiredMetadata?: string[] } | null;
+	lifecycle: Lifecycle;
+	revisions: ArticleRevisionRef[];
+	approvalGate: { ok: true } | { ok: false; code: string; message: string };
+	revisionResult: RevisionResult;
+	taxonomy: { categories: Array<{ id: string; name: string; description?: string }>; contentTypes: string[]; requiredMetadata?: string[] } | null;
 };
+
+type Toast = { kind: 'ok' | 'error'; text: string; at: number };
+
+const STAGES = ['Brief', 'Research', 'Draft', 'Review', 'Category', 'Images', 'CMS', 'Approval'] as const;
+
+function stageState(article: ArticleRecord, lifecycle: Lifecycle, taxonomy: ArticleDetail['taxonomy']): Record<(typeof STAGES)[number], boolean> {
+	const workspace = article.workspace;
+	const editorial = workspace?.editorial;
+	const reviewed = Boolean(editorial?.reviewedRevisionId && editorial.reviewedRevisionId === workspace?.revision?.id);
+	const openCritical = (editorial?.findings ?? []).some((finding) => finding.severity === 'critical' && (finding.decision === 'pending' || finding.decision === 'accepted'));
+	return {
+		Brief: Boolean(workspace?.briefApprovedAt),
+		Research: workspace?.research?.status === 'approved',
+		Draft: Boolean(article.body.trim()),
+		Review: reviewed && !openCritical,
+		Category: article.categories.length > 0 && (!taxonomy || taxonomy.categories.some((category) => category.id === article.categories[0])),
+		Images: Boolean(workspace?.media.deliveryVerified) || /^\s*(none|no images?)\s*$/i.test(workspace?.imageRequirements ?? ''),
+		CMS: lifecycle.submittedToCms && lifecycle.cmsCurrent,
+		Approval: lifecycle.approved,
+	};
+}
+
+function briefValues(article: ArticleRecord): BriefValues {
+	const workspace = article.workspace;
+	const brief = workspace?.brief;
+	return {
+		topic: article.topic,
+		workingTitle: workspace?.workingTitle ?? '',
+		primaryKeyword: article.primaryKeyword ?? article.seo.primaryKeyword ?? '',
+		searchIntent: article.searchIntent,
+		audience: article.audience ?? '',
+		contentType: workspace?.contentType ?? 'guide',
+		targetWords: article.targetWords,
+		destinationId: workspace?.destinationId ?? '',
+		imageRequirements: workspace?.imageRequirements ?? '',
+		researchRequirements: workspace?.researchRequirements ?? '',
+		internalLinking: workspace?.internalLinking ?? '',
+		brief: {
+			secondaryKeywords: brief?.secondaryKeywords ?? '',
+			questions: brief?.questions ?? '',
+			avoid: brief?.avoid ?? '',
+			tone: brief?.tone ?? '',
+			cta: brief?.cta ?? '',
+			requiredLinks: brief?.requiredLinks ?? '',
+			referenceMaterial: brief?.referenceMaterial ?? '',
+			instructions: brief?.instructions ?? '',
+		},
+	};
+}
+
+function running(status: string | undefined | null) {
+	return status === 'queued' || status === 'processing' || status === 'retrying';
+}
 
 export default function ArticleWorkspacePage() {
 	const params = useParams();
 	const articleId = typeof params.id === 'string' ? params.id : '';
 	const [detail, setDetail] = useState<ArticleDetail | null>(null);
-	const [message, setMessage] = useState('');
+	const [loadError, setLoadError] = useState('');
+	const [toast, setToast] = useState<Toast | null>(() =>
+		typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('existing') === '1'
+			? { kind: 'ok', text: 'This article already existed, so it was opened instead of creating a duplicate.', at: Date.now() }
+			: null,
+	);
 	const [pending, setPending] = useState('');
 	const [body, setBody] = useState('');
+	const [seo, setSeo] = useState({ seoTitle: '', metaDescription: '', slug: '', excerpt: '' });
+	const [briefDirty, setBriefDirty] = useState(false);
+	const [externalId, setExternalId] = useState('');
+	const [lookup, setLookup] = useState<null | { externalId: string; draft: { exists: boolean; revision?: number; status?: string; title?: string; category?: string | null } }>(null);
+	const [categoryChoice, setCategoryChoice] = useState('');
 	const [publishAt, setPublishAt] = useState('');
 	const [publishedUrl, setPublishedUrl] = useState('');
 	const [assetId, setAssetId] = useState('');
+	const [media, setMedia] = useState({ heroAlt: '', ogAlt: '', credit: '', license: '' });
+	const [destinations, setDestinations] = useState<Array<{ key: string; name: string; enabled: boolean }>>([]);
+	const serverBody = useRef<string | null>(null);
+	const bodyRef = useRef('');
+	useEffect(() => {
+		bodyRef.current = body;
+	}, [body]);
 
-	const load = useCallback(async () => {
+	const wasRunning = useRef(false);
+
+	const apply = useCallback((payload: ArticleDetail, reset: boolean) => {
+		setDetail(payload);
+		const article = payload.article;
+		const generationState = article.workspace?.generation;
+		const revisionState = article.workspace?.revisionJob;
+		const nowRunning = running(generationState?.status) || running(payload.job?.status) || running(revisionState?.status);
+		let resetEditors = reset;
+		if (wasRunning.current && !nowRunning) {
+			const failed = generationState?.status === 'failed' || revisionState?.status === 'failed';
+			setToast({ kind: failed ? 'error' : 'ok', text: failed ? 'The job failed. The details are shown below.' : 'The job finished. The page is up to date.', at: Date.now() });
+			resetEditors = true;
+		}
+		wasRunning.current = nowRunning;
+		if (resetEditors || serverBody.current === null || bodyRef.current === serverBody.current) setBody(article.body);
+		serverBody.current = article.body;
+		if (resetEditors) {
+			setSeo({ seoTitle: article.seo.seoTitle, metaDescription: article.seo.metaDescription, slug: article.seo.slug, excerpt: article.excerpt });
+			setMedia({
+				heroAlt: article.workspace?.media.heroAlt ?? '',
+				ogAlt: article.workspace?.media.ogAlt ?? '',
+				credit: article.workspace?.media.credit ?? '',
+				license: article.workspace?.media.license ?? '',
+			});
+			setExternalId(article.workspace?.externalId ?? '');
+		}
+	}, []);
+
+	const load = useCallback(async (resetEditors = false) => {
 		if (!articleId) return;
-		const response = await fetch(`/api/articles/${articleId}`);
-		const payload = await response.json();
+		const response = await fetch(`/api/articles/${articleId}`, { cache: 'no-store' });
+		const payload = await response.json().catch(() => ({}));
 		if (!response.ok) {
-			setMessage(payload.error ?? 'Article could not be loaded.');
+			setLoadError(payload.error ?? 'Article could not be loaded.');
 			return;
 		}
-		setDetail(payload);
-		setBody(payload.article?.body ?? '');
-	}, [articleId]);
+		apply(payload as ArticleDetail, resetEditors);
+	}, [articleId, apply]);
 
 	useEffect(() => {
-		if (!articleId) return;
-		let cancelled = false;
-		fetch(`/api/articles/${articleId}`)
-			.then(async (response) => ({ ok: response.ok, payload: await response.json() }))
-			.then(({ ok, payload }) => {
-				if (cancelled) return;
-				if (!ok) {
-					setMessage(payload.error ?? 'Article could not be loaded.');
-					return;
-				}
-				setDetail(payload);
-				setBody(payload.article?.body ?? '');
-			})
-			.catch(() => {
-				if (!cancelled) setMessage('Article could not be loaded.');
-			});
-		return () => {
-			cancelled = true;
-		};
-	}, [articleId]);
+		void Promise.resolve().then(() => load(true));
+	}, [load]);
 
+	const brandId = detail?.article.brandId;
 	useEffect(() => {
-		const status = detail?.article.workspace?.generation.status;
-		const job = detail?.job?.status;
-		if (status !== 'queued' && status !== 'processing' && job !== 'queued' && job !== 'processing' && job !== 'retrying') return;
-		const timer = setInterval(() => void load(), 4000);
+		if (!brandId) return;
+		void fetch(`/api/websites?brandId=${encodeURIComponent(brandId)}`)
+			.then((response) => response.json())
+			.then((payload) => setDestinations(Array.isArray(payload.destinations) ? payload.destinations : []))
+			.catch(() => setDestinations([]));
+	}, [brandId]);
+
+	const generation = detail?.article.workspace?.generation;
+	const revisionJob = detail?.article.workspace?.revisionJob;
+	const jobRunning = running(generation?.status) || running(detail?.job?.status) || running(revisionJob?.status);
+	useEffect(() => {
+		if (!jobRunning) return;
+		const timer = setInterval(() => void load(false), 3000);
 		return () => clearInterval(timer);
-	}, [detail, load]);
+	}, [jobRunning, load]);
 
-	async function act(action: string, extra?: Record<string, unknown>) {
+	const bodyDirty = Boolean(detail) && body !== detail?.article.body;
+	const seoDirty = Boolean(detail) && (seo.seoTitle !== detail?.article.seo.seoTitle || seo.metaDescription !== detail?.article.seo.metaDescription || seo.slug !== detail?.article.seo.slug || seo.excerpt !== detail?.article.excerpt);
+	const unsaved = bodyDirty || seoDirty || briefDirty;
+	useEffect(() => {
+		if (!unsaved) return;
+		const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+		window.addEventListener('beforeunload', warn);
+		return () => window.removeEventListener('beforeunload', warn);
+	}, [unsaved]);
+
+	const act = useCallback(async (action: string, extra?: Record<string, unknown>, success?: string): Promise<boolean> => {
 		setPending(action);
-		setMessage('');
 		const response = await fetch(`/api/articles/${articleId}/actions`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ action, ...extra }),
 		});
-		const payload = await response.json();
+		const payload = await response.json().catch(() => ({}));
 		setPending('');
 		if (!response.ok) {
-			setMessage(payload.error ?? 'That action failed.');
-			await load();
-			return;
+			setToast({ kind: 'error', text: payload.error ?? 'That action failed.', at: Date.now() });
+			await load(false);
+			return false;
 		}
-		if (typeof payload.message === 'string') setMessage(payload.message);
-		else if (action === 'generate' || action === 'retry') setMessage('Generation is running in the background. This page will update.');
-		await load();
-	}
+		if (action === 'lookup_draft') setLookup(payload);
+		const text = typeof payload.message === 'string' ? payload.message : success;
+		if (text) setToast({ kind: 'ok', text, at: Date.now() });
+		await load(action !== 'research_edit');
+		return true;
+	}, [articleId, load]);
 
-	async function saveBody() {
-		setPending('save');
+	async function patch(fields: Record<string, unknown>, label: string, success: string): Promise<boolean> {
+		setPending(label);
 		const response = await fetch(`/api/articles/${articleId}`, {
 			method: 'PATCH',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ body }),
+			body: JSON.stringify(fields),
 		});
-		const payload = await response.json();
+		const payload = await response.json().catch(() => ({}));
 		setPending('');
-		setMessage(response.ok ? 'Saved in CCE.' : payload.error ?? 'Save failed.');
-		await load();
+		if (!response.ok) {
+			setToast({ kind: 'error', text: payload.error ?? 'Save failed. Your changes are still on this page.', at: Date.now() });
+			return false;
+		}
+		const revision = (payload.article as ArticleRecord | undefined)?.workspace?.revision;
+		setToast({ kind: 'ok', text: fields.body !== undefined && revision ? `${success} Revision ${revision.number}.` : success, at: Date.now() });
+		await load(true);
+		return true;
 	}
 
-	if (!detail) return <div className="mx-auto max-w-4xl p-6">{message || 'Loading article…'}</div>;
+	const structure = useMemo(() => (body.trim() ? validateArticleStructure(body) : null), [body]);
+	const bodies = useMemo(() => {
+		const map: Record<string, string> = {};
+		for (const version of detail?.article.versions ?? []) if (version.revisionId) map[version.revisionId] = version.body;
+		const current = detail?.article.workspace?.revision?.id;
+		if (current) map[current] = detail!.article.body;
+		return map;
+	}, [detail]);
+
+	if (!detail) return <div className="mx-auto max-w-4xl p-6">{loadError || 'Loading article…'}</div>;
 	const article = detail.article;
 	const workspace = article.workspace;
 	const busy = pending !== '';
+	const stages = stageState(article, detail.lifecycle, detail.taxonomy);
+	const currentStage = STAGES.find((stage) => !stages[stage]);
+	const research = workspace?.research;
+	const generateBlocked = !workspace?.briefApprovedAt
+		? 'Approve the brief first.'
+		: research?.status !== 'approved'
+			? research?.status === 'changed_since_approval' ? 'Research changed since approval. Approve the current version first.' : 'Approve the research first.'
+			: article.approval.status === 'approved'
+				? 'The article is approved. Remove approval by editing before regenerating.'
+				: '';
+	const target = article.targetWords;
+	const actualWords = structure?.wordCount ?? 0;
+	const deviation = target ? Math.round(((actualWords - target) / target) * 100) : 0;
+	const suggestion = workspace?.categorySuggestion;
+	const categoryName = (id: string) => detail.taxonomy?.categories.find((category) => category.id === id)?.name ?? id;
+	const gate = detail.approvalGate;
 
 	return (
-		<div className="mx-auto max-w-4xl p-6 space-y-6">
-			<div>
+		<div className="mx-auto max-w-5xl p-6 space-y-6">
+			<header className="space-y-3">
 				<Link className="text-sm underline" href="/content/articles">Articles</Link>
 				<h1 className="text-2xl font-semibold">{article.title}</h1>
-				<p className="text-text-soft">{article.status} · {article.wordCount} / {article.targetWords} words · review {workspace?.editorial.status ?? 'not_run'}</p>
+				<LifecycleBadges lifecycle={detail.lifecycle} />
+				<ol className="flex flex-wrap gap-1 text-xs" aria-label="Workflow stages">
+					{STAGES.map((stage, index) => (
+						<li
+							key={stage}
+							aria-current={stage === currentStage ? 'step' : undefined}
+							className={`rounded px-2 py-1 border ${stages[stage] ? 'border-accent/50 bg-accent/10' : stage === currentStage ? 'border-primary bg-primary/15 font-medium' : 'border-edge text-text-dim'}`}
+						>
+							{index + 1}. {stage}{stages[stage] ? ' ✓' : ''}
+						</li>
+					))}
+				</ol>
 				{detail.nextStep ? (
 					<div className="card p-4">
-						<p className="text-sm text-text-soft">Current stage</p>
-						<p className="font-medium">{detail.nextStep.stage}</p>
-						<p className="text-sm">Next: {detail.nextStep.action}</p>
+						<p className="text-sm text-text-soft">Next step · {detail.nextStep.stage}</p>
+						<p className="font-medium">{detail.nextStep.action}</p>
 						<p className="text-sm text-text-soft">{detail.nextStep.detail}</p>
 					</div>
 				) : null}
-				{workspace?.generation.error ? <p className="text-sm">{workspace.generation.error}</p> : null}
-				{message ? <p className="text-sm">{message}</p> : null}
+				{unsaved ? <p className="text-sm text-warning">You have unsaved changes on this page.</p> : null}
+			</header>
+
+			<div aria-live="polite" className="sticky top-2 z-10">
+				{toast ? (
+					<div className={`card p-3 text-sm flex justify-between gap-3 ${toast.kind === 'error' ? 'border-danger/60' : 'border-accent/60'}`} role={toast.kind === 'error' ? 'alert' : 'status'}>
+						<span>{toast.kind === 'ok' ? '✓ ' : ''}{toast.text}</span>
+						<button type="button" className="text-xs underline" onClick={() => setToast(null)}>Dismiss</button>
+					</div>
+				) : null}
+			</div>
+
+			{running(generation?.status) || running(detail.job?.status) ? (
+				<JobPanel title="Writing the draft" stage={generation?.stage ?? null} startedAt={generation?.startedAt ?? null} updatedAt={generation?.updatedAt ?? null} status={generation?.status ?? 'queued'} />
+			) : null}
+			{running(revisionJob?.status) ? (
+				<JobPanel title="Applying accepted recommendations" stage={revisionJob?.stage ?? null} startedAt={revisionJob?.startedAt ?? null} updatedAt={revisionJob?.updatedAt ?? null} status={revisionJob?.status ?? 'queued'} />
+			) : null}
+			{generation?.status === 'failed' && generation.error ? (
+				<div className="card p-4 text-sm border-danger/60" role="alert">
+					<p className="font-medium">Generation failed</p>
+					<p>{generation.error}</p>
+					<button className="btn mt-2" type="button" disabled={busy || Boolean(generateBlocked)} onClick={() => act('retry', {}, 'Generation restarted.')}>Retry</button>
+				</div>
+			) : null}
+			{revisionJob?.status === 'failed' && revisionJob.error ? (
+				<div className="card p-4 text-sm border-danger/60" role="alert">
+					<p className="font-medium">The revision failed and nothing was saved</p>
+					<p>{revisionJob.error}</p>
+				</div>
+			) : null}
+
+			<BriefPanel
+				key={JSON.stringify(briefValues(article))}
+				initial={briefValues(article)}
+				destinations={destinations}
+				contentTypes={detail.taxonomy?.contentTypes ?? null}
+				approvedAt={workspace?.briefApprovedAt ?? null}
+				changedAfterApproval={Boolean(workspace?.briefChangedAfterApproval)}
+				suggestions={workspace?.briefSuggestions?.suggestions ?? []}
+				busy={busy}
+				pending={pending}
+				act={act}
+				onDirtyChange={setBriefDirty}
+				save={(values) => patch({ ...values }, 'save_brief', 'Brief saved in CCE.')}
+			/>
+
+			<ResearchPanel key={`${research?.version ?? 0}-${research?.status ?? 'empty'}`} research={research} busy={busy} pending={pending} act={act} />
+
+			<section className="card p-4 space-y-3" id="draft">
+				<div className="flex flex-wrap items-baseline justify-between gap-2">
+					<h2 className="font-medium">Draft</h2>
+					<p className="text-sm">
+						{workspace?.revision ? `Revision ${workspace.revision.number}` : 'No revision yet'}
+						{workspace?.generation.researchVersion ? ` · written from research version ${workspace.generation.researchVersion}` : ''}
+						{bodyDirty ? ' · unsaved edits' : ''}
+					</p>
+				</div>
+				<div className="flex flex-wrap gap-2 items-center">
+					<button className="btn" type="button" disabled={busy || jobRunning || Boolean(generateBlocked)} onClick={() => act('generate', {}, 'Generation started. You can leave this page.')}>
+						{pending === 'generate' ? 'Starting…' : article.body.trim() ? 'Regenerate draft' : 'Generate draft'}
+					</button>
+					{generateBlocked ? <span className="text-xs text-text-soft">{generateBlocked}</span> : null}
+					{article.body.trim() && !generateBlocked ? <span className="text-xs text-text-soft">Regenerating creates a new revision. The current one stays in history.</span> : null}
+				</div>
+				{structure ? (
+					<div className="text-sm space-y-1">
+						<p>
+							{actualWords.toLocaleString()} words against a target of {target.toLocaleString()}
+							{target ? ` (${deviation > 0 ? '+' : ''}${deviation}%)` : ''} · {structure.sectionCount} sections · {structure.endsCleanly ? 'ends on a complete sentence' : 'does not end on a complete sentence'}
+						</p>
+						{Math.abs(deviation) > 20 ? (
+							<p className="text-xs text-text-soft">
+								{deviation < 0
+									? 'Shorter than the target. That is allowed; the review explains whether anything the brief asks for is missing.'
+									: 'Longer than the target. The review flags sections that could be cut.'}
+							</p>
+						) : null}
+						{structure.issues.map((issue, index) => (
+							<p key={index} className={issue.severity === 'critical' ? 'text-danger' : 'text-warning'}>{issue.message}</p>
+						))}
+					</div>
+				) : null}
+				<textarea className="input w-full min-h-[28rem] font-mono" aria-label="Article body (Markdown)" value={body} onChange={(event) => setBody(event.target.value)} />
+				<div className="grid gap-3 md:grid-cols-2">
+					<label className="block text-sm">SEO title
+						<input className="input w-full" value={seo.seoTitle} onChange={(event) => setSeo({ ...seo, seoTitle: event.target.value })} />
+					</label>
+					<label className="block text-sm">Slug
+						<input className="input w-full" value={seo.slug} onChange={(event) => setSeo({ ...seo, slug: event.target.value })} />
+					</label>
+					<label className="block text-sm">Meta description <span className="text-xs text-text-soft">{seo.metaDescription.length} characters</span>
+						<textarea className="input w-full" rows={2} value={seo.metaDescription} onChange={(event) => setSeo({ ...seo, metaDescription: event.target.value })} />
+					</label>
+					<label className="block text-sm">Excerpt
+						<textarea className="input w-full" rows={2} value={seo.excerpt} onChange={(event) => setSeo({ ...seo, excerpt: event.target.value })} />
+					</label>
+				</div>
+				<div className="flex flex-wrap gap-2 items-center">
+					<button
+						className="btn"
+						type="button"
+						disabled={busy || jobRunning || (!bodyDirty && !seoDirty)}
+						onClick={() => void patch({ ...(bodyDirty ? { body } : {}), ...seo }, 'save', 'Saved in CCE.')}
+					>
+						{pending === 'save' ? 'Saving…' : bodyDirty || seoDirty ? 'Save in CCE' : 'Saved in CCE'}
+					</button>
+					{bodyDirty ? <button className="btn" type="button" onClick={() => setBody(article.body)}>Discard edits</button> : null}
+					{bodyDirty ? <span className="text-xs text-text-soft">Saving the body creates a new revision. Review must run again before approval.</span> : null}
+				</div>
+				<details className="text-sm">
+					<summary>Revision history</summary>
+					<div className="pt-2">
+						<RevisionHistory key={workspace?.revision?.id ?? 'none'} revisions={detail.revisions} bodies={bodies} currentId={workspace?.revision?.id ?? null} />
+					</div>
+				</details>
 				<details className="text-sm">
 					<summary>Generation details</summary>
 					<p>Model role {detail.model.role}: {workspace?.generation.model || detail.model.resolved}</p>
@@ -186,131 +396,161 @@ export default function ArticleWorkspacePage() {
 						</p>
 					) : null}
 				</details>
-			</div>
-
-			<section className="card p-4 space-y-2">
-				<h2 className="font-medium">Brief</h2>
-				<p className="text-sm">Topic: {article.topic}</p>
-				<p className="text-sm">Search intent: {article.searchIntent}</p>
-				<p className="text-sm">Audience: {article.audience || '—'}</p>
-				<p className="text-sm">Keyword: {article.primaryKeyword || '—'}</p>
-				<p className="text-sm">Destination: {workspace?.destinationId || '—'} · {workspace?.contentType}</p>
-				<p className="text-sm">External ID: {workspace?.externalId || '—'}</p>
-				<p className="text-sm">Brief {workspace?.briefApprovedAt ? `approved ${new Date(workspace.briefApprovedAt).toLocaleString()}` : 'not approved'}</p>
-				<button className="btn" type="button" disabled={busy} onClick={() => act('approve_brief')}>{pending === 'approve_brief' ? 'Saving…' : 'Approve brief'}</button>
 			</section>
 
-			<section className="card p-4 space-y-2">
-				<h2 className="font-medium">Research</h2>
-				<button className="btn" type="button" disabled={busy} onClick={() => act('research')}>{pending === 'research' ? 'Researching…' : 'Research topic'}</button>
-				<p className="text-sm">Retrieved: {workspace?.researchSummary.retrievedAt ? new Date(workspace.researchSummary.retrievedAt).toLocaleString() : 'Not run'}</p>
-				<p className="text-sm">Search intent kept from the brief: {workspace?.researchSummary.searchIntent || article.searchIntent}</p>
-				<ul className="text-sm list-disc pl-5">
-					{article.research.sources.filter((source) => source.url).map((source) => (
-						<li key={source.url}><a href={source.url}>{source.label}</a> {source.retrievedAt ? `· ${new Date(source.retrievedAt).toLocaleDateString()}` : ''}</li>
-					))}
-				</ul>
-				{article.research.sources.every((source) => !source.url) ? <p className="text-sm">No external sources with URLs are stored.</p> : null}
-				{article.research.gaps.map((gap) => <p className="text-sm" key={gap}>Gap: {gap}</p>)}
-				{(workspace?.researchSummary.competitors ?? []).map((competitor) => (
-					<p className="text-sm" key={competitor.name}>{competitor.name}{competitor.website ? ` · ${competitor.website}` : ''}: {competitor.claims.join(' ')}</p>
-				))}
-				<h3 className="text-sm font-medium">Recommended structure</h3>
-				{(workspace?.researchSummary.recommendedStructure ?? article.outline).map((section) => (
-					<p className="text-sm" key={section.heading}>{section.heading} — {section.purpose}</p>
-				))}
-				<p className="text-sm">Related articles: {(workspace?.researchSummary.relatedArticleSlugs ?? []).join(', ') || 'None stored'}</p>
-				<p className="text-sm">Destination tools: {(workspace?.researchSummary.relatedTools ?? []).map((tool) => tool.label).join(', ') || 'None matched'}</p>
-			</section>
-
-			<section className="card p-4 space-y-2">
-				<h2 className="font-medium">Draft</h2>
-				<button className="btn" type="button" disabled={busy} onClick={() => act('generate')}>{pending === 'generate' ? 'Generating…' : 'Generate draft'}</button>
-				{workspace?.generation.status === 'failed' ? (
-					<button className="btn" type="button" disabled={busy} onClick={() => act('retry')}>Retry failed job</button>
-				) : null}
-				<p className="text-sm">Generation: {workspace?.generation.status}{detail.job ? ` · job ${detail.job.status}` : ''}</p>
-				<textarea className="input w-full min-h-80" value={body} onChange={(event) => setBody(event.target.value)} />
-				<button className="btn" type="button" disabled={busy} onClick={() => void saveBody()}>Save in CCE</button>
-			</section>
-
-			<section className="card p-4 space-y-2">
-				<h2 className="font-medium">Editorial review</h2>
-				<p className="text-sm">Cycles {workspace?.editorial.cyclesUsed ?? 0} / {workspace?.editorial.maxCycles ?? 0}. {workspace?.editorial.exhausted ? 'The cycle limit is used up. That is not approval.' : 'A person approves the article.'}</p>
-				<button className="btn" type="button" disabled={busy} onClick={() => act('review')}>{pending === 'review' ? 'Reviewing…' : 'Run review'}</button>
-				<button className="btn" type="button" disabled={busy} onClick={() => act('revise')}>Revise accepted recommendations</button>
-				{(workspace?.editorial.findings ?? []).map((finding) => (
-					<div key={finding.id} className="border-t border-white/10 pt-2 text-sm">
-						<p>{finding.severity} · {finding.dimension}</p>
-						<p>{finding.instruction}</p>
-						<p>Decision: {finding.decision}</p>
-						<button className="btn" type="button" disabled={busy} onClick={() => act('recommendation', { findingId: finding.id, decision: 'accepted' })}>Accept</button>
-						<button className="btn" type="button" disabled={busy} onClick={() => act('recommendation', { findingId: finding.id, decision: 'rejected' })}>Reject</button>
+			{workspace ? (
+				<ReviewPanel
+					editorial={workspace.editorial}
+					currentRevision={workspace.revision ? { id: workspace.revision.id, number: workspace.revision.number } : null}
+					revisionResult={detail.revisionResult}
+					revisionRunning={running(revisionJob?.status)}
+					approved={article.approval.status === 'approved'}
+					busy={busy}
+					pending={pending}
+					act={act}
+				/>
+			) : null}
+			{detail.revisionResult && bodies[detail.revisionResult.baseRevisionId] && bodies[detail.revisionResult.resultRevisionId] ? (
+				<details className="card p-4 text-sm">
+					<summary className="font-medium">Before and after the last applied revision</summary>
+					<div className="pt-2">
+						<RevisionHistory
+							key={detail.revisionResult.resultRevisionId}
+							revisions={detail.revisions.filter((revision) => revision.id === detail.revisionResult!.baseRevisionId || revision.id === detail.revisionResult!.resultRevisionId)}
+							bodies={bodies}
+							currentId={detail.revisionResult.resultRevisionId}
+						/>
 					</div>
-				))}
-			</section>
+				</details>
+			) : null}
 
-			<section className="card p-4 space-y-2">
+			<section className="card p-4 space-y-3" id="category">
 				<h2 className="font-medium">Category</h2>
-				<p className="text-sm">Selected: {article.categories[0] || 'None'}</p>
-				{detail.taxonomy?.requiredMetadata?.length ? <p className="text-sm">Destination requires: {detail.taxonomy.requiredMetadata.join(', ')}</p> : null}
-				<button className="btn" type="button" disabled={busy} onClick={() => act('classify')}>Suggest from destination taxonomy</button>
-				<div className="flex flex-wrap gap-2">
-					{(detail.taxonomy?.categories ?? []).map((category) => (
-						<button key={category.id} className="btn" type="button" disabled={busy} onClick={() => act('classify', { categoryId: category.id })}>{category.name}</button>
-					))}
-				</div>
+				{!workspace?.destinationId ? <p className="text-sm">Choose a website destination in the brief first.</p> : null}
+				{workspace?.destinationId && !detail.taxonomy ? <p className="text-sm">This destination has no synced categories. Sync them in <Link className="underline" href="/connections/websites">Websites & CMS</Link>.</p> : null}
+				<p className="text-sm">Selected: {article.categories[0] ? `${categoryName(article.categories[0])} (${article.categories[0]})` : 'None'}</p>
+				{article.categories[0] && detail.taxonomy && !detail.taxonomy.categories.some((category) => category.id === article.categories[0]) ? (
+					<p className="text-sm text-danger">This category no longer exists in the CMS. Choose another.</p>
+				) : null}
+				{suggestion ? (
+					<div className="rounded border border-edge/60 p-2 text-sm space-y-1">
+						<p>Suggested: <strong>{categoryName(suggestion.categoryId)}</strong> ({suggestion.categoryId}) · from {suggestion.source === 'ai' ? 'the model' : suggestion.source === 'mapping' ? 'a topic mapping' : 'the destination default'}</p>
+						<p className="text-xs text-text-soft">{suggestion.reason}</p>
+						<button className="btn" type="button" disabled={busy} onClick={() => act('classify', { categoryId: suggestion.categoryId }, 'Category set.')}>Use suggestion</button>
+					</div>
+				) : null}
+				{detail.taxonomy ? (
+					<div className="flex flex-wrap gap-2 items-end">
+						<label className="text-sm">Choose a category
+							<select className="input ml-2" value={categoryChoice || article.categories[0] || ''} onChange={(event) => setCategoryChoice(event.target.value)}>
+								<option value="">—</option>
+								{detail.taxonomy.categories.map((category) => <option key={category.id} value={category.id}>{category.name} ({category.id})</option>)}
+							</select>
+						</label>
+						<button className="btn" type="button" disabled={busy || !categoryChoice || categoryChoice === article.categories[0]} onClick={() => act('classify', { categoryId: categoryChoice }, 'Category set.')}>Set category</button>
+						<button className="btn" type="button" disabled={busy} onClick={() => act('classify', {}, 'Suggestion ready. The category is not changed until you use it.')}>Suggest a category</button>
+					</div>
+				) : null}
 			</section>
 
-			<section className="card p-4 space-y-2">
+			<section className="card p-4 space-y-3" id="images">
 				<h2 className="font-medium">Images</h2>
-				<p className="text-sm">Delivery {workspace?.media.deliveryVerified ? 'verified' : 'not verified'}{workspace?.media.deliveryError ? ` · ${workspace.media.deliveryError}` : ''}</p>
-				{workspace?.media.heroUrl ? <img src={workspace.media.heroUrl} alt={workspace.media.heroAlt || article.title} className="max-h-48 rounded" /> : null}
-				<button className="btn" type="button" disabled={busy} onClick={() => act('media', { role: 'hero' })}>Generate hero</button>
-				<button className="btn" type="button" disabled={busy} onClick={() => act('media', { role: 'og' })}>Generate social image</button>
-				<label className="block text-sm">Hero alt
-					<input className="input w-full" value={workspace?.media.heroAlt ?? ''} onChange={(event) => setDetail((current) => current && current.article.workspace ? { ...current, article: { ...current.article, workspace: { ...current.article.workspace, media: { ...current.article.workspace.media, heroAlt: event.target.value } } } } : current)} />
-				</label>
-				<label className="block text-sm">Credit
-					<input className="input w-full" value={workspace?.media.credit ?? ''} onChange={(event) => setDetail((current) => current && current.article.workspace ? { ...current, article: { ...current.article, workspace: { ...current.article.workspace, media: { ...current.article.workspace.media, credit: event.target.value } } } } : current)} />
-				</label>
-				<label className="block text-sm">License
-					<input className="input w-full" value={workspace?.media.license ?? ''} onChange={(event) => setDetail((current) => current && current.article.workspace ? { ...current, article: { ...current.article, workspace: { ...current.article.workspace, media: { ...current.article.workspace.media, license: event.target.value } } } } : current)} />
-				</label>
-				<button className="btn" type="button" disabled={busy} onClick={() => act('media_meta', { heroAlt: workspace?.media.heroAlt, ogAlt: workspace?.media.ogAlt, credit: workspace?.media.credit, license: workspace?.media.license })}>Save image details</button>
+				<p className="text-sm">Requirement: {workspace?.imageRequirements || '—'} · delivery {workspace?.media.deliveryVerified ? 'verified' : 'not verified'}{workspace?.media.deliveryError ? ` · ${workspace.media.deliveryError}` : ''}</p>
+				<div className="flex flex-wrap gap-4">
+					{workspace?.media.heroUrl ? <figure className="text-xs"><img src={workspace.media.heroUrl} alt={workspace.media.heroAlt || article.title} className="max-h-48 rounded" /><figcaption>Hero</figcaption></figure> : null}
+					{workspace?.media.ogUrl ? <figure className="text-xs"><img src={workspace.media.ogUrl} alt={workspace.media.ogAlt || article.title} className="max-h-48 rounded" /><figcaption>Social</figcaption></figure> : null}
+				</div>
+				<div className="flex flex-wrap gap-2">
+					<button className="btn" type="button" disabled={busy} onClick={() => act('media', { role: 'hero' }, 'Hero image ready.')}>{pending === 'media' ? 'Generating…' : workspace?.media.heroUrl ? 'Regenerate hero' : 'Generate hero'}</button>
+					<button className="btn" type="button" disabled={busy} onClick={() => act('media', { role: 'og' }, 'Social image ready.')}>{workspace?.media.ogUrl ? 'Regenerate social image' : 'Generate social image'}</button>
+				</div>
+				<div className="grid gap-3 md:grid-cols-2">
+					<label className="block text-sm">Hero alt text
+						<input className="input w-full" value={media.heroAlt} onChange={(event) => setMedia({ ...media, heroAlt: event.target.value })} />
+					</label>
+					<label className="block text-sm">Social image alt text
+						<input className="input w-full" value={media.ogAlt} onChange={(event) => setMedia({ ...media, ogAlt: event.target.value })} />
+					</label>
+					<label className="block text-sm">Credit
+						<input className="input w-full" value={media.credit} onChange={(event) => setMedia({ ...media, credit: event.target.value })} />
+					</label>
+					<label className="block text-sm">Licence
+						<input className="input w-full" value={media.license} onChange={(event) => setMedia({ ...media, license: event.target.value })} />
+					</label>
+				</div>
+				<button className="btn" type="button" disabled={busy} onClick={() => act('media_meta', media, 'Image details saved.')}>Save image details</button>
 				<details className="text-sm">
 					<summary>Use an existing library image</summary>
 					<label className="block">Asset ID
 						<input className="input w-full" value={assetId} onChange={(event) => setAssetId(event.target.value)} />
 					</label>
-					<button className="btn" type="button" disabled={busy || !assetId} onClick={() => act('media', { role: 'hero', assetId })}>Use library image</button>
+					<button className="btn mt-2" type="button" disabled={busy || !assetId} onClick={() => act('media', { role: 'hero', assetId }, 'Library image set as hero.')}>Use library image</button>
 				</details>
 			</section>
 
-			<section className="card p-4 space-y-2">
-				<h2 className="font-medium">CMS, approval, and schedule</h2>
-				<p className="text-sm">Approval: {article.approval.status}. Schedule: {workspace?.schedule.status}. This schedule is for the website article, not a social post.</p>
-				{workspace?.cms.draftUrl ? <p className="text-sm"><a href={workspace.cms.draftUrl}>CMS draft</a> {workspace.cms.revision != null ? `· revision ${workspace.cms.revision}` : ''}</p> : null}
-				{workspace?.cms.lastError ? <p className="text-sm">{workspace.cms.lastError}</p> : null}
-				{workspace?.schedule.blockedReason ? <p className="text-sm">{workspace.schedule.blockedReason}</p> : null}
-				<button className="btn" type="button" disabled={busy} onClick={() => act(workspace?.cms.lastSyncAt ? 'update_draft' : 'submit_draft')}>
-					{pending === 'submit_draft' || pending === 'update_draft' ? 'Sending…' : workspace?.cms.lastSyncAt ? 'Update CMS draft' : 'Send to CMS as draft'}
+			<section className="card p-4 space-y-3" id="cms">
+				<h2 className="font-medium">CMS draft</h2>
+				<p className="text-sm text-text-soft">CCE sends drafts only. Publishing happens in the CMS, by a person.</p>
+				<div className="flex flex-wrap gap-2 items-end">
+					<label className="text-sm grow">External ID
+						<input className="input w-full" value={externalId} disabled={Boolean(workspace?.externalId)} onChange={(event) => setExternalId(event.target.value)} placeholder="cce_pillar_novel-first-draft" />
+					</label>
+					<button className="btn" type="button" disabled={busy || !externalId.trim() || !workspace?.destinationId} onClick={() => act('lookup_draft', { externalId })}>Look up in CMS</button>
+					{!workspace?.externalId ? (
+						<button className="btn" type="button" disabled={busy || !externalId.trim()} onClick={() => void patch({ externalId }, 'link', 'External ID linked. Updates go to that CMS entry.')}>Link</button>
+					) : null}
+				</div>
+				{workspace?.externalId ? <p className="text-xs text-text-soft">Linked to {workspace.externalId}. The link cannot be changed, so a second CMS entry is never created.</p> : null}
+				{lookup ? (
+					<p className="text-sm">
+						{lookup.draft.exists
+							? `Found “${lookup.draft.title}” in the CMS · revision ${lookup.draft.revision} · ${lookup.draft.status}${lookup.draft.category ? ` · category ${lookup.draft.category}` : ''}`
+							: `No CMS entry with ID ${lookup.externalId}. Sending creates one.`}
+					</p>
+				) : null}
+				{workspace?.cms.lastSyncAt ? (
+					<p className="text-sm">
+						Last sent {new Date(workspace.cms.lastSyncAt).toLocaleString()}
+						{workspace.cms.revision != null ? ` · CMS revision ${workspace.cms.revision}` : ''}
+						{workspace.cms.mode === 'proposal' ? ' · sent as a proposal for the CMS editor to accept' : ''}
+						{workspace.cms.remoteStatus ? ` · CMS status ${workspace.cms.remoteStatus}` : ''}
+						{workspace.cms.draftUrl ? <> · <a className="underline" href={workspace.cms.draftUrl} target="_blank" rel="noreferrer">Open in CMS</a></> : null}
+					</p>
+				) : null}
+				{detail.lifecycle.submittedToCms && !detail.lifecycle.cmsCurrent ? <p className="text-sm text-warning">The CMS has an older revision than CCE.</p> : null}
+				{workspace?.cms.lastError ? <p className="text-sm text-danger">{workspace.cms.lastError}</p> : null}
+				<button className="btn" type="button" disabled={busy || jobRunning || !workspace?.destinationId || unsaved} onClick={() => act('submit_draft', {}, 'Draft sent to the CMS. It is not published.')}>
+					{pending === 'submit_draft' ? 'Sending…' : workspace?.cms.lastSyncAt ? 'Update CMS draft' : 'Send to CMS as draft'}
 				</button>
+				{unsaved ? <span className="text-xs text-text-soft ml-2">Save your changes first.</span> : null}
+			</section>
+
+			<section className="card p-4 space-y-3" id="approval">
+				<h2 className="font-medium">Approval and schedule</h2>
+				<p className="text-sm">
+					Approval: {article.approval.status}
+					{workspace?.approvedAt ? ` · ${new Date(workspace.approvedAt).toLocaleString()}` : ''}
+					{' · '}Schedule: {workspace?.schedule.status}
+				</p>
+				{!gate.ok ? <p className="text-sm text-warning">{gate.message}</p> : null}
+				{workspace?.schedule.blockedReason ? <p className="text-sm">{workspace.schedule.blockedReason}</p> : null}
+				<div className="flex flex-wrap gap-2">
+					<button className="btn" type="button" disabled={busy || article.approval.status === 'approved'} onClick={() => act('request_approval', {}, 'Approval requested.')}>Request approval</button>
+					<button className="btn" type="button" disabled={busy || !gate.ok || article.approval.status === 'approved'} onClick={() => act('approve', {}, `Revision ${workspace?.revision?.number ?? ''} approved.`)}>Approve article</button>
+				</div>
 				<details className="text-sm space-y-2">
-					<summary>Approval and schedule</summary>
-					<p>Website publishing stays manual. These actions do not publish the article or create a social post.</p>
-					<button className="btn" type="button" disabled={busy} onClick={() => act('request_approval')}>Request approval</button>
-					<button className="btn" type="button" disabled={busy} onClick={() => act('approve')}>Approve article</button>
+					<summary>Schedule and record publication</summary>
+					<p>Scheduling records the intended time. It does not publish and does not create a social post.</p>
 					<label className="block">Publication date and time
 						<input className="input w-full" type="datetime-local" value={publishAt} onChange={(event) => setPublishAt(event.target.value)} />
 					</label>
-					<button className="btn" type="button" disabled={busy || !publishAt} onClick={() => act('schedule', { publishAt: new Date(publishAt).toISOString(), destinationId: workspace?.destinationId })}>Schedule publication</button>
+					<button className="btn" type="button" disabled={busy || !publishAt} onClick={() => act('schedule', { publishAt: new Date(publishAt).toISOString(), destinationId: workspace?.destinationId }, 'Schedule saved.')}>Schedule publication</button>
 					<label className="block">Published URL, after you publish in the CMS
 						<input className="input w-full" value={publishedUrl} onChange={(event) => setPublishedUrl(event.target.value)} placeholder="https://" />
 					</label>
-					<button className="btn" type="button" disabled={busy || !publishedUrl} onClick={() => act('record_publication', { url: publishedUrl })}>Record published URL</button>
+					<button className="btn" type="button" disabled={busy || !publishedUrl} onClick={() => act('record_publication', { url: publishedUrl }, 'Published URL recorded.')}>Record published URL</button>
 				</details>
-				{article.publication?.url ? <p className="text-sm"><a href={article.publication.url}>Published URL</a></p> : null}
+				{article.publication?.url ? <p className="text-sm"><a className="underline" href={article.publication.url}>Published URL</a></p> : null}
 			</section>
 		</div>
 	);

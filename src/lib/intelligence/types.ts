@@ -59,6 +59,7 @@ export type WorkflowJobStatus = 'queued' | 'processing' | 'completed' | 'failed'
 export type WorkflowJobType =
 	| 'generation'
 	| 'article_generation'
+	| 'article_revision'
 	| 'strategy_generation'
 	| 'research'
 	| 'review'

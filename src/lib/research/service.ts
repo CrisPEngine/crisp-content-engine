@@ -16,6 +16,7 @@ export async function executeResearch(input: {
 	fetchPage?: PageFetcher;
 	search?: SearchProvider;
 	researchDecision?: 'NO_RESEARCH_NEEDED' | 'USE_EXISTING_RESEARCH' | 'REFRESH_EXISTING_RESEARCH' | 'QUICK_VERIFY' | 'FULL_RESEARCH';
+	readPages?: number;
 }): Promise<ResearchRecord> {
 	const decision = input.researchDecision ?? decideResearch({ instruction: input.query }).decision;
 	const searchDepth = searchDepthForDecision(decision);
@@ -29,6 +30,7 @@ export async function executeResearch(input: {
 		fetchPage: input.fetchPage,
 		search: input.search,
 		searchDepth,
+		readPages: input.readPages,
 	});
 	const saved = await getAgentStore().saveResearch(input.ownerUserId, {
 		id: crypto.randomUUID(),
