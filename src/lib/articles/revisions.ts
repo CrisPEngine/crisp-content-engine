@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'crypto';
-import { articleWordCount, excerptFrom, parseSections } from './structure';
+import { applyGeneratedMetadata, generateArticleMetadata } from './seoMetadata';
+import { articleWordCount, parseSections } from './structure';
 import type { ArticleRecord, ArticleRevisionRef, ArticleSection } from './types';
 
 export function contentHash(body: string): string {
@@ -49,6 +50,7 @@ export function commitRevision(
 	body: string,
 	source: ArticleRevisionRef['source'],
 	note?: string,
+	options?: { refreshMetadata?: boolean },
 ): ArticleRevisionRef {
 	const workspace = article.workspace;
 	if (!workspace) throw new Error('Article workspace is missing.');
@@ -84,12 +86,8 @@ export function commitRevision(
 	article.body = nextBody;
 	article.wordCount = revision.wordCount;
 	article.sections = syncSections(article, nextBody);
-	const excerpt = excerptFrom(nextBody);
-	const previousExcerpt = article.excerpt;
-	article.excerpt = excerpt;
-	article.seo.excerpt = excerpt;
-	if (!article.seo.metaDescription.trim() || article.seo.metaDescription.trim().startsWith('#') || article.seo.metaDescription === previousExcerpt.slice(0, 155)) {
-		article.seo.metaDescription = excerptFrom(nextBody, 155);
+	if (options?.refreshMetadata ?? source === 'generation') {
+		applyGeneratedMetadata(article, generateArticleMetadata(article));
 	}
 	workspace.revision = revision;
 	return revision;

@@ -74,7 +74,7 @@ export type ArticleRevisionRef = {
 	contentHash: string;
 	wordCount: number;
 	createdAt: string;
-	source: 'generation' | 'manual' | 'revision' | 'legacy';
+	source: 'generation' | 'manual' | 'revision' | 'legacy' | 'structural_repair' | 'improvement';
 	note?: string;
 };
 
@@ -251,6 +251,12 @@ export type ArticleWorkspace = {
 	};
 	approvedAt?: string | null;
 	approvedRevisionId?: string | null;
+	seoEdited?: {
+		seoTitle?: boolean;
+		metaDescription?: boolean;
+		excerpt?: boolean;
+		slug?: boolean;
+	};
 	schedule: {
 		publishAt: string | null;
 		destinationId: string | null;

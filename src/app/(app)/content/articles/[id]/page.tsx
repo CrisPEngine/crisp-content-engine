@@ -8,6 +8,7 @@ import { JobPanel } from '@/components/articles/JobPanel';
 import { LifecycleBadges, type Lifecycle } from '@/components/articles/LifecycleBadges';
 import { ResearchPanel } from '@/components/articles/ResearchPanel';
 import { ReviewPanel, type RevisionResult } from '@/components/articles/ReviewPanel';
+import { DraftWorkspace } from '@/components/articles/DraftWorkspace';
 import { RevisionHistory } from '@/components/articles/RevisionDiff';
 import { validateArticleStructure } from '@/lib/articles/structure';
 import type { ArticleRecord, ArticleRevisionRef } from '@/lib/articles/types';
@@ -177,26 +178,31 @@ export default function ArticleWorkspacePage() {
 		return () => window.removeEventListener('beforeunload', warn);
 	}, [unsaved]);
 
-	const act = useCallback(async (action: string, extra?: Record<string, unknown>, success?: string): Promise<boolean> => {
+	const act = useCallback(async (action: string, extra?: Record<string, unknown>, success?: string): Promise<{ ok: boolean; payload?: Record<string, unknown> }> => {
 		setPending(action);
 		const response = await fetch(`/api/articles/${articleId}/actions`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ action, ...extra }),
 		});
-		const payload = await response.json().catch(() => ({}));
+		const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
 		setPending('');
 		if (!response.ok) {
-			setToast({ kind: 'error', text: payload.error ?? 'That action failed.', at: Date.now() });
+			setToast({ kind: 'error', text: String(payload.error ?? 'That action failed.'), at: Date.now() });
 			await load(false);
-			return false;
+			return { ok: false, payload };
 		}
-		if (action === 'lookup_draft') setLookup(payload);
+		if (action === 'lookup_draft') setLookup(payload as typeof lookup);
 		const text = typeof payload.message === 'string' ? payload.message : success;
 		if (text) setToast({ kind: 'ok', text, at: Date.now() });
-		await load(action !== 'research_edit');
-		return true;
+		await load(action !== 'research_edit' && action !== 'preview_structural_repair' && action !== 'preview_improve');
+		return { ok: true, payload };
 	}, [articleId, load]);
+
+	const actBool = useCallback(
+		async (action: string, extra?: Record<string, unknown>, success?: string) => (await act(action, extra, success)).ok,
+		[act],
+	);
 
 	async function patch(fields: Record<string, unknown>, label: string, success: string): Promise<boolean> {
 		setPending(label);
@@ -241,8 +247,6 @@ export default function ArticleWorkspacePage() {
 				? 'The article is approved. Remove approval by editing before regenerating.'
 				: '';
 	const target = article.targetWords;
-	const actualWords = structure?.wordCount ?? 0;
-	const deviation = target ? Math.round(((actualWords - target) / target) * 100) : 0;
 	const suggestion = workspace?.categorySuggestion;
 	const categoryName = (id: string) => detail.taxonomy?.categories.find((category) => category.id === id)?.name ?? id;
 	const gate = detail.approvalGate;
@@ -293,7 +297,7 @@ export default function ArticleWorkspacePage() {
 				<div className="card p-4 text-sm border-danger/60" role="alert">
 					<p className="font-medium">Generation failed</p>
 					<p>{generation.error}</p>
-					<button className="btn mt-2" type="button" disabled={busy || Boolean(generateBlocked)} onClick={() => act('retry', {}, 'Generation restarted.')}>Retry</button>
+					<button className="btn mt-2" type="button" disabled={busy || Boolean(generateBlocked)} onClick={() => actBool('retry', {}, 'Generation restarted.')}>Retry</button>
 				</div>
 			) : null}
 			{revisionJob?.status === 'failed' && revisionJob.error ? (
@@ -313,90 +317,54 @@ export default function ArticleWorkspacePage() {
 				suggestions={workspace?.briefSuggestions?.suggestions ?? []}
 				busy={busy}
 				pending={pending}
-				act={act}
+				act={actBool}
 				onDirtyChange={setBriefDirty}
 				save={(values) => patch({ ...values }, 'save_brief', 'Brief saved in CCE.')}
 			/>
 
-			<ResearchPanel key={`${research?.version ?? 0}-${research?.status ?? 'empty'}`} research={research} busy={busy} pending={pending} act={act} />
+			<ResearchPanel key={`${research?.version ?? 0}-${research?.status ?? 'empty'}`} research={research} busy={busy} pending={pending} act={actBool} />
 
-			<section className="card p-4 space-y-3" id="draft">
-				<div className="flex flex-wrap items-baseline justify-between gap-2">
-					<h2 className="font-medium">Draft</h2>
-					<p className="text-sm">
-						{workspace?.revision ? `Revision ${workspace.revision.number}` : 'No revision yet'}
-						{workspace?.generation.researchVersion ? ` · written from research version ${workspace.generation.researchVersion}` : ''}
-						{bodyDirty ? ' · unsaved edits' : ''}
-					</p>
+			<DraftWorkspace
+				articleId={articleId}
+				body={body}
+				setBody={setBody}
+				seo={seo}
+				setSeo={setSeo}
+				targetWords={target}
+				structure={structure}
+				revisionNumber={workspace?.revision?.number ?? null}
+				generateBlocked={generateBlocked}
+				jobRunning={jobRunning}
+				busy={busy}
+				pending={pending}
+				articleBody={article.body}
+				initialSeo={{
+					seoTitle: article.seo.seoTitle,
+					metaDescription: article.seo.metaDescription,
+					slug: article.seo.slug,
+					excerpt: article.excerpt,
+				}}
+				act={act}
+				onSaved={() => load(true)}
+			/>
+			<details className="card p-4 text-sm">
+				<summary className="font-medium">Revision history</summary>
+				<div className="pt-2">
+					<RevisionHistory key={workspace?.revision?.id ?? 'none'} revisions={detail.revisions} bodies={bodies} currentId={workspace?.revision?.id ?? null} />
 				</div>
-				<div className="flex flex-wrap gap-2 items-center">
-					<button className="btn" type="button" disabled={busy || jobRunning || Boolean(generateBlocked)} onClick={() => act('generate', {}, 'Generation started. You can leave this page.')}>
-						{pending === 'generate' ? 'Starting…' : article.body.trim() ? 'Regenerate draft' : 'Generate draft'}
-					</button>
-					{generateBlocked ? <span className="text-xs text-text-soft">{generateBlocked}</span> : null}
-					{article.body.trim() && !generateBlocked ? <span className="text-xs text-text-soft">Regenerating creates a new revision. The current one stays in history.</span> : null}
-				</div>
-				{structure ? (
-					<div className="text-sm space-y-1">
-						<p>
-							{actualWords.toLocaleString()} words against a target of {target.toLocaleString()}
-							{target ? ` (${deviation > 0 ? '+' : ''}${deviation}%)` : ''} · {structure.sectionCount} sections · {structure.endsCleanly ? 'ends on a complete sentence' : 'does not end on a complete sentence'}
-						</p>
-						{Math.abs(deviation) > 20 ? (
-							<p className="text-xs text-text-soft">
-								{deviation < 0
-									? 'Shorter than the target. That is allowed; the review explains whether anything the brief asks for is missing.'
-									: 'Longer than the target. The review flags sections that could be cut.'}
-							</p>
-						) : null}
-						{structure.issues.map((issue, index) => (
-							<p key={index} className={issue.severity === 'critical' ? 'text-danger' : 'text-warning'}>{issue.message}</p>
-						))}
-					</div>
-				) : null}
-				<textarea className="input w-full min-h-[28rem] font-mono" aria-label="Article body (Markdown)" value={body} onChange={(event) => setBody(event.target.value)} />
-				<div className="grid gap-3 md:grid-cols-2">
-					<label className="block text-sm">SEO title
-						<input className="input w-full" value={seo.seoTitle} onChange={(event) => setSeo({ ...seo, seoTitle: event.target.value })} />
-					</label>
-					<label className="block text-sm">Slug
-						<input className="input w-full" value={seo.slug} onChange={(event) => setSeo({ ...seo, slug: event.target.value })} />
-					</label>
-					<label className="block text-sm">Meta description <span className="text-xs text-text-soft">{seo.metaDescription.length} characters</span>
-						<textarea className="input w-full" rows={2} value={seo.metaDescription} onChange={(event) => setSeo({ ...seo, metaDescription: event.target.value })} />
-					</label>
-					<label className="block text-sm">Excerpt
-						<textarea className="input w-full" rows={2} value={seo.excerpt} onChange={(event) => setSeo({ ...seo, excerpt: event.target.value })} />
-					</label>
-				</div>
-				<div className="flex flex-wrap gap-2 items-center">
-					<button
-						className="btn"
-						type="button"
-						disabled={busy || jobRunning || (!bodyDirty && !seoDirty)}
-						onClick={() => void patch({ ...(bodyDirty ? { body } : {}), ...seo }, 'save', 'Saved in CCE.')}
-					>
-						{pending === 'save' ? 'Saving…' : bodyDirty || seoDirty ? 'Save in CCE' : 'Saved in CCE'}
-					</button>
-					{bodyDirty ? <button className="btn" type="button" onClick={() => setBody(article.body)}>Discard edits</button> : null}
-					{bodyDirty ? <span className="text-xs text-text-soft">Saving the body creates a new revision. Review must run again before approval.</span> : null}
-				</div>
-				<details className="text-sm">
-					<summary>Revision history</summary>
-					<div className="pt-2">
-						<RevisionHistory key={workspace?.revision?.id ?? 'none'} revisions={detail.revisions} bodies={bodies} currentId={workspace?.revision?.id ?? null} />
-					</div>
-				</details>
-				<details className="text-sm">
-					<summary>Generation details</summary>
-					<p>Model role {detail.model.role}: {workspace?.generation.model || detail.model.resolved}</p>
-					{workspace?.generation.promptTokens || workspace?.generation.completionTokens ? (
+			</details>
+			{workspace ? (
+				<details className="card p-4 text-sm">
+					<summary className="font-medium">Generation details</summary>
+					<p className="pt-2">Model role {detail.model.role}: {workspace.generation.model || detail.model.resolved}</p>
+					{workspace.generation.promptTokens || workspace.generation.completionTokens ? (
 						<p>Tokens {workspace.generation.promptTokens} in / {workspace.generation.completionTokens} out
 							{workspace.generation.estimatedCostUsd != null ? ` · estimated $${workspace.generation.estimatedCostUsd}` : ''}
 						</p>
 					) : null}
+					{workspace.generation.researchVersion ? <p>Written from research version {workspace.generation.researchVersion}</p> : null}
 				</details>
-			</section>
+			) : null}
 
 			{workspace ? (
 				<ReviewPanel
@@ -407,7 +375,7 @@ export default function ArticleWorkspacePage() {
 					approved={article.approval.status === 'approved'}
 					busy={busy}
 					pending={pending}
-					act={act}
+					act={actBool}
 				/>
 			) : null}
 			{detail.revisionResult && bodies[detail.revisionResult.baseRevisionId] && bodies[detail.revisionResult.resultRevisionId] ? (
@@ -436,7 +404,7 @@ export default function ArticleWorkspacePage() {
 					<div className="rounded border border-edge/60 p-2 text-sm space-y-1">
 						<p>Suggested: <strong>{categoryName(suggestion.categoryId)}</strong> ({suggestion.categoryId}) · from {suggestion.source === 'ai' ? 'the model' : suggestion.source === 'mapping' ? 'a topic mapping' : 'the destination default'}</p>
 						<p className="text-xs text-text-soft">{suggestion.reason}</p>
-						<button className="btn" type="button" disabled={busy} onClick={() => act('classify', { categoryId: suggestion.categoryId }, 'Category set.')}>Use suggestion</button>
+						<button className="btn" type="button" disabled={busy} onClick={() => actBool('classify', { categoryId: suggestion.categoryId }, 'Category set.')}>Use suggestion</button>
 					</div>
 				) : null}
 				{detail.taxonomy ? (
@@ -447,8 +415,8 @@ export default function ArticleWorkspacePage() {
 								{detail.taxonomy.categories.map((category) => <option key={category.id} value={category.id}>{category.name} ({category.id})</option>)}
 							</select>
 						</label>
-						<button className="btn" type="button" disabled={busy || !categoryChoice || categoryChoice === article.categories[0]} onClick={() => act('classify', { categoryId: categoryChoice }, 'Category set.')}>Set category</button>
-						<button className="btn" type="button" disabled={busy} onClick={() => act('classify', {}, 'Suggestion ready. The category is not changed until you use it.')}>Suggest a category</button>
+						<button className="btn" type="button" disabled={busy || !categoryChoice || categoryChoice === article.categories[0]} onClick={() => actBool('classify', { categoryId: categoryChoice }, 'Category set.')}>Set category</button>
+						<button className="btn" type="button" disabled={busy} onClick={() => actBool('classify', {}, 'Suggestion ready. The category is not changed until you use it.')}>Suggest a category</button>
 					</div>
 				) : null}
 			</section>
@@ -461,8 +429,8 @@ export default function ArticleWorkspacePage() {
 					{workspace?.media.ogUrl ? <figure className="text-xs"><img src={workspace.media.ogUrl} alt={workspace.media.ogAlt || article.title} className="max-h-48 rounded" /><figcaption>Social</figcaption></figure> : null}
 				</div>
 				<div className="flex flex-wrap gap-2">
-					<button className="btn" type="button" disabled={busy} onClick={() => act('media', { role: 'hero' }, 'Hero image ready.')}>{pending === 'media' ? 'Generating…' : workspace?.media.heroUrl ? 'Regenerate hero' : 'Generate hero'}</button>
-					<button className="btn" type="button" disabled={busy} onClick={() => act('media', { role: 'og' }, 'Social image ready.')}>{workspace?.media.ogUrl ? 'Regenerate social image' : 'Generate social image'}</button>
+					<button className="btn" type="button" disabled={busy} onClick={() => actBool('media', { role: 'hero' }, 'Hero image ready.')}>{pending === 'media' ? 'Generating…' : workspace?.media.heroUrl ? 'Regenerate hero' : 'Generate hero'}</button>
+					<button className="btn" type="button" disabled={busy} onClick={() => actBool('media', { role: 'og' }, 'Social image ready.')}>{workspace?.media.ogUrl ? 'Regenerate social image' : 'Generate social image'}</button>
 				</div>
 				<div className="grid gap-3 md:grid-cols-2">
 					<label className="block text-sm">Hero alt text
@@ -478,13 +446,13 @@ export default function ArticleWorkspacePage() {
 						<input className="input w-full" value={media.license} onChange={(event) => setMedia({ ...media, license: event.target.value })} />
 					</label>
 				</div>
-				<button className="btn" type="button" disabled={busy} onClick={() => act('media_meta', media, 'Image details saved.')}>Save image details</button>
+				<button className="btn" type="button" disabled={busy} onClick={() => actBool('media_meta', media, 'Image details saved.')}>Save image details</button>
 				<details className="text-sm">
 					<summary>Use an existing library image</summary>
 					<label className="block">Asset ID
 						<input className="input w-full" value={assetId} onChange={(event) => setAssetId(event.target.value)} />
 					</label>
-					<button className="btn mt-2" type="button" disabled={busy || !assetId} onClick={() => act('media', { role: 'hero', assetId }, 'Library image set as hero.')}>Use library image</button>
+					<button className="btn mt-2" type="button" disabled={busy || !assetId} onClick={() => actBool('media', { role: 'hero', assetId }, 'Library image set as hero.')}>Use library image</button>
 				</details>
 			</section>
 
@@ -495,7 +463,7 @@ export default function ArticleWorkspacePage() {
 					<label className="text-sm grow">External ID
 						<input className="input w-full" value={externalId} disabled={Boolean(workspace?.externalId)} onChange={(event) => setExternalId(event.target.value)} placeholder="cce_pillar_novel-first-draft" />
 					</label>
-					<button className="btn" type="button" disabled={busy || !externalId.trim() || !workspace?.destinationId} onClick={() => act('lookup_draft', { externalId })}>Look up in CMS</button>
+					<button className="btn" type="button" disabled={busy || !externalId.trim() || !workspace?.destinationId} onClick={() => actBool('lookup_draft', { externalId })}>Look up in CMS</button>
 					{!workspace?.externalId ? (
 						<button className="btn" type="button" disabled={busy || !externalId.trim()} onClick={() => void patch({ externalId }, 'link', 'External ID linked. Updates go to that CMS entry.')}>Link</button>
 					) : null}
@@ -519,7 +487,7 @@ export default function ArticleWorkspacePage() {
 				) : null}
 				{detail.lifecycle.submittedToCms && !detail.lifecycle.cmsCurrent ? <p className="text-sm text-warning">The CMS has an older revision than CCE.</p> : null}
 				{workspace?.cms.lastError ? <p className="text-sm text-danger">{workspace.cms.lastError}</p> : null}
-				<button className="btn" type="button" disabled={busy || jobRunning || !workspace?.destinationId || unsaved} onClick={() => act('submit_draft', {}, 'Draft sent to the CMS. It is not published.')}>
+				<button className="btn" type="button" disabled={busy || jobRunning || !workspace?.destinationId || unsaved} onClick={() => actBool('submit_draft', {}, 'Draft sent to the CMS. It is not published.')}>
 					{pending === 'submit_draft' ? 'Sending…' : workspace?.cms.lastSyncAt ? 'Update CMS draft' : 'Send to CMS as draft'}
 				</button>
 				{unsaved ? <span className="text-xs text-text-soft ml-2">Save your changes first.</span> : null}
@@ -535,8 +503,8 @@ export default function ArticleWorkspacePage() {
 				{!gate.ok ? <p className="text-sm text-warning">{gate.message}</p> : null}
 				{workspace?.schedule.blockedReason ? <p className="text-sm">{workspace.schedule.blockedReason}</p> : null}
 				<div className="flex flex-wrap gap-2">
-					<button className="btn" type="button" disabled={busy || article.approval.status === 'approved'} onClick={() => act('request_approval', {}, 'Approval requested.')}>Request approval</button>
-					<button className="btn" type="button" disabled={busy || !gate.ok || article.approval.status === 'approved'} onClick={() => act('approve', {}, `Revision ${workspace?.revision?.number ?? ''} approved.`)}>Approve article</button>
+					<button className="btn" type="button" disabled={busy || article.approval.status === 'approved'} onClick={() => actBool('request_approval', {}, 'Approval requested.')}>Request approval</button>
+					<button className="btn" type="button" disabled={busy || !gate.ok || article.approval.status === 'approved'} onClick={() => actBool('approve', {}, `Revision ${workspace?.revision?.number ?? ''} approved.`)}>Approve article</button>
 				</div>
 				<details className="text-sm space-y-2">
 					<summary>Schedule and record publication</summary>
@@ -544,11 +512,11 @@ export default function ArticleWorkspacePage() {
 					<label className="block">Publication date and time
 						<input className="input w-full" type="datetime-local" value={publishAt} onChange={(event) => setPublishAt(event.target.value)} />
 					</label>
-					<button className="btn" type="button" disabled={busy || !publishAt} onClick={() => act('schedule', { publishAt: new Date(publishAt).toISOString(), destinationId: workspace?.destinationId }, 'Schedule saved.')}>Schedule publication</button>
+					<button className="btn" type="button" disabled={busy || !publishAt} onClick={() => actBool('schedule', { publishAt: new Date(publishAt).toISOString(), destinationId: workspace?.destinationId }, 'Schedule saved.')}>Schedule publication</button>
 					<label className="block">Published URL, after you publish in the CMS
 						<input className="input w-full" value={publishedUrl} onChange={(event) => setPublishedUrl(event.target.value)} placeholder="https://" />
 					</label>
-					<button className="btn" type="button" disabled={busy || !publishedUrl} onClick={() => act('record_publication', { url: publishedUrl }, 'Published URL recorded.')}>Record published URL</button>
+					<button className="btn" type="button" disabled={busy || !publishedUrl} onClick={() => actBool('record_publication', { url: publishedUrl }, 'Published URL recorded.')}>Record published URL</button>
 				</details>
 				{article.publication?.url ? <p className="text-sm"><a className="underline" href={article.publication.url}>Published URL</a></p> : null}
 			</section>
