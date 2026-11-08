@@ -32,6 +32,97 @@ export type ArticlePublication = {
 	method: 'cce' | 'external';
 };
 
+export const EDITORIAL_DIMENSIONS = [
+	'search_intent',
+	'topic_completeness',
+	'accuracy',
+	'sources',
+	'writing_quality',
+	'brand_voice',
+	'seo',
+	'category_accuracy',
+	'internal_linking',
+	'publication_readiness',
+] as const;
+
+export type EditorialDimension = (typeof EDITORIAL_DIMENSIONS)[number];
+
+export type ArticleEditorialFinding = {
+	id: string;
+	severity: 'critical' | 'major' | 'minor';
+	code: string;
+	dimension: EditorialDimension;
+	instruction: string;
+	source: 'deterministic' | 'llm';
+	decision: 'pending' | 'accepted' | 'rejected';
+};
+
+export type ArticleWorkspace = {
+	destinationId: string | null;
+	contentType: string;
+	workingTitle: string;
+	researchRequirements: string;
+	internalLinking: string;
+	imageRequirements: string;
+	briefApprovedAt: string | null;
+	externalId: string | null;
+	researchId: string | null;
+	assignedModelRole: string;
+	assignedModel: string | null;
+	generation: {
+		jobId: string | null;
+		model: string | null;
+		promptTokens: number;
+		completionTokens: number;
+		estimatedCostUsd: number | null;
+		status: 'idle' | 'queued' | 'processing' | 'completed' | 'failed';
+		error: string | null;
+	};
+	editorial: {
+		status: 'not_run' | 'findings' | 'ready' | 'blocked';
+		cyclesUsed: number;
+		maxCycles: number;
+		findings: ArticleEditorialFinding[];
+		lastRunAt: string | null;
+		exhausted: boolean;
+	};
+	media: {
+		heroAssetId: string | null;
+		ogAssetId: string | null;
+		heroUrl: string | null;
+		ogUrl: string | null;
+		heroAlt: string;
+		ogAlt: string;
+		credit: string;
+		license: string;
+		deliveryVerified: boolean;
+		deliveryError: string | null;
+	};
+	cms: {
+		externalId: string | null;
+		revision: number | null;
+		draftUrl: string | null;
+		lastSyncAt: string | null;
+		lastError: string | null;
+		mode: 'update' | 'proposal' | null;
+	};
+	schedule: {
+		publishAt: string | null;
+		destinationId: string | null;
+		approvalRequired: true;
+		status: 'unscheduled' | 'scheduled' | 'blocked' | 'due';
+		blockedReason: string | null;
+	};
+	researchSummary: {
+		retrievedAt: string | null;
+		competitors: Array<{ name: string; website?: string; claims: string[] }>;
+		recommendedStructure: Array<{ id: string; heading: string; purpose: string }>;
+		relatedArticleSlugs: string[];
+		relatedTools: Array<{ slug: string; label: string }>;
+		searchIntent: string;
+	};
+};
+
 export type ArticleRecord = {
 	id: string;
 	ownerUserId: string;
@@ -75,4 +166,5 @@ export type ArticleRecord = {
 	};
 	createdAt: string;
 	updatedAt: string;
+	workspace?: ArticleWorkspace;
 };

@@ -1,5 +1,5 @@
 import type { ArticleRecord } from '@/lib/articles/types';
-import { assertDestinationCategory } from './destinationTaxonomy';
+import { assertDestinationCategory, type DestinationTaxonomy } from './destinationTaxonomy';
 import { folianTaxonomyFallback } from './folian/taxonomyFallback';
 
 type FolianDraftPayload = Record<string, unknown>;
@@ -11,17 +11,28 @@ function sectionBlocks(article: ArticleRecord) {
 	}));
 }
 
-function relatedToolSlugs(article: ArticleRecord): string[] {
+function relatedToolSlugs(article: ArticleRecord, taxonomy: { tools: Array<{ slug: string; linkWhenTopicMatches?: string }> }): string[] {
 	const haystack = `${article.topic} ${article.body}`;
-	return folianTaxonomyFallback.tools
+	return taxonomy.tools
 		.filter((tool) => tool.linkWhenTopicMatches && new RegExp(tool.linkWhenTopicMatches, 'i').test(haystack))
 		.map((tool) => tool.slug);
 }
 
 export function mapArticleRecordToFolianDraft(
 	article: ArticleRecord,
-	options: { externalId: string; baseRevision?: number; mode?: 'update' | 'proposal'; heroMediaId?: string; ogMediaId?: string },
+	options: {
+		externalId: string;
+		baseRevision?: number;
+		mode?: 'update' | 'proposal';
+		heroMediaId?: string;
+		ogMediaId?: string;
+		taxonomy?: DestinationTaxonomy;
+	},
 ): FolianDraftPayload {
+	const taxonomy = options.taxonomy ?? folianTaxonomyFallback;
+	const categoryId = article.categories[0] || taxonomy.categories[0]?.id || '';
+	const requestedType = article.workspace?.contentType || (article.tags.includes('pillar') ? 'pillar' : 'guide');
+	const contentType = taxonomy.contentTypes.includes(requestedType) ? requestedType : taxonomy.contentTypes[0] ?? requestedType;
 	return {
 		schemaVersion: 1,
 		externalId: options.externalId,
@@ -30,14 +41,14 @@ export function mapArticleRecordToFolianDraft(
 		title: article.title,
 		slug: article.slug,
 		dek: article.excerpt,
-		category: assertDestinationCategory(folianTaxonomyFallback, article.categories[0] ?? 'writing-a-book'),
+		category: assertDestinationCategory(taxonomy, categoryId),
 		tags: article.tags,
-		contentType: article.tags.includes('pillar') ? 'pillar' : 'guide',
+		contentType,
 		searchIntent: article.searchIntent,
 		seoTitle: article.seo.seoTitle,
 		seoDescription: article.seo.metaDescription,
 		relatedArticleSlugs: article.internalLinkOpportunities.filter((slug) => !slug.startsWith('/tools/')),
-		relatedToolSlugs: relatedToolSlugs(article),
+		relatedToolSlugs: relatedToolSlugs(article, taxonomy),
 		sources: article.research.sources
 			.filter((source) => source.url)
 			.map((source) => ({

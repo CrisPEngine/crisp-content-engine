@@ -32,6 +32,8 @@ export type ArticlePublishResult = {
 	url?: string;
 	error?: string;
 	skipped?: boolean;
+	revision?: number;
+	previewUrl?: string;
 };
 
 export type ArticlePublisher = {

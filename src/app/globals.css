@@ -62,6 +62,14 @@ html {
   @apply bg-surface/80 border border-edge/60 shadow-soft rounded-xl2 backdrop-blur-xs;
 }
 
+.input {
+  @apply bg-surface border border-edge rounded-lg px-3 py-2 text-sm text-text;
+}
+
+.btn {
+  @apply inline-flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm text-text hover:bg-primary/20 disabled:opacity-50;
+}
+
 /* Utility shims for custom tokens */
 .shadow-glow { box-shadow: var(--shadow-glow); }
 .backdrop-blur-xs { backdrop-filter: blur(var(--backdrop-blur-xs)); }

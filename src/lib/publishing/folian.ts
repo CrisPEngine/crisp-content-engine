@@ -1,6 +1,7 @@
 import type { ArticlePublishRequest, ArticlePublishResult, ArticlePublisher } from './types';
 import type { ArticleRecord } from '@/lib/articles/types';
 import { mapArticleRecordToFolianDraft } from './folianMap';
+import { loadDestinationTaxonomy } from './destinationRegistry';
 import { fetchAllowedImage, folianBaseUrl, folianHeaders, uploadImageToFolian } from './folianClient';
 
 async function readJson(response: Response) {
@@ -57,7 +58,8 @@ export async function submitFolianDraftFromRecord(
 		ogMediaId = uploaded.mediaId;
 	}
 
-	const body = mapArticleRecordToFolianDraft(article, { ...options, heroMediaId, ogMediaId });
+	const taxonomy = (await loadDestinationTaxonomy('folian')) ?? undefined;
+	const body = mapArticleRecordToFolianDraft(article, { ...options, heroMediaId, ogMediaId, taxonomy });
 	const response = await fetch(`${url}/api/content/v1/drafts/${encodeURIComponent(options.externalId)}`, {
 		method: 'PUT',
 		headers,
@@ -75,7 +77,9 @@ export async function submitFolianDraftFromRecord(
 		ok: true,
 		destination: 'folian',
 		externalId: options.externalId,
-		url: `${url}/admin/collections/articles`,
+		url: typeof payload.adminUrl === 'string' ? payload.adminUrl : `${url}/admin/collections/articles`,
+		previewUrl: typeof payload.previewUrl === 'string' ? payload.previewUrl : typeof payload.url === 'string' ? payload.url : undefined,
+		revision: typeof payload.revision === 'number' ? payload.revision : undefined,
 	};
 }
 

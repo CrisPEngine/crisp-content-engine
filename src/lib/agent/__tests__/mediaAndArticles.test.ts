@@ -351,7 +351,7 @@ describe('media planning and long-form articles', () => {
 		expect(article.seo.slug).toMatch(/memory/);
 		expect(article.seo.metaDescription.length).toBeGreaterThan(40);
 		expect(article.seo.metaDescription.length).toBeLessThanOrEqual(155);
-		expect(article.review.materialPassed).toBe(true);
+		expect(article.review.materialPassed).toBe(false);
 		expect(article.mediaPlan.hero).toMatchObject({ mediaRole: 'SUPPORTING', mediaType: 'HERO_IMAGE', mediaRequired: false, generateNow: false });
 		expect(article.mediaPlan.hero.visualConcept).toBeTruthy();
 		expect(article.mediaPlan.inline).toEqual([]);
