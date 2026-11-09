@@ -6,6 +6,7 @@ import {
 	diffParagraphs,
 	excerptFrom,
 	parseSections,
+	stripCmsTitleHeading,
 	validateArticleStructure,
 } from '../structure';
 
@@ -63,5 +64,12 @@ describe('article structure', () => {
 		const parts = diffParagraphs('A.\n\nB.\n\nC.', 'A.\n\nB2.\n\nC.');
 		expect(parts.filter((part) => part.type === 'removed').map((part) => part.text)).toEqual(['B.']);
 		expect(parts.filter((part) => part.type === 'added').map((part) => part.text)).toEqual(['B2.']);
+	});
+
+	it('strips a leading H1 that repeats the CMS page title', () => {
+		const title = 'How to Write a Novel: From Idea to First Draft';
+		const stripped = stripCmsTitleHeading(`# ${title}\n\nIntro.\n\n## Plan\n\nBody.`, title);
+		expect(stripped.startsWith('# ')).toBe(false);
+		expect(stripped).toMatch(/^Intro\.\n\n## Plan/);
 	});
 });

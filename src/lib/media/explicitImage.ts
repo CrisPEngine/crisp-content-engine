@@ -3,7 +3,8 @@ import type { MediaDecision } from './types';
 
 export function channelSupportsExplicitImage(channel: string | undefined): boolean {
 	const spec = mediaSpecFor(channel);
-	if (!spec.supportedTypes.includes('IMAGE')) return false;
+	const supportsStill = spec.supportedTypes.some((type) => type === 'IMAGE' || type === 'HERO_IMAGE' || type === 'INLINE_IMAGE');
+	if (!supportsStill) return false;
 	return spec.implementation === 'SUPPORTED_BY_PLATFORM' || spec.implementation === 'CCE_NATIVE';
 }
 

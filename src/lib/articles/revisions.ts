@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'crypto';
 import { applyGeneratedMetadata, generateArticleMetadata } from './seoMetadata';
-import { articleWordCount, parseSections } from './structure';
+import { articleWordCount, parseSections, stripCmsTitleHeading } from './structure';
 import type { ArticleRecord, ArticleRevisionRef, ArticleSection } from './types';
 
 export function contentHash(body: string): string {
@@ -54,7 +54,8 @@ export function commitRevision(
 ): ArticleRevisionRef {
 	const workspace = article.workspace;
 	if (!workspace) throw new Error('Article workspace is missing.');
-	const nextBody = body.replace(/\r\n/g, '\n').trim();
+	let nextBody = body.replace(/\r\n/g, '\n').trim();
+	if (workspace.destinationId) nextBody = stripCmsTitleHeading(nextBody, article.title);
 	const hash = contentHash(nextBody);
 	const prior = ensureRevision(article);
 	if (prior && prior.contentHash === hash) return prior;
