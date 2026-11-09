@@ -34,6 +34,21 @@ export function normaliseHeading(text: string): string {
 		.trim();
 }
 
+/** Removes a leading markdown H1 when the destination CMS already renders the page title. */
+export function stripCmsTitleHeading(markdown: string, title?: string): string {
+	let body = markdown.replace(/\r\n/g, '\n');
+	const lines = body.split('\n');
+	while (lines.length && !lines[0].trim()) lines.shift();
+	if (!lines.length) return body.trim();
+	const match = /^#\s+(.+?)\s*#*\s*$/.exec(lines[0].trim());
+	if (!match) return body.trim();
+	const heading = match[1].trim();
+	if (title && normaliseHeading(heading) !== normaliseHeading(title)) return body.trim();
+	lines.shift();
+	while (lines.length && !lines[0].trim()) lines.shift();
+	return lines.join('\n').trim();
+}
+
 export function extractHeadings(markdown: string): Heading[] {
 	const headings: Heading[] = [];
 	let inFence = false;

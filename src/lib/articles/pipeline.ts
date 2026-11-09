@@ -17,7 +17,7 @@ import { postProcessPlainDraft } from '@/lib/content/postProcessGeneration';
 import { normaliseUrl } from './researchPackage';
 import { commitRevision } from './revisions';
 import { reviewCurrentRevision } from './reviewRun';
-import { articleWordCount, assembleSections, cleanSectionBody, parseSections, validateArticleStructure } from './structure';
+import { articleWordCount, assembleSections, cleanSectionBody, parseSections, stripCmsTitleHeading, validateArticleStructure } from './structure';
 
 const TARGETS = [1500, 3000, 5000] as const;
 
@@ -599,6 +599,7 @@ export async function previewArticleImprovement(input: {
 			content: [
 				'Return JSON with body (complete revised markdown) and summary (one sentence on what changed).',
 				'Keep ## for section headings and ### for sub-steps. Do not repeat a section heading inside the section body.',
+				'Do not add a leading # title line; the destination CMS renders the article title as the page H1.',
 				'Do not add sources or statistics that are not in the approved research.',
 				'Preserve factual content unless a recommendation explicitly asks to cut or rewrite it.',
 			].join(' '),
@@ -634,7 +635,10 @@ export async function previewArticleImprovement(input: {
 		data = completion.data;
 		model = completion.model ?? null;
 	}
-	const proposedBody = postProcessPlainDraft(data.body?.trim() ?? '');
+	const proposedBody = stripCmsTitleHeading(
+		postProcessPlainDraft(data.body?.trim() ?? ''),
+		article.workspace?.destinationId ? article.title : undefined,
+	);
 	if (!proposedBody) throw new Error('The improvement returned no text.');
 	const after = validateArticleStructure(proposedBody);
 	if (!after.ok) {

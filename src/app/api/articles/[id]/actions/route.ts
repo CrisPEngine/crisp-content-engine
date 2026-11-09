@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import {
 	applyAcceptedRevisions,
 	applyArticleEditorialImprovement,
+	applyArticleCmsTitleCleanup,
 	applyArticleStructuralRepair,
 	approveArticleBrief,
 	approveArticleResearch,
@@ -89,6 +90,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 			}
 			case 'apply_structural_repair':
 				return NextResponse.json({ article: await applyArticleStructuralRepair(userId, id) });
+			case 'apply_cms_title_cleanup':
+				return NextResponse.json({ article: await applyArticleCmsTitleCleanup(userId, id) });
 			case 'preview_improve':
 				return NextResponse.json({ preview: await previewArticleEditorialImprovement(userId, id) });
 			case 'apply_improve':

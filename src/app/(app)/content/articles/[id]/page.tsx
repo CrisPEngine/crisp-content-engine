@@ -192,6 +192,21 @@ export default function ArticleWorkspacePage() {
 			await load(false);
 			return { ok: false, payload };
 		}
+		if (action === 'media' && extra?.assetId == null) {
+			const saved = payload.article as { workspace?: { media?: { heroUrl?: string | null; ogUrl?: string | null; deliveryVerified?: boolean; deliveryError?: string | null } } } | undefined;
+			const mediaState = saved?.workspace?.media;
+			const role = extra?.role === 'og' ? 'og' : 'hero';
+			const ready = role === 'og' ? Boolean(mediaState?.ogUrl) : Boolean(mediaState?.heroUrl && mediaState?.deliveryVerified);
+			if (!ready) {
+				setToast({
+					kind: 'error',
+					text: mediaState?.deliveryError || (role === 'og' ? 'Social image generation did not finish.' : 'Hero image is not verified for the destination yet.'),
+					at: Date.now(),
+				});
+				await load(false);
+				return { ok: false, payload };
+			}
+		}
 		if (action === 'lookup_draft') setLookup(payload as typeof lookup);
 		const text = typeof payload.message === 'string' ? payload.message : success;
 		if (text) setToast({ kind: 'ok', text, at: Date.now() });

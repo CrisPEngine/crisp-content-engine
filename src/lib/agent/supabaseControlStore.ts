@@ -22,6 +22,13 @@ function db() {
 	return getSupabaseService();
 }
 
+const CREDENTIAL_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** UI actions use synthetic credential ids that are not stored in agent_daily_cost. */
+function tracksDailyCost(credentialId: string): boolean {
+	return CREDENTIAL_UUID_RE.test(credentialId);
+}
+
 function credentialFromRow(row: Record<string, unknown>): AgentCredential {
 	return {
 		id: String(row.id),
@@ -259,6 +266,7 @@ export function createSupabaseAgentStore(): AgentControlStore {
 			return { allowed: count <= limit, count };
 		},
 		async addCost(credentialId, usd) {
+			if (!tracksDailyCost(credentialId)) return 0;
 			const day = new Date().toISOString().slice(0, 10);
 			const current = await this.costToday(credentialId);
 			const imageUsd = await this.imageCostToday(credentialId);
@@ -272,6 +280,7 @@ export function createSupabaseAgentStore(): AgentControlStore {
 			return current + usd;
 		},
 		async costToday(credentialId) {
+			if (!tracksDailyCost(credentialId)) return 0;
 			const day = new Date().toISOString().slice(0, 10);
 			const { data, error } = await db()
 				.from('agent_daily_cost')
@@ -283,6 +292,7 @@ export function createSupabaseAgentStore(): AgentControlStore {
 			return data ? Number(data.usd) : 0;
 		},
 		async addImageCost(credentialId, usd) {
+			if (!tracksDailyCost(credentialId)) return 0;
 			const day = new Date().toISOString().slice(0, 10);
 			const current = await this.costToday(credentialId);
 			const imageUsd = await this.imageCostToday(credentialId);
@@ -296,6 +306,7 @@ export function createSupabaseAgentStore(): AgentControlStore {
 			return imageUsd + usd;
 		},
 		async imageCostToday(credentialId) {
+			if (!tracksDailyCost(credentialId)) return 0;
 			const day = new Date().toISOString().slice(0, 10);
 			const { data, error } = await db()
 				.from('agent_daily_cost')

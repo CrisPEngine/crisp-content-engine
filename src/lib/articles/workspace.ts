@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { resolveModelForRole } from '@/lib/ai/roles';
+import { AgentError } from '@/lib/agent/errors';
 import { DEFAULT_RATE_LIMIT } from '@/lib/agent/policy';
 import type { ResearchRecord } from '@/lib/agent/types';
 import { getAgentStore } from '@/lib/agent/controlStore';
@@ -62,7 +63,7 @@ import {
 } from '@/lib/articles/researchPackage';
 import { commitRevision, ensureRevision, listRevisions } from '@/lib/articles/revisions';
 import { reviewCurrentRevision } from '@/lib/articles/reviewRun';
-import { articleWordCount, validateArticleStructure } from '@/lib/articles/structure';
+import { articleWordCount, stripCmsTitleHeading, validateArticleStructure } from '@/lib/articles/structure';
 import type { ArticleBriefDetails, ArticleRecord, BriefSuggestion, ResearchPackage } from '@/lib/articles/types';
 import { categoryFromMappings, destinationForBrand, destinationTaxonomy, DestinationError, resolveConnection } from '@/lib/destinations/service';
 import { generateAssetFromProposal } from '@/lib/media/images';
@@ -939,27 +940,67 @@ async function verifyMediaUrl(url: string | undefined): Promise<{ ok: boolean; e
 	return fetched.ok ? { ok: true, error: null } : { ok: false, error: fetched.error };
 }
 
+async function verifyHeroDestinationDelivery(
+	ownerUserId: string,
+	article: ArticleRecord,
+	workspace: NonNullable<ArticleRecord['workspace']>,
+	url: string,
+): Promise<{ ok: boolean; error: string | null }> {
+	const fetched = await fetchAllowedImage(url);
+	if (!fetched.ok) return { ok: false, error: fetched.error };
+	if (!workspace.destinationId) return { ok: true, error: null };
+	const { adapter, connection, destination } = await resolveConnection(ownerUserId, article.brandId, workspace.destinationId).catch(asWorkflowError);
+	if (connection.destination.settings.media.delivery !== 'upload') return { ok: true, error: null };
+	const credit = workspace.media.credit || 'Crisp Content Engine';
+	const license = workspace.media.license || `Generated for ${destination.name} editorial use`;
+	const uploaded = await adapter.uploadMedia(connection, {
+		bytes: fetched.bytes,
+		mimeType: fetched.mimeType,
+		alt: workspace.media.heroAlt || article.title,
+		credit,
+		license,
+		filename: 'hero.webp',
+	});
+	if (!uploaded.ok) return { ok: false, error: uploaded.error };
+	workspace.cms.heroMediaId = uploaded.mediaId;
+	workspace.cms.heroSourceUrl = url;
+	return { ok: true, error: null };
+}
+
 export async function generateArticleMedia(ownerUserId: string, articleId: string, role: 'hero' | 'og'): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
 	const brain = await requireBrand(ownerUserId, article.brandId);
 	const decision = planMedia({ channel: 'BLOG', topic: article.topic, objective: article.objective, contentType: 'article' });
-	const generated = await generateAssetFromProposal({
-		ownerUserId,
-		credentialId: 'ui-session',
-		brandId: brain.id,
-		targetType: 'article',
-		targetId: role === 'og' ? `${article.id}:og` : article.id,
-		decision,
-		rateLimit: DEFAULT_RATE_LIMIT,
-		brand: brain,
-		channel: 'BLOG',
-		topic: article.topic,
-		excerpt: article.excerpt || article.body.slice(0, 400),
-		explicitRequest: true,
-	});
+	let generated;
+	try {
+		generated = await generateAssetFromProposal({
+			ownerUserId,
+			credentialId: 'ui-session',
+			brandId: brain.id,
+			targetType: 'article',
+			targetId: role === 'og' ? `${article.id}:og` : article.id,
+			decision,
+			rateLimit: DEFAULT_RATE_LIMIT,
+			brand: brain,
+			channel: 'BLOG',
+			topic: article.topic,
+			excerpt: article.excerpt || article.body.slice(0, 400),
+			explicitRequest: true,
+		});
+	} catch (error) {
+		if (error instanceof AgentError) {
+			throw new ArticleWorkflowError(error.message, error.status ?? 502, error.code ?? 'media_generation_failed');
+		}
+		throw error;
+	}
 	const workspace = ensureWorkspace(article);
 	const url = generated.asset.url ?? null;
-	const verified = await verifyMediaUrl(url ?? undefined);
+	const verified =
+		role === 'hero'
+			? url
+				? await verifyHeroDestinationDelivery(ownerUserId, article, workspace, url)
+				: { ok: false, error: 'The image has no delivery URL.' }
+			: await verifyMediaUrl(url ?? undefined);
 	if (role === 'hero') {
 		workspace.media.heroAssetId = generated.asset.id;
 		workspace.media.heroUrl = url;
@@ -983,7 +1024,10 @@ export async function replaceArticleMedia(ownerUserId: string, articleId: string
 		throw new ArticleWorkflowError('That image is not in this brand library.', 404, 'asset_not_found');
 	}
 	const workspace = ensureWorkspace(article);
-	const verified = await verifyMediaUrl(asset.url);
+	const verified =
+		role === 'hero' && asset.url
+			? await verifyHeroDestinationDelivery(ownerUserId, article, workspace, asset.url)
+			: await verifyMediaUrl(asset.url);
 	if (role === 'hero') {
 		workspace.media.heroAssetId = asset.id;
 		workspace.media.heroUrl = asset.url ?? null;
@@ -1136,6 +1180,21 @@ export async function submitArticleDraft(ownerUserId: string, articleId: string)
 export function previewArticleStructuralRepair(_ownerUserId: string, article: ArticleRecord): StructuralRepairPreview {
 	if (!article.body.trim()) throw new ArticleWorkflowError('There is no draft to repair.', 400, 'draft_missing');
 	return previewStructuralRepair(article.body);
+}
+
+/** Creates a revision with the duplicate page-title H1 removed for CMS destinations. */
+export async function applyArticleCmsTitleCleanup(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const workspace = ensureWorkspace(article);
+	if (!workspace.destinationId) {
+		throw new ArticleWorkflowError('Choose a website destination before removing the in-body title.', 400, 'destination_required');
+	}
+	const cleaned = stripCmsTitleHeading(article.body, article.title);
+	if (!cleaned || cleaned === article.body.trim()) {
+		throw new ArticleWorkflowError('There is no duplicate page title heading to remove.', 400, 'heading_clean');
+	}
+	commitRevision(article, cleaned, 'structural_repair', 'Removed the in-body H1 so the CMS title is the only page heading.', { refreshMetadata: false });
+	return persist(article);
 }
 
 export async function applyArticleStructuralRepair(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
