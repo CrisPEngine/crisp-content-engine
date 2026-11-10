@@ -18,6 +18,7 @@ import {
 	generateArticleMedia,
 	getWorkspaceArticle,
 	lookupArticleDraft,
+	prepareArticleImageBrief,
 	publishWorkspaceArticle,
 	previewArticleEditorialImprovement,
 	previewArticleStructuralRepair,
@@ -29,9 +30,11 @@ import {
 	resolveBriefSuggestion,
 	retryArticleGeneration,
 	reviewArticle,
+	saveArticleImageBrief,
 	scheduleWorkspaceArticle,
 	startArticleGeneration,
 	submitArticleDraft,
+	suggestWorkspaceTitles,
 	updateArticleMediaMeta,
 	type ResearchEdit,
 } from '@/lib/articles/workspace';
@@ -81,7 +84,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 			case 'review':
 				return NextResponse.json({ article: await reviewArticle(userId, id) });
 			case 'recommendation': {
-				const decision = body.decision === 'rejected' ? 'rejected' : body.decision === 'pending' ? 'pending' : 'accepted';
+				const decision =
+					body.decision === 'rejected'
+						? 'rejected'
+						: body.decision === 'dismissed'
+							? 'dismissed'
+							: body.decision === 'pending'
+								? 'pending'
+								: 'accepted';
 				return NextResponse.json({ article: await decideRecommendation(userId, id, text(body.findingId), decision) });
 			}
 			case 'edit_recommendation':
@@ -118,9 +128,46 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 				return NextResponse.json({ article: await classifyWorkspaceArticle(userId, id, text(body.categoryId) || undefined) });
 			case 'media': {
 				const role = body.role === 'og' ? 'og' : 'hero';
-				if (typeof body.assetId === 'string') return NextResponse.json({ article: await replaceArticleMedia(userId, id, body.assetId, role) });
-				return NextResponse.json({ article: await generateArticleMedia(userId, id, role) });
+				if (typeof body.assetId === 'string' || typeof body.selectAssetId === 'string') {
+					return NextResponse.json({
+						article: await replaceArticleMedia(userId, id, text(body.assetId || body.selectAssetId), role),
+					});
+				}
+				return NextResponse.json({
+					article: await generateArticleMedia(userId, id, role, {
+						prompt: typeof body.prompt === 'string' ? body.prompt : undefined,
+						concept: typeof body.concept === 'string' ? body.concept : undefined,
+						negativeConstraints: typeof body.negativeConstraints === 'string' ? body.negativeConstraints : undefined,
+						revisionInstructions: typeof body.revisionInstructions === 'string' ? body.revisionInstructions : undefined,
+						brandStyleNotes: typeof body.brandStyleNotes === 'string' ? body.brandStyleNotes : undefined,
+						referenceAssetIds: Array.isArray(body.referenceAssetIds)
+							? body.referenceAssetIds.filter((value): value is string => typeof value === 'string')
+							: undefined,
+						forceNew: body.forceNew === true,
+					}),
+				});
 			}
+			case 'prepare_image_brief': {
+				const role = body.role === 'og' ? 'og' : 'hero';
+				return NextResponse.json(await prepareArticleImageBrief(userId, id, role));
+			}
+			case 'save_image_brief': {
+				const role = body.role === 'og' ? 'og' : 'hero';
+				return NextResponse.json({
+					article: await saveArticleImageBrief(userId, id, role, {
+						concept: typeof body.concept === 'string' ? body.concept : undefined,
+						prompt: typeof body.prompt === 'string' ? body.prompt : undefined,
+						negativeConstraints: typeof body.negativeConstraints === 'string' ? body.negativeConstraints : undefined,
+						revisionInstructions: typeof body.revisionInstructions === 'string' ? body.revisionInstructions : undefined,
+						brandStyleNotes: typeof body.brandStyleNotes === 'string' ? body.brandStyleNotes : undefined,
+						referenceAssetIds: Array.isArray(body.referenceAssetIds)
+							? body.referenceAssetIds.filter((value): value is string => typeof value === 'string')
+							: undefined,
+					}),
+				});
+			}
+			case 'suggest_titles':
+				return NextResponse.json(await suggestWorkspaceTitles(userId, id));
 			case 'media_meta':
 				return NextResponse.json({
 					article: await updateArticleMediaMeta(userId, id, {

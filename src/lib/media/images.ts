@@ -80,6 +80,12 @@ export async function generateAssetFromProposal(input: {
 	topic?: string;
 	excerpt?: string;
 	explicitRequest?: boolean;
+	/** When set, use this prompt instead of rebuilding from the concept alone. */
+	promptOverride?: string;
+	negativeConstraints?: string;
+	revisionInstructions?: string;
+	brandStyleNotes?: string;
+	roleFraming?: string;
 }): Promise<{ asset: PublicAsset; reused: boolean; estimatedCostUsd: number }> {
 	let decision = input.decision;
 	if (!decision.mediaRecommended && !decision.mediaRequired) {
@@ -107,7 +113,8 @@ export async function generateAssetFromProposal(input: {
 		return { asset: publicAsset(sameProposal), reused: true, estimatedCostUsd: 0 };
 	}
 	const unlimitedUsage = await bypassesUsageLimits(input.ownerUserId);
-	if (!unlimitedUsage && prior.length >= MAX_ATTEMPTS_PER_TARGET) {
+	const attemptCap = decision.generateNow ? Math.max(MAX_ATTEMPTS_PER_TARGET, 12) : MAX_ATTEMPTS_PER_TARGET;
+	if (!unlimitedUsage && prior.length >= attemptCap) {
 		throw new AgentError('rate_limit', 'This content already has the maximum generated images. Further regeneration is blocked.', 429);
 	}
 	const provider = resolveProvider();
@@ -128,21 +135,30 @@ export async function generateAssetFromProposal(input: {
 		concept: decision.visualConcept,
 		title: decision.visualConcept,
 	});
-	const instructions = buildImagePrompt({
-		brand: input.brand,
-		channel: input.channel ?? input.targetType,
-		topic: input.topic,
-		concept: decision.visualConcept ?? decision.reason,
-		aspectRatio: decision.aspectRatio ?? '1:1',
-		purpose: decision.mediaRole,
-		altTextDirection,
-		excerpt: input.excerpt,
-	});
+	const instructions = input.promptOverride?.trim()
+		? { prompt: input.promptOverride.trim(), visualGuidanceStored: Boolean(input.brandStyleNotes?.trim()) }
+		: buildImagePrompt({
+				brand: input.brand,
+				channel: input.channel ?? input.targetType,
+				topic: input.topic,
+				concept: decision.visualConcept ?? decision.reason,
+				aspectRatio: decision.aspectRatio ?? '1:1',
+				purpose: decision.mediaRole,
+				altTextDirection,
+				excerpt: input.excerpt,
+				negativeConstraints: input.negativeConstraints,
+				revisionInstructions: input.revisionInstructions,
+				brandStyleOverride: input.brandStyleNotes,
+				roleFraming: input.roleFraming,
+			});
 	const referenceIds = decision.referenceAssetIds ?? [];
 	const referenceImageUrls: string[] = [];
 	for (const referenceId of referenceIds) {
 		const reference = await store.getAsset(input.ownerUserId, referenceId);
-		const permitted = reference?.verifiedReference && reference.referenceAllowed && reference.url && (!reference.brandId || reference.brandId === input.brandId);
+		const permitted =
+			reference?.url &&
+			(!reference.brandId || reference.brandId === input.brandId) &&
+			(reference.verifiedReference ? reference.referenceAllowed !== false : reference.libraryType === 'PRODUCT_SCREENSHOT' || reference.libraryType === 'PRODUCT_UI' || reference.sourceType === 'upload');
 		if (permitted && reference.url) referenceImageUrls.push(reference.url);
 	}
 	const generated = await provider.generate({

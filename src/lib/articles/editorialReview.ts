@@ -50,6 +50,8 @@ export type DeterministicReviewInput = {
 	sourceCount: number;
 	claimsExternalResearch: boolean;
 	toolSlugs: string[];
+	/** Tool slugs already linked in the current body (absolute or relative URLs). */
+	linkedToolSlugs?: string[];
 	brandName?: string;
 	title?: string;
 	seoTitle?: string;
@@ -241,15 +243,17 @@ export function runDeterministicArticleReview(input: DeterministicReviewInput): 
 	}
 	for (const tool of input.taxonomy?.tools ?? []) {
 		if (!tool.linkWhenTopicMatches) continue;
-		if (new RegExp(tool.linkWhenTopicMatches, 'i').test(input.body) && !input.toolSlugs.includes(tool.slug)) {
-			findings.push({
-				severity: 'minor',
-				code: 'missing_destination_resource',
-				source: 'deterministic',
-				dimension: 'internal_linking',
-				instruction: `Link ${tool.label} where the draft discusses that topic.`,
-			});
-		}
+		if (!new RegExp(tool.linkWhenTopicMatches, 'i').test(input.body)) continue;
+		// Satisfaction is body-link based. researchSummary.relatedTools must not clear this finding.
+		if (input.linkedToolSlugs?.includes(tool.slug)) continue;
+		findings.push({
+			severity: 'minor',
+			code: 'missing_destination_resource',
+			source: 'deterministic',
+			dimension: 'internal_linking',
+			instruction: `Link ${tool.label} where the draft discusses that topic.`,
+			evidence: tool.routePath ? [`Expected a link containing ${tool.routePath}`] : undefined,
+		});
 	}
 
 	if (input.imageRequired && !input.heroReady) {
