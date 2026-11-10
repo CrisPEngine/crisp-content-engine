@@ -410,13 +410,19 @@ export default function ArticleWorkspacePage() {
 					act={actBool}
 				/>
 			) : null}
-			{detail.revisionResult && bodies[detail.revisionResult.baseRevisionId] && bodies[detail.revisionResult.resultRevisionId] ? (
+			{detail.revisionResult?.baseRevisionId &&
+			detail.revisionResult.resultRevisionId &&
+			bodies[detail.revisionResult.baseRevisionId] &&
+			bodies[detail.revisionResult.resultRevisionId] ? (
 				<details className="card p-4 text-sm">
 					<summary className="font-medium">Before and after the last applied revision</summary>
 					<div className="pt-2">
 						<RevisionHistory
 							key={detail.revisionResult.resultRevisionId}
-							revisions={detail.revisions.filter((revision) => revision.id === detail.revisionResult!.baseRevisionId || revision.id === detail.revisionResult!.resultRevisionId)}
+							revisions={detail.revisions.filter(
+								(revision) =>
+									revision.id === detail.revisionResult!.baseRevisionId || revision.id === detail.revisionResult!.resultRevisionId,
+							)}
 							bodies={bodies}
 							currentId={detail.revisionResult.resultRevisionId}
 						/>

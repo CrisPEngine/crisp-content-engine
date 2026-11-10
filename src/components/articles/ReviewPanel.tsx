@@ -5,7 +5,14 @@ import type { ArticleEditorialFinding, ArticleReviewRun } from '@/lib/articles/t
 import { findingTier } from '@/lib/articles/meta';
 
 type Act = (action: string, extra?: Record<string, unknown>, success?: string) => Promise<boolean>;
-export type RevisionResult = { applied?: Array<{ id: string; change: string }>; skipped?: Array<{ id: string; reason: string }> } | null;
+export type RevisionResult = {
+	applied?: Array<{ id: string; change: string }>;
+	skipped?: Array<{ id: string; reason: string }>;
+	notApplied?: Array<{ id: string; reason: string }>;
+	baseRevisionId?: string;
+	resultRevisionId?: string;
+	articleId?: string;
+} | null;
 
 const SEVERITY_STYLES: Record<string, string> = {
 	critical: 'text-danger',
