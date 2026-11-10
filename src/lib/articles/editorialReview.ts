@@ -29,6 +29,9 @@ const STRUCTURE_DIMENSION: Record<string, string> = {
 	unclosed_code_fence: 'publication_readiness',
 	missing_sections: 'topic_completeness',
 	empty_document: 'publication_readiness',
+	flattened_table: 'publication_readiness',
+	malformed_table: 'publication_readiness',
+	unbalanced_emphasis: 'publication_readiness',
 };
 
 export type DeterministicReviewInput = {
