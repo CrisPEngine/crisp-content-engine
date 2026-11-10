@@ -1,3 +1,4 @@
+import type { DestinationDraftMode } from '@/lib/destinations/types';
 import type { ArticlePublishRequest, ArticlePublishResult, ArticlePublisher } from './types';
 import type { ArticleRecord } from '@/lib/articles/types';
 import { mapArticleRecordToFolianDraft } from './folianMap';
@@ -33,7 +34,7 @@ export async function submitFolianDraftFromRecord(
 	options: {
 		externalId: string;
 		baseRevision?: number;
-		mode?: 'update' | 'proposal';
+		mode?: DestinationDraftMode;
 		heroImageUrl?: string;
 		heroAlt?: string;
 		ogImageUrl?: string;
@@ -130,7 +131,12 @@ export const folianPayloadPublisher: ArticlePublisher = {
 				typeof request.document.metadata?.baseRevision === 'number'
 					? request.document.metadata.baseRevision
 					: undefined,
-			mode: request.document.metadata?.mode === 'proposal' ? 'proposal' : 'update',
+			mode:
+				request.document.metadata?.mode === 'correction'
+					? 'correction'
+					: request.document.metadata?.mode === 'proposal'
+						? 'proposal'
+						: 'update',
 			heroImageUrl: typeof request.document.imageUrl === 'string' ? request.document.imageUrl : undefined,
 			heroAlt: article.title,
 		});

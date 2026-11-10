@@ -1,4 +1,5 @@
 import type { ArticleRecord } from '@/lib/articles/types';
+import type { DestinationDraftMode } from '@/lib/destinations/types';
 import { sourcesForPublication } from '@/lib/articles/publicSources';
 import { parseSections } from '@/lib/articles/structure';
 import { assertDestinationCategory, type DestinationTaxonomy } from './destinationTaxonomy';
@@ -26,7 +27,7 @@ export function mapArticleRecordToFolianDraft(
 	options: {
 		externalId: string;
 		baseRevision?: number;
-		mode?: 'update' | 'proposal';
+		mode?: DestinationDraftMode;
 		heroMediaId?: string;
 		ogMediaId?: string;
 		taxonomy?: DestinationTaxonomy;
