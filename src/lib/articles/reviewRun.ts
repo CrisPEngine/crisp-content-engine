@@ -8,6 +8,7 @@ import { buildQualityContext } from './reviewContext';
 import { ensureRevision } from './revisions';
 import { validateArticleStructure } from './structure';
 import type { ArticleRecord } from './types';
+import { linkedToolSlugsFromBody } from './linkPresence';
 
 const HISTORY_LIMIT = 12;
 
@@ -43,13 +44,14 @@ export async function reviewCurrentRevision(input: {
 		sourceCount,
 		claimsExternalResearch: article.research.usedExternalResearch === true,
 		toolSlugs: workspace.researchSummary.relatedTools.map((tool) => tool.slug),
+		linkedToolSlugs: linkedToolSlugsFromBody(article.body, input.taxonomy?.tools ?? []),
 		brandName: input.brain.identity.name,
 		title: article.title,
 		seoTitle: article.seo.seoTitle,
 		metaDescription: article.seo.metaDescription,
 		requiredLinks: splitLines(brief?.requiredLinks),
 		imageRequired: imagesRequired(workspace.imageRequirements),
-		heroReady: Boolean(workspace.media.heroUrl && workspace.media.deliveryVerified),
+		heroReady: Boolean(workspace.media.heroUrl && workspace.media.deliveryVerified && workspace.media.heroAssetId),
 	});
 	const llm = await runLlmEditorialReview({
 		ai: input.ai,
@@ -98,16 +100,25 @@ export async function reviewCurrentRevision(input: {
 	}
 	const history = [...(workspace.editorial.history ?? [])];
 	if (previous.length) {
+		const nextKeys = new Set(findings.map((finding) => `${finding.code}::${finding.source}::${finding.section ?? ''}`));
 		history.push({
 			revisionId: workspace.editorial.reviewedRevisionId ?? 'legacy',
 			revisionNumber: workspace.editorial.reviewedRevisionNumber ?? 0,
 			contentHash: workspace.editorial.reviewedContentHash ?? '',
 			ranAt: workspace.editorial.lastRunAt ?? now,
-			findings: previous.map((finding) =>
-				isOpenFinding(finding)
-					? { ...finding, decision: 'superseded' as const, note: `Superseded by the review of revision ${revision.number}.` }
-					: finding,
-			),
+			findings: previous.map((finding) => {
+				if (!isOpenFinding(finding)) return finding;
+				const key = `${finding.code}::${finding.source}::${finding.section ?? ''}`;
+				if (!nextKeys.has(key)) {
+					return {
+						...finding,
+						decision: 'resolved_auto' as const,
+						decidedAt: now,
+						note: `Resolved automatically on review of revision ${revision.number}.`,
+					};
+				}
+				return { ...finding, decision: 'superseded' as const, note: `Superseded by the review of revision ${revision.number}.` };
+			}),
 		});
 	}
 	const maxCycles = reviewCycleLimit();

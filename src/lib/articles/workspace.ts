@@ -74,9 +74,23 @@ import { validateForDestination } from '@/lib/destinations/contentCapabilities';
 import { providerDefinition } from '@/lib/destinations/providers';
 import { categoryFromMappings, destinationForBrand, destinationTaxonomy, DestinationError, resolveConnection } from '@/lib/destinations/service';
 import type { DestinationProviderId } from '@/lib/destinations/types';
+import {
+	aspectRatioForRole,
+	buildArticleImagePrompt,
+	conceptSimilarityWarning,
+	emptyMediaCreativeState,
+	mergeImageBrief,
+	suggestImageConcept,
+	type ArticleImageRole,
+	type ImageCreativeBrief,
+	type MediaCreativeState,
+} from '@/lib/articles/imageBrief';
+import { suggestArticleTitles, type TitleSuggestion } from '@/lib/articles/titleSuggestions';
 import { generateAssetFromProposal } from '@/lib/media/images';
 import { planMedia } from '@/lib/media/planner';
+import { runAssetVisionAnalysis } from '@/lib/media/runAssetVision';
 import { getNativeContentStore } from '@/lib/media/store';
+import type { MediaDecision } from '@/lib/media/types';
 import { classifyArticleForDestination } from '@/lib/publishing/classifyForDestination';
 import { assertDestinationCategory, type DestinationTaxonomy } from '@/lib/publishing/destinationTaxonomy';
 import { mapArticleRecordToFolianDraft } from '@/lib/publishing/folianMap';
@@ -461,10 +475,13 @@ export async function createArticleBrief(ownerUserId: string, input: ArticleBrie
 export type ArticleDraftPatch = Partial<Omit<ArticleBriefInput, 'brandId'>> & {
 	body?: string;
 	title?: string;
+	workingTitle?: string;
 	seoTitle?: string;
 	metaDescription?: string;
 	excerpt?: string;
 	slug?: string;
+	/** Explicit owner approval to change a published/synced slug. */
+	approveSlugChange?: boolean;
 };
 
 export async function saveArticleDraft(ownerUserId: string, articleId: string, patch: ArticleDraftPatch): Promise<ArticleRecord> {
@@ -476,16 +493,23 @@ export async function saveArticleDraft(ownerUserId: string, articleId: string, p
 		return next;
 	};
 	if (patch.topic?.trim()) article.topic = change(article.topic, patch.topic.trim());
-	if (patch.workingTitle?.trim() || patch.title?.trim()) {
-		const title = (patch.title ?? patch.workingTitle)!.trim();
+	if (patch.workingTitle?.trim()) {
+		workspace.workingTitle = change(workspace.workingTitle, patch.workingTitle.trim());
+	}
+	if (patch.title?.trim()) {
+		const title = patch.title.trim();
 		article.title = change(article.title, title);
-		workspace.workingTitle = title;
 		article.seo.title = title;
-		if (!patch.seoTitle) article.seo.seoTitle = title;
-		if (!article.publication && !workspace.cms.lastSyncAt) {
-			article.slug = slugify(title);
-			article.seo.slug = article.slug;
-		}
+		if (!workspace.workingTitle) workspace.workingTitle = title;
+	} else if (patch.workingTitle?.trim() && !article.title.trim()) {
+		// Seed published title from working title only when no published title exists yet.
+		article.title = patch.workingTitle.trim();
+		article.seo.title = article.title;
+	}
+	if ((patch.title?.trim() || patch.workingTitle?.trim()) && !patch.slug?.trim() && !article.publication && !workspace.cms.lastSyncAt && !workspace.seoEdited?.slug) {
+		const seed = (patch.title ?? patch.workingTitle)!.trim();
+		article.slug = slugify(seed);
+		article.seo.slug = article.slug;
 	}
 	if (patch.primaryKeyword !== undefined) {
 		article.primaryKeyword = change(article.primaryKeyword ?? '', patch.primaryKeyword.trim());
@@ -579,6 +603,10 @@ export async function saveArticleDraft(ownerUserId: string, articleId: string, p
 		seoEdited.excerpt = true;
 	}
 	if (patch.slug !== undefined && patch.slug.trim()) {
+		const locked = Boolean(article.publication || workspace.cms.lastSyncAt);
+		if (locked && !patch.approveSlugChange) {
+			throw new ArticleWorkflowError('The published slug is locked. Approve a URL change explicitly before editing it.', 409, 'slug_locked');
+		}
 		article.slug = slugifyTitle(patch.slug);
 		article.seo.slug = article.slug;
 		seoEdited.slug = true;
@@ -978,23 +1006,53 @@ export async function decideRecommendation(
 	ownerUserId: string,
 	articleId: string,
 	findingId: string,
-	decision: 'accepted' | 'rejected' | 'pending',
+	decision: 'accepted' | 'rejected' | 'pending' | 'dismissed',
 ): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
 	const workspace = ensureWorkspace(article);
 	const finding = workspace.editorial.findings.find((item) => item.id === findingId);
 	if (!finding) throw new ArticleWorkflowError('Recommendation not found.', 404, 'finding_not_found');
-	if (finding.decision === 'applied' || finding.decision === 'superseded') {
+	if (finding.decision === 'applied' || finding.decision === 'superseded' || finding.decision === 'resolved_auto') {
 		throw new ArticleWorkflowError(`This recommendation is already ${finding.decision}.`, 409, 'finding_closed');
 	}
-	if (decision === 'rejected' && finding.rejectable === false) {
-		throw new ArticleWorkflowError('Structural defects cannot be rejected. Fix them in the draft or apply the recommendation.', 400, 'finding_not_rejectable');
+	if ((decision === 'rejected' || decision === 'dismissed') && finding.rejectable === false) {
+		throw new ArticleWorkflowError('Structural defects cannot be dismissed. Fix them in the draft or apply the recommendation.', 400, 'finding_not_rejectable');
 	}
 	finding.decision = decision;
 	finding.decidedAt = new Date().toISOString();
-	workspace.editorial.status = openCriticalFindings(workspace).length ? (workspace.editorial.exhausted ? 'blocked' : 'findings') : workspace.editorial.findings.some((item) => item.decision === 'pending' || item.decision === 'accepted') ? 'findings' : 'ready';
+	if (decision === 'dismissed') finding.note = finding.note || 'Dismissed by the editor.';
+	workspace.editorial.status = openCriticalFindings(workspace).length
+		? workspace.editorial.exhausted
+			? 'blocked'
+			: 'findings'
+		: workspace.editorial.findings.some((item) => item.decision === 'pending' || item.decision === 'accepted')
+			? 'findings'
+			: 'ready';
 	article.workspace = workspace;
 	return persist(article);
+}
+
+export async function suggestWorkspaceTitles(ownerUserId: string, articleId: string): Promise<{ suggestions: TitleSuggestion[]; current: { workingTitle: string; publishedTitle: string; seoTitle: string; slug: string } }> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const workspace = ensureWorkspace(article);
+	const siblings = await getNativeContentStore().listArticles(ownerUserId, article.brandId);
+	return {
+		suggestions: suggestArticleTitles({
+			currentTitle: article.title,
+			topic: article.topic,
+			primaryKeyword: article.primaryKeyword,
+			audience: article.audience,
+			searchIntent: article.searchIntent,
+			readerOutcome: workspace.brief?.readerOutcome,
+			existingTitles: siblings.map((sibling) => sibling.title),
+		}),
+		current: {
+			workingTitle: workspace.workingTitle || article.title,
+			publishedTitle: article.title,
+			seoTitle: article.seo.seoTitle || '',
+			slug: article.slug,
+		},
+	};
 }
 
 /** Rewrites a finding's instruction in the editor's words and accepts it. The original instruction is kept. */
@@ -1191,10 +1249,150 @@ async function verifyHeroDestinationDelivery(
 	return { ok: true, error: null };
 }
 
-export async function generateArticleMedia(ownerUserId: string, articleId: string, role: 'hero' | 'og'): Promise<ArticleRecord> {
+function ensureMediaCreative(workspace: ArticleWorkspace): MediaCreativeState {
+	const current = workspace.media.creative ?? emptyMediaCreativeState();
+	workspace.media.creative = {
+		hero: mergeImageBrief(current.hero, null, 'hero'),
+		og: mergeImageBrief(current.og, null, 'og'),
+	};
+	return workspace.media.creative;
+}
+
+export async function prepareArticleImageBrief(
+	ownerUserId: string,
+	articleId: string,
+	role: ArticleImageRole,
+): Promise<{ article: ArticleRecord; brief: ImageCreativeBrief }> {
 	const article = await requireArticle(ownerUserId, articleId);
 	const brain = await requireBrand(ownerUserId, article.brandId);
-	const decision = planMedia({ channel: 'BLOG', topic: article.topic, objective: article.objective, contentType: 'article' });
+	const workspace = ensureWorkspace(article);
+	const creative = ensureMediaCreative(workspace);
+	const suggested = suggestImageConcept({
+		role,
+		title: article.title,
+		topic: article.topic,
+		excerpt: article.excerpt || article.body.slice(0, 400),
+		audience: article.audience,
+		imageRequirements: workspace.imageRequirements,
+	});
+	const brandStyleNotes = creative[role].brandStyleNotes || '';
+	const concept = creative[role].concept.trim() || suggested;
+	const built = buildArticleImagePrompt({
+		role,
+		brand: brain,
+		topic: article.topic,
+		concept,
+		excerpt: article.excerpt || article.body.slice(0, 400),
+		negativeConstraints: creative[role].negativeConstraints,
+		brandStyleNotes,
+	});
+	const recent = (await getNativeContentStore().listAssets(ownerUserId, article.brandId))
+		.filter((asset) => asset.sourceType === 'generated')
+		.slice(0, 12)
+		.map((asset) => String(asset.provenance.concept ?? asset.title ?? ''))
+		.filter(Boolean);
+	creative[role] = {
+		...creative[role],
+		suggestedConcept: suggested,
+		concept,
+		prompt: creative[role].prompt.trim() || built.prompt,
+		brandStyleNotes: brandStyleNotes || creative[role].brandStyleNotes,
+		dimensions: built.dimensions,
+		similarityWarning: conceptSimilarityWarning(concept, recent),
+		estimatedCostUsd: creative[role].estimatedCostUsd,
+	};
+	article.workspace = workspace;
+	await persist(article);
+	return { article, brief: creative[role] };
+}
+
+export async function saveArticleImageBrief(
+	ownerUserId: string,
+	articleId: string,
+	role: ArticleImageRole,
+	patch: Partial<ImageCreativeBrief>,
+): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const workspace = ensureWorkspace(article);
+	const creative = ensureMediaCreative(workspace);
+	creative[role] = mergeImageBrief(creative[role], { ...patch, purpose: role }, role);
+	article.workspace = workspace;
+	return persist(article);
+}
+
+export type GenerateArticleMediaOptions = {
+	prompt?: string;
+	concept?: string;
+	negativeConstraints?: string;
+	revisionInstructions?: string;
+	referenceAssetIds?: string[];
+	brandStyleNotes?: string;
+	/** Force a new asset even when the concept matches a prior generation. */
+	forceNew?: boolean;
+	/** Select a prior candidate without generating. */
+	selectAssetId?: string;
+};
+
+export async function generateArticleMedia(
+	ownerUserId: string,
+	articleId: string,
+	role: ArticleImageRole,
+	options: GenerateArticleMediaOptions = {},
+): Promise<ArticleRecord> {
+	if (options.selectAssetId) {
+		return replaceArticleMedia(ownerUserId, articleId, options.selectAssetId, role);
+	}
+	const article = await requireArticle(ownerUserId, articleId);
+	const brain = await requireBrand(ownerUserId, article.brandId);
+	const workspace = ensureWorkspace(article);
+	const creative = ensureMediaCreative(workspace);
+	const brief = creative[role];
+	const suggested = suggestImageConcept({
+		role,
+		title: article.title,
+		topic: article.topic,
+		excerpt: article.excerpt || article.body.slice(0, 400),
+		audience: article.audience,
+		imageRequirements: workspace.imageRequirements,
+	});
+	const concept = (options.concept ?? brief.concept ?? suggested).trim() || suggested;
+	const negativeConstraints = options.negativeConstraints ?? brief.negativeConstraints;
+	const revisionInstructions = options.revisionInstructions ?? brief.revisionInstructions;
+	const brandStyleNotes = options.brandStyleNotes ?? brief.brandStyleNotes;
+	const referenceAssetIds = options.referenceAssetIds ?? brief.referenceAssetIds;
+	const built = buildArticleImagePrompt({
+		role,
+		brand: brain,
+		topic: article.topic,
+		concept,
+		excerpt: article.excerpt || article.body.slice(0, 400),
+		negativeConstraints,
+		revisionInstructions,
+		brandStyleNotes,
+	});
+	const prompt = (options.prompt ?? brief.prompt ?? built.prompt).trim() || built.prompt;
+	const forceNew =
+		options.forceNew === true ||
+		Boolean(revisionInstructions?.trim()) ||
+		Boolean(options.prompt?.trim()) ||
+		Boolean(options.concept?.trim()) ||
+		Boolean(workspace.media[role === 'hero' ? 'heroUrl' : 'ogUrl']);
+
+	const planned = planMedia({ channel: 'BLOG', topic: article.topic, objective: article.objective, contentType: 'article' });
+	const decision: MediaDecision = {
+		...planned,
+		mediaRecommended: true,
+		mediaType: role === 'og' ? 'IMAGE' : 'HERO_IMAGE',
+		mediaRole: 'SUPPORTING',
+		visualConcept: concept,
+		aspectRatio: aspectRatioForRole(role),
+		preferredSource: referenceAssetIds.length ? 'generate' : planned.preferredSource,
+		referenceAssetIds,
+		generateNow: forceNew,
+		altTextDirection: role === 'og' ? 'Describe the social share image accurately for a small preview.' : 'Describe the hero image accurately for accessibility.',
+		textOverlayRecommendation: planned.textOverlayRecommendation,
+	};
+
 	let generated;
 	try {
 		generated = await generateAssetFromProposal({
@@ -1210,6 +1408,14 @@ export async function generateArticleMedia(ownerUserId: string, articleId: strin
 			topic: article.topic,
 			excerpt: article.excerpt || article.body.slice(0, 400),
 			explicitRequest: true,
+			promptOverride: prompt,
+			negativeConstraints,
+			revisionInstructions,
+			brandStyleNotes,
+			roleFraming:
+				role === 'og'
+					? 'Compose for social sharing: subject must remain clear when cropped to a small card.'
+					: 'Compose for an article hero: atmosphere and place matter; keep product UI legible if a reference screenshot is provided.',
 		});
 	} catch (error) {
 		if (error instanceof AgentError) {
@@ -1217,27 +1423,101 @@ export async function generateArticleMedia(ownerUserId: string, articleId: strin
 		}
 		throw error;
 	}
-	const workspace = ensureWorkspace(article);
-	const url = generated.asset.url ?? null;
+
+	let asset = generated.asset;
+	if (!generated.reused) {
+		const analyzed = await runAssetVisionAnalysis({
+			ownerUserId,
+			assetId: generated.asset.id,
+			brandName: brain.identity.name,
+			force: true,
+		});
+		if (analyzed) asset = { ...asset, altText: analyzed.altText || asset.altText, visionAnalysis: analyzed.visionAnalysis, visionAnalysisStatus: analyzed.visionAnalysisStatus };
+	}
+
+	const url = asset.url ?? null;
 	const verified =
 		role === 'hero'
 			? url
 				? await verifyHeroDestinationDelivery(ownerUserId, article, workspace, url)
 				: { ok: false, error: 'The image has no delivery URL.' }
 			: await verifyMediaUrl(url ?? undefined);
+
+	const now = new Date().toISOString();
+	const candidate = {
+		assetId: asset.id,
+		url: url ?? '',
+		prompt,
+		concept,
+		createdAt: now,
+		estimatedCostUsd: generated.estimatedCostUsd,
+		selected: true,
+	};
+	const previousCandidates = brief.candidates.map((item) => ({ ...item, selected: false }));
+	creative[role] = {
+		...brief,
+		suggestedConcept: suggested,
+		concept,
+		prompt,
+		negativeConstraints,
+		revisionInstructions: '',
+		referenceAssetIds,
+		brandStyleNotes,
+		dimensions: aspectRatioForRole(role),
+		lastCostUsd: generated.estimatedCostUsd,
+		estimatedCostUsd: generated.estimatedCostUsd,
+		similarityWarning: conceptSimilarityWarning(
+			concept,
+			previousCandidates.map((item) => item.concept),
+		),
+		history: [
+			{
+				at: now,
+				prompt,
+				concept,
+				assetId: asset.id,
+				url,
+				reused: generated.reused,
+				estimatedCostUsd: generated.estimatedCostUsd,
+				revisionInstructions: options.revisionInstructions || null,
+			},
+			...brief.history,
+		].slice(0, 20),
+		candidates: [candidate, ...previousCandidates.filter((item) => item.assetId !== asset.id)].slice(0, 12),
+	};
+
+	const visionAlt = asset.altText?.trim();
+	const needsManualAlt = !visionAlt || /^Visual supporting:/i.test(visionAlt) || asset.visionAnalysisStatus === 'skipped' || asset.visionAnalysisStatus === 'failed';
 	if (role === 'hero') {
-		workspace.media.heroAssetId = generated.asset.id;
+		workspace.media.heroAssetId = asset.id;
 		workspace.media.heroUrl = url;
-		workspace.media.heroAlt = workspace.media.heroAlt || generated.asset.altText || article.title;
-		article.featuredAssetId = generated.asset.id;
+		workspace.media.heroAlt = needsManualAlt
+			? workspace.media.heroAlt || ''
+			: visionAlt || workspace.media.heroAlt;
+		if (needsManualAlt && !workspace.media.heroAlt) {
+			workspace.media.deliveryError = verified.error;
+		}
+		article.featuredAssetId = asset.id;
 		workspace.media.deliveryVerified = verified.ok;
 		workspace.media.deliveryError = verified.error;
 	} else {
-		workspace.media.ogAssetId = generated.asset.id;
+		workspace.media.ogAssetId = asset.id;
 		workspace.media.ogUrl = url;
-		workspace.media.ogAlt = workspace.media.ogAlt || generated.asset.altText || article.title;
+		workspace.media.ogAlt = needsManualAlt ? workspace.media.ogAlt || '' : visionAlt || workspace.media.ogAlt;
 	}
 	article.workspace = workspace;
+	await persist(article);
+	try {
+		await reviewCurrentRevision({
+			article,
+			brain,
+			taxonomy: await taxonomyFor(article),
+			ai: getIntelligenceAi(),
+			ownerUserId,
+		});
+	} catch {
+		// Media save must succeed even if a follow-up review fails.
+	}
 	return persist(article);
 }
 
@@ -1248,23 +1528,59 @@ export async function replaceArticleMedia(ownerUserId: string, articleId: string
 		throw new ArticleWorkflowError('That image is not in this brand library.', 404, 'asset_not_found');
 	}
 	const workspace = ensureWorkspace(article);
+	const creative = ensureMediaCreative(workspace);
 	const verified =
 		role === 'hero' && asset.url
 			? await verifyHeroDestinationDelivery(ownerUserId, article, workspace, asset.url)
 			: await verifyMediaUrl(asset.url);
 	if (role === 'hero') {
+		if (workspace.media.acceptedHeroAssetId && workspace.media.acceptedHeroAssetId !== asset.id) {
+			// Keep the previously accepted asset id for history; selection replaces the active pointer only.
+		}
 		workspace.media.heroAssetId = asset.id;
 		workspace.media.heroUrl = asset.url ?? null;
-		workspace.media.heroAlt = asset.altText || workspace.media.heroAlt || article.title;
+		workspace.media.heroAlt = asset.altText || workspace.media.heroAlt || '';
 		article.featuredAssetId = asset.id;
 		workspace.media.deliveryVerified = verified.ok;
 		workspace.media.deliveryError = verified.error;
+		workspace.media.acceptedHeroAssetId = asset.id;
 	} else {
 		workspace.media.ogAssetId = asset.id;
 		workspace.media.ogUrl = asset.url ?? null;
-		workspace.media.ogAlt = asset.altText || article.title;
+		workspace.media.ogAlt = asset.altText || workspace.media.ogAlt || '';
+		workspace.media.acceptedOgAssetId = asset.id;
 	}
+	creative[role] = {
+		...creative[role],
+		candidates: [
+			{
+				assetId: asset.id,
+				url: asset.url ?? '',
+				prompt: asset.generationPrompt || creative[role].prompt,
+				concept: String(asset.provenance.concept ?? creative[role].concept),
+				createdAt: new Date().toISOString(),
+				estimatedCostUsd: null,
+				selected: true,
+			},
+			...creative[role].candidates.map((item) => ({ ...item, selected: item.assetId === asset.id })),
+		]
+			.filter((item, index, all) => all.findIndex((other) => other.assetId === item.assetId) === index)
+			.slice(0, 12),
+	};
 	article.workspace = workspace;
+	await persist(article);
+	try {
+		const brain = await requireBrand(ownerUserId, article.brandId);
+		await reviewCurrentRevision({
+			article,
+			brain,
+			taxonomy: await taxonomyFor(article),
+			ai: getIntelligenceAi(),
+			ownerUserId,
+		});
+	} catch {
+		// Selection must persist even if review refresh fails.
+	}
 	return persist(article);
 }
 

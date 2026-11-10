@@ -9,6 +9,7 @@ import { LifecycleBadges, type Lifecycle } from '@/components/articles/Lifecycle
 import { ResearchPanel } from '@/components/articles/ResearchPanel';
 import { ReviewPanel, type RevisionResult } from '@/components/articles/ReviewPanel';
 import { DraftWorkspace } from '@/components/articles/DraftWorkspace';
+import { ImagePanel } from '@/components/articles/ImagePanel';
 import { RevisionHistory } from '@/components/articles/RevisionDiff';
 import { validateArticleStructure } from '@/lib/articles/structure';
 import type { ArticleRecord, ArticleRevisionRef } from '@/lib/articles/types';
@@ -110,7 +111,6 @@ export default function ArticleWorkspacePage() {
 	const [categoryChoice, setCategoryChoice] = useState('');
 	const [publishAt, setPublishAt] = useState('');
 	const [publishedUrl, setPublishedUrl] = useState('');
-	const [assetId, setAssetId] = useState('');
 	const [media, setMedia] = useState({ heroAlt: '', ogAlt: '', credit: '', license: '' });
 	const [destinations, setDestinations] = useState<Array<{ key: string; name: string; enabled: boolean; id?: string; taxonomy?: { categories?: Array<{ id: string; name: string }>; contentTypes?: string[] } | null }>>([]);
 	const serverBody = useRef<string | null>(null);
@@ -224,7 +224,13 @@ export default function ArticleWorkspacePage() {
 		if (action === 'destination_preview') setCmsPreview((payload.preview as typeof cmsPreview) ?? null);
 		const text = typeof payload.message === 'string' ? payload.message : success;
 		if (text) setToast({ kind: 'ok', text, at: Date.now() });
-		await load(action !== 'research_edit' && action !== 'preview_structural_repair' && action !== 'preview_improve' && action !== 'destination_preview');
+		await load(
+			action !== 'research_edit' &&
+				action !== 'preview_structural_repair' &&
+				action !== 'preview_improve' &&
+				action !== 'destination_preview' &&
+				action !== 'suggest_titles',
+		);
 		return { ok: true, payload };
 	}, [articleId, load]);
 
@@ -370,6 +376,8 @@ export default function ArticleWorkspacePage() {
 				busy={busy}
 				pending={pending}
 				articleBody={article.body}
+				publishedTitle={article.title}
+				workingTitle={workspace?.workingTitle || article.title}
 				initialSeo={{
 					seoTitle: article.seo.seoTitle,
 					metaDescription: article.seo.metaDescription,
@@ -459,40 +467,17 @@ export default function ArticleWorkspacePage() {
 				) : null}
 			</section>
 
-			<section className="card p-4 space-y-3" id="images">
-				<h2 className="font-medium">Images</h2>
-				<p className="text-sm">Requirement: {workspace?.imageRequirements || '—'} · delivery {workspace?.media.deliveryVerified ? 'verified' : 'not verified'}{workspace?.media.deliveryError ? ` · ${workspace.media.deliveryError}` : ''}</p>
-				<div className="flex flex-wrap gap-4">
-					{workspace?.media.heroUrl ? <figure className="text-xs"><img src={workspace.media.heroUrl} alt={workspace.media.heroAlt || article.title} className="max-h-48 rounded" /><figcaption>Hero</figcaption></figure> : null}
-					{workspace?.media.ogUrl ? <figure className="text-xs"><img src={workspace.media.ogUrl} alt={workspace.media.ogAlt || article.title} className="max-h-48 rounded" /><figcaption>Social</figcaption></figure> : null}
-				</div>
-				<div className="flex flex-wrap gap-2">
-					<button className="btn" type="button" disabled={busy} onClick={() => actBool('media', { role: 'hero' }, 'Hero image ready.')}>{pending === 'media' ? 'Generating…' : workspace?.media.heroUrl ? 'Regenerate hero' : 'Generate hero'}</button>
-					<button className="btn" type="button" disabled={busy} onClick={() => actBool('media', { role: 'og' }, 'Social image ready.')}>{workspace?.media.ogUrl ? 'Regenerate social image' : 'Generate social image'}</button>
-				</div>
-				<div className="grid gap-3 md:grid-cols-2">
-					<label className="block text-sm">Hero alt text
-						<input className="input w-full" value={media.heroAlt} onChange={(event) => setMedia({ ...media, heroAlt: event.target.value })} />
-					</label>
-					<label className="block text-sm">Social image alt text
-						<input className="input w-full" value={media.ogAlt} onChange={(event) => setMedia({ ...media, ogAlt: event.target.value })} />
-					</label>
-					<label className="block text-sm">Credit
-						<input className="input w-full" value={media.credit} onChange={(event) => setMedia({ ...media, credit: event.target.value })} />
-					</label>
-					<label className="block text-sm">Licence
-						<input className="input w-full" value={media.license} onChange={(event) => setMedia({ ...media, license: event.target.value })} />
-					</label>
-				</div>
-				<button className="btn" type="button" disabled={busy} onClick={() => actBool('media_meta', media, 'Image details saved.')}>Save image details</button>
-				<details className="text-sm">
-					<summary>Use an existing library image</summary>
-					<label className="block">Asset ID
-						<input className="input w-full" value={assetId} onChange={(event) => setAssetId(event.target.value)} />
-					</label>
-					<button className="btn mt-2" type="button" disabled={busy || !assetId} onClick={() => actBool('media', { role: 'hero', assetId }, 'Library image set as hero.')}>Use library image</button>
-				</details>
-			</section>
+			{workspace ? (
+				<ImagePanel
+					imageRequirements={workspace.imageRequirements}
+					media={workspace.media}
+					busy={busy}
+					pending={pending}
+					act={actBool}
+					meta={media}
+					onMetaChange={setMedia}
+				/>
+			) : null}
 
 			<section className="card p-4 space-y-3" id="cms">
 				<h2 className="font-medium">CMS draft</h2>

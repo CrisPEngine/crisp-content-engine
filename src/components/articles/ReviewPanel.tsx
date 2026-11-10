@@ -71,7 +71,10 @@ function FindingRow({ finding, busy, act, locked }: { finding: ArticleEditorialF
 						<button className="btn" type="button" disabled={busy} onClick={() => act('recommendation', { findingId: finding.id, decision: 'pending' }, 'Recommendation set back to pending.')}>Undo accept</button>
 					)}
 					{finding.rejectable !== false ? (
-						<button className="btn" type="button" disabled={busy} onClick={() => act('recommendation', { findingId: finding.id, decision: 'rejected' }, 'Recommendation rejected.')}>Reject</button>
+						<>
+							<button className="btn" type="button" disabled={busy} onClick={() => act('recommendation', { findingId: finding.id, decision: 'rejected' }, 'Recommendation rejected.')}>Reject</button>
+							<button className="btn" type="button" disabled={busy} onClick={() => act('recommendation', { findingId: finding.id, decision: 'dismissed' }, 'Finding dismissed.')}>Dismiss</button>
+						</>
 					) : null}
 					{editing ? (
 						<>

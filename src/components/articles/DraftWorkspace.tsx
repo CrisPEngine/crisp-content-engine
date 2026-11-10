@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { DiffView } from './RevisionDiff';
 import type { StructuralRepairPreview } from '@/lib/articles/structuralRepair';
 import { validateArticleStructure } from '@/lib/articles/structure';
@@ -42,6 +42,8 @@ export function DraftWorkspace({
 	initialSeo,
 	act,
 	onSaved,
+	publishedTitle,
+	workingTitle,
 }: {
 	articleId: string;
 	body: string;
@@ -59,9 +61,17 @@ export function DraftWorkspace({
 	initialSeo: SeoState;
 	act: Act;
 	onSaved: () => Promise<void>;
+	publishedTitle: string;
+	workingTitle: string;
 }) {
 	const [repair, setRepair] = useState<StructuralRepairPreview | null>(null);
 	const [improve, setImprove] = useState<ImprovePreview | null>(null);
+	const [title, setTitle] = useState(publishedTitle);
+	const [suggestions, setSuggestions] = useState<Array<{ title: string; rationale: string }>>([]);
+	const titleDirty = title.trim() !== publishedTitle.trim();
+	useEffect(() => {
+		setTitle(publishedTitle);
+	}, [publishedTitle]);
 	const bodyDirty = body !== articleBody;
 	const seoDirty = JSON.stringify(seo) !== JSON.stringify(initialSeo);
 	const actualWords = structure?.wordCount ?? 0;
@@ -82,6 +92,7 @@ export function DraftWorkspace({
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({
 				...(bodyDirty ? { body } : {}),
+				...(titleDirty ? { title: title.trim() } : {}),
 				...(seoDirty ? { seoTitle: seo.seoTitle, metaDescription: seo.metaDescription, excerpt: seo.excerpt, slug: seo.slug } : {}),
 			}),
 		});
@@ -227,6 +238,38 @@ export function DraftWorkspace({
 
 			<div className="space-y-3">
 				<div className="flex flex-wrap items-center justify-between gap-2">
+					<h3 className="text-sm font-medium">Titles</h3>
+					<button
+						className="btn"
+						type="button"
+						disabled={busy}
+						onClick={async () => {
+							const { ok, payload } = await act('suggest_titles');
+							if (ok && payload?.suggestions) setSuggestions(payload.suggestions as Array<{ title: string; rationale: string }>);
+						}}
+					>
+						Suggest headlines
+					</button>
+				</div>
+				<p className="text-xs text-text-soft">Working title (brief): {workingTitle || '—'} · Published H1 is separate from SEO title and slug.</p>
+				<label className="block text-sm">
+					Published article title / H1
+					<input className="input w-full" value={title} onChange={(event) => setTitle(event.target.value)} />
+				</label>
+				{suggestions.length ? (
+					<ul className="space-y-2 text-sm">
+						{suggestions.map((suggestion) => (
+							<li key={suggestion.title} className="rounded border border-edge/50 p-2">
+								<p className="font-medium">{suggestion.title}</p>
+								<p className="text-xs text-text-soft">{suggestion.rationale}</p>
+								<button className="btn mt-1" type="button" onClick={() => setTitle(suggestion.title)}>
+									Use as published title
+								</button>
+							</li>
+						))}
+					</ul>
+				) : null}
+				<div className="flex flex-wrap items-center justify-between gap-2">
 					<h3 className="text-sm font-medium">SEO metadata</h3>
 					<button
 						className="btn"
@@ -244,7 +287,7 @@ export function DraftWorkspace({
 						<input className="input w-full" value={seo.seoTitle} onChange={(event) => setSeo({ ...seo, seoTitle: event.target.value })} />
 					</label>
 					<label className="block text-sm">
-						Slug
+						Slug <span className="text-xs text-text-soft">Stable after CMS sync unless you approve a URL change</span>
 						<input className="input w-full" value={seo.slug} onChange={(event) => setSeo({ ...seo, slug: event.target.value })} />
 					</label>
 					<label className="block text-sm md:col-span-2">
@@ -261,8 +304,8 @@ export function DraftWorkspace({
 			</div>
 
 			<div className="flex flex-wrap gap-2 items-center">
-				<button className="btn" type="button" disabled={busy || jobRunning || (!bodyDirty && !seoDirty)} onClick={() => void saveDraft()}>
-					{pending === 'save' ? 'Saving…' : bodyDirty || seoDirty ? 'Save in CCE' : 'Saved in CCE'}
+				<button className="btn" type="button" disabled={busy || jobRunning || (!bodyDirty && !seoDirty && !titleDirty)} onClick={() => void saveDraft()}>
+					{pending === 'save' ? 'Saving…' : bodyDirty || seoDirty || titleDirty ? 'Save in CCE' : 'Saved in CCE'}
 				</button>
 				{bodyDirty ? <button className="btn" type="button" onClick={() => setBody(articleBody)}>Discard body edits</button> : null}
 				{bodyDirty ? <span className="text-xs text-text-soft">Saving the body creates a new revision and marks editorial review outdated. Metadata-only saves do not.</span> : null}

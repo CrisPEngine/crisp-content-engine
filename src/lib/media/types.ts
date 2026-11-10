@@ -31,7 +31,8 @@ export type MediaDecision = {
 	assetMatchScore?: number | null;
 	referenceAssetIds?: string[];
 	mediaChoice?: 'existing' | 'reference' | 'generate' | 'none';
-	generateNow: false;
+	/** When true, skip concept-match reuse and create a new asset version. */
+	generateNow: boolean;
 };
 
 export type ChannelMediaSpec = {

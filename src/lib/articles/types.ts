@@ -59,7 +59,15 @@ export const EDITORIAL_DIMENSIONS = [
 
 export type EditorialDimension = (typeof EDITORIAL_DIMENSIONS)[number];
 
-export const RECOMMENDATION_STATES = ['pending', 'accepted', 'rejected', 'applied', 'superseded'] as const;
+export const RECOMMENDATION_STATES = [
+	'pending',
+	'accepted',
+	'rejected',
+	'applied',
+	'superseded',
+	'resolved_auto',
+	'dismissed',
+] as const;
 
 export type RecommendationState = (typeof RECOMMENDATION_STATES)[number];
 
@@ -293,6 +301,11 @@ export type ArticleWorkspace = {
 		license: string;
 		deliveryVerified: boolean;
 		deliveryError: string | null;
+		/** Editable creative briefs and generation history per role. */
+		creative?: import('./imageBrief').MediaCreativeState;
+		/** Accepted asset ids that must not be overwritten silently. */
+		acceptedHeroAssetId?: string | null;
+		acceptedOgAssetId?: string | null;
 	};
 	cms: {
 		externalId: string | null;
