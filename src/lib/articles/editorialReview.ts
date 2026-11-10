@@ -1,7 +1,9 @@
 import type { DestinationTaxonomy } from '@/lib/publishing/destinationTaxonomy';
 import type { BrandBrain } from '@/lib/intelligence/types';
 import type { IntelligenceAi } from '@/lib/intelligence/pipeline';
+import { runQualityChecks, type QualityContext } from './quality';
 import { plainText, validateArticleStructure, type StructureReport } from './structure';
+import type { FindingFix } from './types';
 
 export type ReviewFinding = {
 	severity: 'critical' | 'major' | 'minor';
@@ -11,6 +13,11 @@ export type ReviewFinding = {
 	dimension?: string;
 	/** False for structural defects that every revision is re-checked against. */
 	rejectable?: boolean;
+	section?: string | null;
+	evidence?: string[];
+	explanation?: string | null;
+	proposedFix?: string | null;
+	fix?: FindingFix | null;
 };
 
 export type EditorialReview = {
@@ -51,12 +58,17 @@ export type DeterministicReviewInput = {
 	imageRequired?: boolean;
 	heroReady?: boolean;
 	expectedSections?: number;
+	/** Allowed deviation from the requested length, in percent. Defaults to 20. */
+	tolerancePct?: number;
+	/** Category name stored when it was chosen, to detect a rename in the CMS. */
+	categoryName?: string | null;
+	quality?: Omit<QualityContext, 'body' | 'wordCount'>;
 };
 
-function lengthFinding(actual: number, target: number): ReviewFinding | null {
+function lengthFinding(actual: number, target: number, tolerancePct = 20): ReviewFinding | null {
 	if (!target || !actual) return null;
 	const deviation = (actual - target) / target;
-	if (Math.abs(deviation) <= 0.2) return null;
+	if (Math.abs(deviation) <= tolerancePct / 100) return null;
 	const percent = Math.round(Math.abs(deviation) * 100);
 	const under = deviation < 0;
 	return {
@@ -64,6 +76,7 @@ function lengthFinding(actual: number, target: number): ReviewFinding | null {
 		code: under ? 'too_short' : 'too_long',
 		source: 'deterministic',
 		dimension: 'topic_completeness',
+		evidence: [`${actual.toLocaleString()} words; requested ${target.toLocaleString()} ± ${tolerancePct}%.`],
 		instruction: under
 			? `The draft has ${actual.toLocaleString()} words against a target of ${target.toLocaleString()} (${percent}% under). That is acceptable if every question in the brief is answered. If a reader question is unanswered, add depth there. Do not add filler to reach the number.`
 			: `The draft has ${actual.toLocaleString()} words against a target of ${target.toLocaleString()} (${percent}% over). Cut repetition and digressions; keep every step the reader needs.`,
@@ -92,18 +105,30 @@ export function runDeterministicArticleReview(input: DeterministicReviewInput): 
 			rejectable: false,
 		});
 	}
-	const length = lengthFinding(input.wordCount, input.targetWords);
+	const length = lengthFinding(input.wordCount, input.targetWords, input.tolerancePct);
 	if (length) findings.push(length);
 
 	if (input.taxonomy) {
 		const allowed = input.taxonomy.categories.map((item) => item.id);
+		const current = input.categoryId ? input.taxonomy.categories.find((item) => item.id === input.categoryId) : undefined;
 		if (!input.categoryId) {
 			findings.push({
-				severity: 'major',
+				severity: allowed.length ? 'critical' : 'major',
 				code: 'category_missing',
 				source: 'deterministic',
 				dimension: 'category_accuracy',
 				instruction: 'Choose a category that the destination returned before sending the draft.',
+				explanation: 'The destination files articles by category. Without one, the draft cannot be placed on the site.',
+				rejectable: !allowed.length,
+			});
+		} else if (current && input.categoryName && current.name !== input.categoryName) {
+			findings.push({
+				severity: 'major',
+				code: 'category_renamed',
+				source: 'deterministic',
+				dimension: 'category_accuracy',
+				evidence: [`Chosen as “${input.categoryName}”; the CMS now calls it “${current.name}”.`],
+				instruction: `The category was renamed in the CMS to “${current.name}”. Confirm it is still the right category, or choose another.`,
 			});
 		} else if (!allowed.includes(input.categoryId)) {
 			findings.push({
@@ -172,7 +197,7 @@ export function runDeterministicArticleReview(input: DeterministicReviewInput): 
 		});
 	}
 
-	if (input.brandName?.trim()) {
+	if (input.brandName?.trim() && !input.quality?.promotedNames?.includes(input.brandName)) {
 		const pattern = new RegExp(`\\b${input.brandName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
 		const mentions = (plainText(input.body).match(pattern) ?? []).length;
 		const perThousand = input.wordCount ? (mentions / input.wordCount) * 1000 : 0;
@@ -251,6 +276,10 @@ export function runDeterministicArticleReview(input: DeterministicReviewInput): 
 		});
 	}
 
+	if (input.quality) {
+		findings.push(...runQualityChecks({ ...input.quality, body: input.body, wordCount: input.wordCount }));
+	}
+
 	const ready = !findings.some((finding) => finding.severity === 'critical');
 	return { ready, findings };
 }
@@ -290,13 +319,26 @@ export async function runLlmEditorialReview(input: {
 		throw new Error(`The article is ${input.body.length.toLocaleString()} characters, which is more than one review pass can read (${MAX_REVIEW_CHARS.toLocaleString()}). Split it before review.`);
 	}
 	const structure = input.structure ?? validateArticleStructure(input.body);
-	const completion = await input.ai.completeJson<{ ready?: boolean; findings?: Array<{ severity?: string; code?: string; instruction?: string; dimension?: string }> }>(
+	type LlmFinding = {
+		severity?: string;
+		code?: string;
+		instruction?: string;
+		dimension?: string;
+		section?: string;
+		evidence?: string;
+		explanation?: string;
+		proposedFix?: string;
+	};
+	const completion = await input.ai.completeJson<{ ready?: boolean; findings?: LlmFinding[] }>(
 		'REVIEW',
 		[
 			{
 				role: 'system',
 				content: [
-					'Review the complete article against the approved brief. Return JSON with ready (boolean) and findings (array of severity, code, dimension, instruction).',
+					'Review the complete article against the approved brief. Return JSON with ready (boolean) and findings (array of severity, code, dimension, section, evidence, explanation, instruction, proposedFix).',
+					'section is the exact H2 heading the finding is about, or empty when it concerns the whole article. evidence is a short exact quote from the article. explanation says why it matters to the reader. proposedFix is replacement text when a direct fix is possible, otherwise empty.',
+					'Check that the article gives the reader something distinctive: worked examples, exercises or decisions they can act on. Flag sections that only restate general advice.',
+					'Flag ideas restated across sections, community anecdotes presented as expert advice, and product mentions that do not help the step being described.',
 					'dimension must be one of search_intent, topic_completeness, accuracy, sources, writing_quality, brand_voice, seo, category_accuracy, internal_linking, publication_readiness.',
 					'severity critical means the article must not be published as is. Use it only for factual errors, unsupported claims stated as fact, missing answers to the brief questions, or content that contradicts the brief.',
 					'You receive the full document. Structure, truncation and word count are checked separately; do not report them.',
@@ -331,6 +373,10 @@ export async function runLlmEditorialReview(input: {
 			instruction: String(item.instruction),
 			source: 'llm' as const,
 			dimension: typeof item.dimension === 'string' ? item.dimension : undefined,
+			section: typeof item.section === 'string' && item.section.trim() ? item.section.trim() : null,
+			evidence: typeof item.evidence === 'string' && item.evidence.trim() ? [item.evidence.trim()] : undefined,
+			explanation: typeof item.explanation === 'string' && item.explanation.trim() ? item.explanation.trim() : null,
+			proposedFix: typeof item.proposedFix === 'string' && item.proposedFix.trim() ? item.proposedFix.trim() : null,
 		}));
 	const ready = !findings.some((finding) => finding.severity === 'critical');
 	return { ready, findings };

@@ -8,6 +8,7 @@ import type {
 	ResearchPackageSource,
 	ResearchUpdate,
 } from './types';
+import { classifySource, evidenceLevel } from './sourceClass';
 
 const STOP = new Set([
 	'about', 'after', 'also', 'among', 'and', 'best', 'between', 'cover', 'does', 'each', 'every', 'from', 'guide', 'guides',
@@ -91,6 +92,7 @@ export function emptyResearchPackage(): ResearchPackage {
 		updatedAt: null,
 		notes: '',
 		expertise: '',
+		questions: [],
 		sources: [],
 		items: [],
 		gaps: [],
@@ -159,6 +161,7 @@ export function mergeResearchRecord(pkg: ResearchPackage, record: ResearchRecord
 			excluded,
 			excludedReason: excluded ? 'Not related to the brief. The title and excerpt do not mention the topic or keywords.' : null,
 		};
+		source.classification = classifySource(source, { brandDomain: context.brandDomain, competitorDomains: context.competitorDomains });
 		if (excluded) excludedSources += 1;
 		else addedSources += 1;
 		byUrl.set(key, source);
@@ -331,6 +334,7 @@ export function addUserSource(pkg: ResearchPackage, input: { url: string; title?
 			excluded: false,
 			excludedReason: null,
 		};
+		source.classification = classifySource(source);
 		pkg.sources.push(source);
 	} else {
 		source.excluded = false;
@@ -397,6 +401,7 @@ export function approveResearch(pkg: ResearchPackage): void {
 		items: live.map((item) => ({ ...item })),
 		notes: pkg.notes,
 		expertise: pkg.expertise,
+		questions: [...(pkg.questions ?? [])],
 	};
 	pkg.status = 'approved';
 }
@@ -408,12 +413,15 @@ export function articleResearchFromApproved(pkg: ResearchPackage): ArticleResear
 	const sourceById = new Map(snapshot.sources.map((source) => [source.id, source]));
 	const claims: ArticleResearch['claims'] = snapshot.items.map((item) => {
 		const source = item.sourceIds.map((id) => sourceById.get(id)).find(Boolean);
+		const sourceClass = source ? (source.classification ?? classifySource(source)) : item.kind === 'brand' ? 'brand_knowledge' : undefined;
 		return {
 			text: item.text,
 			sourceLabel: source ? source.title : item.kind === 'brand' ? 'Brand Brain' : item.kind === 'user' ? 'Author' : 'Editorial recommendation',
 			confidence: item.kind === 'brand' ? ('stored' as const) : ('supplied' as const),
 			sourceUrl: source?.url,
 			kind: item.kind,
+			sourceClass,
+			evidenceLevel: item.kind === 'user' ? 'expert_recommendation' : sourceClass ? evidenceLevel(sourceClass) : undefined,
 		};
 	});
 	if (snapshot.expertise.trim()) {

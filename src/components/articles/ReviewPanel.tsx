@@ -1,41 +1,60 @@
 'use client';
 
+import { useState } from 'react';
 import type { ArticleEditorialFinding, ArticleReviewRun } from '@/lib/articles/types';
+import { findingTier } from '@/lib/articles/meta';
 
 type Act = (action: string, extra?: Record<string, unknown>, success?: string) => Promise<boolean>;
-
-export type RevisionResult = {
-	baseRevisionId: string;
-	resultRevisionId: string;
-	applied: Array<{ id: string; change: string }>;
-	notApplied: Array<{ id: string; reason: string }>;
-} | null;
-
-const STATE_STYLES: Record<string, string> = {
-	pending: 'border-edge text-text-soft',
-	accepted: 'border-primary/60 bg-primary/15',
-	rejected: 'border-edge text-text-dim',
-	applied: 'border-accent/60 bg-accent/15',
-	superseded: 'border-edge text-text-dim',
-};
+export type RevisionResult = { applied?: Array<{ id: string; change: string }>; skipped?: Array<{ id: string; reason: string }> } | null;
 
 const SEVERITY_STYLES: Record<string, string> = {
 	critical: 'text-danger',
-	major: 'text-warning',
+	major: 'text-amber-700',
 	minor: 'text-text-soft',
 };
 
+const STATE_STYLES: Record<string, string> = {
+	pending: 'border-edge text-text-soft',
+	accepted: 'border-emerald-600/40 text-emerald-800',
+	rejected: 'border-edge text-text-soft',
+	applied: 'border-emerald-600/40 text-emerald-800',
+	superseded: 'border-edge text-text-soft',
+};
+
+const TIER_LABELS = { blocking: 'Blocking', important: 'Important', optional: 'Optional' } as const;
+
 function FindingRow({ finding, busy, act, locked }: { finding: ArticleEditorialFinding; busy: boolean; act: Act; locked: boolean }) {
 	const open = finding.decision === 'pending' || finding.decision === 'accepted';
+	const tier = findingTier(finding);
+	const [editing, setEditing] = useState(false);
+	const [instruction, setInstruction] = useState(finding.editedInstruction ?? finding.instruction);
 	return (
 		<li className="border-t border-edge/50 pt-2 text-sm space-y-1">
 			<div className="flex flex-wrap items-center gap-2">
 				<span className={`font-medium uppercase text-xs ${SEVERITY_STYLES[finding.severity]}`}>{finding.severity}</span>
+				<span className="rounded-full border px-2 py-0.5 text-xs">{TIER_LABELS[tier]}</span>
 				<span className="text-xs text-text-soft">{finding.dimension.replace(/_/g, ' ')} · {finding.source === 'llm' ? 'editor model' : 'automatic check'}</span>
 				<span className={`rounded-full border px-2 py-0.5 text-xs ${STATE_STYLES[finding.decision] ?? ''}`}>{finding.decision}</span>
 				{finding.rejectable === false ? <span className="text-xs text-text-soft">must be fixed, cannot be rejected</span> : null}
 			</div>
-			<p>{finding.instruction}</p>
+			{finding.section ? <p className="text-xs text-text-soft">Section: {finding.section}</p> : null}
+			{editing ? (
+				<textarea className="input w-full" rows={3} value={instruction} onChange={(event) => setInstruction(event.target.value)} />
+			) : (
+				<p>{finding.editedInstruction ?? finding.instruction}</p>
+			)}
+			{finding.explanation ? <p className="text-xs text-text-soft">{finding.explanation}</p> : null}
+			{(finding.evidence?.length ?? 0) > 0 ? (
+				<ul className="text-xs text-text-soft list-disc pl-5">
+					{finding.evidence!.map((item) => <li key={item}>{item}</li>)}
+				</ul>
+			) : null}
+			{finding.proposedFix ? (
+				<details className="text-xs">
+					<summary>Proposed fix</summary>
+					<pre className="whitespace-pre-wrap mt-1 rounded border border-edge/50 p-2">{finding.proposedFix}</pre>
+				</details>
+			) : null}
 			{finding.note ? <p className="text-xs text-text-soft">{finding.note}</p> : null}
 			{open && !locked ? (
 				<div className="flex flex-wrap gap-2">
@@ -46,6 +65,26 @@ function FindingRow({ finding, busy, act, locked }: { finding: ArticleEditorialF
 					)}
 					{finding.rejectable !== false ? (
 						<button className="btn" type="button" disabled={busy} onClick={() => act('recommendation', { findingId: finding.id, decision: 'rejected' }, 'Recommendation rejected.')}>Reject</button>
+					) : null}
+					{editing ? (
+						<>
+							<button
+								className="btn"
+								type="button"
+								disabled={busy || !instruction.trim()}
+								onClick={async () => {
+									if (await act('edit_recommendation', { findingId: finding.id, instruction }, 'Recommendation rewritten.')) setEditing(false);
+								}}
+							>
+								Save rewrite
+							</button>
+							<button className="btn" type="button" onClick={() => { setInstruction(finding.editedInstruction ?? finding.instruction); setEditing(false); }}>Cancel</button>
+						</>
+					) : (
+						<button className="btn" type="button" disabled={busy} onClick={() => setEditing(true)}>Edit instruction</button>
+					)}
+					{finding.fix ? (
+						<button className="btn" type="button" disabled={busy} onClick={() => act('apply_fix', { findingId: finding.id }, 'Deterministic fix applied.')}>Apply fix now</button>
 					) : null}
 				</div>
 			) : null}
@@ -111,77 +150,41 @@ export function ReviewPanel({
 			<div className="flex flex-wrap items-baseline justify-between gap-2">
 				<h2 className="font-medium">Editorial review</h2>
 				<p className="text-sm">
-					{editorial.reviewedRevisionNumber ? `Reviewed revision ${editorial.reviewedRevisionNumber}` : 'Not reviewed'}
-					{currentRevision ? ` · current revision ${currentRevision.number}` : ''}
+					{editorial.status.replace(/_/g, ' ')}
+					{editorial.reviewedRevisionNumber ? ` · revision ${editorial.reviewedRevisionNumber}` : ''}
+					{` · ${cyclesLeft} revision cycle${cyclesLeft === 1 ? '' : 's'} left`}
 				</p>
 			</div>
-			<p className="text-xs text-text-soft">
-				Structural validation in Draft is automatic and does not use revision cycles. Editorial review below is tied to a saved revision.
-				<strong className="text-text"> Improve article with AI</strong> in Draft is separate from <strong className="text-text">Apply accepted revisions</strong> here.
-			</p>
-			<p className="text-sm">
-				Revision cycles used: <strong>{editorial.cyclesUsed} of {editorial.maxCycles}</strong>.
-				{cyclesLeft === 0 ? ' The limit is reached. That is not approval; a person still decides.' : ` ${cyclesLeft} left.`}
-			</p>
-			{stale ? (
-				<p className="text-sm text-warning">
-					{editorial.reviewedRevisionNumber
-						? `The draft changed after the last review. These findings refer to revision ${editorial.reviewedRevisionNumber}.`
-						: 'These findings come from a review that was not tied to a saved revision, so they may not match the current text.'}{' '}
-					Run review again before applying or approving.
-				</p>
-			) : null}
-			{openCritical.length ? <p className="text-sm text-danger">{openCritical.length} critical {openCritical.length === 1 ? 'finding is' : 'findings are'} unresolved. Approval is blocked until {openCritical.length === 1 ? 'it is' : 'they are'} fixed or, where allowed, rejected.</p> : null}
-
-			<div className="flex flex-wrap gap-2 items-center">
-				<button className="btn" type="button" disabled={busy || revisionRunning} onClick={() => act('review', {}, 'Review finished.')}>
-					{pending === 'review' ? 'Reviewing…' : stale || editorial.status === 'not_run' ? 'Run review' : 'Run review again'}
+			<p className="text-sm text-text-soft">Blocking findings must be fixed before publication-ready. Accept recommendations, rewrite them, or apply a deterministic fix where offered. Targeted revisions change only accepted items.</p>
+			{openCritical.length ? <p className="text-sm text-danger" role="alert">{openCritical.length} blocking finding{openCritical.length === 1 ? '' : 's'} still open.</p> : null}
+			<div className="flex flex-wrap gap-2">
+				<button className="btn" type="button" disabled={busy || approved} onClick={() => act('review', {}, 'Review complete.')}>
+					{pending === 'review' ? 'Reviewing…' : editorial.status === 'not_run' ? 'Run review' : 'Re-run review'}
 				</button>
-				<button className="btn" type="button" disabled={busy || Boolean(applyBlocked)} onClick={() => act('apply_revisions', {}, 'Revision started. A new revision is created and reviewed when it finishes.')}>
-					{pending === 'apply_revisions' ? 'Starting…' : `Apply accepted revisions${accepted.length ? ` (${accepted.length})` : ''}`}
+				<button className="btn" type="button" disabled={busy || Boolean(applyBlocked)} onClick={() => act('apply_revisions', {}, 'Revision started for accepted recommendations.')}>
+					{revisionRunning || pending === 'apply_revisions' ? 'Revising…' : 'Apply accepted revisions'}
 				</button>
-				{applyBlocked && accepted.length ? <span className="text-xs text-text-soft">{applyBlocked}</span> : null}
 			</div>
-
-			{revisionResult ? (
-				<div className="rounded border border-edge/60 p-3 text-sm space-y-1">
-					<p className="font-medium">Last revision</p>
-					{revisionResult.applied.map((item) => {
-						const original = historyFindings.find(({ finding }) => finding.id === item.id)?.finding;
-						return <p key={item.id}>Applied: {original?.instruction ?? item.id} — {item.change}</p>;
-					})}
-					{revisionResult.notApplied.map((item) => {
-						const original = [...findings, ...historyFindings.map(({ finding }) => finding)].find((finding) => finding.id === item.id);
-						return <p key={item.id} className="text-warning">Not applied: {original?.instruction ?? item.id} — {item.reason}. It stays accepted for the next cycle.</p>;
-					})}
-				</div>
-			) : null}
-
-			{sorted.length === 0 && editorial.status !== 'not_run' ? <p className="text-sm">No findings on this revision.</p> : null}
-			<ul className="space-y-2">
-				{sorted.map((finding) => (
-					<FindingRow key={finding.id} finding={finding} busy={busy || revisionRunning} act={act} locked={approved} />
-				))}
-			</ul>
-
-			{historyFindings.length ? (
+			{applyBlocked && accepted.length ? <p className="text-xs text-text-soft">{applyBlocked}</p> : null}
+			{stale ? <p className="text-sm">The draft changed since this review. Run it again on the current revision.</p> : null}
+			{sorted.length === 0 ? <p className="text-sm">No findings yet.</p> : (
+				<ul className="space-y-3">
+					{sorted.map((finding) => (
+						<div key={finding.id}>
+							<FindingRow finding={finding} busy={busy || revisionRunning} act={act} locked={approved} />
+							{appliedMap.get(finding.id) ? <p className="text-xs text-emerald-800 pl-1">Applied: {appliedMap.get(finding.id)}</p> : null}
+						</div>
+					))}
+				</ul>
+			)}
+			{appliedHistory.length ? (
 				<details className="text-sm">
-					<summary>Recommendation history ({appliedHistory.length} applied)</summary>
-					<ol className="space-y-1 pt-2">
-						{(editorial.history ?? []).slice().reverse().map((run) => (
-							<li key={`${run.revisionId}-${run.ranAt}`} className="space-y-1">
-								<p className="font-medium">Review of revision {run.revisionNumber} · {new Date(run.ranAt).toLocaleString()}</p>
-								<ul className="pl-4 space-y-0.5">
-									{run.findings.map((finding) => (
-										<li key={finding.id}>
-											<span className={`rounded-full border px-1.5 text-xs ${STATE_STYLES[finding.decision] ?? ''}`}>{finding.decision}</span> {finding.severity} — {finding.instruction}
-											{finding.decision === 'applied' && appliedMap.get(finding.id) ? ` (${appliedMap.get(finding.id)})` : ''}
-										</li>
-									))}
-								</ul>
-							</li>
+					<summary>Applied in earlier reviews</summary>
+					<ul className="pt-2 space-y-1">
+						{appliedHistory.map(({ run, finding }) => (
+							<li key={`${run.revisionId}-${finding.id}`}>Revision {run.revisionNumber}: {finding.instruction}</li>
 						))}
-					</ol>
+					</ul>
 				</details>
 			) : null}
 		</section>

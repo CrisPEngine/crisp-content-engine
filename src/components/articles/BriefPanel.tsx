@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { BriefSuggestion } from '@/lib/articles/types';
-import { BRIEF_FIELDS, ChoiceWithOther, contentTypeOptions, DEFAULT_CONTENT_TYPES, SEARCH_INTENT_OPTIONS } from './options';
+import { BRIEF_FIELDS, ChoiceWithOther, contentTypeOptions, DEFAULT_CONTENT_TYPES, MAX_BRIEF_TARGET_WORDS, MIN_BRIEF_TARGET_WORDS, SEARCH_INTENT_OPTIONS } from './options';
 
 type Act = (action: string, extra?: Record<string, unknown>, success?: string) => Promise<boolean>;
 
@@ -15,16 +15,28 @@ export type BriefValues = {
 	contentType: string;
 	targetWords: number;
 	destinationId: string;
+	categoryId: string;
 	imageRequirements: string;
 	researchRequirements: string;
 	internalLinking: string;
 	brief: Record<string, string>;
 };
 
+type DestinationOption = {
+	key: string;
+	name: string;
+	enabled: boolean;
+	taxonomy?: {
+		categories?: Array<{ id: string; name: string }>;
+		contentTypes?: string[];
+	} | null;
+};
+
 const SUGGESTION_LABELS: Record<string, string> = {
 	audience: 'Audience',
 	primaryKeyword: 'Primary keyword',
 	workingTitle: 'Working title',
+	targetWords: 'Target word count',
 	...Object.fromEntries(BRIEF_FIELDS.map((field) => [field.key, field.label])),
 };
 
@@ -32,6 +44,9 @@ export function BriefPanel({
 	initial,
 	destinations,
 	contentTypes,
+	categories,
+	wordTarget,
+	actualWordCount,
 	approvedAt,
 	changedAfterApproval,
 	suggestions,
@@ -40,10 +55,14 @@ export function BriefPanel({
 	act,
 	save,
 	onDirtyChange,
+	onSyncTaxonomy,
 }: {
 	initial: BriefValues;
-	destinations: Array<{ key: string; name: string; enabled: boolean }>;
+	destinations: DestinationOption[];
 	contentTypes: string[] | null;
+	categories: Array<{ id: string; name: string }> | null;
+	wordTarget?: { requested: number; approved: number | null; tolerancePct: number } | null;
+	actualWordCount?: number;
 	approvedAt: string | null;
 	changedAfterApproval: boolean;
 	suggestions: BriefSuggestion[];
@@ -52,6 +71,7 @@ export function BriefPanel({
 	act: Act;
 	save: (values: BriefValues) => Promise<boolean>;
 	onDirtyChange: (dirty: boolean) => void;
+	onSyncTaxonomy?: () => Promise<void>;
 }) {
 	const [values, setValues] = useState(initial);
 	const dirty = JSON.stringify(values) !== JSON.stringify(initial);
@@ -62,6 +82,11 @@ export function BriefPanel({
 	}
 	const setBrief = (key: string, value: string) => setValues((current) => ({ ...current, brief: { ...current.brief, [key]: value } }));
 	const types = contentTypeOptions([...(contentTypes?.length ? contentTypes : DEFAULT_CONTENT_TYPES)]);
+	const selectedDestination = destinations.find((item) => item.key === values.destinationId);
+	const destinationCategories = categories?.length
+		? categories
+		: selectedDestination?.taxonomy?.categories ?? [];
+	const needsTaxonomy = Boolean(values.destinationId) && destinationCategories.length === 0;
 
 	return (
 		<section className="card p-4 space-y-3" id="brief">
@@ -72,6 +97,14 @@ export function BriefPanel({
 					{dirty ? ' · unsaved changes' : ''}
 				</p>
 			</div>
+			{(wordTarget || actualWordCount) ? (
+				<p className="text-xs text-text-soft">
+					Word count · requested {wordTarget?.requested ?? values.targetWords}
+					{wordTarget?.approved != null ? ` · approved ${wordTarget.approved}` : ''}
+					{typeof actualWordCount === 'number' && actualWordCount > 0 ? ` · draft ${actualWordCount}` : ''}
+					{wordTarget?.tolerancePct != null ? ` · tolerance ±${wordTarget.tolerancePct}%` : ''}
+				</p>
+			) : null}
 			<form
 				className="space-y-3"
 				onSubmit={async (event) => {
@@ -95,17 +128,55 @@ export function BriefPanel({
 					<ChoiceWithOther label="Search intent" value={values.searchIntent} options={SEARCH_INTENT_OPTIONS} onChange={(value) => set('searchIntent', value)} />
 					<ChoiceWithOther label="Content type" value={values.contentType} options={types} onChange={(value) => set('contentType', value)} />
 					<label className="block text-sm">Target word count
-						<input className="input w-full" type="number" min={300} max={12000} step={100} value={values.targetWords} onChange={(event) => set('targetWords', Number(event.target.value))} />
+						<input
+							className="input w-full"
+							type="number"
+							min={MIN_BRIEF_TARGET_WORDS}
+							max={MAX_BRIEF_TARGET_WORDS}
+							step={100}
+							value={values.targetWords}
+							onChange={(event) => set('targetWords', Number(event.target.value))}
+						/>
 					</label>
 					<label className="block text-sm">Website destination
-						<select className="input w-full" value={values.destinationId} onChange={(event) => set('destinationId', event.target.value)}>
+						<select
+							className="input w-full"
+							value={values.destinationId}
+							onChange={(event) => {
+								const destinationId = event.target.value;
+								setValues((current) => ({ ...current, destinationId, categoryId: destinationId === current.destinationId ? current.categoryId : '' }));
+							}}
+						>
 							<option value="">Choose later</option>
 							{destinations.map((destination) => (
 								<option key={destination.key} value={destination.key} disabled={!destination.enabled}>{destination.name}{destination.enabled ? '' : ' (disabled)'}</option>
 							))}
 						</select>
 					</label>
+					<label className="block text-sm">Primary category
+						<select
+							className="input w-full"
+							value={values.categoryId}
+							disabled={!values.destinationId || destinationCategories.length === 0}
+							onChange={(event) => set('categoryId', event.target.value)}
+						>
+							<option value="">{destinationCategories.length ? 'Choose a category' : values.destinationId ? 'Sync taxonomy first' : 'Choose a destination first'}</option>
+							{destinationCategories.map((category) => (
+								<option key={category.id} value={category.id}>{category.name}</option>
+							))}
+						</select>
+					</label>
 				</div>
+				{needsTaxonomy ? (
+					<p className="text-sm text-text-soft">
+						This destination has no synced categories.
+						{onSyncTaxonomy ? (
+							<button className="underline ml-1" type="button" disabled={busy} onClick={() => void onSyncTaxonomy()}>Sync taxonomy</button>
+						) : (
+							<span> Sync them in Websites & CMS.</span>
+						)}
+					</p>
+				) : null}
 				<details className="text-sm" open={Object.values(values.brief).some((value) => value.trim())}>
 					<summary>Optional details</summary>
 					<div className="grid gap-3 md:grid-cols-2 pt-2">
@@ -145,7 +216,7 @@ export function BriefPanel({
 			{suggestions.length ? (
 				<div className="space-y-2 border-t border-edge/50 pt-3">
 					<p className="text-sm font-medium">Suggestions</p>
-					<p className="text-xs text-text-soft">Applying adds to the field; existing text is kept.</p>
+					<p className="text-xs text-text-soft">Applying adds to the field; existing text is kept. Word-count suggestions replace the target only if you apply them.</p>
 					{suggestions.map((suggestion, index) => (
 						<div key={`${suggestion.field}-${index}`} className="text-sm rounded border border-edge/60 p-2 space-y-1">
 							<p className="font-medium">{SUGGESTION_LABELS[suggestion.field] ?? suggestion.field}</p>

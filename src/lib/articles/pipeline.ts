@@ -2,7 +2,7 @@ import { completeLongFormJson } from '@/lib/ai/longFormComplete';
 import { assertLongFormDraftReady } from '@/lib/ai/longFormComplete';
 import { estimateModelCostUsd } from '@/lib/ai/pricing';
 import { resolveModelForRole } from '@/lib/ai/roles';
-import { emptyWorkspace, ensureWorkspace, isOpenFinding, reviewCycleLimit, splitLines } from '@/lib/articles/meta';
+import { DEFAULT_WORD_TOLERANCE_PCT, effectiveInstruction, emptyWorkspace, ensureWorkspace, isOpenFinding, reviewCycleLimit, splitLines } from '@/lib/articles/meta';
 import { getIntelligenceAi } from '@/lib/intelligence/actions';
 import { completeReview } from '@/lib/intelligence/review';
 import type { BrandBrain, BrandStrategy, ContentBrief, ContentTheme } from '@/lib/intelligence/types';
@@ -12,27 +12,107 @@ import { editorialDestinationForBrand, loadDestinationTaxonomy } from '@/lib/pub
 import type { ResearchRecord } from '@/lib/agent/types';
 import { getNativeContentStore } from '@/lib/media/store';
 import { publicAsset } from '@/lib/media/images';
-import type { ArticleBriefDetails, ArticleEditorialFinding, ArticleRecord, ArticleResearch, ArticleSection } from './types';
+import type { ArticleBriefDetails, ArticleEditorialFinding, ArticleRecord, ArticleResearch, ArticleSection, SectionPlan } from './types';
 import { postProcessPlainDraft } from '@/lib/content/postProcessGeneration';
-import { normaliseUrl } from './researchPackage';
+import { normaliseUrl, termsFrom } from './researchPackage';
+import { attributionRule, evidenceLevel } from './sourceClass';
 import { commitRevision } from './revisions';
 import { reviewCurrentRevision } from './reviewRun';
 import { articleWordCount, assembleSections, cleanSectionBody, parseSections, stripCmsTitleHeading, validateArticleStructure } from './structure';
 
-const TARGETS = [1500, 3000, 5000] as const;
+export const DEFAULT_TARGET_WORDS = 1500;
+export const MIN_TARGET_WORDS = 300;
+export const MAX_TARGET_WORDS = 10_000;
 
+/** Keeps the requested length. Only missing or out-of-range values are replaced; nothing is rounded to a tier. */
 export function normaliseTargetWords(value: number | undefined): number {
-	if (!value || value < 800) return 1500;
-	if (value >= 4500) return 5000;
-	if (value >= 2500) return 3000;
-	if (value > 1500) return Math.round(value);
-	return 1500;
+	if (!value || !Number.isFinite(value)) return DEFAULT_TARGET_WORDS;
+	return Math.min(MAX_TARGET_WORDS, Math.max(MIN_TARGET_WORDS, Math.round(value)));
 }
 
-function sectionCount(target: number): number {
-	if (target >= 5000) return 8;
-	if (target >= 3000) return 6;
-	return 4;
+export function sectionCount(target: number): number {
+	return Math.max(3, Math.min(8, Math.round(target / 420)));
+}
+
+type OutlineSection = {
+	heading?: string;
+	purpose?: string;
+	readerQuestion?: string;
+	contribution?: string;
+	practicalElement?: string;
+	words?: number;
+	evidence?: number[];
+	links?: string[];
+};
+
+function overlap(a: string, b: string): number {
+	const left = new Set(termsFrom(a));
+	if (!left.size) return 0;
+	let hits = 0;
+	for (const term of termsFrom(b)) if (left.has(term)) hits += 1;
+	return hits;
+}
+
+/**
+ * Turns the model's outline into a plan where every required link appears in exactly one section and each piece
+ * of evidence is used once. Section lengths always add up to the requested total.
+ */
+export function planSections(
+	outline: Array<{ heading: string; purpose: string; raw?: OutlineSection }>,
+	input: { targetWords: number; evidence: Array<{ text: string; url?: string }>; requiredLinks: string[] },
+): SectionPlan[] {
+	const count = outline.length || 1;
+	const usedEvidence = new Set<number>();
+	const plans: SectionPlan[] = outline.map((item) => {
+		const raw = item.raw ?? {};
+		const picked = (Array.isArray(raw.evidence) ? raw.evidence : [])
+			.filter((index) => Number.isInteger(index) && index >= 0 && index < input.evidence.length && !usedEvidence.has(index))
+			.slice(0, 4);
+		picked.forEach((index) => usedEvidence.add(index));
+		return {
+			heading: item.heading,
+			readerQuestion: raw.readerQuestion?.trim() || '',
+			contribution: raw.contribution?.trim() || item.purpose,
+			practicalElement: raw.practicalElement?.trim() || '',
+			targetWords: Number(raw.words) > 0 ? Number(raw.words) : 0,
+			evidence: picked,
+			links: [],
+		};
+	});
+	input.evidence.forEach((entry, index) => {
+		if (usedEvidence.has(index)) return;
+		const scored = plans
+			.map((plan, position) => ({ position, score: overlap(entry.text, `${plan.heading} ${plan.contribution}`) }))
+			.filter((item) => item.score > 0 && plans[item.position].evidence.length < 4)
+			.sort((a, b) => b.score - a.score);
+		if (!scored.length) return;
+		plans[scored[0].position].evidence.push(index);
+		usedEvidence.add(index);
+	});
+	const wanted = new Map<string, number>();
+	outline.forEach((item, position) => {
+		for (const link of item.raw?.links ?? []) {
+			const match = input.requiredLinks.find((required) => normaliseUrl(required) === normaliseUrl(link));
+			if (match && !wanted.has(match)) wanted.set(match, position);
+		}
+	});
+	input.requiredLinks.forEach((link, linkIndex) => {
+		let position = wanted.get(link);
+		if (position === undefined) {
+			const slug = link.replace(/^https?:\/\/[^/]+/, '').replace(/[-/]+/g, ' ');
+			const scored = plans.map((plan, index) => ({ index, score: overlap(slug, `${plan.heading} ${plan.contribution} ${plan.practicalElement}`) })).sort((a, b) => b.score - a.score);
+			position = scored[0]?.score ? scored[0].index : Math.min(plans.length - 1, linkIndex + 1);
+		}
+		plans[position].links.push(link);
+	});
+	const proposed = plans.reduce((sum, plan) => sum + plan.targetWords, 0);
+	if (proposed > 0 && plans.every((plan) => plan.targetWords > 0)) {
+		const scale = input.targetWords / proposed;
+		plans.forEach((plan) => (plan.targetWords = Math.round(plan.targetWords * scale)));
+	} else {
+		plans.forEach((plan) => (plan.targetWords = Math.round(input.targetWords / count)));
+	}
+	return plans;
 }
 
 function slugify(title: string): string {
@@ -43,24 +123,27 @@ export type GenerationStage = (stage: string) => Promise<void>;
 
 type SectionDraft = { body: string; model?: string; promptTokens: number; completionTokens: number };
 
-type EvidenceItem = { text: string; source: string; url?: string };
+type EvidenceItem = { text: string; source: string; url?: string; howToAttribute?: string };
 
 async function draftArticleSection(input: {
 	ai: ReturnType<typeof getIntelligenceAi>;
 	ownerUserId: string;
 	item: { heading: string; purpose: string };
+	plan: SectionPlan;
 	previousHeading: string | null;
 	nextHeading: string | null;
 	isLast: boolean;
-	wordsPerSection: number;
 	voice: string;
 	evidence: EvidenceItem[];
 	gaps: string[];
 	brief?: ArticleBriefDetails;
+	alreadyCovered: string[];
+	alreadyLinked: string[];
+	laterSections: string[];
 }): Promise<SectionDraft> {
 	const sectionRange = {
-		min: Math.max(120, Math.round(input.wordsPerSection * 0.65)),
-		max: Math.round(input.wordsPerSection * 1.35),
+		min: Math.max(100, Math.round(input.plan.targetWords * 0.8)),
+		max: Math.round(input.plan.targetWords * 1.2),
 	};
 	const messages = [
 		{
@@ -68,7 +151,10 @@ async function draftArticleSection(input: {
 			content: [
 				'Write one article section as JSON with a body string in markdown.',
 				'The section heading is added separately: do not write it, and do not use # or ## headings. Use ### only for sub-steps.',
-				'Use the supplied evidence only. When you use a sourced item, link its URL in markdown. Do not invent customers, metrics, studies or quotations.',
+				'Use the supplied evidence only, and follow each item’s howToAttribute rule. When you use a sourced item, link its URL in markdown once. Do not invent customers, metrics, studies or quotations.',
+				'Make this section’s own contribution. Do not restate any point in alreadyCovered, and leave the topics of laterSections to those sections.',
+				'Do not link any URL in alreadyLinked. Use each URL in requiredLinks exactly once, where it helps the reader.',
+				'Include the practicalElement concretely: show it, do not only describe it. Do not pad to reach the length.',
 				'Finish the section with a complete sentence.',
 			].join(' '),
 		},
@@ -77,14 +163,20 @@ async function draftArticleSection(input: {
 			content: JSON.stringify({
 				heading: input.item.heading,
 				purpose: input.item.purpose,
+				readerQuestion: input.plan.readerQuestion || undefined,
+				contribution: input.plan.contribution,
+				practicalElement: input.plan.practicalElement || undefined,
 				previousSection: input.previousHeading,
 				nextSection: input.nextHeading,
+				laterSections: input.laterSections,
+				alreadyCovered: input.alreadyCovered,
+				alreadyLinked: input.alreadyLinked,
 				guidance: `Target ${sectionRange.min}-${sectionRange.max} words. Fewer is acceptable if the point is fully made.`,
 				voice: input.voice,
 				tone: input.brief?.tone || undefined,
 				avoid: input.brief?.avoid || undefined,
 				callToAction: input.isLast ? input.brief?.cta || undefined : undefined,
-				requiredLinks: splitLines(input.brief?.requiredLinks),
+				requiredLinks: input.plan.links,
 				evidence: input.evidence,
 				gaps: input.gaps,
 			}),
@@ -180,7 +272,23 @@ function fallbackOutline(topic: string, questions: string[]) {
 }
 
 function evidenceFrom(research: ArticleResearch): EvidenceItem[] {
-	return research.claims.map((claim) => ({ text: claim.text, source: claim.sourceLabel, url: claim.sourceUrl }));
+	return research.claims.map((claim) => ({
+		text: claim.text,
+		source: claim.sourceLabel,
+		url: claim.sourceUrl,
+		howToAttribute: attributionRule(claim.evidenceLevel ?? evidenceLevel(claim.sourceClass)),
+	}));
+}
+
+/** The points a finished section made, passed to later sections so they do not make them again. */
+function coveredPoints(heading: string, plan: SectionPlan, body: string): string {
+	const firstSentences = body
+		.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+		.split(/(?<=[.!?])\s+/)
+		.filter((sentence) => sentence.length > 40 && !sentence.startsWith('#'))
+		.slice(0, 2)
+		.join(' ');
+	return `${heading}: ${plan.contribution}${firstSentences ? ` (${firstSentences.slice(0, 240)})` : ''}`;
 }
 
 export async function generateArticle(input: {
@@ -215,13 +323,19 @@ export async function generateArticle(input: {
 	const questions = splitLines(input.brief?.questions);
 	const ai = getIntelligenceAi();
 	await stage('Planning the outline');
-	const outlineCompletion = await ai.completeJson<{ title?: string; searchIntent?: string; sections?: Array<{ heading?: string; purpose?: string }> }>(
+	const requiredLinks = splitLines(input.brief?.requiredLinks).filter((link) => /^https?:\/\//.test(link));
+	const outlineCompletion = await ai.completeJson<{ title?: string; searchIntent?: string; sections?: OutlineSection[] }>(
 		'STRATEGY',
 		[
 			{
 				role: 'system',
-				content:
-					'Plan a long-form article. Return JSON with title, searchIntent, and sections (heading, purpose). Every question in the brief must be answered by a section. Headings are short reader-facing phrases, never copied research sentences. Use only the supplied evidence. Do not pad the outline.',
+				content: [
+					'Plan a long-form article section by section before any prose is written.',
+					'Return JSON with title, searchIntent, and sections. Each section has heading, purpose, readerQuestion (the question the reader brings to it), contribution (the one point only this section makes), practicalElement (a worked example, exercise, template, checklist or decision the section shows), words, evidence (indices into the evidence list, each index used by one section only) and links (URLs from requiredLinks, each URL in one section only).',
+					'Every question in the brief must be answered by a section. No two sections may make the same point. The words of all sections must add up to targetWords.',
+					'Headings are short reader-facing phrases, never copied research sentences. Use only the supplied evidence. Do not pad the outline.',
+					'If differentiateFrom lists existing articles, cover what they do not and do not repeat their sections.',
+				].join(' '),
 			},
 			{
 				role: 'user',
@@ -236,8 +350,17 @@ export async function generateArticle(input: {
 					avoid: input.brief?.avoid,
 					instructions: [input.brief?.instructions, input.instruction].filter(Boolean).join('\n'),
 					referenceMaterial: input.brief?.referenceMaterial,
+					audience: input.audience,
+					contentType: input.contentType,
+					clusterRole: input.brief?.clusterRole || undefined,
+					readerOutcome: input.brief?.readerOutcome || undefined,
+					distinctiveContribution: input.brief?.distinctiveContribution || undefined,
+					productConnection: input.brief?.productConnection || undefined,
+					differentiateFrom: splitLines(input.brief?.differentiateFrom),
+					targetWords,
 					sectionCount: sectionCount(targetWords),
-					evidence: research.claims.map((claim) => claim.text),
+					requiredLinks,
+					evidence: research.claims.map((claim, index) => ({ index, text: claim.text, kind: claim.sourceClass ?? claim.kind })),
 					gaps: research.gaps,
 				}),
 			},
@@ -246,40 +369,51 @@ export async function generateArticle(input: {
 		input.ownerUserId,
 	);
 	const proposed = Array.isArray(outlineCompletion.data.sections) ? outlineCompletion.data.sections : [];
-	const outline = proposed.length
+	const planned: Array<{ id: string; heading: string; purpose: string; raw?: OutlineSection }> = proposed.length
 		? proposed.slice(0, sectionCount(targetWords) + 1).map((section) => ({
 				id: crypto.randomUUID(),
 				heading: (section.heading?.trim() || 'Untitled section').replace(/^#+\s*/, ''),
 				purpose: section.purpose?.trim() || 'Develop the heading with approved evidence.',
+				raw: section,
 			}))
 		: fallbackOutline(topic, questions);
-	const wordsPerSection = Math.round(targetWords / outline.length);
+	const outline = planned.map(({ id, heading, purpose }) => ({ id, heading, purpose }));
 	const evidence = evidenceFrom(research);
+	const plans = planSections(planned, { targetWords, evidence, requiredLinks });
 	const sections: ArticleSection[] = [];
+	const covered: string[] = [];
+	const linked = new Map<string, string>();
 	let promptTokens = outlineCompletion.promptTokens ?? 0;
 	let completionTokens = outlineCompletion.completionTokens ?? 0;
 	let modelUsed = outlineCompletion.model ?? resolveModelForRole('LONG_FORM_WRITING');
 	for (const [index, item] of outline.entries()) {
+		const plan = plans[index];
 		await stage(`Writing section ${index + 1} of ${outline.length}: ${item.heading}`);
 		const drafted = await draftArticleSection({
 			ai,
 			ownerUserId: input.ownerUserId,
 			item,
+			plan,
 			previousHeading: outline[index - 1]?.heading ?? null,
 			nextHeading: outline[index + 1]?.heading ?? null,
 			isLast: index === outline.length - 1,
-			wordsPerSection,
 			voice: input.brand.voice.tone ?? '',
-			evidence,
+			evidence: plan.evidence.map((position) => evidence[position]).filter((entry) => !entry.url || !linked.has(normaliseUrl(entry.url))),
 			gaps: research.gaps,
 			brief: input.brief,
+			alreadyCovered: [...covered],
+			alreadyLinked: [...linked.values()],
+			laterSections: plans.slice(index + 1).map((later) => `${later.heading}: ${later.contribution}`),
 		});
 		promptTokens += drafted.promptTokens;
 		completionTokens += drafted.completionTokens;
 		if (drafted.model) modelUsed = drafted.model;
+		const body = cleanSectionBody(drafted.body, item.heading);
+		for (const match of body.matchAll(/\]\((https?:\/\/[^)\s]+)\)/g)) linked.set(normaliseUrl(match[1]), match[1]);
+		covered.push(coveredPoints(item.heading, plan, body));
 		sections.push({
 			...item,
-			body: cleanSectionBody(drafted.body, item.heading),
+			body,
 			claims: evidence.filter((entry) => entry.url && drafted.body.includes(entry.url)).map((entry) => entry.text).slice(0, 5),
 		});
 	}
@@ -359,8 +493,8 @@ export async function generateArticle(input: {
 		body: '',
 		seo: { title, seoTitle: title, slug: slugify(title), excerpt: '', metaDescription: '', canonical: null, primaryKeyword: null, secondaryTopics: [] },
 		author: null,
-		categories: classification ? [classification.categoryId] : [],
-		tags: classification?.tags ?? theme?.keywords ?? [],
+		categories: [],
+		tags: theme?.keywords ?? [],
 		inlineAssetIds: [],
 		mediaPlan: null,
 		internalLinkOpportunities: [],
@@ -415,7 +549,9 @@ export async function generateArticle(input: {
 	workspace.assignedModelRole = 'LONG_FORM_WRITING';
 	workspace.assignedModel = modelUsed;
 	workspace.researchSummary.searchIntent = searchIntent;
-	if (classification && latest) {
+	workspace.sectionPlan = plans;
+	if (!workspace.wordTarget) workspace.wordTarget = { requested: targetWords, approved: null, tolerancePct: DEFAULT_WORD_TOLERANCE_PCT };
+	if (classification) {
 		workspace.categorySuggestion = {
 			categoryId: classification.categoryId,
 			reason: 'Suggested from the topic during generation. Accept it or choose another category.',
@@ -483,59 +619,81 @@ export async function applyArticleRevision(input: {
 }): Promise<RevisionOutcome> {
 	const ai = getIntelligenceAi();
 	const article = input.article;
-	const target = input.sectionId ? article.sections.find((section) => section.id === input.sectionId) : undefined;
-	const recommendations = (input.findings ?? []).map((finding) => ({ id: finding.id, severity: finding.severity, instruction: finding.instruction }));
-	if (input.instruction?.trim()) recommendations.push({ id: 'instruction', severity: 'major', instruction: input.instruction.trim() });
+	const recommendations = (input.findings ?? []).map((finding) => ({
+		id: finding.id,
+		severity: finding.severity,
+		instruction: effectiveInstruction(finding),
+		section: finding.section ?? null,
+		evidence: finding.evidence?.length ? finding.evidence : undefined,
+		proposedFix: finding.proposedFix ?? undefined,
+	}));
+	if (input.instruction?.trim()) recommendations.push({ id: 'instruction', severity: 'major', instruction: input.instruction.trim(), section: null, evidence: undefined, proposedFix: undefined });
 	if (!recommendations.length) throw new Error('There is nothing to apply.');
-	const sourceText = target ? target.body : article.body;
-	const messages = [
-		{
-			role: 'system' as const,
-			content: [
-				'Revise the article by applying each recommendation. Return JSON with body (the complete revised markdown) and results (array of id, applied boolean, change describing what you changed or why you did not).',
-				'Return the whole text, including every unchanged section. Never summarise or abbreviate unchanged parts.',
-				target ? 'This is one section body: do not add a heading.' : 'Keep ## for section headings and ### for sub-steps. Do not repeat a heading.',
-				'Do not add facts, statistics or sources that are not already in the text or the approved research.',
-				'Mark applied false if a recommendation cannot be carried out without inventing evidence.',
-			].join(' '),
-		},
-		{
-			role: 'user' as const,
-			content: JSON.stringify({
-				recommendations,
-				approvedResearch: article.research.claims.slice(0, 30).map((claim) => ({ text: claim.text, source: claim.sourceUrl ?? claim.sourceLabel })),
-				text: sourceText,
-			}),
-		},
-	];
+	const current = parseSections(article.body);
+	const explicitTarget = input.sectionId ? article.sections.find((section) => section.id === input.sectionId) : undefined;
+	const headingOf = (name: string | null) => (name ? current.find((section) => section.heading.trim().toLowerCase() === name.trim().toLowerCase())?.heading ?? null : null);
+	const localised = !explicitTarget && recommendations.every((item) => headingOf(item.section));
+	type Batch = { heading: string | null; items: typeof recommendations };
+	const batches: Batch[] = explicitTarget
+		? [{ heading: explicitTarget.heading, items: recommendations }]
+		: localised
+			? [...new Set(recommendations.map((item) => headingOf(item.section) as string))].map((heading) => ({
+					heading,
+					items: recommendations.filter((item) => headingOf(item.section) === heading),
+				}))
+			: [{ heading: null, items: recommendations }];
 	type RevisionJson = { body?: string; results?: Array<{ id?: string; applied?: boolean; change?: string }> };
-	let data: RevisionJson;
 	let model: string | null = null;
-	if (process.env.VITEST === 'true') {
-		const completion = await ai.completeJson<RevisionJson>('WRITING', messages, 'article_revision', input.ownerUserId);
-		data = completion.data;
-		model = completion.model ?? null;
-	} else {
-		const completion = await completeLongFormJson<RevisionJson>({
-			messages,
-			feature: 'article_revision',
-			userId: input.ownerUserId,
-			extractText: (value) => value.body ?? '',
-			mergeContinuation: (previous, piece) => ({ ...previous, body: `${(previous.body ?? '').trim()}\n\n${piece}`.trim() }),
-		});
-		data = completion.data;
-		model = completion.model ?? null;
-	}
-	const revisedText = data.body?.trim();
-	if (!revisedText) throw new Error('The revision returned no text. The current revision is unchanged.');
-	let nextBody: string;
-	if (target) {
-		const cleaned = cleanSectionBody(revisedText, target.heading);
-		nextBody = assembleSections(
-			parseSections(article.body).map((section) => (section.heading === target.heading ? { heading: section.heading, body: cleaned } : section)),
-		);
-	} else {
-		nextBody = postProcessPlainDraft(revisedText);
+	let nextBody = article.body;
+	const results: NonNullable<RevisionJson['results']> = [];
+	for (const batch of batches) {
+		const sourceText = batch.heading ? (current.find((section) => section.heading === batch.heading)?.body ?? '') : article.body;
+		const messages = [
+			{
+				role: 'system' as const,
+				content: [
+					'Revise the text by applying each recommendation. Return JSON with body (the complete revised markdown) and results (array of id, applied boolean, change describing what you changed or why you did not).',
+					'Return the whole text, including every unchanged paragraph. Never summarise or abbreviate unchanged parts.',
+					batch.heading ? 'This is one section body: do not add a heading. Change only what the recommendations ask for.' : 'Keep ## for section headings and ### for sub-steps. Do not repeat a heading.',
+					'Do not add facts, statistics, quotations or sources that are not already in the text or the approved research.',
+					'Mark applied false if a recommendation cannot be carried out without inventing evidence.',
+				].join(' '),
+			},
+			{
+				role: 'user' as const,
+				content: JSON.stringify({
+					section: batch.heading ?? undefined,
+					recommendations: batch.items,
+					approvedResearch: article.research.claims.slice(0, 30).map((claim) => ({ text: claim.text, source: claim.sourceUrl ?? claim.sourceLabel })),
+					text: sourceText,
+				}),
+			},
+		];
+		let data: RevisionJson;
+		if (process.env.VITEST === 'true') {
+			const completion = await ai.completeJson<RevisionJson>('WRITING', messages, 'article_revision', input.ownerUserId);
+			data = completion.data;
+			model = completion.model ?? model;
+		} else {
+			const completion = await completeLongFormJson<RevisionJson>({
+				messages,
+				feature: 'article_revision',
+				userId: input.ownerUserId,
+				extractText: (value) => value.body ?? '',
+				mergeContinuation: (previous, piece) => ({ ...previous, body: `${(previous.body ?? '').trim()}\n\n${piece}`.trim() }),
+			});
+			data = completion.data;
+			model = completion.model ?? model;
+		}
+		const revisedText = data.body?.trim();
+		if (!revisedText) throw new Error('The revision returned no text. The current revision is unchanged.');
+		if (batch.heading) {
+			const cleaned = cleanSectionBody(revisedText, batch.heading);
+			nextBody = assembleSections(parseSections(nextBody).map((section) => (section.heading === batch.heading ? { heading: section.heading, body: cleaned } : section)));
+		} else {
+			nextBody = postProcessPlainDraft(revisedText);
+		}
+		if (Array.isArray(data.results)) results.push(...data.results);
 	}
 	const before = validateArticleStructure(article.body);
 	const after = validateArticleStructure(nextBody);
@@ -546,7 +704,6 @@ export async function applyArticleRevision(input: {
 	if (!shrinkAllowed && after.wordCount < before.wordCount * 0.8) {
 		throw new Error(`The revision dropped from ${before.wordCount} to ${after.wordCount} words without a recommendation to cut. It was not saved because text may have been lost.`);
 	}
-	const results = Array.isArray(data.results) ? data.results : [];
 	const applied: RevisionOutcome['applied'] = [];
 	const notApplied: RevisionOutcome['notApplied'] = [];
 	for (const item of recommendations) {
@@ -554,7 +711,8 @@ export async function applyArticleRevision(input: {
 		if (result?.applied) applied.push({ id: item.id, change: result.change?.trim() || 'Applied.' });
 		else notApplied.push({ id: item.id, reason: result?.change?.trim() || 'The revision did not report this as applied.' });
 	}
-	commitRevision(article, nextBody, 'revision', `Applied ${applied.length} of ${recommendations.length} recommendation${recommendations.length === 1 ? '' : 's'}.`);
+	const scope = batches.every((batch) => batch.heading) ? ` in ${batches.map((batch) => `“${batch.heading}”`).join(', ')}; other sections unchanged` : '';
+	commitRevision(article, nextBody, 'revision', `Applied ${applied.length} of ${recommendations.length} recommendation${recommendations.length === 1 ? '' : 's'}${scope}.`);
 	return { article, applied, notApplied, model };
 }
 
@@ -589,8 +747,8 @@ export async function previewArticleImprovement(input: {
 		.map((issue) => issue.message);
 	const instructions = [
 		'Improve coverage for the brief and search intent without inventing facts or statistics.',
-		'Reduce repetition and weak explanations. Keep Folian mentions restrained (at most one useful brand mention).',
-		...accepted.map((finding) => finding.instruction),
+		`Reduce repetition and weak explanations. Keep ${input.brand.identity.name} mentions restrained (at most one useful brand mention).`,
+		...accepted.map((finding) => effectiveInstruction(finding)),
 		...structural.map((message) => `Fix the structural issue: ${message}`),
 	];
 	const messages = [
@@ -673,4 +831,3 @@ export async function reviseArticle(input: {
 	return outcome.article;
 }
 
-export { TARGETS };

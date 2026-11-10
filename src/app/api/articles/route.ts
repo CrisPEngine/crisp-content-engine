@@ -54,6 +54,7 @@ export async function POST(request: Request) {
 			audience: text(body.audience),
 			contentType: text(body.contentType),
 			targetWords: typeof body.targetWords === 'number' ? body.targetWords : undefined,
+			categoryId: text(body.categoryId),
 			researchRequirements: text(body.researchRequirements),
 			internalLinking: text(body.internalLinking),
 			imageRequirements: text(body.imageRequirements),

@@ -10,7 +10,10 @@ import {
 	ArticleWorkflowError,
 	classifyWorkspaceArticle,
 	decideRecommendation,
+	destinationPreview,
 	editArticleResearch,
+	editRecommendation,
+	applyFindingFix,
 	enhanceArticleBrief,
 	generateArticleMedia,
 	getWorkspaceArticle,
@@ -81,6 +84,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 				const decision = body.decision === 'rejected' ? 'rejected' : body.decision === 'pending' ? 'pending' : 'accepted';
 				return NextResponse.json({ article: await decideRecommendation(userId, id, text(body.findingId), decision) });
 			}
+			case 'edit_recommendation':
+				return NextResponse.json({ article: await editRecommendation(userId, id, text(body.findingId), text(body.instruction)) });
+			case 'apply_fix':
+				return NextResponse.json({ article: await applyFindingFix(userId, id, text(body.findingId)) });
+			case 'destination_preview':
+				return NextResponse.json({ preview: await destinationPreview(userId, id) });
 			case 'apply_revisions':
 			case 'revise':
 				return NextResponse.json(await applyAcceptedRevisions(userId, id));

@@ -1,4 +1,5 @@
 import type { DestinationDraftMode } from '@/lib/destinations/types';
+import type { EvidenceLevel, SourceClass } from './sourceClass';
 
 export type ArticleSection = {
 	id: string;
@@ -10,7 +11,15 @@ export type ArticleSection = {
 
 export type ArticleResearch = {
 	sources: Array<{ label: string; kind: 'brand_brain' | 'supplied' | 'opportunity'; url?: string; retrievedAt?: string }>;
-	claims: Array<{ text: string; sourceLabel: string; confidence: 'stored' | 'supplied'; sourceUrl?: string; kind?: ResearchItemKind }>;
+	claims: Array<{
+		text: string;
+		sourceLabel: string;
+		confidence: 'stored' | 'supplied';
+		sourceUrl?: string;
+		kind?: ResearchItemKind;
+		sourceClass?: SourceClass;
+		evidenceLevel?: EvidenceLevel;
+	}>;
 	gaps: string[];
 	usedExternalResearch?: boolean;
 	packageVersion?: number;
@@ -68,7 +77,23 @@ export type ArticleEditorialFinding = {
 	decidedAt?: string | null;
 	appliedInRevisionId?: string | null;
 	note?: string | null;
+	/** Section heading the finding is about, when it is local to one section. */
+	section?: string | null;
+	/** Quoted text or counts that show the problem. */
+	evidence?: string[];
+	/** Why it matters to the reader or the site. */
+	explanation?: string | null;
+	/** Proposed replacement text, when a direct fix is possible. */
+	proposedFix?: string | null;
+	/** Set when an editor rewrote the instruction before applying it. */
+	editedInstruction?: string | null;
+	/** A deterministic edit that resolves the finding without a model call. */
+	fix?: FindingFix | null;
 };
+
+export type FindingFix = { kind: 'unlink_repeats'; url: string; keepFirst: number };
+
+export type FindingTier = 'blocking' | 'important' | 'optional';
 
 export type ArticleRevisionRef = {
 	id: string;
@@ -111,6 +136,7 @@ export type ResearchPackageSource = {
 	origin: 'search' | 'page' | 'user';
 	excluded: boolean;
 	excludedReason: string | null;
+	classification?: SourceClass;
 };
 
 export type ResearchPackageItem = {
@@ -141,6 +167,7 @@ export type ResearchSnapshot = {
 	items: ResearchPackageItem[];
 	notes: string;
 	expertise: string;
+	questions?: string[];
 };
 
 export type ResearchPackage = {
@@ -149,6 +176,8 @@ export type ResearchPackage = {
 	updatedAt: string | null;
 	notes: string;
 	expertise: string;
+	/** Research questions this package set out to answer. */
+	questions?: string[];
 	sources: ResearchPackageSource[];
 	items: ResearchPackageItem[];
 	gaps: string[];
@@ -173,10 +202,34 @@ export type ArticleBriefDetails = {
 	requiredLinks: string;
 	referenceMaterial: string;
 	instructions: string;
+	/** Strategy fields. Optional so briefs created before they existed stay valid. */
+	clusterRole?: string;
+	readerOutcome?: string;
+	distinctiveContribution?: string;
+	productConnection?: string;
+	/** Existing articles this one must not duplicate, one per line (title or URL). */
+	differentiateFrom?: string;
+};
+
+/** The requested length belongs to the user. Generation and review read it; only an explicit edit changes it. */
+export type WordTarget = {
+	requested: number;
+	approved: number | null;
+	tolerancePct: number;
+};
+
+export type SectionPlan = {
+	heading: string;
+	readerQuestion: string;
+	contribution: string;
+	practicalElement: string;
+	targetWords: number;
+	evidence: number[];
+	links: string[];
 };
 
 export type BriefSuggestion = {
-	field: keyof ArticleBriefDetails | 'audience' | 'primaryKeyword' | 'workingTitle';
+	field: keyof ArticleBriefDetails | 'audience' | 'primaryKeyword' | 'workingTitle' | 'targetWords';
 	value: string;
 	reason: string;
 };
@@ -225,6 +278,10 @@ export type ArticleWorkspace = {
 		history?: ArticleReviewRun[];
 	};
 	categorySuggestion?: { categoryId: string; reason: string; source: 'mapping' | 'ai' | 'default'; tags: string[]; createdAt: string } | null;
+	wordTarget?: WordTarget;
+	sectionPlan?: SectionPlan[];
+	/** Which taxonomy sync the category was chosen from, so a later rename or removal can be detected. */
+	taxonomyRef?: { destinationId: string; syncedAt: string | null; categoryName: string | null } | null;
 	media: {
 		heroAssetId: string | null;
 		ogAssetId: string | null;

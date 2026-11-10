@@ -12,15 +12,23 @@ export const SEARCH_INTENT_OPTIONS = [
 
 export const DEFAULT_CONTENT_TYPES = ['guide', 'pillar', 'how-to', 'listicle', 'comparison', 'checklist', 'case study', 'opinion', 'news'];
 
+export const MAX_BRIEF_TARGET_WORDS = 10_000;
+export const MIN_BRIEF_TARGET_WORDS = 300;
+
 export const BRIEF_FIELDS: Array<{ key: string; label: string; hint: string; rows: number }> = [
 	{ key: 'secondaryKeywords', label: 'Secondary keywords', hint: 'One per line.', rows: 2 },
-	{ key: 'questions', label: 'Questions to answer', hint: 'One per line. These shape the outline.', rows: 3 },
+	{ key: 'questions', label: 'Questions to answer', hint: 'One per line. These shape the outline and research.', rows: 3 },
 	{ key: 'avoid', label: 'Topics to avoid', hint: 'Anything the article must not cover or claim.', rows: 2 },
 	{ key: 'tone', label: 'Tone', hint: 'Leave empty to use the Brand Brain voice.', rows: 1 },
 	{ key: 'cta', label: 'Call to action', hint: 'Placed in the final section.', rows: 1 },
 	{ key: 'requiredLinks', label: 'Required links', hint: 'One URL per line. Review flags any that are missing.', rows: 2 },
 	{ key: 'referenceMaterial', label: 'Reference material', hint: 'Notes or URLs the writer should draw on.', rows: 3 },
 	{ key: 'instructions', label: 'Instructions', hint: 'Anything else the writer needs to know.', rows: 3 },
+	{ key: 'clusterRole', label: 'Role in the topic cluster', hint: 'What this article owns versus sibling articles.', rows: 2 },
+	{ key: 'readerOutcome', label: 'Reader outcome', hint: 'What the reader should be able to do after reading.', rows: 2 },
+	{ key: 'distinctiveContribution', label: 'Distinctive contribution', hint: 'The original value this article must add.', rows: 2 },
+	{ key: 'productConnection', label: 'Product or tool connection', hint: 'Where a product mention is genuinely useful, if at all.', rows: 2 },
+	{ key: 'differentiateFrom', label: 'Differentiate from', hint: 'Existing articles this one must not repeat. One per line.', rows: 2 },
 ];
 
 /** A select whose last option, Other, reveals a free-text input. The stored value is the custom text. */
