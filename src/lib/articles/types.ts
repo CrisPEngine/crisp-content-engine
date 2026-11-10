@@ -1,3 +1,5 @@
+import type { DestinationDraftMode } from '@/lib/destinations/types';
+
 export type ArticleSection = {
 	id: string;
 	heading: string;
@@ -241,7 +243,7 @@ export type ArticleWorkspace = {
 		draftUrl: string | null;
 		lastSyncAt: string | null;
 		lastError: string | null;
-		mode: 'update' | 'proposal' | null;
+		mode: DestinationDraftMode | null;
 		submittedRevisionId?: string | null;
 		remoteStatus?: string | null;
 		heroMediaId?: string | null;

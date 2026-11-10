@@ -79,10 +79,13 @@ export type DestinationConnection = {
 
 export type DraftLookup = { exists: false } | { exists: true; revision: number; status: string; title: string; category: string | null; slug: string | null };
 
+/** How a CMS upsert should treat an existing record (draft proposal, new update, or published correction). */
+export type DestinationDraftMode = 'update' | 'proposal' | 'correction';
+
 export type DraftSubmission = {
 	externalId: string;
 	baseRevision?: number;
-	mode: 'update' | 'proposal' | 'correction';
+	mode: DestinationDraftMode;
 	payload: Record<string, unknown>;
 };
 
