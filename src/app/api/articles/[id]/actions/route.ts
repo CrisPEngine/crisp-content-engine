@@ -123,6 +123,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 				});
 			case 'lookup_draft':
 				return NextResponse.json(await lookupArticleDraft(userId, id, text(body.externalId) || undefined));
+			case 'correct_published':
+				return NextResponse.json({ article: await submitArticleDraft(userId, id, { correction: true }) });
 			case 'submit_draft':
 			case 'update_draft':
 				return NextResponse.json({ article: await submitArticleDraft(userId, id) });

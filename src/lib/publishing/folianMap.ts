@@ -1,4 +1,5 @@
 import type { ArticleRecord } from '@/lib/articles/types';
+import { sourcesForPublication } from '@/lib/articles/publicSources';
 import { parseSections } from '@/lib/articles/structure';
 import { assertDestinationCategory, type DestinationTaxonomy } from './destinationTaxonomy';
 import { folianTaxonomyFallback } from './folian/taxonomyFallback';
@@ -46,24 +47,16 @@ export function mapArticleRecordToFolianDraft(
 		category: assertDestinationCategory(taxonomy, categoryId),
 		tags: article.tags,
 		contentType,
-		searchIntent: article.searchIntent,
 		seoTitle: article.seo.seoTitle,
 		seoDescription: article.seo.metaDescription,
 		relatedArticleSlugs: article.internalLinkOpportunities.filter((slug) => !slug.startsWith('/tools/')),
 		relatedToolSlugs: relatedToolSlugs(article, taxonomy),
-		sources: article.research.sources
-			.filter((source) => source.url)
-			.map((source) => ({
-				title: source.label,
-				url: source.url as string,
-				publisher: source.kind,
-				accessedAt: source.retrievedAt,
-			})),
+		sources: sourcesForPublication(article),
 		heroMediaId: options.heroMediaId,
 		ogMediaId: options.ogMediaId,
 		featured: article.tags.includes('featured'),
 		pillar: article.tags.includes('pillar'),
-		reviewRequired: true,
+		reviewRequired: article.approval.status === 'pending',
 		body: sectionBlocks(article),
 	};
 }
