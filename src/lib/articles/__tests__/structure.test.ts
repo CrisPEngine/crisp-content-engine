@@ -66,6 +66,15 @@ describe('article structure', () => {
 		expect(parts.filter((part) => part.type === 'added').map((part) => part.text)).toEqual(['B2.']);
 	});
 
+	it('rejects flattened tables and unbalanced emphasis, and allows a valid table', () => {
+		const valid = '## Plan\n\n| Stage | Event |\n| --- | --- |\n| Opening | Mara checks the map. |\n\n**Bold** and a literal \\* asterisk.';
+		expect(validateArticleStructure(valid).issues.map((issue) => issue.code)).not.toContain('flattened_table');
+		expect(validateArticleStructure(valid).issues.map((issue) => issue.code)).not.toContain('unbalanced_emphasis');
+		const flat = '## Plan\n\n| Stage | Event | | --- | --- | | Opening | Mara checks. |';
+		expect(validateArticleStructure(flat).issues.map((issue) => issue.code)).toContain('flattened_table');
+		expect(validateArticleStructure('## Plan\n\n**Bold starts and never ends.').issues.map((issue) => issue.code)).toContain('unbalanced_emphasis');
+	});
+
 	it('strips a leading H1 that repeats the CMS page title', () => {
 		const title = 'How to Write a Novel: From Idea to First Draft';
 		const stripped = stripCmsTitleHeading(`# ${title}\n\nIntro.\n\n## Plan\n\nBody.`, title);

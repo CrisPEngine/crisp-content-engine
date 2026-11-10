@@ -7,7 +7,10 @@ export type StructureIssue = {
 		| 'truncated_ending'
 		| 'ends_with_heading'
 		| 'unclosed_code_fence'
-		| 'missing_sections';
+		| 'missing_sections'
+		| 'flattened_table'
+		| 'malformed_table'
+		| 'unbalanced_emphasis';
 	severity: 'critical' | 'major';
 	message: string;
 };
@@ -159,6 +162,54 @@ export function excerptFrom(markdown: string, maxChars = 280): string {
 
 const CLEAN_END = /([.!?…]|[.!?…]["'”’)\]*_]+)$/;
 
+function withoutFences(markdown: string): string {
+	return markdown.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]+`/g, '');
+}
+
+/** Flags Markdown that would publish as literal syntax. Valid GFM is allowed. */
+export function cmsFormattingIssues(markdown: string): StructureIssue[] {
+	const issues: StructureIssue[] = [];
+	const visible = withoutFences(markdown);
+	for (const line of visible.split('\n')) {
+		if (line.includes('|') && /-{3,}/.test(line) && line.split('|').length >= 6 && /\| \|/.test(line)) {
+			issues.push({
+				code: 'flattened_table',
+				severity: 'critical',
+				message: 'A Markdown table has been flattened onto one line, so it would publish as raw pipe text.',
+			});
+		}
+	}
+	const lines = visible.split('\n');
+	for (let index = 0; index < lines.length; index += 1) {
+		const line = lines[index].trim();
+		const next = lines[index + 1]?.trim() ?? '';
+		if (!line.startsWith('|') || !/^\|?\s*:?-{3,}/.test(next)) continue;
+		const columns = line.replace(/^\|/, '').replace(/\|$/, '').split('|').length;
+		index += 2;
+		while (index < lines.length && lines[index].trim().startsWith('|')) {
+			const rowColumns = lines[index].trim().replace(/^\|/, '').replace(/\|$/, '').split('|').length;
+			if (rowColumns !== columns) {
+				issues.push({
+					code: 'malformed_table',
+					severity: 'critical',
+					message: `A Markdown table row has ${rowColumns} cells and the header has ${columns}.`,
+				});
+				break;
+			}
+			index += 1;
+		}
+	}
+	const bold = visible.replace(/\\\*/g, '').match(/\*\*/g)?.length ?? 0;
+	if (bold % 2 === 1) {
+		issues.push({
+			code: 'unbalanced_emphasis',
+			severity: 'critical',
+			message: 'A bold marker (**) is opened and never closed, so it would appear in the published article.',
+		});
+	}
+	return issues;
+}
+
 function lastBlock(markdown: string): string {
 	const blocks = markdown
 		.trim()
@@ -232,6 +283,7 @@ export function validateArticleStructure(markdown: string, options?: { expectedS
 			}
 		}
 	}
+	issues.push(...cmsFormattingIssues(body));
 	const fences = lines.filter((line) => line.trim().startsWith('```')).length;
 	if (fences % 2 === 1) {
 		issues.push({ code: 'unclosed_code_fence', severity: 'critical', message: 'A code block is opened and never closed.' });

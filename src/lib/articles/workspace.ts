@@ -1139,23 +1139,11 @@ export async function submitArticleDraft(ownerUserId: string, articleId: string,
 		throw new ArticleWorkflowError('There is no published CMS entry to correct.', 404, 'cms_missing');
 	}
 	const mode = correction ? 'correction' : existing.exists ? 'proposal' : 'update';
-	if (correction && article.body.includes('300 new words per session.') && !article.body.includes('/tools/word-count-planner')) {
-		commitRevision(
-			article,
-			article.body.replace(
-				'A word target might be 300 new words per session.',
-				'A word target might be 300 new words per session. The [Novel Word Count Planner](/tools/word-count-planner) can turn a deadline into a session target.',
-			),
-			'manual',
-			'Added a contextual link to the Novel Word Count Planner.',
-			{ refreshMetadata: false },
-		);
-	}
 	const baseRevision = existing.exists ? existing.revision : undefined;
 	const hero = workspace.media.heroUrl && workspace.media.deliveryVerified ? workspace.media.heroUrl : undefined;
 	const credit = workspace.media.credit || 'Crisp Content Engine';
 	const license = workspace.media.license || `Generated for ${destination.name} editorial use`;
-	const previousHero = correction ? {} : { url: workspace.cms.heroSourceUrl, mediaId: workspace.cms.heroMediaId };
+	const previousHero = { url: workspace.cms.heroSourceUrl, mediaId: workspace.cms.heroMediaId };
 	const heroMediaId = await uploadIfChanged(adapter, connection, hero, previousHero, {
 		alt: workspace.media.heroAlt || article.title,
 		credit,
@@ -1163,7 +1151,7 @@ export async function submitArticleDraft(ownerUserId: string, articleId: string,
 		filename: mediaFilename(article.slug, 'hero', 'image/jpeg'),
 	});
 	const og = workspace.media.ogUrl && workspace.media.ogUrl !== hero ? workspace.media.ogUrl : undefined;
-	const previousOg = correction ? {} : { url: workspace.cms.ogSourceUrl, mediaId: workspace.cms.ogMediaId };
+	const previousOg = { url: workspace.cms.ogSourceUrl, mediaId: workspace.cms.ogMediaId };
 	const ogMediaId = await uploadIfChanged(adapter, connection, og, previousOg, {
 		alt: workspace.media.ogAlt || article.title,
 		credit,
