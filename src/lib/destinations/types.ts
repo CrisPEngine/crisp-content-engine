@@ -102,12 +102,42 @@ export type DestinationAdapter = {
 	): Promise<{ ok: true; mediaId: string } | { ok: false; error: string }>;
 };
 
+/** What the destination's body format can hold. Anything outside it must be fixed before submission, never dropped. */
+export type ContentCapabilities = {
+	/** Heading levels the CMS keeps. Others are mapped to the nearest supported level. */
+	headingLevels: number[];
+	orderedLists: boolean;
+	unorderedLists: boolean;
+	nestedLists: boolean;
+	tables: boolean;
+	blockquotes: boolean;
+	/** Whether a quote can hold lists or several paragraphs, not only one paragraph of text. */
+	richBlockquotes: boolean;
+	codeBlocks: boolean;
+	inlineCode: boolean;
+	horizontalRules: boolean;
+	inlineImages: boolean;
+	links: boolean;
+	emphasis: boolean;
+	strikethrough: boolean;
+	rawHtml: boolean;
+	sourcesField: boolean;
+	heroImage: boolean;
+	seoFields: boolean;
+	categories: 'single' | 'multiple' | 'none';
+	tags: boolean;
+	/** True when the CMS can render a draft preview that reflects its own templates. */
+	draftPreview: boolean;
+};
+
 export type ProviderDefinition = {
 	id: DestinationProviderId;
 	label: string;
 	available: boolean;
 	note: string;
 	capabilities: ProviderCapabilities;
+	/** Null when the provider is not built yet, so nothing can be validated against it. */
+	content: ContentCapabilities | null;
 	adapter: DestinationAdapter | null;
 };
 

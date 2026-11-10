@@ -44,6 +44,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 			audience: text(body.audience),
 			contentType: text(body.contentType),
 			destinationId: text(body.destinationId),
+			categoryId: text(body.categoryId),
 			researchRequirements: text(body.researchRequirements),
 			internalLinking: text(body.internalLinking),
 			imageRequirements: text(body.imageRequirements),

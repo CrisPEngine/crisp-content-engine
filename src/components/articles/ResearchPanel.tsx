@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import type { ResearchItemKind, ResearchPackage, ResearchPackageItem } from '@/lib/articles/types';
+import { SOURCE_CLASS_LABELS, evidenceLevel, type EvidenceLevel } from '@/lib/articles/sourceClass';
+import type { ResearchItemKind, ResearchPackage, ResearchPackageItem, ResearchPackageSource } from '@/lib/articles/types';
 
 type Act = (action: string, extra?: Record<string, unknown>, success?: string) => Promise<boolean>;
 
@@ -20,10 +21,24 @@ const STATUS_LABELS: Record<ResearchPackage['status'], string> = {
 	changed_since_approval: 'Changed since approval',
 };
 
+const EVIDENCE_LABELS: Record<EvidenceLevel, string> = {
+	reported_experience: 'Reported experience',
+	expert_recommendation: 'Expert recommendation',
+	verified: 'Verified evidence',
+	brand: 'Brand / internal',
+	background: 'Background only',
+};
+
+function sourceEvidence(source: ResearchPackageSource | undefined): EvidenceLevel | null {
+	if (!source?.classification) return null;
+	return evidenceLevel(source.classification);
+}
+
 function ItemRow({ item, sources, busy, act }: { item: ResearchPackageItem; sources: ResearchPackage['sources']; busy: boolean; act: Act }) {
 	const [editing, setEditing] = useState(false);
 	const [text, setText] = useState(item.text);
 	const linked = sources.filter((source) => item.sourceIds.includes(source.id));
+	const levels = [...new Set(linked.map((source) => sourceEvidence(source)).filter(Boolean))] as EvidenceLevel[];
 	return (
 		<li className={`border-t border-edge/50 pt-2 ${item.excluded ? 'opacity-60' : ''}`}>
 			{editing ? (
@@ -33,6 +48,7 @@ function ItemRow({ item, sources, busy, act }: { item: ResearchPackageItem; sour
 			)}
 			<p className="text-xs text-text-soft">
 				{linked.length ? linked.map((source) => source.domain).join(', ') : 'No source'}
+				{levels.length ? ` · ${levels.map((level) => EVIDENCE_LABELS[level]).join(', ')}` : ''}
 				{!item.supported ? ' · unsupported, needs a source before it is stated as fact' : ''}
 				{` · added in version ${item.addedInVersion}`}
 				{item.excluded && item.excludedReason ? ` · removed: ${item.excludedReason}` : ''}
@@ -93,7 +109,15 @@ export function ResearchPanel({ research, busy, pending, act }: { research: Rese
 					{pkg?.approved ? ` · approved version ${pkg.approved.version}, ${new Date(pkg.approved.approvedAt).toLocaleString()}` : ''}
 				</p>
 			</div>
-			<p className="text-sm text-text-soft">Generation uses only the approved version. New research is added as a new version and never changes the approved copy until you approve again.</p>
+			<p className="text-sm text-text-soft">Generation uses only the approved version. New research is added as a new version and never changes the approved copy until you approve again. Community sources stay audience insight, not expert advice.</p>
+			{(pkg?.questions?.length ?? 0) > 0 ? (
+				<div className="text-sm space-y-1">
+					<p className="font-medium">Research questions</p>
+					<ul className="list-disc pl-5 text-text-soft">
+						{pkg!.questions!.map((entry) => <li key={entry}>{entry}</li>)}
+					</ul>
+				</div>
+			) : null}
 
 			<div className="flex flex-wrap gap-2">
 				<button className="btn" type="button" disabled={busy} onClick={() => act('research', { mode: 'initial' }, 'Research added as a new version.')}>
@@ -137,7 +161,14 @@ export function ResearchPanel({ research, busy, pending, act }: { research: Rese
 					{(pkg?.sources ?? []).map((source) => (
 						<li key={source.id} className={source.excluded ? 'opacity-60' : ''}>
 							<a className="underline" href={source.url} target="_blank" rel="noreferrer">{source.title || source.url}</a>
-							<span className="text-xs text-text-soft"> · {source.domain} · {source.origin}{source.retrievedAt ? ` · ${new Date(source.retrievedAt).toLocaleDateString()}` : ''}{source.excluded && source.excludedReason ? ` · removed: ${source.excludedReason}` : ''}</span>{' '}
+							<span className="text-xs text-text-soft">
+								{' · '}
+								{source.classification ? SOURCE_CLASS_LABELS[source.classification] : 'Unclassified'}
+								{source.classification ? ` · ${EVIDENCE_LABELS[evidenceLevel(source.classification)]}` : ''}
+								{` · ${source.domain} · ${source.origin}`}
+								{source.retrievedAt ? ` · ${new Date(source.retrievedAt).toLocaleDateString()}` : ''}
+								{source.excluded && source.excludedReason ? ` · removed: ${source.excludedReason}` : ''}
+							</span>{' '}
 							<button
 								className="underline text-xs"
 								type="button"

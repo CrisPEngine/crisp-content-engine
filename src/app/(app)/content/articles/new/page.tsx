@@ -2,10 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { BRIEF_FIELDS, ChoiceWithOther, contentTypeOptions, DEFAULT_CONTENT_TYPES, SEARCH_INTENT_OPTIONS } from '@/components/articles/options';
+import { BRIEF_FIELDS, ChoiceWithOther, contentTypeOptions, DEFAULT_CONTENT_TYPES, MAX_BRIEF_TARGET_WORDS, MIN_BRIEF_TARGET_WORDS, SEARCH_INTENT_OPTIONS } from '@/components/articles/options';
 
 type Brand = { id: string; name?: string };
-type Destination = { key: string; name: string; enabled: boolean; taxonomy: { contentTypes: string[] } | null };
+type Destination = {
+	id?: string;
+	key: string;
+	name: string;
+	enabled: boolean;
+	taxonomy: { contentTypes: string[]; categories?: Array<{ id: string; name: string }> } | null;
+};
 
 export default function NewArticlePage() {
 	const router = useRouter();
@@ -13,9 +19,11 @@ export default function NewArticlePage() {
 	const [destinations, setDestinations] = useState<Destination[]>([]);
 	const [message, setMessage] = useState('');
 	const [pending, setPending] = useState(false);
+	const [syncing, setSyncing] = useState(false);
 	const [form, setForm] = useState({
 		brandId: '',
 		destinationId: '',
+		categoryId: '',
 		topic: '',
 		workingTitle: '',
 		primaryKeyword: '',
@@ -53,11 +61,37 @@ export default function NewArticlePage() {
 			.catch(() => setDestinations([]));
 	}, [form.brandId]);
 
-	const destinationTypes = destinations.find((item) => item.key === form.destinationId)?.taxonomy?.contentTypes;
+	const selectedDestination = destinations.find((item) => item.key === form.destinationId);
+	const destinationTypes = selectedDestination?.taxonomy?.contentTypes;
 	const contentTypes = contentTypeOptions(destinationTypes?.length ? destinationTypes : DEFAULT_CONTENT_TYPES);
+	const categories = selectedDestination?.taxonomy?.categories ?? [];
 
 	function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
 		setForm((current) => ({ ...current, [key]: value }));
+	}
+
+	async function syncTaxonomy() {
+		const destination = destinations.find((item) => item.key === form.destinationId);
+		if (!destination?.id) {
+			setMessage('Open Websites & CMS to sync this destination first.');
+			return;
+		}
+		setSyncing(true);
+		setMessage('');
+		const response = await fetch(`/api/websites/${encodeURIComponent(destination.id)}`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ action: 'sync_taxonomy' }),
+		});
+		const body = await response.json().catch(() => ({}));
+		setSyncing(false);
+		if (!response.ok) {
+			setMessage(body.error ?? 'Taxonomy sync failed.');
+			return;
+		}
+		const refreshed = await fetch(`/api/websites?brandId=${encodeURIComponent(form.brandId)}`).then((item) => item.json());
+		setDestinations(Array.isArray(refreshed.destinations) ? refreshed.destinations : []);
+		setMessage('Categories synced from the destination.');
 	}
 
 	async function createArticle(event: React.FormEvent) {
@@ -92,14 +126,30 @@ export default function NewArticlePage() {
 						</select>
 					</label>
 					<label className="block text-sm">Website destination
-						<select className="input w-full" value={form.destinationId} onChange={(event) => set('destinationId', event.target.value)}>
+						<select
+							className="input w-full"
+							value={form.destinationId}
+							onChange={(event) => setForm((current) => ({ ...current, destinationId: event.target.value, categoryId: '' }))}
+						>
 							<option value="">Choose later</option>
 							{destinations.map((destination) => (
 								<option key={destination.key} value={destination.key} disabled={!destination.enabled}>{destination.name}{destination.enabled ? '' : ' (disabled)'}</option>
 							))}
 						</select>
 					</label>
+					<label className="block text-sm">Primary category
+						<select className="input w-full" value={form.categoryId} disabled={!form.destinationId || categories.length === 0} onChange={(event) => set('categoryId', event.target.value)}>
+							<option value="">{categories.length ? 'Choose a category' : form.destinationId ? 'Sync taxonomy first' : 'Choose a destination first'}</option>
+							{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+						</select>
+					</label>
 				</div>
+				{form.destinationId && categories.length === 0 ? (
+					<p className="text-sm text-text-soft">
+						No categories loaded for this destination.
+						<button className="underline ml-1" type="button" disabled={syncing} onClick={() => void syncTaxonomy()}>{syncing ? 'Syncing…' : 'Sync taxonomy'}</button>
+					</p>
+				) : null}
 				<label className="block text-sm">Topic
 					<input className="input w-full" value={form.topic} onChange={(event) => set('topic', event.target.value)} required />
 				</label>
@@ -116,7 +166,7 @@ export default function NewArticlePage() {
 						<input className="input w-full" value={form.audience} onChange={(event) => set('audience', event.target.value)} />
 					</label>
 					<label className="block text-sm">Target word count
-						<input className="input w-full" type="number" min={300} max={12000} step={100} value={form.targetWords} onChange={(event) => set('targetWords', Number(event.target.value))} />
+						<input className="input w-full" type="number" min={MIN_BRIEF_TARGET_WORDS} max={MAX_BRIEF_TARGET_WORDS} step={100} value={form.targetWords} onChange={(event) => set('targetWords', Number(event.target.value))} />
 					</label>
 				</div>
 				<details className="text-sm">

@@ -5,6 +5,8 @@ import type {
 	ArticleRecord,
 	ArticleWorkspace,
 	EditorialDimension,
+	FindingTier,
+	WordTarget,
 } from '@/lib/articles/types';
 import type { DestinationTaxonomy } from '@/lib/publishing/destinationTaxonomy';
 
@@ -69,6 +71,9 @@ export function emptyWorkspace(partial?: Partial<ArticleWorkspace>): ArticleWork
 			resultRevisionId: null,
 		},
 		categorySuggestion: partial?.categorySuggestion ?? null,
+		wordTarget: partial?.wordTarget,
+		sectionPlan: partial?.sectionPlan,
+		taxonomyRef: partial?.taxonomyRef ?? null,
 		generation: partial?.generation ?? {
 			jobId: null,
 			model: null,
@@ -128,6 +133,15 @@ export function ensureWorkspace(article: ArticleRecord): ArticleWorkspace {
 	return emptyWorkspace(article.workspace);
 }
 
+export const DEFAULT_WORD_TOLERANCE_PCT = 15;
+
+/** The requested length, falling back to the stored target for articles created before word targets existed. */
+export function wordTargetFor(article: Pick<ArticleRecord, 'targetWords' | 'workspace'>): WordTarget {
+	const stored = article.workspace?.wordTarget;
+	if (stored?.requested) return { ...stored, tolerancePct: stored.tolerancePct ?? DEFAULT_WORD_TOLERANCE_PCT };
+	return { requested: article.targetWords, approved: null, tolerancePct: DEFAULT_WORD_TOLERANCE_PCT };
+}
+
 const DIMENSION_BY_CODE: Record<string, EditorialDimension> = {
 	too_short: 'topic_completeness',
 	unknown_category: 'category_accuracy',
@@ -173,7 +187,23 @@ export function toEditorialFindings(findings: ReviewFinding[], revisionId: strin
 		decidedAt: null,
 		appliedInRevisionId: null,
 		note: null,
+		section: finding.section ?? null,
+		evidence: finding.evidence ?? [],
+		explanation: finding.explanation ?? null,
+		proposedFix: finding.proposedFix ?? null,
+		fix: finding.fix ?? null,
 	}));
+}
+
+/** Blocking findings stop approval and submission; important ones should be fixed; optional ones are suggestions. */
+export function findingTier(finding: Pick<ArticleEditorialFinding, 'severity'>): FindingTier {
+	return finding.severity === 'critical' ? 'blocking' : finding.severity === 'major' ? 'important' : 'optional';
+}
+
+/** The instruction a revision should follow: the editor's wording when they edited it. */
+export function effectiveInstruction(finding: Pick<ArticleEditorialFinding, 'instruction' | 'editedInstruction' | 'section'>): string {
+	const text = finding.editedInstruction?.trim() || finding.instruction;
+	return finding.section && !text.includes(finding.section) ? `In “${finding.section}”: ${text}` : text;
 }
 
 /** Findings that still need action: not rejected, applied or superseded. */

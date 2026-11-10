@@ -61,6 +61,7 @@ function briefValues(article: ArticleRecord): BriefValues {
 		imageRequirements: workspace?.imageRequirements ?? '',
 		researchRequirements: workspace?.researchRequirements ?? '',
 		internalLinking: workspace?.internalLinking ?? '',
+		categoryId: article.categories[0] ?? '',
 		brief: {
 			secondaryKeywords: brief?.secondaryKeywords ?? '',
 			questions: brief?.questions ?? '',
@@ -70,6 +71,11 @@ function briefValues(article: ArticleRecord): BriefValues {
 			requiredLinks: brief?.requiredLinks ?? '',
 			referenceMaterial: brief?.referenceMaterial ?? '',
 			instructions: brief?.instructions ?? '',
+			clusterRole: brief?.clusterRole ?? '',
+			readerOutcome: brief?.readerOutcome ?? '',
+			distinctiveContribution: brief?.distinctiveContribution ?? '',
+			productConnection: brief?.productConnection ?? '',
+			differentiateFrom: brief?.differentiateFrom ?? '',
 		},
 	};
 }
@@ -94,12 +100,19 @@ export default function ArticleWorkspacePage() {
 	const [briefDirty, setBriefDirty] = useState(false);
 	const [externalId, setExternalId] = useState('');
 	const [lookup, setLookup] = useState<null | { externalId: string; draft: { exists: boolean; revision?: number; status?: string; title?: string; category?: string | null } }>(null);
+	const [cmsPreview, setCmsPreview] = useState<null | {
+		label?: string;
+		note?: string;
+		blocking?: Array<{ message: string }>;
+		issues?: Array<{ severity: string; message: string; count: number }>;
+		canonical?: { wordCount?: number; blocks?: unknown[] };
+	}>(null);
 	const [categoryChoice, setCategoryChoice] = useState('');
 	const [publishAt, setPublishAt] = useState('');
 	const [publishedUrl, setPublishedUrl] = useState('');
 	const [assetId, setAssetId] = useState('');
 	const [media, setMedia] = useState({ heroAlt: '', ogAlt: '', credit: '', license: '' });
-	const [destinations, setDestinations] = useState<Array<{ key: string; name: string; enabled: boolean }>>([]);
+	const [destinations, setDestinations] = useState<Array<{ key: string; name: string; enabled: boolean; id?: string; taxonomy?: { categories?: Array<{ id: string; name: string }>; contentTypes?: string[] } | null }>>([]);
 	const serverBody = useRef<string | null>(null);
 	const bodyRef = useRef('');
 	useEffect(() => {
@@ -208,9 +221,10 @@ export default function ArticleWorkspacePage() {
 			}
 		}
 		if (action === 'lookup_draft') setLookup(payload as typeof lookup);
+		if (action === 'destination_preview') setCmsPreview((payload.preview as typeof cmsPreview) ?? null);
 		const text = typeof payload.message === 'string' ? payload.message : success;
 		if (text) setToast({ kind: 'ok', text, at: Date.now() });
-		await load(action !== 'research_edit' && action !== 'preview_structural_repair' && action !== 'preview_improve');
+		await load(action !== 'research_edit' && action !== 'preview_structural_repair' && action !== 'preview_improve' && action !== 'destination_preview');
 		return { ok: true, payload };
 	}, [articleId, load]);
 
@@ -327,6 +341,9 @@ export default function ArticleWorkspacePage() {
 				initial={briefValues(article)}
 				destinations={destinations}
 				contentTypes={detail.taxonomy?.contentTypes ?? null}
+				categories={detail.taxonomy?.categories ?? null}
+				wordTarget={workspace?.wordTarget ?? null}
+				actualWordCount={article.wordCount}
 				approvedAt={workspace?.briefApprovedAt ?? null}
 				changedAfterApproval={Boolean(workspace?.briefChangedAfterApproval)}
 				suggestions={workspace?.briefSuggestions?.suggestions ?? []}
@@ -393,13 +410,19 @@ export default function ArticleWorkspacePage() {
 					act={actBool}
 				/>
 			) : null}
-			{detail.revisionResult && bodies[detail.revisionResult.baseRevisionId] && bodies[detail.revisionResult.resultRevisionId] ? (
+			{detail.revisionResult?.baseRevisionId &&
+			detail.revisionResult.resultRevisionId &&
+			bodies[detail.revisionResult.baseRevisionId] &&
+			bodies[detail.revisionResult.resultRevisionId] ? (
 				<details className="card p-4 text-sm">
 					<summary className="font-medium">Before and after the last applied revision</summary>
 					<div className="pt-2">
 						<RevisionHistory
 							key={detail.revisionResult.resultRevisionId}
-							revisions={detail.revisions.filter((revision) => revision.id === detail.revisionResult!.baseRevisionId || revision.id === detail.revisionResult!.resultRevisionId)}
+							revisions={detail.revisions.filter(
+								(revision) =>
+									revision.id === detail.revisionResult!.baseRevisionId || revision.id === detail.revisionResult!.resultRevisionId,
+							)}
 							bodies={bodies}
 							currentId={detail.revisionResult.resultRevisionId}
 						/>
@@ -502,10 +525,34 @@ export default function ArticleWorkspacePage() {
 				) : null}
 				{detail.lifecycle.submittedToCms && !detail.lifecycle.cmsCurrent ? <p className="text-sm text-warning">The CMS has an older revision than CCE.</p> : null}
 				{workspace?.cms.lastError ? <p className="text-sm text-danger">{workspace.cms.lastError}</p> : null}
-				<button className="btn" type="button" disabled={busy || jobRunning || !workspace?.destinationId || unsaved} onClick={() => actBool('submit_draft', {}, 'Draft sent to the CMS. It is not published.')}>
-					{pending === 'submit_draft' ? 'Sending…' : workspace?.cms.lastSyncAt ? 'Update CMS draft' : 'Send to CMS as draft'}
-				</button>
-				{unsaved ? <span className="text-xs text-text-soft ml-2">Save your changes first.</span> : null}
+				<div className="flex flex-wrap gap-2">
+					<button className="btn" type="button" disabled={busy || !workspace?.destinationId} onClick={() => actBool('destination_preview', {}, 'CMS compatibility preview ready.')}>
+						{pending === 'destination_preview' ? 'Checking…' : 'Preview CMS mapping'}
+					</button>
+					<button className="btn" type="button" disabled={busy || jobRunning || !workspace?.destinationId || unsaved || Boolean(cmsPreview?.blocking?.length)} onClick={() => actBool('submit_draft', {}, 'Draft sent to the CMS. It is not published.')}>
+						{pending === 'submit_draft' ? 'Sending…' : workspace?.cms.lastSyncAt ? 'Update CMS draft' : 'Send to CMS as draft'}
+					</button>
+				</div>
+				{unsaved ? <span className="text-xs text-text-soft">Save your changes first.</span> : null}
+				{cmsPreview ? (
+					<div className="text-sm space-y-1 border-t border-edge/50 pt-3">
+						<p className="font-medium">{cmsPreview.label ?? 'CMS compatibility preview'}</p>
+						<p className="text-text-soft">{cmsPreview.note}</p>
+						<p className="text-xs text-text-soft">Canonical blocks: {cmsPreview.canonical?.blocks?.length ?? 0} · words: {cmsPreview.canonical?.wordCount ?? '—'}. This is not a live website render.</p>
+						{(cmsPreview.blocking?.length ?? 0) > 0 ? (
+							<p className="text-danger" role="alert">Blocking: {cmsPreview.blocking!.map((issue) => issue.message).join(' ')}</p>
+						) : (
+							<p>No blocking compatibility issues.</p>
+						)}
+						{(cmsPreview.issues ?? []).filter((issue) => issue.severity !== 'blocking').length ? (
+							<ul className="list-disc pl-5 text-text-soft">
+								{cmsPreview.issues!.filter((issue) => issue.severity !== 'blocking').map((issue) => (
+									<li key={`${issue.severity}-${issue.message}`}>{issue.message}{issue.count > 1 ? ` (${issue.count})` : ''}</li>
+								))}
+							</ul>
+						) : null}
+					</div>
+				) : null}
 			</section>
 
 			<section className="card p-4 space-y-3" id="approval">

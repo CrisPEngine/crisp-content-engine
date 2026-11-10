@@ -23,8 +23,10 @@ import {
 	articleLifecycle,
 	articleNextStep,
 	articleScheduleGate,
+	DEFAULT_WORD_TOLERANCE_PCT,
 	emptyWorkspace,
 	ensureWorkspace,
+	wordTargetFor,
 	imagesRequired,
 	matchingTools,
 	normaliseExternalId,
@@ -64,8 +66,14 @@ import {
 import { commitRevision, ensureRevision, listRevisions } from '@/lib/articles/revisions';
 import { reviewCurrentRevision } from '@/lib/articles/reviewRun';
 import { articleWordCount, stripCmsTitleHeading, validateArticleStructure } from '@/lib/articles/structure';
-import type { ArticleBriefDetails, ArticleRecord, BriefSuggestion, ResearchPackage } from '@/lib/articles/types';
+import { unlinkRepeats } from '@/lib/articles/quality';
+import { withSourceClasses } from '@/lib/articles/sourceClass';
+import type { ArticleBriefDetails, ArticleRecord, ArticleWorkspace, BriefSuggestion, ResearchPackage } from '@/lib/articles/types';
+import { toCanonicalArticle } from '@/lib/articles/canonical';
+import { validateForDestination } from '@/lib/destinations/contentCapabilities';
+import { providerDefinition } from '@/lib/destinations/providers';
 import { categoryFromMappings, destinationForBrand, destinationTaxonomy, DestinationError, resolveConnection } from '@/lib/destinations/service';
+import type { DestinationProviderId } from '@/lib/destinations/types';
 import { generateAssetFromProposal } from '@/lib/media/images';
 import { planMedia } from '@/lib/media/planner';
 import { getNativeContentStore } from '@/lib/media/store';
@@ -131,6 +139,54 @@ async function taxonomyFor(article: ArticleRecord): Promise<DestinationTaxonomy 
 	} catch {
 		return null;
 	}
+}
+
+function compatibilityFor(article: ArticleRecord, taxonomy: DestinationTaxonomy | null, provider: DestinationProviderId | string) {
+	const definition = providerDefinition(provider);
+	const caps = definition?.content ?? null;
+	const canonical = toCanonicalArticle(article, taxonomy);
+	if (!caps) {
+		return {
+			canonical,
+			issues: [{ severity: 'blocking' as const, code: 'provider_unavailable', message: 'This destination provider cannot validate content yet.', count: 1 }],
+			providerLabel: definition?.label ?? provider,
+			draftPreview: false,
+		};
+	}
+	return {
+		canonical,
+		issues: validateForDestination(canonical, caps),
+		providerLabel: definition?.label ?? provider,
+		draftPreview: caps.draftPreview,
+	};
+}
+
+/** Compatibility preview of how the article maps for the selected CMS. Not a live website screenshot. */
+export async function destinationPreview(ownerUserId: string, articleId: string) {
+	const article = await requireArticle(ownerUserId, articleId);
+	const workspace = ensureWorkspace(article);
+	if (!workspace.destinationId) throw new ArticleWorkflowError('Choose a website destination first.', 400, 'destination_required');
+	const { connection, destination } = await resolveConnection(ownerUserId, article.brandId, workspace.destinationId).catch(asWorkflowError);
+	const taxonomy = await taxonomyFor(article);
+	const check = compatibilityFor(article, taxonomy, destination.provider);
+	const mapped = mapArticleRecordToFolianDraft(article, {
+		externalId: workspace.externalId || workspace.cms.externalId || article.slug,
+		mode: 'proposal',
+		taxonomy: taxonomy ?? undefined,
+		heroMediaId: workspace.cms.heroMediaId ?? undefined,
+		ogMediaId: workspace.cms.ogMediaId ?? undefined,
+	});
+	return {
+		label: 'CMS compatibility preview',
+		note: check.draftPreview
+			? `This is the structured payload CCE would send to ${destination.name}. It is not a live page render.`
+			: `This destination does not expose an authenticated draft preview. Showing the mapped payload only.`,
+		destination: { id: destination.id, name: destination.name, provider: destination.provider, baseUrl: connection.baseUrl },
+		issues: check.issues,
+		blocking: check.issues.filter((issue) => issue.severity === 'blocking'),
+		canonical: check.canonical,
+		mappedPayload: mapped,
+	};
 }
 
 function assertNotApproved(article: ArticleRecord, action: string) {
@@ -201,6 +257,11 @@ export async function getWorkspaceArticle(ownerUserId: string, articleId: string
 	});
 	const revisionJob = jobs.find((item) => item.jobType === 'article_revision' && (item.payload as ArticleRevisionJobPayload).articleId === article.id);
 	const gate = articleApprovalGate(article);
+	const research = article.workspace?.research;
+	if (research?.sources.some((source) => !source.classification)) {
+		const brain = await requireBrand(ownerUserId, article.brandId).catch(() => null);
+		research.sources = withSourceClasses(research.sources, { brandDomain: brandDomain(brain?.identity.website) });
+	}
 	return {
 		article,
 		nextStep: articleNextStep(article),
@@ -228,6 +289,11 @@ export type ArticleBriefInput = {
 	audience?: string;
 	contentType?: string;
 	targetWords?: number;
+	/** Allowed deviation from targetWords, in percent. */
+	wordTolerancePct?: number;
+	/** Primary category, as a stable id from the destination taxonomy. */
+	categoryId?: string;
+	tags?: string[];
 	researchRequirements?: string;
 	internalLinking?: string;
 	imageRequirements?: string;
@@ -235,7 +301,49 @@ export type ArticleBriefInput = {
 	brief?: Partial<ArticleBriefDetails>;
 };
 
-const BRIEF_FIELDS: Array<keyof ArticleBriefDetails> = ['secondaryKeywords', 'questions', 'avoid', 'tone', 'cta', 'requiredLinks', 'referenceMaterial', 'instructions'];
+const BRIEF_FIELDS: Array<keyof ArticleBriefDetails> = [
+	'secondaryKeywords',
+	'questions',
+	'avoid',
+	'tone',
+	'cta',
+	'requiredLinks',
+	'referenceMaterial',
+	'instructions',
+	'clusterRole',
+	'readerOutcome',
+	'distinctiveContribution',
+	'productConnection',
+	'differentiateFrom',
+];
+
+function cleanTolerance(value: number | undefined): number {
+	if (value === undefined || !Number.isFinite(value)) return DEFAULT_WORD_TOLERANCE_PCT;
+	return Math.min(50, Math.max(5, Math.round(value)));
+}
+
+/** Checks a chosen category against the destination's synced taxonomy. A missing or renamed category is never replaced. */
+async function resolveCategory(
+	ownerUserId: string,
+	brandId: string,
+	destinationId: string | null,
+	categoryId: string | undefined,
+): Promise<{ categories: string[]; ref: ArticleWorkspace['taxonomyRef'] }> {
+	const id = categoryId?.trim();
+	if (!id) return { categories: [], ref: null };
+	if (!destinationId) throw new ArticleWorkflowError('Choose a website destination before choosing a category.', 400, 'destination_required');
+	const taxonomy = await destinationTaxonomy(ownerUserId, brandId, destinationId).catch(() => null);
+	if (!taxonomy) throw new ArticleWorkflowError('This destination has no synced taxonomy. Sync it in Websites & CMS, then choose a category.', 422, 'taxonomy_unavailable');
+	const category = taxonomy.categories.find((item) => item.id === id);
+	if (!category) {
+		throw new ArticleWorkflowError(`“${id}” is not a category in ${taxonomy.destination}. Choose one of: ${taxonomy.categories.map((item) => item.name).join(', ')}.`, 400, 'invalid_category');
+	}
+	return { categories: [category.id], ref: { destinationId, syncedAt: new Date().toISOString(), categoryName: category.name } };
+}
+
+function cleanTags(tags: string[] | undefined): string[] {
+	return [...new Set((tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean))].slice(0, 12);
+}
 
 function cleanBrief(input: Partial<ArticleBriefDetails> | undefined): Partial<ArticleBriefDetails> {
 	const out: Partial<ArticleBriefDetails> = {};
@@ -271,13 +379,18 @@ export async function createArticleBrief(ownerUserId: string, input: ArticleBrie
 			(article.status !== 'published' && (sameTitle(article.title, title) || sameTitle(article.topic, topic))),
 	);
 	if (duplicate) return { article: duplicate, existing: true };
+	const destinationId = input.destinationId?.trim() || null;
+	const category = await resolveCategory(ownerUserId, brain.id, destinationId, input.categoryId);
+	const targetWords = normaliseTargetWords(input.targetWords);
 	const now = new Date().toISOString();
 	const id = crypto.randomUUID();
 	const slug = slugify(title);
 	const brief = { ...emptyWorkspace().brief!, ...cleanBrief(input.brief) };
 	const workspace = emptyWorkspace({
-		destinationId: input.destinationId?.trim() || null,
+		destinationId,
 		contentType: input.contentType?.trim() || 'guide',
+		wordTarget: { requested: targetWords, approved: null, tolerancePct: cleanTolerance(input.wordTolerancePct) },
+		taxonomyRef: category.ref,
 		workingTitle: title,
 		researchRequirements: input.researchRequirements?.trim() ?? '',
 		internalLinking: input.internalLinking?.trim() ?? '',
@@ -323,8 +436,8 @@ export async function createArticleBrief(ownerUserId: string, input: ArticleBrie
 			secondaryTopics: splitLines(brief.secondaryKeywords),
 		},
 		author: null,
-		categories: [],
-		tags: [],
+		categories: category.categories,
+		tags: cleanTags(input.tags),
 		inlineAssetIds: [],
 		mediaPlan: null,
 		internalLinkOpportunities: [],
@@ -334,7 +447,7 @@ export async function createArticleBrief(ownerUserId: string, input: ArticleBrie
 		publication: null,
 		performanceContentId: id,
 		wordCount: 0,
-		targetWords: normaliseTargetWords(input.targetWords),
+		targetWords,
 		review: null,
 		versions: [],
 		distribution: { disclosure: null, sponsorship: 'none', contentCluster: null, authorProfileId: null },
@@ -385,13 +498,43 @@ export async function saveArticleDraft(ownerUserId: string, articleId: string, p
 	if (patch.audience !== undefined) article.audience = change(article.audience ?? '', patch.audience.trim());
 	if (patch.contentType?.trim()) workspace.contentType = change(workspace.contentType, patch.contentType.trim().slice(0, 80));
 	if (patch.destinationId !== undefined) {
-		workspace.destinationId = patch.destinationId.trim() || null;
-		article.publishDestination = workspace.destinationId ?? undefined;
+		const nextDestination = patch.destinationId.trim() || null;
+		if (nextDestination !== workspace.destinationId) {
+			workspace.destinationId = nextDestination;
+			article.publishDestination = nextDestination ?? undefined;
+			if (patch.categoryId === undefined) {
+				article.categories = [];
+				workspace.taxonomyRef = null;
+				workspace.categorySuggestion = null;
+				briefChanged = true;
+			}
+		} else {
+			workspace.destinationId = nextDestination;
+			article.publishDestination = nextDestination ?? undefined;
+		}
 	}
 	if (patch.researchRequirements !== undefined) workspace.researchRequirements = change(workspace.researchRequirements, patch.researchRequirements);
 	if (patch.internalLinking !== undefined) workspace.internalLinking = change(workspace.internalLinking, patch.internalLinking);
 	if (patch.imageRequirements !== undefined) workspace.imageRequirements = patch.imageRequirements;
-	if (patch.targetWords) article.targetWords = change(article.targetWords, normaliseTargetWords(patch.targetWords));
+	if (patch.targetWords || patch.wordTolerancePct !== undefined) {
+		const current = wordTargetFor(article);
+		const requested = patch.targetWords ? normaliseTargetWords(patch.targetWords) : current.requested;
+		article.targetWords = change(article.targetWords, requested);
+		workspace.wordTarget = {
+			requested,
+			approved: requested === current.requested ? current.approved : null,
+			tolerancePct: patch.wordTolerancePct !== undefined ? cleanTolerance(patch.wordTolerancePct) : current.tolerancePct,
+		};
+	}
+	if (patch.categoryId !== undefined) {
+		const category = await resolveCategory(ownerUserId, article.brandId, workspace.destinationId, patch.categoryId);
+		if (category.categories[0] !== article.categories[0]) {
+			article.categories = category.categories;
+			workspace.taxonomyRef = category.ref;
+			workspace.categorySuggestion = null;
+		}
+	}
+	if (patch.tags !== undefined) article.tags = cleanTags(patch.tags);
 	if (patch.brief) {
 		const next = { ...workspace.brief!, ...cleanBrief(patch.brief) };
 		for (const field of BRIEF_FIELDS) if (next[field] !== workspace.brief![field]) briefChanged = true;
@@ -534,13 +677,23 @@ export async function researchArticle(ownerUserId: string, articleId: string, in
 	const pkg = ensureResearchPackage(article);
 	await migrateLegacyResearch(ownerUserId, article, pkg, brain);
 	const brief = workspace.brief;
+	const plannedQuestions = [
+		...splitLines(brief?.questions),
+		question,
+		article.primaryKeyword ? `What does a beginner need to know about ${article.primaryKeyword}?` : '',
+		article.audience ? `What obstacles does ${article.audience} face when starting?` : '',
+		brief?.readerOutcome ? `How does the reader reach: ${brief.readerOutcome}` : '',
+		brief?.differentiateFrom ? `What should this article cover that is not already covered by: ${splitLines(brief.differentiateFrom).join('; ')}?` : '',
+	].filter(Boolean).slice(0, 8);
+	if (mode === 'initial' || !(pkg.questions?.length)) pkg.questions = plannedQuestions;
+	else if (mode === 'follow_up' && question) pkg.questions = [...new Set([...(pkg.questions ?? []), question])].slice(0, 12);
 	const provider = selectSearchProvider();
 	const query =
 		mode === 'follow_up'
 			? `${question} ${article.primaryKeyword || article.topic}`
 			: mode === 'deeper'
-				? [question || article.topic, ...splitLines(brief?.questions).slice(0, 2)].join(' ')
-				: [article.topic, article.primaryKeyword, splitLines(brief?.secondaryKeywords).slice(0, 3).join(' '), workspace.researchRequirements].filter(Boolean).join('. ');
+				? [question || article.topic, ...(pkg.questions ?? []).slice(0, 2)].join(' ')
+				: [article.topic, article.primaryKeyword, ...(pkg.questions ?? []).slice(0, 3), workspace.researchRequirements].filter(Boolean).join('. ');
 	const record: ResearchRecord = await executeResearch({
 		ownerUserId,
 		brandId: brain.id,
@@ -559,6 +712,7 @@ export async function researchArticle(ownerUserId: string, articleId: string, in
 		kind: pkg.version === 0 ? 'initial' : mode === 'initial' ? 'follow_up' : mode,
 		question: question || null,
 	});
+	pkg.sources = withSourceClasses(pkg.sources, { brandDomain: brandDomain(brain.identity.website) });
 	addBrandContext(pkg, brain.knowledge.brandFacts ?? []);
 	await assessRelevance(ownerUserId, article, pkg, before);
 	const taxonomy = await taxonomyFor(article);
@@ -623,10 +777,9 @@ export async function approveArticleResearch(ownerUserId: string, articleId: str
 	const article = await requireArticle(ownerUserId, articleId);
 	const workspace = ensureWorkspace(article);
 	const pkg = ensureResearchPackage(article);
-	if (pkg.version === 0) {
-		const brain = await requireBrand(ownerUserId, article.brandId);
-		await migrateLegacyResearch(ownerUserId, article, pkg, brain);
-	}
+	const brain = await requireBrand(ownerUserId, article.brandId);
+	if (pkg.version === 0) await migrateLegacyResearch(ownerUserId, article, pkg, brain);
+	pkg.sources = withSourceClasses(pkg.sources, { brandDomain: brandDomain(brain.identity.website) });
 	try {
 		approveResearch(pkg);
 	} catch (error) {
@@ -655,7 +808,7 @@ export async function enhanceArticleBrief(ownerUserId: string, articleId: string
 				{
 					role: 'system',
 					content:
-						'Suggest improvements to an article brief. Return JSON with suggestions: array of field, value, reason. field is one of workingTitle, primaryKeyword, audience, secondaryKeywords, questions, avoid, tone, cta, requiredLinks, instructions. Suggest only where the brief is empty or clearly weaker than the research and Brand Brain allow. For list fields, put one item per line. Never restate what the brief already says.',
+						'Suggest improvements to an article brief. Return JSON with suggestions: array of field, value, reason. field is one of workingTitle, primaryKeyword, audience, secondaryKeywords, questions, avoid, tone, cta, requiredLinks, instructions, clusterRole, readerOutcome, distinctiveContribution, productConnection, differentiateFrom, targetWords. Suggest only where the brief is empty or clearly weaker than the research and Brand Brain allow. For list fields, put one item per line. Never restate what the brief already says. targetWords belongs to the author: suggest a different number only with a concrete reason, as a plain integer.',
 				},
 				{
 					role: 'user',
@@ -667,6 +820,8 @@ export async function enhanceArticleBrief(ownerUserId: string, articleId: string
 							searchIntent: article.searchIntent,
 							audience: article.audience,
 							contentType: workspace.contentType,
+							targetWords: article.targetWords,
+							categoryId: article.categories[0] ?? null,
 							...brief,
 						},
 						brand: { name: brain.identity.name, voice: brain.voice, audiences: brain.identity.audiences, guardrails: brain.guardrails },
@@ -677,9 +832,11 @@ export async function enhanceArticleBrief(ownerUserId: string, articleId: string
 			'article_brief_enhancement',
 			ownerUserId,
 		);
-		const allowed = new Set(['workingTitle', 'primaryKeyword', 'audience', ...BRIEF_FIELDS]);
+		const allowed = new Set(['workingTitle', 'primaryKeyword', 'audience', 'targetWords', ...BRIEF_FIELDS]);
 		suggestions = (completion.data.suggestions ?? [])
+			.map((item) => (item && item.field === 'targetWords' ? { ...item, value: String(item.value ?? '') } : item))
 			.filter((item) => item && allowed.has(String(item.field)) && typeof item.value === 'string' && item.value.trim())
+			.filter((item) => item.field !== 'targetWords' || Number(item.value) !== article.targetWords)
 			.map((item) => ({ field: item.field, value: item.value.trim().slice(0, 2000), reason: String(item.reason ?? '').slice(0, 300) }))
 			.slice(0, 10);
 	}
@@ -701,6 +858,11 @@ export async function resolveBriefSuggestion(ownerUserId: string, articleId: str
 	if (field === 'workingTitle') return saveArticleDraft(ownerUserId, articleId, { workingTitle: suggestion.value });
 	if (field === 'primaryKeyword') return saveArticleDraft(ownerUserId, articleId, { primaryKeyword: suggestion.value });
 	if (field === 'audience') return saveArticleDraft(ownerUserId, articleId, { audience: suggestion.value });
+	if (field === 'targetWords') {
+		const words = Number.parseInt(suggestion.value, 10);
+		if (!Number.isFinite(words)) throw new ArticleWorkflowError('The suggested length is not a number.', 400, 'invalid_suggestion');
+		return saveArticleDraft(ownerUserId, articleId, { targetWords: words });
+	}
 	const current = workspace.brief![field] ?? '';
 	const value = current.trim() ? `${current.trim()}\n${suggestion.value}` : suggestion.value;
 	return saveArticleDraft(ownerUserId, articleId, { brief: { [field]: value } });
@@ -715,6 +877,8 @@ export async function approveArticleBrief(ownerUserId: string, articleId: string
 	const workspace = ensureWorkspace(article);
 	workspace.briefApprovedAt = new Date().toISOString();
 	workspace.briefChangedAfterApproval = false;
+	const words = wordTargetFor(article);
+	workspace.wordTarget = { ...words, approved: words.requested };
 	if (!article.body.trim()) {
 		workspace.researchSummary.recommendedStructure = recommendArticleStructure(article.topic, splitLines(workspace.brief?.questions));
 		article.outline = workspace.researchSummary.recommendedStructure;
@@ -830,6 +994,60 @@ export async function decideRecommendation(
 	finding.decidedAt = new Date().toISOString();
 	workspace.editorial.status = openCriticalFindings(workspace).length ? (workspace.editorial.exhausted ? 'blocked' : 'findings') : workspace.editorial.findings.some((item) => item.decision === 'pending' || item.decision === 'accepted') ? 'findings' : 'ready';
 	article.workspace = workspace;
+	return persist(article);
+}
+
+/** Rewrites a finding's instruction in the editor's words and accepts it. The original instruction is kept. */
+export async function editRecommendation(ownerUserId: string, articleId: string, findingId: string, instruction: string): Promise<ArticleRecord> {
+	const text = instruction.trim().slice(0, 2000);
+	if (!text) throw new ArticleWorkflowError('Write the instruction to apply.', 400, 'instruction_required');
+	const article = await requireArticle(ownerUserId, articleId);
+	const workspace = ensureWorkspace(article);
+	const finding = workspace.editorial.findings.find((item) => item.id === findingId);
+	if (!finding) throw new ArticleWorkflowError('Recommendation not found.', 404, 'finding_not_found');
+	if (finding.decision === 'applied' || finding.decision === 'superseded') {
+		throw new ArticleWorkflowError(`This recommendation is already ${finding.decision}.`, 409, 'finding_closed');
+	}
+	finding.editedInstruction = text;
+	finding.decision = 'accepted';
+	finding.decidedAt = new Date().toISOString();
+	workspace.editorial.status = openCriticalFindings(workspace).length ? (workspace.editorial.exhausted ? 'blocked' : 'findings') : 'findings';
+	article.workspace = workspace;
+	return persist(article);
+}
+
+/**
+ * Applies a finding's deterministic fix to the current revision, saves a new revision and reruns review on it.
+ * Only the text the fix targets changes; no model rewrites the article.
+ */
+export async function applyFindingFix(ownerUserId: string, articleId: string, findingId: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	assertNotApproved(article, 'Applying a fix');
+	const workspace = ensureWorkspace(article);
+	const revision = ensureRevision(article);
+	const finding = workspace.editorial.findings.find((item) => item.id === findingId);
+	if (!finding) throw new ArticleWorkflowError('Recommendation not found.', 404, 'finding_not_found');
+	if (!finding.fix) throw new ArticleWorkflowError('This recommendation has no automatic fix. Accept it and apply revisions instead.', 400, 'no_fix');
+	if (!revision || workspace.editorial.reviewedRevisionId !== revision.id) {
+		throw new ArticleWorkflowError('The draft changed after review. Rerun review first.', 409, 'review_stale');
+	}
+	const result = unlinkRepeats(article.body, finding.fix.url, finding.fix.keepFirst);
+	if (!result.removed) throw new ArticleWorkflowError('Nothing to change: the repeated links are already gone.', 409, 'fix_not_applicable');
+	article.workspace = workspace;
+	const next = commitRevision(article, result.body, 'revision', `Removed ${result.removed} repeat link${result.removed === 1 ? '' : 's'} to ${finding.fix.url}.`);
+	finding.decision = 'applied';
+	finding.decidedAt = new Date().toISOString();
+	finding.appliedInRevisionId = next.id;
+	finding.note = `Applied automatically: ${result.removed} link${result.removed === 1 ? '' : 's'} removed, anchor text kept.`;
+	article.approval = { required: true, approver: 'human', status: 'pending' };
+	const brain = await requireBrand(ownerUserId, article.brandId);
+	const taxonomy = await taxonomyFor(article);
+	try {
+		await reviewCurrentRevision({ article, brain, taxonomy, ai: getIntelligenceAi(), ownerUserId });
+	} catch (error) {
+		ensureWorkspace(article).editorial.status = 'not_run';
+		article.review = { materialPassed: false, note: `The fix was saved, but review did not rerun: ${error instanceof Error ? error.message : 'unknown error'}.`, coherenceFindings: [] };
+	}
 	return persist(article);
 }
 
@@ -1125,6 +1343,13 @@ export async function submitArticleDraft(ownerUserId: string, articleId: string,
 	const { adapter, connection, destination } = await resolveConnection(ownerUserId, article.brandId, workspace.destinationId).catch(asWorkflowError);
 	const taxonomy = await taxonomyFor(article);
 	if (!taxonomy) throw new ArticleWorkflowError('Sync the destination taxonomy before sending.', 422, 'taxonomy_unavailable');
+	if (!taxonomy.categories.some((category) => category.id === article.categories[0])) {
+		throw new ArticleWorkflowError(`The category “${article.categories[0]}” is no longer in ${destination.name}. Choose another category; CCE will not substitute one.`, 409, 'category_stale');
+	}
+	const blocking = compatibilityFor(article, taxonomy, destination.provider).issues.filter((issue) => issue.severity === 'blocking');
+	if (blocking.length) {
+		throw new ArticleWorkflowError(`The draft contains content ${destination.name} cannot store, so it was not sent: ${blocking.map((issue) => issue.message).join(' ')}`, 409, 'destination_incompatible');
+	}
 	let existing;
 	try {
 		existing = await adapter.lookupDraft(connection, externalId);

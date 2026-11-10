@@ -2,7 +2,9 @@ import type { IntelligenceAi } from '@/lib/intelligence/pipeline';
 import type { BrandBrain } from '@/lib/intelligence/types';
 import type { DestinationTaxonomy } from '@/lib/publishing/destinationTaxonomy';
 import { mergeEditorialReviews, runDeterministicArticleReview, runLlmEditorialReview } from './editorialReview';
-import { editorialStatusFromFindings, ensureWorkspace, imagesRequired, isOpenFinding, reviewCycleLimit, splitLines, toEditorialFindings } from './meta';
+import { editorialStatusFromFindings, ensureWorkspace, imagesRequired, isOpenFinding, reviewCycleLimit, splitLines, toEditorialFindings, wordTargetFor } from './meta';
+import { getNativeContentStore } from '@/lib/media/store';
+import { buildQualityContext } from './reviewContext';
 import { ensureRevision } from './revisions';
 import { validateArticleStructure } from './structure';
 import type { ArticleRecord } from './types';
@@ -16,6 +18,8 @@ export async function reviewCurrentRevision(input: {
 	taxonomy: DestinationTaxonomy | null;
 	ai: IntelligenceAi;
 	ownerUserId: string;
+	/** Other articles for the same brand, for overlap and internal link checks. */
+	siblings?: ArticleRecord[];
 }): Promise<void> {
 	const { article } = input;
 	const workspace = ensureWorkspace(article);
@@ -25,10 +29,15 @@ export async function reviewCurrentRevision(input: {
 	const brief = workspace.brief;
 	const structure = validateArticleStructure(article.body);
 	const sourceCount = article.research.sources.filter((source) => source.url).length;
+	const words = wordTargetFor(article);
+	const siblings = input.siblings ?? (await getNativeContentStore().listArticles(input.ownerUserId, article.brandId).catch(() => []));
 	const deterministic = runDeterministicArticleReview({
 		body: article.body,
 		wordCount: revision.wordCount,
-		targetWords: article.targetWords,
+		targetWords: words.requested,
+		tolerancePct: words.tolerancePct,
+		categoryName: workspace.taxonomyRef?.categoryName ?? null,
+		quality: buildQualityContext({ article, siblings, brain: input.brain, taxonomy: input.taxonomy }),
 		categoryId: article.categories[0] ?? null,
 		taxonomy: input.taxonomy,
 		sourceCount,
@@ -50,7 +59,7 @@ export async function reviewCurrentRevision(input: {
 		searchIntent: article.searchIntent,
 		body: article.body,
 		categoryId: article.categories[0] ?? null,
-		targetWords: article.targetWords,
+		targetWords: words.requested,
 		structure,
 		brief: {
 			title: article.title,
@@ -74,7 +83,12 @@ export async function reviewCurrentRevision(input: {
 	const previous = workspace.editorial.findings;
 	for (const finding of findings) {
 		const rejectedBefore = previous.find(
-			(old) => old.decision === 'rejected' && old.rejectable !== false && old.code === finding.code && old.source === finding.source,
+			(old) =>
+				old.decision === 'rejected' &&
+				old.rejectable !== false &&
+				old.code === finding.code &&
+				old.source === finding.source &&
+				(old.section ?? null) === (finding.section ?? null),
 		);
 		if (rejectedBefore && finding.rejectable !== false) {
 			finding.decision = 'rejected';
