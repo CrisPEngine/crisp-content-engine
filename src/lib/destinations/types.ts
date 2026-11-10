@@ -82,7 +82,7 @@ export type DraftLookup = { exists: false } | { exists: true; revision: number; 
 export type DraftSubmission = {
 	externalId: string;
 	baseRevision?: number;
-	mode: 'update' | 'proposal';
+	mode: 'update' | 'proposal' | 'correction';
 	payload: Record<string, unknown>;
 };
 

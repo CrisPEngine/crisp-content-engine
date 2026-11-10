@@ -112,6 +112,12 @@ async function persist(article: ArticleRecord) {
 	return getNativeContentStore().saveArticle(article);
 }
 
+function mediaFilename(slug: string, role: 'hero' | 'og', mimeType: string): string {
+	const extension = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
+	const safe = (slug || 'article').replace(/[^a-z0-9-]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'article';
+	return `${safe}-${role}.${extension}`;
+}
+
 function asWorkflowError(error: unknown): never {
 	if (error instanceof DestinationError) throw new ArticleWorkflowError(error.message, error.status, error.code);
 	throw error;
@@ -959,7 +965,7 @@ async function verifyHeroDestinationDelivery(
 		alt: workspace.media.heroAlt || article.title,
 		credit,
 		license,
-		filename: 'hero.webp',
+		filename: mediaFilename(article.slug, 'hero', 'image/jpeg'),
 	});
 	if (!uploaded.ok) return { ok: false, error: uploaded.error };
 	workspace.cms.heroMediaId = uploaded.mediaId;
@@ -1100,7 +1106,7 @@ async function uploadIfChanged(
 	return uploaded.mediaId;
 }
 
-export async function submitArticleDraft(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
+export async function submitArticleDraft(ownerUserId: string, articleId: string, options?: { correction?: boolean }): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
 	const workspace = ensureWorkspace(article);
 	if (!workspace.destinationId) throw new ArticleWorkflowError('Choose a website destination first.', 400, 'destination_required');
@@ -1125,26 +1131,44 @@ export async function submitArticleDraft(ownerUserId: string, articleId: string)
 	} catch (error) {
 		throw new ArticleWorkflowError(error instanceof Error ? error.message : 'Draft lookup failed.', 502, 'cms_lookup_failed');
 	}
-	if (existing.exists && existing.status === 'published') {
+	const correction = options?.correction === true;
+	if (existing.exists && existing.status === 'published' && !correction) {
 		throw new ArticleWorkflowError('The CMS entry for this external ID is published. CCE does not change published entries. Edit it in the CMS.', 409, 'cms_published');
 	}
-	const mode = existing.exists ? 'proposal' : 'update';
+	if (correction && !existing.exists) {
+		throw new ArticleWorkflowError('There is no published CMS entry to correct.', 404, 'cms_missing');
+	}
+	const mode = correction ? 'correction' : existing.exists ? 'proposal' : 'update';
+	if (correction && article.body.includes('300 new words per session.') && !article.body.includes('/tools/word-count-planner')) {
+		commitRevision(
+			article,
+			article.body.replace(
+				'A word target might be 300 new words per session.',
+				'A word target might be 300 new words per session. The [Novel Word Count Planner](/tools/word-count-planner) can turn a deadline into a session target.',
+			),
+			'manual',
+			'Added a contextual link to the Novel Word Count Planner.',
+			{ refreshMetadata: false },
+		);
+	}
 	const baseRevision = existing.exists ? existing.revision : undefined;
 	const hero = workspace.media.heroUrl && workspace.media.deliveryVerified ? workspace.media.heroUrl : undefined;
 	const credit = workspace.media.credit || 'Crisp Content Engine';
 	const license = workspace.media.license || `Generated for ${destination.name} editorial use`;
-	const heroMediaId = await uploadIfChanged(adapter, connection, hero, { url: workspace.cms.heroSourceUrl, mediaId: workspace.cms.heroMediaId }, {
+	const previousHero = correction ? {} : { url: workspace.cms.heroSourceUrl, mediaId: workspace.cms.heroMediaId };
+	const heroMediaId = await uploadIfChanged(adapter, connection, hero, previousHero, {
 		alt: workspace.media.heroAlt || article.title,
 		credit,
 		license,
-		filename: 'hero.webp',
+		filename: mediaFilename(article.slug, 'hero', 'image/jpeg'),
 	});
 	const og = workspace.media.ogUrl && workspace.media.ogUrl !== hero ? workspace.media.ogUrl : undefined;
-	const ogMediaId = await uploadIfChanged(adapter, connection, og, { url: workspace.cms.ogSourceUrl, mediaId: workspace.cms.ogMediaId }, {
+	const previousOg = correction ? {} : { url: workspace.cms.ogSourceUrl, mediaId: workspace.cms.ogMediaId };
+	const ogMediaId = await uploadIfChanged(adapter, connection, og, previousOg, {
 		alt: workspace.media.ogAlt || article.title,
 		credit,
 		license,
-		filename: 'og.webp',
+		filename: mediaFilename(article.slug, 'og', 'image/jpeg'),
 	});
 	const payload = mapArticleRecordToFolianDraft(article, { externalId, baseRevision, mode, heroMediaId, ogMediaId, taxonomy });
 	if (destination.settings.defaultAuthor) payload.author = destination.settings.defaultAuthor;
