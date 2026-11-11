@@ -269,28 +269,27 @@ export function applyModelStrategy(base: EditorialBriefVersion, model: ModelBrie
 	const targetWords = Number.isFinite(words) && words >= 400 && words <= 6000 ? Math.round(words) : base.targetWords;
 	const inventory = existingTitles.map((title) => title.trim()).filter(Boolean);
 	const differentiation = [cleanProposal(model.differentiation, 500), inventory.length ? `Do not repeat: ${inventory.slice(0, 8).join('; ')}.` : ''].filter(Boolean).join(' ');
-	const modelSections = (model.sections ?? [])
-		.map((section) => {
-			const heading = cleanProposal(section.heading, 120);
-			if (!heading) return null;
-			const confirmedEvidence = base.sections.find((item) => item.heading.toLowerCase() === heading.toLowerCase())?.confirmedEvidence ?? [];
-			const evidenceNeeded = cleanList(section.evidenceNeeded, 4);
-			return {
-				heading,
-				level: section.level === 3 ? 3 as const : 2 as const,
-				parentHeading: cleanProposal(section.parentHeading, 120) || null,
-				questions: cleanList(section.questions, 4),
-				confirmedEvidence,
-				proposedDirection: cleanProposal(section.proposedDirection, 400) || 'Proposed section. It is not a research finding.',
-				knowledgeGaps: [],
-				examples: cleanList(section.examples, 3),
-				exercises: cleanList(section.exercises, 3),
-				takeaways: cleanList(section.takeaways, 3),
-				evidenceNeeded,
-				researchGap: confirmedEvidence.length === 0,
-			} satisfies EditorialBriefSection;
-		})
-		.filter((section): section is EditorialBriefSection => Boolean(section));
+	const modelSections = (model.sections ?? []).flatMap((section) => {
+		const heading = cleanProposal(section.heading, 120);
+		if (!heading) return [];
+		const confirmedEvidence = base.sections.find((item) => item.heading.toLowerCase() === heading.toLowerCase())?.confirmedEvidence ?? [];
+		const evidenceNeeded = cleanList(section.evidenceNeeded, 4);
+		const built: EditorialBriefSection = {
+			heading,
+			level: section.level === 3 ? 3 : 2,
+			parentHeading: cleanProposal(section.parentHeading, 120) || null,
+			questions: cleanList(section.questions, 4),
+			confirmedEvidence,
+			proposedDirection: cleanProposal(section.proposedDirection, 400) || 'Proposed section. It is not a research finding.',
+			knowledgeGaps: [],
+			examples: cleanList(section.examples, 3),
+			exercises: cleanList(section.exercises, 3),
+			takeaways: cleanList(section.takeaways, 3),
+			evidenceNeeded,
+			researchGap: confirmedEvidence.length === 0,
+		};
+		return [built];
+	});
 	const proposed = [
 		...base.proposed,
 		modelSections.length ? 'Section structure was proposed by the strategy model and still requires approval.' : '',
