@@ -92,7 +92,7 @@ import { generateAssetFromProposal } from '@/lib/media/images';
 import { assessGeneratedImageQuality, estimateRegenerationCostUsd } from '@/lib/media/imageQuality';
 import { imageModelReport, resolveImageModelId } from '@/lib/media/imageModels';
 import { planMedia } from '@/lib/media/planner';
-import { brandAssetTypeLabel, proposeReferenceAssets } from '@/lib/media/referenceAssets';
+import { brandAssetTypeLabel, brandHasProductScreenshot, proposeReferenceAssets } from '@/lib/media/referenceAssets';
 import { runAssetVisionAnalysis } from '@/lib/media/runAssetVision';
 import { getNativeContentStore } from '@/lib/media/store';
 import type { MediaDecision } from '@/lib/media/types';
@@ -1275,9 +1275,7 @@ export async function prepareArticleImageBrief(
 	const creative = ensureMediaCreative(workspace);
 	const store = getNativeContentStore();
 	const brandAssets = await store.listAssets(ownerUserId, article.brandId);
-	const hasProductScreenshot = brandAssets.some(
-		(asset) => asset.libraryType === 'PRODUCT_SCREENSHOT' || asset.libraryType === 'PRODUCT_UI',
-	);
+	const hasProductScreenshot = brandHasProductScreenshot(brandAssets);
 	const suggested = suggestImageConcept({
 		role,
 		title: article.title,
@@ -1299,7 +1297,8 @@ export async function prepareArticleImageBrief(
 		assets: brandAssets,
 	});
 	const recommendedIds = references.filter((row) => row.recommended).map((row) => row.asset.id).slice(0, 2);
-	const referenceAssetIds = creative[role].referenceAssetIds.length ? creative[role].referenceAssetIds : recommendedIds;
+	const referenceAssetIds =
+		!applySuggested && creative[role].referenceAssetIds.length ? creative[role].referenceAssetIds : recommendedIds;
 	const built = buildArticleImagePrompt({
 		role,
 		brand: brain,
@@ -1309,7 +1308,13 @@ export async function prepareArticleImageBrief(
 		revisionInstructions: creative[role].revisionInstructions,
 		brandStyleNotes,
 		hasProductReference: referenceAssetIds.some((id) =>
-			brandAssets.some((asset) => asset.id === id && (asset.libraryType === 'PRODUCT_SCREENSHOT' || asset.libraryType === 'PRODUCT_UI')),
+			brandAssets.some(
+				(asset) =>
+					asset.id === id &&
+					(asset.libraryType === 'PRODUCT_SCREENSHOT' ||
+						asset.libraryType === 'PRODUCT_UI' ||
+						/screenshot|planner|interface|dashboard/i.test(`${asset.title || ''} ${asset.description || ''}`)),
+			),
 		),
 	});
 	const recent = brandAssets
@@ -1385,9 +1390,7 @@ export async function generateArticleMedia(
 	const creative = ensureMediaCreative(workspace);
 	const brief = creative[role];
 	const brandAssets = await getNativeContentStore().listAssets(ownerUserId, article.brandId);
-	const hasProductScreenshot = brandAssets.some(
-		(asset) => asset.libraryType === 'PRODUCT_SCREENSHOT' || asset.libraryType === 'PRODUCT_UI',
-	);
+	const hasProductScreenshot = brandHasProductScreenshot(brandAssets);
 	const suggested = suggestImageConcept({
 		role,
 		title: article.title,
@@ -1404,7 +1407,13 @@ export async function generateArticleMedia(
 	const brandStyleNotes = options.brandStyleNotes ?? brief.brandStyleNotes;
 	const referenceAssetIds = options.referenceAssetIds ?? brief.referenceAssetIds;
 	const hasProductReference = referenceAssetIds.some((id) =>
-		brandAssets.some((asset) => asset.id === id && (asset.libraryType === 'PRODUCT_SCREENSHOT' || asset.libraryType === 'PRODUCT_UI')),
+		brandAssets.some(
+			(asset) =>
+				asset.id === id &&
+				(asset.libraryType === 'PRODUCT_SCREENSHOT' ||
+					asset.libraryType === 'PRODUCT_UI' ||
+					/screenshot|planner|interface|dashboard/i.test(`${asset.title || ''} ${asset.description || ''}`)),
+		),
 	);
 	const built = buildArticleImagePrompt({
 		role,

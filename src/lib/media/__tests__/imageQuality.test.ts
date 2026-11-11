@@ -28,22 +28,39 @@ describe('imageQuality and references', () => {
 		expect(findings.some((finding) => finding.code === 'anatomy_concern' && finding.severity === 'blocking')).toBe(true);
 	});
 
-	it('isolates reference proposals to the requested brand', () => {
+	it('isolates reference proposals to the requested brand and prefers screenshots over generated fills', () => {
 		const assets = [
 			{
 				id: 'a1',
 				ownerUserId: 'u',
 				brandId: 'brand-a',
 				assetType: 'image',
-				sourceType: 'upload',
+				sourceType: 'external',
 				storageProvider: 'cloudinary',
 				url: 'https://example.com/a.jpg',
-				title: 'Writing interface screenshot',
-				libraryType: 'PRODUCT_SCREENSHOT',
-				verifiedReference: true,
+				title: 'Novel Word Count Planner screenshot',
+				libraryType: 'OTHER',
+				verifiedReference: false,
 				referenceAllowed: true,
 				provenance: {},
 				approvalStatus: 'approved',
+				createdAt: '',
+				updatedAt: '',
+			},
+			{
+				id: 'a2',
+				ownerUserId: 'u',
+				brandId: 'brand-a',
+				assetType: 'image',
+				sourceType: 'generated',
+				storageProvider: 'cloudinary',
+				url: 'https://example.com/gen.jpg',
+				title: 'A 16:9 editorial photograph for writing a book',
+				libraryType: 'OTHER',
+				verifiedReference: false,
+				referenceAllowed: true,
+				provenance: {},
+				approvalStatus: 'draft',
 				createdAt: '',
 				updatedAt: '',
 			},
@@ -73,6 +90,9 @@ describe('imageQuality and references', () => {
 		});
 		expect(proposals.every((row) => row.asset.brandId === 'brand-a')).toBe(true);
 		expect(proposals.some((row) => row.asset.id === 'b1')).toBe(false);
+		expect(proposals[0]?.asset.id).toBe('a1');
+		expect(proposals[0]?.recommended).toBe(true);
+		expect(proposals.some((row) => row.asset.id === 'a2')).toBe(false);
 	});
 
 	it('resolves a configurable production image model without auto-switching', () => {

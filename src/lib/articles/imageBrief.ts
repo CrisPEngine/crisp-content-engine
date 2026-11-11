@@ -158,13 +158,17 @@ export function suggestImageConcept(input: {
 			? `Tight ${OG_RATIO} social crop of a first-time writer starting a book in a contemporary café: one clear subject, open notebook or laptop edge, natural light, restrained editorial mood.${productCue}`
 			: `Tight ${OG_RATIO} social crop with one clear subject that expresses “${summariseCoherently(input.title || input.topic, 60)}”, readable at thumbnail size, restrained editorial styling.`;
 	} else if (writing) {
-		scene = `A first-time writer beginning a book in a contemporary café, morning light across a small table, focused posture, and a sense of a creative project taking shape for ${audience}.${productCue} Composition: ${HERO_RATIO} editorial photograph, shallow depth, no stock handshake, no generic empty desk montage.`;
+		scene = `A first-time writer beginning a book in a contemporary café, morning light across a small table, focused posture, and a clear sense of a creative project taking shape.${productCue} Composition: ${HERO_RATIO} editorial photograph, shallow depth of field, restrained mood; no stock handshake, no generic empty desk montage.`;
 	} else {
 		const intent = summariseCoherently(input.excerpt || input.topic || input.title, 90);
 		scene = `An editorial ${HERO_RATIO} photograph whose main subject and setting make “${summariseCoherently(input.title || input.topic, 70)}” concrete for ${audience}. Mood: specific and physical rather than symbolic. Composition centres one action.${intent ? ` Intent cue (do not paint as text): ${intent}.` : ''}${productCue}`;
 	}
 
-	if (input.imageRequirements?.trim() && !/^\s*(none|no images?)\s*$/i.test(input.imageRequirements)) {
+	if (
+		input.imageRequirements?.trim() &&
+		!/^\s*(none|no images?)\s*$/i.test(input.imageRequirements) &&
+		!/^\s*hero image and social image\.?\s*$/i.test(input.imageRequirements.trim())
+	) {
 		scene += ` Honour role needs: ${summariseCoherently(input.imageRequirements, 80)}.`;
 	}
 	return clampConceptWords(scene);
