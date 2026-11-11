@@ -17,6 +17,7 @@ import {
 	getWorkspaceArticle,
 	previewAcceptedEditorialProposals,
 	recordEditorialFeedback,
+	restoreWorkspaceRevision,
 	saveArticleDraft,
 	scheduleWorkspaceArticle,
 	startArticleGeneration,
@@ -234,6 +235,14 @@ describe('article workspace', () => {
 		if (extra) expect(after.find((item) => item.id === extra.id)?.status).toBe('deferred');
 		expect(applied.article.workspace?.revision?.number ?? 0).toBeGreaterThan(revisionBefore);
 		expect(applied.article.workspace?.revision?.source).toBe('improvement');
+		expect(applied.article.workspace?.revision?.note).toContain(change!.id);
+		expect(applied.article.workspace?.revision?.note).not.toContain(keep!.id);
+		expect(contentHash(applied.article.body)).toBe(applied.article.workspace?.revision?.contentHash);
+		const previous = applied.article.versions.at(-1);
+		const restored = await restoreWorkspaceRevision(FOLIAN_USER_ID, article.id, previous!.revisionId!);
+		expect(restored.body.trim()).toBe(before.trim());
+		expect(restored.versions.some((version) => version.instruction?.includes(change!.id) || version.revisionId === applied.article.workspace?.revision?.id)).toBe(true);
+		expect(restored.workspace?.revision?.note).toContain('Restored revision');
 	});
 
 	it('schedules a website article only after approval and keeps it off the social queue', async () => {

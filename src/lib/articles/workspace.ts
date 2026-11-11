@@ -2087,6 +2087,7 @@ export async function generateWorkspaceEditorialBrief(ownerUserId: string, artic
 							'Propose an article strategy as JSON. Fields: primaryKeyword, supportingKeywords, searchIntent, audience, seoTitle, publishedH1, alternativeTitles, sections, internalLinks, cta, targetWords, differentiation, brandPositioning.',
 							'Each section has heading, level (2 or 3), parentHeading, questions, examples, exercises, takeaways, evidenceNeeded, proposedDirection.',
 							'Use only the supplied research as evidence. Put new ideas in proposed fields. Do not invent search volume, rankings, citations, statistics, or product capabilities.',
+							'Check keyword spelling. Do not repeat the primary keyword. For a long practical guide, add an H3 only when an H2 covers a distinct second step. Do not add H3s to a short definition.',
 							'Name an existing article in differentiation when the topic would compete with it. Do not claim a keyword is unclaimed.',
 						].join(' '),
 					},
@@ -2302,7 +2303,7 @@ export async function applyAcceptedEditorialProposals(ownerUserId: string, artic
 	const sameAccepted = preview.acceptedIds.length === accepted.length && preview.acceptedIds.every((id) => accepted.some((item) => item.id === id));
 	if (!sameAccepted) throw new ArticleWorkflowError('The accepted proposals changed after the preview. Preview again.', 409, 'preview_stale');
 	article.workspace = workspace;
-	commitRevision(article, preview.proposedBody, 'improvement', preview.summary, { refreshMetadata: false });
+	commitRevision(article, preview.proposedBody, 'improvement', `Accepted proposals ${accepted.map((item) => item.id).join(', ')}. ${preview.summary}`, { refreshMetadata: false });
 	for (const proposal of proposals) {
 		if (proposal.status === 'accepted') proposal.status = 'applied';
 	}

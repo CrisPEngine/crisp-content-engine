@@ -249,11 +249,163 @@ export type ModelBriefStrategy = {
 };
 
 const UNSUPPORTED_METRIC = /\d[\d,.]*\s*(monthly searches|searches a month|search volume|msv)|#\s*\d+|\brank(?:s|ed|ing)?\b/i;
+const KNOWN_TYPOS: Record<string, string> = {
+	cheeck: 'check',
+	recieve: 'receive',
+	seperate: 'separate',
+	continuty: 'continuity',
+	continutiy: 'continuity',
+	writting: 'writing',
+	occured: 'occurred',
+	definately: 'definitely',
+	wierd: 'weird',
+	artical: 'article',
+	audence: 'audience',
+	sentance: 'sentence',
+	charactor: 'character',
+	chapeter: 'chapter',
+};
+const COMMON_WORDS = new Set(
+	'about after also article audience because before between chapter character check continuity draft error errors example fiction guide method novel novels practical prevent reader scene story stories structure writer writers writing workflow'
+		.split(' '),
+);
+const STOP_WORDS = new Set('the a an and or to of for in on with how what your this that from into by is are was were be as at it its their they them you'.split(' '));
 
 function cleanProposal(value: string | undefined, limit = 240): string {
 	const text = (value ?? '').replace(/\s+/g, ' ').trim();
 	if (!text || UNSUPPORTED_METRIC.test(text)) return '';
 	return text.slice(0, limit);
+}
+
+function significantTokens(value: string): string[] {
+	return value.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((token) => token.length > 3 && !STOP_WORDS.has(token));
+}
+
+function editDistance(left: string, right: string): number {
+	const row = Array.from({ length: right.length + 1 }, (_, index) => index);
+	for (let i = 1; i <= left.length; i += 1) {
+		let previous = row[0]!;
+		row[0] = i;
+		for (let j = 1; j <= right.length; j += 1) {
+			const current = row[j]!;
+			row[j] = left[i - 1] === right[j - 1] ? previous : Math.min(previous, row[j]!, row[j - 1]!) + 1;
+			previous = current;
+		}
+	}
+	return row[right.length]!;
+}
+
+function spellingSuggestion(word: string, lexicon: Set<string>): string | null {
+	if (word.length < 5 || lexicon.has(word) || COMMON_WORDS.has(word)) return null;
+	if (KNOWN_TYPOS[word]) return KNOWN_TYPOS[word];
+	let suggestion: string | null = null;
+	for (const known of [...lexicon, ...COMMON_WORDS]) {
+		if (Math.abs(known.length - word.length) > 1 || known[0] !== word[0]) continue;
+		if (editDistance(word, known) === 1) suggestion = known;
+	}
+	return suggestion;
+}
+
+function keywordPhrase(value: string): string {
+	return significantTokens(value).map((token) => (token.endsWith('s') && token.length > 4 ? token.slice(0, -1) : token)).join(' ');
+}
+
+/** Drops unsupported, misspelled, duplicate, or off-topic keyword proposals. Confirmed research is untouched. */
+export function validateProposedKeywords(keywords: string[], context: { topic: string; title: string; searchIntent: string; primaryKeyword: string }): { keywords: string[]; notes: string[] } {
+	const lexicon = new Set(significantTokens([context.topic, context.title, context.searchIntent, context.primaryKeyword].join(' ')));
+	const kept: string[] = [];
+	const notes: string[] = [];
+	const seen = new Set<string>();
+	for (const keyword of keywords) {
+		const cleaned = cleanProposal(keyword, 80);
+		if (!cleaned) {
+			if (keyword.trim()) notes.push(`Rejected keyword “${keyword.trim().slice(0, 80)}”: unsupported search metric or ranking claim.`);
+			continue;
+		}
+		const words = cleaned.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+		const misspelled = words.map((word) => ({ word, suggestion: spellingSuggestion(word, lexicon) })).find((item) => item.suggestion);
+		if (misspelled) {
+			notes.push(`Rejected keyword “${cleaned}”: “${misspelled.word}” looks like a misspelling of “${misspelled.suggestion}”.`);
+			continue;
+		}
+		const phrase = keywordPhrase(cleaned);
+		const primaryPhrase = keywordPhrase(context.primaryKeyword);
+		if (!phrase || seen.has(phrase) || phrase === primaryPhrase) {
+			notes.push(`Rejected keyword “${cleaned}”: duplicate or near-duplicate of another keyword.`);
+			continue;
+		}
+		const tokens = significantTokens(cleaned);
+		if (tokens.length && !tokens.some((token) => lexicon.has(token))) {
+			notes.push(`Check keyword “${cleaned}”: it does not share words with the topic or search intent.`);
+		}
+		seen.add(phrase);
+		kept.push(cleaned);
+	}
+	return { keywords: kept, notes };
+}
+
+function headingKey(value: string): string {
+	return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function articleNeedsSubsections(topic: string, title: string, targetWords: number): boolean {
+	return targetWords >= 1600 && /\b(how to|guide|practical|workflow|prevent|method)\b/i.test(`${topic} ${title}`);
+}
+
+/** Removes duplicate or irrelevant headings and adds an H3 only when a long practical article already has a second question. */
+export function validateProposedSections(sections: EditorialBriefSection[], context: { topic: string; title: string; targetWords: number }): { sections: EditorialBriefSection[]; notes: string[] } {
+	const lexicon = new Set(significantTokens(`${context.topic} ${context.title}`));
+	const notes: string[] = [];
+	const seen = new Set<string>();
+	const relevant = sections.filter((section) => {
+		const key = headingKey(section.heading);
+		if (!key || seen.has(key)) {
+			notes.push(`Rejected heading “${section.heading}”: duplicate.`);
+			return false;
+		}
+		const tokens = significantTokens(section.heading);
+		if (tokens.length && !tokens.some((token) => lexicon.has(token) || COMMON_WORDS.has(token))) {
+			notes.push(`Check heading “${section.heading}”: it does not share words with the topic.`);
+		}
+		seen.add(key);
+		return true;
+	});
+	const normalized: EditorialBriefSection[] = [];
+	for (const section of relevant) {
+		const level = section.level === 3 ? 3 : 2;
+		const parent = level === 3 ? normalized.filter((item) => item.level !== 3).at(-1)?.heading ?? null : null;
+		normalized.push({ ...section, level: parent || level === 2 ? level : 2, parentHeading: parent });
+		if (level === 3 && !parent) notes.push(`Heading “${section.heading}” was kept as an H2 because it had no parent section.`);
+	}
+	const needsSubsections = articleNeedsSubsections(context.topic, context.title, context.targetWords);
+	if (!needsSubsections || normalized.some((section) => section.level === 3)) return { sections: normalized, notes };
+	let added = false;
+	const withSubsections: EditorialBriefSection[] = [];
+	for (const section of normalized) {
+		withSubsections.push(section);
+		const extra = section.questions.slice(1).map((question) => question.replace(/\?$/, '').trim()).filter(Boolean);
+		for (const heading of extra.slice(0, 2)) {
+			if (seen.has(headingKey(heading))) continue;
+			seen.add(headingKey(heading));
+			withSubsections.push({
+				heading,
+				level: 3,
+				parentHeading: section.heading,
+				questions: [section.questions.find((question) => question.replace(/\?$/, '').trim() === heading) ?? heading],
+				confirmedEvidence: [],
+				proposedDirection: 'Proposed subsection from a reader question. It is not a research finding.',
+				knowledgeGaps: [],
+				examples: [],
+				exercises: [],
+				takeaways: [],
+				evidenceNeeded: ['Evidence specific to this subsection.'],
+				researchGap: true,
+			});
+			added = true;
+		}
+	}
+	if (!added) notes.push('No H3 was added. The outline does not have a section with a distinct second question.');
+	return { sections: withSubsections, notes };
 }
 
 function cleanList(values: string[] | undefined, limit = 8): string[] {
@@ -290,21 +442,41 @@ export function applyModelStrategy(base: EditorialBriefVersion, model: ModelBrie
 		};
 		return [built];
 	});
+	const proposedPrimary = cleanProposal(model.primaryKeyword, 80);
+	const primaryTypo = proposedPrimary
+		?.toLowerCase()
+		.split(/[^a-z0-9]+/)
+		.filter(Boolean)
+		.map((word) => ({ word, suggestion: spellingSuggestion(word, new Set(significantTokens(`${base.readerProblem} ${base.title} ${base.searchIntent}`))) }))
+		.find((item) => item.suggestion);
+	const primaryKeyword = primaryTypo ? base.primaryKeyword : proposedPrimary || base.primaryKeyword;
+	const keywordCheck = validateProposedKeywords(
+		cleanList(model.supportingKeywords, 12).length ? cleanList(model.supportingKeywords, 12) : base.supportingKeywords,
+		{ topic: base.readerProblem, title: base.title, searchIntent: base.searchIntent, primaryKeyword },
+	);
+	if (primaryTypo) keywordCheck.notes.unshift(`Rejected primary keyword “${proposedPrimary}”: “${primaryTypo.word}” looks like a misspelling of “${primaryTypo.suggestion}”.`);
+	const sectionCheck = validateProposedSections(modelSections.length ? modelSections : base.sections, {
+		topic: base.readerProblem,
+		title: base.title,
+		targetWords,
+	});
 	const proposed = [
 		...base.proposed,
 		modelSections.length ? 'Section structure was proposed by the strategy model and still requires approval.' : '',
 		model.searchIntent && model.searchIntent !== base.searchIntent ? `Proposed search intent: ${cleanProposal(model.searchIntent, 80)}. The article intent stays ${base.searchIntent}.` : '',
+		...keywordCheck.notes,
+		...sectionCheck.notes,
 	].filter(Boolean);
 	return {
 		...base,
-		primaryKeyword: cleanProposal(model.primaryKeyword, 80) || base.primaryKeyword,
-		supportingKeywords: cleanList(model.supportingKeywords, 12).length ? cleanList(model.supportingKeywords, 12) : base.supportingKeywords,
+		primaryKeyword,
+		supportingKeywords: keywordCheck.keywords,
 		searchIntent: base.searchIntent || cleanProposal(model.searchIntent, 80) || base.searchIntent,
 		audience: cleanProposal(model.audience, 160) || base.audience,
 		seoTitle: cleanProposal(model.seoTitle, 70) || base.seoTitle,
 		publishedH1: cleanProposal(model.publishedH1, 120) || base.publishedH1,
 		alternativeTitles: cleanList(model.alternativeTitles, 4).length ? cleanList(model.alternativeTitles, 4) : base.alternativeTitles,
-		sections: modelSections.length ? modelSections : base.sections,
+		sections: sectionCheck.sections,
 		internalLinks: cleanList(model.internalLinks, 8).length ? cleanList(model.internalLinks, 8) : base.internalLinks,
 		cta: cleanProposal(model.cta, 240) || base.cta,
 		targetWords,

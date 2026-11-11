@@ -388,6 +388,18 @@ export function updateNotes(pkg: ResearchPackage, input: { notes?: string; exper
 	});
 }
 
+/** Explains a follow-up that must be approved again. The approved snapshot stays the generation source. */
+export function researchApprovalGap(pkg: ResearchPackage | null | undefined): { required: boolean; message: string; changes: ResearchUpdate[] } {
+	if (!pkg || pkg.status !== 'changed_since_approval') return { required: false, message: '', changes: [] };
+	const approvedVersion = pkg.approved?.version ?? 0;
+	const changes = pkg.updates.filter((update) => update.version > approvedVersion);
+	return {
+		required: true,
+		message: `Version ${pkg.version} changed after approved version ${approvedVersion}. Generation still uses that approved snapshot. Approving this version does not regenerate or publish the article.`,
+		changes,
+	};
+}
+
 export function approveResearch(pkg: ResearchPackage): void {
 	const live = pkg.items.filter((item) => !item.excluded);
 	if (!live.some((item) => item.kind !== 'brand') && !pkg.expertise.trim()) {

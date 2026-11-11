@@ -93,9 +93,45 @@ describe('research-led editorial workflow', () => {
 		expect(sectionResearchQuestion(next.sections[0]!).startsWith('Research only this section:')).toBe(true);
 	});
 
+	it('rejects misspelled and duplicate keywords and adds an H3 only when a long guide has a second question', () => {
+		const base = buildEditorialBrief({
+			topic: 'How to prevent continuity errors in a novel',
+			title: 'How to Prevent Continuity Errors in a Novel: A Practical Guide',
+			searchIntent: 'informational',
+			primaryKeyword: 'novel continuity errors',
+			targetWords: 2200,
+		} as never);
+		const next = applyModelStrategy(base, {
+			primaryKeyword: 'continuity cheeck',
+			supportingKeywords: ['novel continuity errors', 'story bible', 'crypto wallets', '12,000 monthly searches'],
+			sections: [
+				{ heading: 'Build a story bible', level: 2, questions: ['What belongs in a story bible?', 'Which facts need a second check?'] },
+				{ heading: 'Build a story bible', level: 2, questions: ['Duplicate heading'] },
+				{ heading: 'Crypto wallet setup', level: 2, questions: ['Unrelated'] },
+			],
+		});
+		expect(next.primaryKeyword).toBe('novel continuity errors');
+		expect(next.supportingKeywords).toEqual(['story bible', 'crypto wallets']);
+		expect(next.proposed.some((line) => /cheeck/.test(line) && /check/.test(line))).toBe(true);
+		expect(next.proposed.some((line) => /crypto wallets/.test(line))).toBe(true);
+		expect(next.sections.map((section) => [section.level, section.heading])).toEqual([
+			[2, 'Build a story bible'],
+			[3, 'Which facts need a second check'],
+			[2, 'Crypto wallet setup'],
+		]);
+		expect(next.proposed.some((line) => /Crypto wallet setup/.test(line))).toBe(true);
+		expect(next.confirmed).toEqual(base.confirmed);
+		const short = applyModelStrategy(
+			buildEditorialBrief({ topic: 'What is a story bible', title: 'What is a story bible', searchIntent: 'informational', targetWords: 800 } as never),
+			{ sections: [{ heading: 'Define a story bible', level: 2, questions: ['What is it?', 'What does it contain?'] }] },
+		);
+		expect(short.sections.every((section) => section.level !== 3)).toBe(true);
+	});
+
 	it('does not treat planned capabilities as usable', () => {
 		const planned: ProductCapability = { id: 'p', name: 'Future scan', description: 'Not shipped.', availability: 'planned' };
-		expect(usableCapabilities([canon, planned]).map((item) => item.id)).toEqual(['canon']);
+		const retired: ProductCapability = { ...canon, id: 'old', availability: 'deprecated', evidence: 'Removed from the product.', lastVerified: '2026-11-01' };
+		expect(usableCapabilities([canon, planned, retired]).map((item) => item.id)).toEqual(['canon']);
 		const gaps = detectKnowledgeGaps(['Can the software run the future scan?'], [planned], 'Folian');
 		expect(gaps[0]?.status).toBe('not_yet_available');
 	});
