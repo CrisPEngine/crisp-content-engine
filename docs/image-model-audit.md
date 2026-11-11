@@ -21,24 +21,25 @@ Last reviewed for the Quality and Brand Asset Intelligence sprint.
 
 Configured in `src/lib/media/imageModels.ts`:
 
-- `gpt-image-2.5-flare` — recommended / current default
-- `gpt-image-2.5-sunburst` — available; validate before cutover
-- `gpt-image-2.6-flare` — available newer family; higher cost band; validate fidelity
-- `gpt-image-1.5` — legacy
+- `gpt-image-2.5-flare` — recommended / current CCE default
+- `gpt-image-2.5-sunburst` — available; OpenAI Images API default; validate before CCE cutover
+- `gpt-image-2.6-sunburst` — available newer detailed family; validate fidelity/cost
+- `gpt-image-2.6-flare` — available newer faster family; validate fidelity
+- `gpt-image-1.5` — legacy / deprecated (shutdown scheduled Dec 2026)
 - `gpt-image-1` — shutdown; refused by resolver
 
 Production selection is **not** auto-switched. Exact provider + model are recorded on each generated asset and image history entry.
 
 ## Comparison notes
 
-| Criterion | 2.5 Flare (current) | 2.5 Sunburst | 2.6 Flare |
+| Criterion | 2.5 Flare (CCE current) | 2.5 Sunburst (OpenAI default) | 2.6 Sunburst / Flare |
 | --- | --- | --- | --- |
 | Visual quality | Strong mid-tier | Comparable | Potentially stronger; needs A/B |
 | Anatomy | Still imperfect; advisory QA required | Similar | Needs validation |
 | Prompt adherence | Strong | Strong | Needs validation |
 | Reference preservation | Edits API; not pixel-perfect compositing | Same | Needs validation |
 | Cost | Mid | Mid | Higher |
-| Latency | Acceptable for editorial flow | Similar | Likely higher |
+| Latency | Acceptable for editorial flow | Similar | Flare likely faster; needs measurement |
 
 ## Known limitations
 
