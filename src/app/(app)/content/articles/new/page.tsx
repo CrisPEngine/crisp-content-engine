@@ -192,7 +192,7 @@ export default function NewArticlePage() {
 							<input className="input w-full" value={form.imageRequirements} onChange={(event) => set('imageRequirements', event.target.value)} />
 						</label>
 						<label className="block text-sm">External ID <span className="text-xs text-text-soft">Links to an existing CMS entry so it is updated, not duplicated.</span>
-							<input className="input w-full" value={form.externalId} onChange={(event) => set('externalId', event.target.value)} placeholder="cce_pillar_novel-first-draft" />
+							<input className="input w-full" value={form.externalId} onChange={(event) => set('externalId', event.target.value)} placeholder="Optional — auto-assigned on first CMS send" />
 						</label>
 					</div>
 				</details>

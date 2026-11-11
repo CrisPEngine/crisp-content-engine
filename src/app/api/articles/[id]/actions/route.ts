@@ -18,6 +18,7 @@ import {
 	generateArticleMedia,
 	getWorkspaceArticle,
 	lookupArticleDraft,
+	ensureArticleCmsExternalId,
 	acceptArticleImageCandidate,
 	prepareArticleImageBrief,
 	proposeArticleImageReferences,
@@ -203,11 +204,22 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 				});
 			case 'lookup_draft':
 				return NextResponse.json(await lookupArticleDraft(userId, id, text(body.externalId) || undefined));
+			case 'ensure_cms_external_id':
+				return NextResponse.json({ article: await ensureArticleCmsExternalId(userId, id) });
 			case 'correct_published':
 				return NextResponse.json({ article: await submitArticleDraft(userId, id, { correction: true }) });
 			case 'submit_draft':
-			case 'update_draft':
-				return NextResponse.json({ article: await submitArticleDraft(userId, id) });
+			case 'update_draft': {
+				const submitted = await submitArticleDraft(userId, id);
+				const submission = submitted.workspace?.cms.lastSubmission;
+				return NextResponse.json({
+					article: submitted,
+					submission,
+					message: submission?.ok
+						? `Draft ${submission.action === 'create' ? 'created' : 'updated'} in ${submission.destinationName || 'the CMS'} as ${submission.externalId}${submission.cmsRevision != null ? ` · revision ${submission.cmsRevision}` : ''}. Not published.`
+						: undefined,
+				});
+			}
 			case 'request_approval':
 				return NextResponse.json({ article: await requestArticleApproval(userId, id) });
 			case 'approve':
