@@ -33,11 +33,12 @@ import {
 	previewArticleEditorialImprovement,
 	recordEditorialFeedback,
 	previewArticleStructuralRepair,
+	researchArticle,
+	researchEditorialSection,
 	recordArticlePublication,
 	regenerateArticleSeo,
 	replaceArticleMedia,
 	requestArticleApproval,
-	researchArticle,
 	resolveBriefSuggestion,
 	restoreWorkspaceRevision,
 	retryArticleGeneration,
@@ -230,6 +231,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 			}
 			case 'generate_editorial_brief':
 				return NextResponse.json({ article: await generateWorkspaceEditorialBrief(userId, id, text(body.instruction) || undefined) });
+			case 'research_section':
+				return NextResponse.json({ article: await researchEditorialSection(userId, id, text(body.heading)) });
 			case 'approve_editorial_brief':
 				return NextResponse.json({ article: await approveWorkspaceEditorialBrief(userId, id) });
 			case 'critique_article':

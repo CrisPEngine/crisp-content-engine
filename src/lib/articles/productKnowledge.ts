@@ -13,6 +13,7 @@ export type ProductCapability = {
 	limitations?: string;
 	approvedLanguage?: string;
 	prohibitedClaims?: string[];
+	productUrl?: string;
 };
 
 export type KnowledgeGap = {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildEditorialBrief, generationContextFromBrief, reviseBrief } from '@/lib/articles/editorialBrief';
+import { applyModelStrategy, buildEditorialBrief, generationContextFromBrief, reviseBrief, sectionResearchQuestion } from '@/lib/articles/editorialBrief';
 import { reconcileCritique } from '@/lib/articles/editorialDesk';
 import { detectKnowledgeGaps, usableCapabilities, type ProductCapability } from '@/lib/articles/productKnowledge';
 import { classifySource, evidenceLevel, withSourceClasses } from '@/lib/articles/sourceClass';
@@ -51,6 +51,46 @@ describe('research-led editorial workflow', () => {
 		expect(revised.history[0]?.status).toBe('approved');
 		expect(generationContextFromBrief(revised.current)).toBe('');
 		expect(generationContextFromBrief(revised.history[0])).toContain('Approved editorial brief');
+	});
+
+	it('keeps model strategy out of confirmed evidence and drops invented search metrics', () => {
+		const research = emptyResearchPackage();
+		research.status = 'approved';
+		research.items = [{ id: '1', kind: 'topic', text: 'Writers report losing track of injuries across chapters.', sourceIds: [], supported: true, relevance: 1, addedInVersion: 1, excluded: false, excludedReason: null }];
+		research.approved = { version: 1, approvedAt: '2026-11-11T00:00:00.000Z', sources: [], items: research.items, notes: '', expertise: '' };
+		const base = buildEditorialBrief({
+			topic: 'How novelists prevent continuity errors',
+			title: 'How to Prevent Continuity Errors in a Novel',
+			searchIntent: 'informational',
+			targetWords: 1800,
+			research,
+			capabilities: [canon, { id: 'soon', name: 'Automatic contradiction scan', description: 'Finds conflicts.', availability: 'planned' }],
+			brandName: 'Folian',
+		} as never);
+		const next = applyModelStrategy(base, {
+			primaryKeyword: 'continuity errors',
+			supportingKeywords: ['12,000 monthly searches', 'story bible'],
+			seoTitle: 'How to prevent continuity errors',
+			publishedH1: 'How to Prevent Continuity Errors in a Novel',
+			sections: [
+				{ heading: 'Detect a contradiction', level: 2, questions: ['How do writers find a contradiction?'], examples: ['A radio that cannot transmit'], evidenceNeeded: ['An independent editing source'], proposedDirection: 'Proposed detection method.' },
+				{ heading: 'Check the later chapter', level: 3, parentHeading: 'Detect a contradiction', questions: ['What gets checked?'] },
+			],
+			targetWords: 2200,
+			differentiation: 'This keyword ranks #1.',
+			brandPositioning: 'Automatic contradiction scan is ready for writers.',
+			internalLinks: ['/how-to-write-a-novel'],
+		}, ['How to Write a Novel']);
+		expect(next.confirmed).toEqual(base.confirmed);
+		expect(next.capabilities).toEqual(base.capabilities);
+		expect(next.supportingKeywords).toEqual(['story bible']);
+		expect(next.sections.map((section) => section.level)).toEqual([2, 3]);
+		expect(next.sections[0]?.researchGap).toBe(true);
+		expect(next.differentiation).toContain('How to Write a Novel');
+		expect(next.differentiation).not.toMatch(/#1/);
+		expect(next.targetWords).toBe(2200);
+		expect(next.brandRelevance).toBe(base.brandRelevance);
+		expect(sectionResearchQuestion(next.sections[0]!).startsWith('Research only this section:')).toBe(true);
 	});
 
 	it('does not treat planned capabilities as usable', () => {

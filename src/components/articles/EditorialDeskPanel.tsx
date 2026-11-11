@@ -55,7 +55,12 @@ export function EditorialDeskPanel({
 					<div className="space-y-2">
 						<p className="text-xs uppercase text-text-soft">Version {current.version} · {current.status.replace(/_/g, ' ')}</p>
 						<p><span className="text-text-soft">Title.</span> {current.title}</p>
+						<p><span className="text-text-soft">H1.</span> {current.publishedH1 || current.title}</p>
+						<p><span className="text-text-soft">SEO title.</span> {current.seoTitle || current.title}</p>
 						<p><span className="text-text-soft">Intent.</span> {current.searchIntent} · {current.primaryKeyword}</p>
+						{current.supportingKeywords.length ? <p><span className="text-text-soft">Supporting keywords.</span> {current.supportingKeywords.join(', ')}</p> : null}
+						<p><span className="text-text-soft">Audience.</span> {current.audience}</p>
+						<p><span className="text-text-soft">Words.</span> {current.targetWords}</p>
 						<p><span className="text-text-soft">Brand.</span> {current.brandRelevance}</p>
 						<div>
 							<p className="text-xs uppercase text-text-soft">Confirmed</p>
@@ -66,10 +71,20 @@ export function EditorialDeskPanel({
 							<ul className="list-disc pl-5">{current.proposed.map((item) => <li key={item}>{item}</li>)}</ul>
 						</div>
 						{current.sections.map((section) => (
-							<div key={section.heading}>
-								<p className="font-medium">{section.heading}</p>
+							<div key={`${section.level ?? 2}-${section.heading}`}>
+								<p className="font-medium">{section.level === 3 ? 'H3' : 'H2'} · {section.heading}</p>
 								<p className="text-text-soft">{section.proposedDirection}</p>
-								{section.confirmedEvidence.length ? <p>Evidence: {section.confirmedEvidence.join(' · ')}</p> : null}
+								{section.questions.length ? <p>Questions: {section.questions.join(' · ')}</p> : null}
+								{section.examples?.length ? <p>Examples: {section.examples.join(' · ')}</p> : null}
+								{section.exercises?.length ? <p>Exercises: {section.exercises.join(' · ')}</p> : null}
+								{section.takeaways?.length ? <p>Takeaways: {section.takeaways.join(' · ')}</p> : null}
+								{section.confirmedEvidence.length ? <p>Confirmed evidence: {section.confirmedEvidence.join(' · ')}</p> : <p>No approved evidence is mapped to this section.</p>}
+								{section.evidenceNeeded?.length ? <p>Evidence still needed: {section.evidenceNeeded.join(' · ')}</p> : null}
+								{section.researchGap ? (
+									<button className="btn" type="button" disabled={busy} onClick={() => act('research_section', { heading: section.heading }, 'Section research added to the dossier. Approve it before generating.')}>
+										Research this section
+									</button>
+								) : null}
 								{section.knowledgeGaps.length ? <p>Knowledge gaps: {section.knowledgeGaps.join(' · ')}</p> : null}
 							</div>
 						))}

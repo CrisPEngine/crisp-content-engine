@@ -6,10 +6,17 @@ export type BriefBasis = 'confirmed' | 'proposed';
 
 export type EditorialBriefSection = {
 	heading: string;
+	level?: 2 | 3;
+	parentHeading?: string | null;
 	questions: string[];
 	confirmedEvidence: string[];
 	proposedDirection: string;
 	knowledgeGaps: string[];
+	examples?: string[];
+	exercises?: string[];
+	takeaways?: string[];
+	evidenceNeeded?: string[];
+	researchGap?: boolean;
 };
 
 export type EditorialBriefVersion = {
@@ -38,6 +45,8 @@ export type EditorialBriefVersion = {
 	cta: string;
 	targetWords: number;
 	differentiation: string;
+	seoTitle?: string;
+	publishedH1?: string;
 	cmsRequirements: string[];
 	confirmed: string[];
 	proposed: string[];
@@ -105,13 +114,22 @@ export function buildEditorialBrief(input: EditorialBriefInput, previous: Editor
 		};
 	});
 	const sectionHeads = headingsFromResearch(research, questions);
-	const sections: EditorialBriefSection[] = sectionHeads.map((heading, index) => ({
-		heading,
-		questions: questions[index] ? [questions[index]] : [],
-		confirmedEvidence: confirmedFindings.filter((_, findingIndex) => findingIndex % sectionHeads.length === index).slice(0, 4),
-		proposedDirection: 'Proposed structure. Confirm against the research before treating it as required.',
-		knowledgeGaps: gaps.filter((gap) => gap.question.toLowerCase().includes(heading.toLowerCase().slice(0, 24))).map((gap) => gap.question),
-	}));
+	const sections: EditorialBriefSection[] = sectionHeads.map((heading, index) => {
+		const confirmedEvidence = confirmedFindings.filter((_, findingIndex) => findingIndex % sectionHeads.length === index).slice(0, 4);
+		return {
+			heading,
+			level: 2 as const,
+			questions: questions[index] ? [questions[index]] : [],
+			confirmedEvidence,
+			proposedDirection: 'Proposed structure. Confirm against the research before treating it as required.',
+			knowledgeGaps: gaps.filter((gap) => gap.question.toLowerCase().includes(heading.toLowerCase().slice(0, 24))).map((gap) => gap.question),
+			examples: [],
+			exercises: [],
+			takeaways: [],
+			evidenceNeeded: confirmedEvidence.length ? [] : ['Independent evidence for the claim this section will make.'],
+			researchGap: confirmedEvidence.length === 0,
+		};
+	});
 	if (sections.length && gaps.length) sections[0]!.knowledgeGaps = [...new Set([...sections[0]!.knowledgeGaps, ...gaps.map((gap) => gap.question)])];
 	const brand = input.brandName?.trim();
 	const confirmed = [
@@ -157,6 +175,8 @@ export function buildEditorialBrief(input: EditorialBriefInput, previous: Editor
 		cta: input.brief?.cta?.trim() || 'Close with the practical next step.',
 		targetWords: input.targetWords,
 		differentiation: input.brief?.differentiateFrom?.trim() || input.brief?.distinctiveContribution?.trim() || '',
+		seoTitle: input.title || input.topic,
+		publishedH1: input.title || input.topic,
 		cmsRequirements: [
 			input.destinationLabel ? `Destination: ${input.destinationLabel}.` : 'No destination selected.',
 			'Body uses Markdown. The CMS title is the only H1.',
@@ -197,4 +217,103 @@ export function generationContextFromBrief(version: EditorialBriefVersion | null
 		sections,
 		capabilityGuidance(version.capabilities.map((item) => ({ id: item.name, name: item.name, description: item.name, availability: item.availability as ProductCapability['availability'], evidence: item.verified ? 'brief' : undefined, lastVerified: item.verified ? version.approvedAt : null }))),
 	].join('\n');
+}
+
+export type ModelBriefStrategy = {
+	primaryKeyword?: string;
+	supportingKeywords?: string[];
+	searchIntent?: string;
+	audience?: string;
+	seoTitle?: string;
+	publishedH1?: string;
+	alternativeTitles?: string[];
+	sections?: Array<{
+		heading?: string;
+		level?: number;
+		parentHeading?: string;
+		questions?: string[];
+		examples?: string[];
+		exercises?: string[];
+		takeaways?: string[];
+		evidenceNeeded?: string[];
+		proposedDirection?: string;
+	}>;
+	internalLinks?: string[];
+	cta?: string;
+	targetWords?: number;
+	differentiation?: string;
+	brandPositioning?: string;
+};
+
+const UNSUPPORTED_METRIC = /\d[\d,.]*\s*(monthly searches|searches a month|search volume|msv)|#\s*\d+|\brank(?:s|ed|ing)?\b/i;
+
+function cleanProposal(value: string | undefined, limit = 240): string {
+	const text = (value ?? '').replace(/\s+/g, ' ').trim();
+	if (!text || UNSUPPORTED_METRIC.test(text)) return '';
+	return text.slice(0, limit);
+}
+
+function cleanList(values: string[] | undefined, limit = 8): string[] {
+	return (values ?? []).map((item) => cleanProposal(item)).filter(Boolean).slice(0, limit);
+}
+
+/** Merges model strategy into a deterministic brief. Confirmed evidence and verified capabilities are not replaced. */
+export function applyModelStrategy(base: EditorialBriefVersion, model: ModelBriefStrategy | null | undefined, existingTitles: string[] = []): EditorialBriefVersion {
+	if (!model) return base;
+	const positioning = cleanProposal(model.brandPositioning, 400);
+	const mentionsUnverified = Boolean(positioning) && base.capabilities.some((item) => !item.verified && positioning.toLowerCase().includes(item.name.toLowerCase()));
+	const words = Number(model.targetWords);
+	const targetWords = Number.isFinite(words) && words >= 400 && words <= 6000 ? Math.round(words) : base.targetWords;
+	const inventory = existingTitles.map((title) => title.trim()).filter(Boolean);
+	const differentiation = [cleanProposal(model.differentiation, 500), inventory.length ? `Do not repeat: ${inventory.slice(0, 8).join('; ')}.` : ''].filter(Boolean).join(' ');
+	const modelSections = (model.sections ?? [])
+		.map((section) => {
+			const heading = cleanProposal(section.heading, 120);
+			if (!heading) return null;
+			const confirmedEvidence = base.sections.find((item) => item.heading.toLowerCase() === heading.toLowerCase())?.confirmedEvidence ?? [];
+			const evidenceNeeded = cleanList(section.evidenceNeeded, 4);
+			return {
+				heading,
+				level: section.level === 3 ? 3 as const : 2 as const,
+				parentHeading: cleanProposal(section.parentHeading, 120) || null,
+				questions: cleanList(section.questions, 4),
+				confirmedEvidence,
+				proposedDirection: cleanProposal(section.proposedDirection, 400) || 'Proposed section. It is not a research finding.',
+				knowledgeGaps: [],
+				examples: cleanList(section.examples, 3),
+				exercises: cleanList(section.exercises, 3),
+				takeaways: cleanList(section.takeaways, 3),
+				evidenceNeeded,
+				researchGap: confirmedEvidence.length === 0,
+			} satisfies EditorialBriefSection;
+		})
+		.filter((section): section is EditorialBriefSection => Boolean(section));
+	return {
+		...base,
+		primaryKeyword: cleanProposal(model.primaryKeyword, 80) || base.primaryKeyword,
+		supportingKeywords: cleanList(model.supportingKeywords, 12).length ? cleanList(model.supportingKeywords, 12) : base.supportingKeywords,
+		searchIntent: cleanProposal(model.searchIntent, 80) || base.searchIntent,
+		audience: cleanProposal(model.audience, 160) || base.audience,
+		seoTitle: cleanProposal(model.seoTitle, 70) || base.seoTitle,
+		publishedH1: cleanProposal(model.publishedH1, 120) || base.publishedH1,
+		alternativeTitles: cleanList(model.alternativeTitles, 4).length ? cleanList(model.alternativeTitles, 4) : base.alternativeTitles,
+		sections: modelSections.length ? modelSections : base.sections,
+		internalLinks: cleanList(model.internalLinks, 8).length ? cleanList(model.internalLinks, 8) : base.internalLinks,
+		cta: cleanProposal(model.cta, 240) || base.cta,
+		targetWords,
+		differentiation: differentiation || base.differentiation,
+		brandRelevance: mentionsUnverified ? base.brandRelevance : positioning || base.brandRelevance,
+		proposed: [
+			...base.proposed,
+			modelSections.length ? 'Section structure was proposed by the strategy model and still requires approval.' : '',
+		].filter(Boolean),
+		confirmed: base.confirmed,
+		capabilities: base.capabilities,
+	};
+}
+
+export function sectionResearchQuestion(section: Pick<EditorialBriefSection, 'heading' | 'questions' | 'evidenceNeeded'>): string {
+	const questions = section.questions.length ? section.questions.join(' ') : `What must “${section.heading}” establish?`;
+	const needed = (section.evidenceNeeded ?? []).join(' ');
+	return `Research only this section: ${section.heading}. ${questions} ${needed}`.replace(/\s+/g, ' ').trim();
 }

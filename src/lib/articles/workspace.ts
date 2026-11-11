@@ -40,7 +40,7 @@ import {
 	type ArticleListItem,
 } from '@/lib/articles/meta';
 import { critiqueDraft, emptyEditorialDesk, planFromFeedback, reconcileCritique, type RevisionProposal } from '@/lib/articles/editorialDesk';
-import { approveBriefVersion, buildEditorialBrief, reviseBrief } from '@/lib/articles/editorialBrief';
+import { approveBriefVersion, applyModelStrategy, buildEditorialBrief, reviseBrief, sectionResearchQuestion, type ModelBriefStrategy } from '@/lib/articles/editorialBrief';
 import { normaliseTargetWords, previewArticleImprovement, type ArticleImprovementPreview } from '@/lib/articles/pipeline';
 import { capabilitiesFromKnowledge, capabilityGuidance } from '@/lib/articles/productKnowledge';
 import {
@@ -2059,7 +2059,7 @@ export async function generateWorkspaceEditorialBrief(ownerUserId: string, artic
 	if (workspace.research?.sources) {
 		workspace.research.sources = withSourceClasses(workspace.research.sources, { brandDomain: brandDomain(brand.identity.website) });
 	}
-	const built = buildEditorialBrief({
+	const builtBase = buildEditorialBrief({
 		topic: article.topic,
 		title: article.title,
 		searchIntent: article.searchIntent,
@@ -2073,6 +2073,47 @@ export async function generateWorkspaceEditorialBrief(ownerUserId: string, artic
 		destinationLabel: workspace.destinationId,
 		instruction,
 	});
+	let built = builtBase;
+	if (process.env.VITEST !== 'true') {
+		try {
+			const siblings = await getNativeContentStore().listArticles(ownerUserId, article.brandId);
+			const strategy = await getIntelligenceStore().getStrategyForBrand(ownerUserId, brand.id);
+			const completion = await getIntelligenceAi().completeJson<ModelBriefStrategy>(
+				'STRATEGY',
+				[
+					{
+						role: 'system',
+						content: [
+							'Propose an article strategy as JSON. Fields: primaryKeyword, supportingKeywords, searchIntent, audience, seoTitle, publishedH1, alternativeTitles, sections, internalLinks, cta, targetWords, differentiation, brandPositioning.',
+							'Each section has heading, level (2 or 3), parentHeading, questions, examples, exercises, takeaways, evidenceNeeded, proposedDirection.',
+							'Use only the supplied research as evidence. Put new ideas in proposed fields. Do not invent search volume, rankings, citations, statistics, or product capabilities.',
+							'Name an existing article in differentiation when the topic would compete with it. Do not claim a keyword is unclaimed.',
+						].join(' '),
+					},
+					{
+						role: 'user',
+						content: JSON.stringify({
+							topic: article.topic,
+							title: article.title,
+							searchIntent: article.searchIntent,
+							audience: article.audience,
+							targetWords: article.targetWords,
+							instruction,
+							confirmedResearch: builtBase.confirmed,
+							verifiedCapabilities: builtBase.capabilities.filter((item) => item.verified),
+							existingArticles: siblings.filter((item) => item.id !== article.id).map((item) => item.title).slice(0, 20),
+							strategy: strategy ? { positioning: strategy.positioning, objectives: strategy.objectives, pillars: strategy.contentPillars } : null,
+						}),
+					},
+				],
+				'editorial_brief_strategy',
+				ownerUserId,
+			);
+			built = applyModelStrategy(builtBase, completion.data, siblings.filter((item) => item.id !== article.id).map((item) => item.title));
+		} catch {
+			built = builtBase;
+		}
+	}
 	const current = workspace.editorialBrief?.current ?? null;
 	if (current?.status === 'approved') {
 		const revised = reviseBrief(current, built);
@@ -2102,6 +2143,17 @@ export async function generateWorkspaceEditorialBrief(ownerUserId: string, artic
 	}
 	article.workspace = workspace;
 	return persist(article);
+}
+
+export async function researchEditorialSection(ownerUserId: string, articleId: string, heading: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const section = article.workspace?.editorialBrief?.current?.sections.find((item) => item.heading === heading);
+	if (!section) throw new ArticleWorkflowError('Generate an editorial brief before researching a section.', 400, 'brief_missing');
+	const updated = await researchArticle(ownerUserId, articleId, { mode: 'follow_up', question: sectionResearchQuestion(section) });
+	if (updated.workspace?.research?.status === 'approved') {
+		throw new ArticleWorkflowError('New section research was marked approved automatically. It must be reviewed first.', 409, 'research_auto_approved');
+	}
+	return updated;
 }
 
 export async function approveWorkspaceEditorialBrief(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
