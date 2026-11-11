@@ -111,6 +111,11 @@ export function emptyWorkspace(partial?: Partial<ArticleWorkspace>): ArticleWork
 			lastError: null,
 			mode: null,
 		},
+		editorialBrief: partial?.editorialBrief,
+		editorialDesk: partial?.editorialDesk,
+		exampleConsistency: partial?.exampleConsistency,
+		approvedAt: partial?.approvedAt ?? null,
+		approvedRevisionId: partial?.approvedRevisionId ?? null,
 		schedule: partial?.schedule ?? {
 			publishAt: null,
 			destinationId: null,

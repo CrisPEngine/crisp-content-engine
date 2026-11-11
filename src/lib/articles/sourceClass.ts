@@ -7,6 +7,8 @@ export const SOURCE_CLASSES = [
 	'community',
 	'audience_pain_point',
 	'competitor',
+	'vendor_marketing',
+	'official_documentation',
 	'brand_knowledge',
 	'internal_content',
 	'background',
@@ -23,7 +25,9 @@ export const SOURCE_CLASS_LABELS: Record<SourceClass, string> = {
 	educational: 'Educational resource',
 	community: 'Community discussion',
 	audience_pain_point: 'Audience pain point',
-	competitor: 'Competitor intelligence',
+	competitor: 'Competitor comparison',
+	vendor_marketing: 'Vendor marketing',
+	official_documentation: 'Official documentation',
 	brand_knowledge: 'Brand knowledge',
 	internal_content: 'Internal content',
 	background: 'General background',
@@ -63,7 +67,14 @@ export function classifySource(source: Pick<ResearchPackageSource, 'domain' | 'u
 	if (EDUCATIONAL.test(domain)) return 'educational';
 	if (VIDEO.test(domain)) return 'educational';
 	if (PUBLISHER.test(domain)) return 'background';
+	if (/\b(docs|documentation|developer|support)\b/i.test(source.url) && /\b(docs|documentation|guide|reference)\b/i.test(source.title)) return 'official_documentation';
+	if (isVendorMarketingTitle(source.title)) return 'vendor_marketing';
 	return 'expert_guidance';
+}
+
+/** Rankings and “best tools” pages are vendor marketing even when the domain is unfamiliar. */
+export function isVendorMarketingTitle(title: string): boolean {
+	return /\b(best|top \d+)\b.{0,48}\b(tools?|software|ai|apps?)\b|\b\d+ tools (compared|tested)\b|\btools compared\b|\btools tested\b|\bvs\.?\b.+\b(tool|software|ai)\b/i.test(title);
 }
 
 export function evidenceLevel(sourceClass: SourceClass | undefined): EvidenceLevel {
@@ -78,7 +89,10 @@ export function evidenceLevel(sourceClass: SourceClass | undefined): EvidenceLev
 			return 'brand';
 		case 'background':
 		case 'competitor':
+		case 'vendor_marketing':
 			return 'background';
+		case 'official_documentation':
+			return 'verified';
 		default:
 			return 'expert_recommendation';
 	}
@@ -105,5 +119,12 @@ export function withSourceClasses<T extends Pick<ResearchPackageSource, 'domain'
 	sources: T[],
 	context: SourceContext,
 ): T[] {
-	return sources.map((source) => (source.classification ? source : { ...source, classification: classifySource(source, context) }));
+	return sources.map((source) => {
+		const fresh = classifySource(source, context);
+		if (!source.classification) return { ...source, classification: fresh };
+		if (source.classification === 'expert_guidance' && (fresh === 'vendor_marketing' || fresh === 'official_documentation')) {
+			return { ...source, classification: fresh };
+		}
+		return source;
+	});
 }

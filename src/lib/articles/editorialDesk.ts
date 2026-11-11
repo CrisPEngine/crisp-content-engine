@@ -55,10 +55,22 @@ export type RevisionProposal = {
 	sourceFeedback: string;
 };
 
+export type RevisionPreview = {
+	baseRevisionId: string;
+	proposedBody: string;
+	summary: string;
+	acceptedIds: string[];
+	preservedIds: string[];
+	wordCountBefore: number;
+	wordCountAfter: number;
+	createdAt: string;
+};
+
 export type EditorialDeskState = {
 	critique: EditorialCritique | null;
 	feedback: string;
 	proposals: RevisionProposal[];
+	preview: RevisionPreview | null;
 	updatedAt: string | null;
 };
 
@@ -227,7 +239,7 @@ export function critiqueDraft(input: CritiqueInput): Omit<EditorialCritique, 're
 		}
 	}
 
-	const competitorHeavy = (input.sourceClasses ?? []).filter((item) => item === 'competitor').length;
+	const competitorHeavy = (input.sourceClasses ?? []).filter((item) => item === 'competitor' || item === 'vendor_marketing').length;
 	const independent = (input.sourceClasses ?? []).filter((item) => item === 'primary_evidence' || item === 'expert_guidance').length;
 	const titles = input.sourceTitles ?? [];
 	const vendorTitles = titles.filter((title) => /best .+ (tool|ai|software)|tools compared|tools tested|vs\.?\s/i.test(title));
@@ -408,8 +420,16 @@ export function planFromFeedback(feedback: string, body: string): RevisionPropos
 	return proposals;
 }
 
+export function reconcileCritique(previous: EditorialCritique | null, next: Omit<EditorialCritique, 'revisionId' | 'createdAt'>): Omit<EditorialCritique, 'revisionId' | 'createdAt'> {
+	const nextIds = new Set(next.findings.map((item) => item.id));
+	const resolved = (previous?.findings ?? [])
+		.filter((item) => item.status !== 'resolved' && !nextIds.has(item.id))
+		.map((item) => ({ ...item, status: 'resolved' as const }));
+	return { ...next, findings: [...next.findings, ...resolved] };
+}
+
 export function emptyEditorialDesk(): EditorialDeskState {
-	return { critique: null, feedback: '', proposals: [], updatedAt: null };
+	return { critique: null, feedback: '', proposals: [], preview: null, updatedAt: null };
 }
 
 export type { EvidenceLevel };

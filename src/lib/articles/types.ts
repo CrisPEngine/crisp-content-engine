@@ -338,7 +338,9 @@ export type ArticleWorkspace = {
 			error?: string | null;
 		} | null;
 	};
+	editorialBrief?: import('./editorialBrief').EditorialBriefState;
 	editorialDesk?: import('./editorialDesk').EditorialDeskState;
+	exampleConsistency?: string[];
 	approvedAt?: string | null;
 	approvedRevisionId?: string | null;
 	seoEdited?: {

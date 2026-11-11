@@ -25,8 +25,11 @@ import {
 	publishWorkspaceArticle,
 	refreshArticleImageAlt,
 	applyAcceptedEditorialProposals,
+	approveWorkspaceEditorialBrief,
 	critiqueWorkspaceArticle,
 	decideEditorialProposal,
+	generateWorkspaceEditorialBrief,
+	previewAcceptedEditorialProposals,
 	previewArticleEditorialImprovement,
 	recordEditorialFeedback,
 	previewArticleStructuralRepair,
@@ -36,6 +39,7 @@ import {
 	requestArticleApproval,
 	researchArticle,
 	resolveBriefSuggestion,
+	restoreWorkspaceRevision,
 	retryArticleGeneration,
 	reviewArticle,
 	saveArticleImageBrief,
@@ -224,6 +228,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 						: undefined,
 				});
 			}
+			case 'generate_editorial_brief':
+				return NextResponse.json({ article: await generateWorkspaceEditorialBrief(userId, id, text(body.instruction) || undefined) });
+			case 'approve_editorial_brief':
+				return NextResponse.json({ article: await approveWorkspaceEditorialBrief(userId, id) });
 			case 'critique_article':
 				return NextResponse.json({ article: await critiqueWorkspaceArticle(userId, id) });
 			case 'editorial_feedback':
@@ -237,8 +245,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 						text(body.status) as 'proposed' | 'accepted' | 'rejected' | 'deferred' | 'applied',
 					),
 				});
+			case 'preview_editorial_proposals':
+				return NextResponse.json({ article: await previewAcceptedEditorialProposals(userId, id) });
 			case 'apply_editorial_proposals':
 				return NextResponse.json(await applyAcceptedEditorialProposals(userId, id));
+			case 'restore_revision':
+				return NextResponse.json({ article: await restoreWorkspaceRevision(userId, id, text(body.revisionId)) });
 			case 'request_approval':
 				return NextResponse.json({ article: await requestArticleApproval(userId, id) });
 			case 'approve':

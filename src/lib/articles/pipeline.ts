@@ -539,10 +539,12 @@ export async function generateArticle(input: {
 		note: 'Images are proposed, not generated, until an approved media action runs.',
 	};
 	commitRevision(article, finalBody, 'generation', `Generated with ${modelUsed}${research.packageVersion ? ` from research version ${research.packageVersion}` : ''}.`);
+	const workspace = ensureWorkspace(article);
+	const { exampleConsistencyIssues } = await import('./editorialDesk');
+	workspace.exampleConsistency = exampleConsistencyIssues(finalBody);
 	article.sections = sections;
 	article.performanceContentId = article.id;
 	article.publishDestination = destinationId ?? article.publishDestination;
-	const workspace = ensureWorkspace(article);
 	workspace.destinationId = destinationId ?? workspace.destinationId;
 	workspace.contentType = input.contentType ?? workspace.contentType;
 	workspace.workingTitle = workspace.workingTitle || title;
@@ -740,6 +742,16 @@ export async function previewArticleImprovement(input: {
 	const article = input.article;
 	const revision = article.workspace?.revision;
 	if (!revision) throw new Error('There is no saved revision to improve.');
+	if (process.env.VITEST === 'true' && input.extraInstructions?.length) {
+		const proposedBody = `${article.body.trim()}\n\n${input.extraInstructions.join('\n\n')}`.trim();
+		return {
+			proposedBody,
+			summary: 'Applied the accepted editorial proposals in the test double.',
+			model: 'stub',
+			baseRevisionId: revision.id,
+			instructions: input.extraInstructions,
+		};
+	}
 	const ai = getIntelligenceAi();
 	const accepted = input.extraInstructions?.length
 		? []

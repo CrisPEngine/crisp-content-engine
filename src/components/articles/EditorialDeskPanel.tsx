@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { DiffView } from '@/components/articles/RevisionDiff';
+import type { EditorialBriefState } from '@/lib/articles/editorialBrief';
 import type { EditorialDeskState, RevisionProposal } from '@/lib/articles/editorialDesk';
 
 type Act = (action: string, extra?: Record<string, unknown>, success?: string) => Promise<boolean>;
@@ -13,14 +15,82 @@ const STATUS_LABEL: Record<RevisionProposal['status'], string> = {
 	applied: 'Applied',
 };
 
-export function EditorialDeskPanel({ desk, busy, act }: { desk: EditorialDeskState | null | undefined; busy: boolean; act: Act }) {
+export function EditorialDeskPanel({
+	desk,
+	brief,
+	body,
+	exampleNotes,
+	busy,
+	act,
+}: {
+	desk: EditorialDeskState | null | undefined;
+	brief: EditorialBriefState | null | undefined;
+	body: string;
+	exampleNotes?: string[];
+	busy: boolean;
+	act: Act;
+}) {
 	const [feedback, setFeedback] = useState(desk?.feedback ?? '');
+	const [instruction, setInstruction] = useState(brief?.current?.instruction ?? '');
 	const critique = desk?.critique;
 	const proposals = desk?.proposals ?? [];
 	const accepted = proposals.filter((item) => item.status === 'accepted').length;
+	const current = brief?.current;
 	return (
 		<section className="card p-4 space-y-4 text-sm">
-			<div className="flex flex-wrap items-center justify-between gap-2">
+			<div className="space-y-2">
+				<div className="flex flex-wrap items-center justify-between gap-2">
+					<h2 className="font-medium">Editorial brief</h2>
+					<div className="flex flex-wrap gap-2">
+						<button className="btn" type="button" disabled={busy} onClick={() => act('generate_editorial_brief', { instruction }, current?.status === 'approved' ? 'New brief version needs approval.' : 'Editorial brief generated.')}>
+							Generate editorial brief
+						</button>
+						<button className="btn" type="button" disabled={busy || !current || current.status === 'approved'} onClick={() => act('approve_editorial_brief', {}, 'Editorial brief approved.')}>
+							Approve brief
+						</button>
+					</div>
+				</div>
+				<textarea className="input w-full" rows={2} value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Optional instruction, for example: make the article more technical." />
+				{current ? (
+					<div className="space-y-2">
+						<p className="text-xs uppercase text-text-soft">Version {current.version} · {current.status.replace(/_/g, ' ')}</p>
+						<p><span className="text-text-soft">Title.</span> {current.title}</p>
+						<p><span className="text-text-soft">Intent.</span> {current.searchIntent} · {current.primaryKeyword}</p>
+						<p><span className="text-text-soft">Brand.</span> {current.brandRelevance}</p>
+						<div>
+							<p className="text-xs uppercase text-text-soft">Confirmed</p>
+							<ul className="list-disc pl-5">{current.confirmed.length ? current.confirmed.map((item) => <li key={item}>{item}</li>) : <li>No confirmed research or verified capabilities yet.</li>}</ul>
+						</div>
+						<div>
+							<p className="text-xs uppercase text-text-soft">Proposed direction</p>
+							<ul className="list-disc pl-5">{current.proposed.map((item) => <li key={item}>{item}</li>)}</ul>
+						</div>
+						{current.sections.map((section) => (
+							<div key={section.heading}>
+								<p className="font-medium">{section.heading}</p>
+								<p className="text-text-soft">{section.proposedDirection}</p>
+								{section.confirmedEvidence.length ? <p>Evidence: {section.confirmedEvidence.join(' · ')}</p> : null}
+								{section.knowledgeGaps.length ? <p>Knowledge gaps: {section.knowledgeGaps.join(' · ')}</p> : null}
+							</div>
+						))}
+						{current.claimsToVerify.length ? <p>Claims to verify: {current.claimsToVerify.join(' · ')}</p> : null}
+						{current.externalCitations.length ? (
+							<p className="text-text-soft">
+								Citations: {current.externalCitations.filter((item) => item.cite).length} may be cited · {current.externalCitations.filter((item) => !item.cite).length} are background only
+							</p>
+						) : null}
+					</div>
+				) : (
+					<p className="text-text-soft">The editorial brief is separate from the topic request and the research dossier.</p>
+				)}
+			</div>
+			{(exampleNotes?.length ?? 0) > 0 ? (
+				<div>
+					<p className="text-xs uppercase text-text-soft">Example consistency</p>
+					<ul className="list-disc pl-5">{exampleNotes!.map((item) => <li key={item}>{item}</li>)}</ul>
+				</div>
+			) : null}
+			<div className="flex flex-wrap items-center justify-between gap-2 border-t border-edge/50 pt-3">
 				<h2 className="font-medium">Editorial critique</h2>
 				<button className="btn" type="button" disabled={busy} onClick={() => act('critique_article', {}, 'Critique saved. The article was not rewritten.')}>
 					Critique article
@@ -37,11 +107,10 @@ export function EditorialDeskPanel({ desk, busy, act }: { desk: EditorialDeskSta
 					) : null}
 					<ul className="space-y-3">
 						{critique.findings.map((finding) => (
-							<li key={finding.id} className="border-t border-edge/50 pt-2">
-								<p className="text-xs uppercase text-text-soft">{finding.severity} · {finding.category.replace(/_/g, ' ')}{finding.section ? ` · ${finding.section}` : ''}</p>
+							<li key={`${finding.id}-${finding.status}`} className="border-t border-edge/50 pt-2">
+								<p className="text-xs uppercase text-text-soft">{finding.status} · {finding.severity} · {finding.category.replace(/_/g, ' ')}{finding.section ? ` · ${finding.section}` : ''}</p>
 								<p>{finding.explanation}</p>
 								<p className="text-text-soft">{finding.recommendation}</p>
-								<p className="text-xs text-text-soft">Expected: {finding.expectedBenefit}</p>
 							</li>
 						))}
 					</ul>
@@ -59,13 +128,11 @@ export function EditorialDeskPanel({ desk, busy, act }: { desk: EditorialDeskSta
 			{proposals.length ? (
 				<div className="space-y-3">
 					<div className="flex flex-wrap gap-2">
-						<button className="btn" type="button" disabled={busy} onClick={async () => {
-							for (const item of proposals.filter((proposal) => proposal.status === 'proposed' || proposal.status === 'deferred')) {
-								await act('editorial_proposal', { proposalId: item.id, status: 'accepted' });
-							}
-						}}>Accept all open</button>
-						<button className="btn" type="button" disabled={busy || accepted === 0} onClick={() => act('apply_editorial_proposals', {}, 'Accepted changes applied as a new revision.')}>
-							Apply accepted ({accepted})
+						<button className="btn" type="button" disabled={busy || accepted === 0} onClick={() => act('preview_editorial_proposals', {}, 'Preview ready. The article was not changed.')}>
+							Preview accepted ({accepted})
+						</button>
+						<button className="btn" type="button" disabled={busy || !desk?.preview} onClick={() => act('apply_editorial_proposals', {}, 'Accepted changes applied. The article was critiqued again.')}>
+							Apply accepted
 						</button>
 					</div>
 					<ul className="space-y-3">
@@ -84,6 +151,13 @@ export function EditorialDeskPanel({ desk, busy, act }: { desk: EditorialDeskSta
 							</li>
 						))}
 					</ul>
+					{desk?.preview ? (
+						<div className="space-y-2 border-t border-edge/50 pt-3">
+							<p>{desk.preview.summary}</p>
+							<p className="text-text-soft">Words {desk.preview.wordCountBefore} → {desk.preview.wordCountAfter}. Rejected and deferred proposals are not in this preview.</p>
+							<DiffView before={body} after={desk.preview.proposedBody} />
+						</div>
+					) : null}
 				</div>
 			) : null}
 		</section>
