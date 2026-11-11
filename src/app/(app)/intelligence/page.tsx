@@ -7,6 +7,7 @@ import { Loader2, Brain, Map, Layers, Activity, Lightbulb } from 'lucide-react';
 import { resolveWorkingBrandId, writeWorkingBrandId } from '@/lib/brands/workingBrand';
 import type { StrategyCompletenessResult } from '@/lib/intelligence/strategy/strategyCompleteness';
 import { HumanBrandBrain } from '@/components/HumanBrandBrain';
+import { ProductCapabilityEditor } from '@/components/ProductCapabilityEditor';
 
 type BrandProfile = { id: string; name: string };
 type Tab = 'brain' | 'strategy' | 'themes' | 'learnings' | 'diagnostics';
@@ -557,6 +558,7 @@ function IntelligencePageInner() {
 
 			{tab === 'brain' && (
 				<div className="space-y-4">
+					<ProductCapabilityEditor knowledgeJson={knowledge} onKnowledge={setKnowledge} />
 					<HumanBrandBrain
 						identityJson={identity}
 						voiceJson={voice}

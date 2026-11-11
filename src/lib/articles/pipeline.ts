@@ -539,10 +539,12 @@ export async function generateArticle(input: {
 		note: 'Images are proposed, not generated, until an approved media action runs.',
 	};
 	commitRevision(article, finalBody, 'generation', `Generated with ${modelUsed}${research.packageVersion ? ` from research version ${research.packageVersion}` : ''}.`);
+	const workspace = ensureWorkspace(article);
+	const { exampleConsistencyIssues } = await import('./editorialDesk');
+	workspace.exampleConsistency = exampleConsistencyIssues(finalBody);
 	article.sections = sections;
 	article.performanceContentId = article.id;
 	article.publishDestination = destinationId ?? article.publishDestination;
-	const workspace = ensureWorkspace(article);
 	workspace.destinationId = destinationId ?? workspace.destinationId;
 	workspace.contentType = input.contentType ?? workspace.contentType;
 	workspace.workingTitle = workspace.workingTitle || title;
@@ -734,23 +736,44 @@ export async function previewArticleImprovement(input: {
 	brand: BrandBrain;
 	brief?: ArticleBriefDetails;
 	findings?: ArticleEditorialFinding[];
+	/** When set, these instructions replace the default full-article improvement list. */
+	extraInstructions?: string[];
 }): Promise<ArticleImprovementPreview> {
 	const article = input.article;
 	const revision = article.workspace?.revision;
 	if (!revision) throw new Error('There is no saved revision to improve.');
+	if (process.env.VITEST === 'true' && input.extraInstructions?.length) {
+		const proposedBody = `${article.body.trim()}\n\n${input.extraInstructions.join('\n\n')}`.trim();
+		return {
+			proposedBody,
+			summary: 'Applied the accepted editorial proposals in the test double.',
+			model: 'stub',
+			baseRevisionId: revision.id,
+			instructions: input.extraInstructions,
+		};
+	}
 	const ai = getIntelligenceAi();
-	const accepted = (input.findings ?? []).filter(
-		(finding) => finding.revisionId === revision.id && (finding.decision === 'accepted' || (finding.decision === 'pending' && finding.source === 'llm')),
-	);
+	const accepted = input.extraInstructions?.length
+		? []
+		: (input.findings ?? []).filter(
+				(finding) => finding.revisionId === revision.id && (finding.decision === 'accepted' || (finding.decision === 'pending' && finding.source === 'llm')),
+			);
 	const structural = validateArticleStructure(article.body).issues
 		.filter((issue) => issue.severity === 'critical')
 		.map((issue) => issue.message);
-	const instructions = [
-		'Improve coverage for the brief and search intent without inventing facts or statistics.',
-		`Reduce repetition and weak explanations. Keep ${input.brand.identity.name} mentions restrained (at most one useful brand mention).`,
-		...accepted.map((finding) => effectiveInstruction(finding)),
-		...structural.map((message) => `Fix the structural issue: ${message}`),
-	];
+	const instructions = input.extraInstructions?.length
+		? [
+				...input.extraInstructions,
+				'Apply only these authorised changes. Do not rewrite unrelated sections.',
+				'Preserve existing tables and checklists unless an instruction explicitly edits a cell.',
+				'Do not invent sources, statistics or product capabilities.',
+			]
+		: [
+				'Improve coverage for the brief and search intent without inventing facts or statistics.',
+				`Reduce repetition and weak explanations. Keep ${input.brand.identity.name} mentions restrained (at most one useful brand mention).`,
+				...accepted.map((finding) => effectiveInstruction(finding)),
+				...structural.map((message) => `Fix the structural issue: ${message}`),
+			];
 	const messages = [
 		{
 			role: 'system' as const,

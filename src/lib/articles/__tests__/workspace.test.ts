@@ -4,13 +4,20 @@ import { contentHash } from '@/lib/articles/revisions';
 import { articleWordCount, validateArticleStructure } from '@/lib/articles/structure';
 import {
 	applyAcceptedRevisions,
+	applyAcceptedEditorialProposals,
 	approveArticleBrief,
 	approveArticleResearch,
 	approveWorkspaceArticle,
+	approveWorkspaceEditorialBrief,
 	createArticleBrief,
+	decideEditorialProposal,
 	decideRecommendation,
 	editArticleResearch,
+	generateWorkspaceEditorialBrief,
 	getWorkspaceArticle,
+	previewAcceptedEditorialProposals,
+	recordEditorialFeedback,
+	restoreWorkspaceRevision,
 	saveArticleDraft,
 	scheduleWorkspaceArticle,
 	startArticleGeneration,
@@ -193,6 +200,49 @@ describe('article workspace', () => {
 		expect(changed.workspace?.briefApprovedAt).toBeNull();
 		expect(changed.workspace?.briefChangedAfterApproval).toBe(true);
 		expect(articleNextStep(changed).stage).toBe('Brief');
+	});
+
+	it('versions the editorial brief and applies only accepted proposals', async () => {
+		const { article } = await generatedArticle();
+		const before = article.body;
+		const revisionBefore = article.workspace?.revision?.number ?? 0;
+		const drafted = await generateWorkspaceEditorialBrief(FOLIAN_USER_ID, article.id, 'Focus on fiction writers.');
+		expect(drafted.workspace?.editorialBrief?.current?.status).toBe('draft');
+		expect(drafted.workspace?.sectionPlan?.length).toBeGreaterThan(0);
+		await approveWorkspaceEditorialBrief(FOLIAN_USER_ID, article.id);
+		const revised = await generateWorkspaceEditorialBrief(FOLIAN_USER_ID, article.id, 'Make it more technical.');
+		expect(revised.workspace?.editorialBrief?.current?.status).toBe('needs_reapproval');
+		expect(revised.workspace?.editorialBrief?.history).toHaveLength(1);
+		await expect(startArticleGeneration(FOLIAN_USER_ID, article.id)).rejects.toMatchObject({ code: 'brief_needs_reapproval' });
+		const planned = await recordEditorialFeedback(FOLIAN_USER_ID, article.id, 'Open with a realistic continuity mistake. Preserve the practical tables.');
+		const proposals = planned.workspace?.editorialDesk?.proposals ?? [];
+		const keep = proposals.find((item) => /tables/i.test(item.action));
+		const change = proposals.find((item) => /continuity mistake/i.test(item.action));
+		expect(keep && change).toBeTruthy();
+		await decideEditorialProposal(FOLIAN_USER_ID, article.id, keep!.id, 'rejected');
+		await decideEditorialProposal(FOLIAN_USER_ID, article.id, change!.id, 'accepted');
+		const extra = proposals.find((item) => item.id !== keep!.id && item.id !== change!.id);
+		if (extra) await decideEditorialProposal(FOLIAN_USER_ID, article.id, extra.id, 'deferred');
+		const preview = await previewAcceptedEditorialProposals(FOLIAN_USER_ID, article.id);
+		expect(preview.body).toBe(before);
+		expect(preview.workspace?.editorialDesk?.preview?.preservedIds).toContain(keep!.id);
+		const applied = await applyAcceptedEditorialProposals(FOLIAN_USER_ID, article.id);
+		expect(applied.article.body.startsWith(before.trim())).toBe(true);
+		expect(applied.article.body).not.toContain('Do not remove or restyle existing tables');
+		const after = applied.article.workspace?.editorialDesk?.proposals ?? [];
+		expect(after.find((item) => item.id === keep!.id)?.status).toBe('rejected');
+		expect(after.find((item) => item.id === change!.id)?.status).toBe('applied');
+		if (extra) expect(after.find((item) => item.id === extra.id)?.status).toBe('deferred');
+		expect(applied.article.workspace?.revision?.number ?? 0).toBeGreaterThan(revisionBefore);
+		expect(applied.article.workspace?.revision?.source).toBe('improvement');
+		expect(applied.article.workspace?.revision?.note).toContain(change!.id);
+		expect(applied.article.workspace?.revision?.note).not.toContain(keep!.id);
+		expect(contentHash(applied.article.body)).toBe(applied.article.workspace?.revision?.contentHash);
+		const previous = applied.article.versions.at(-1);
+		const restored = await restoreWorkspaceRevision(FOLIAN_USER_ID, article.id, previous!.revisionId!);
+		expect(restored.body.trim()).toBe(before.trim());
+		expect(restored.versions.some((version) => version.instruction?.includes(change!.id) || version.revisionId === applied.article.workspace?.revision?.id)).toBe(true);
+		expect(restored.workspace?.revision?.note).toContain('Restored revision');
 	});
 
 	it('schedules a website article only after approval and keeps it off the social queue', async () => {

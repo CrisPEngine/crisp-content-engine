@@ -146,6 +146,8 @@ export type BrandKnowledge = {
 	differentiators?: string[];
 	proofPoints?: string[];
 	referenceInformation?: string[];
+	/** Verified product capabilities. Absent on brains created before this field existed. */
+	capabilities?: import('@/lib/articles/productKnowledge').ProductCapability[];
 };
 
 export type BrandBrainExample = {

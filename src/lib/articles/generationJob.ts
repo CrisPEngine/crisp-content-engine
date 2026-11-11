@@ -9,6 +9,8 @@ import type { WorkflowJob } from '@/lib/intelligence/types';
 import { loadDestinationTaxonomy } from '@/lib/publishing/destinationRegistry';
 import { editorialStatusFromFindings, ensureWorkspace, isOpenFinding } from './meta';
 import { articleResearchFromApproved } from './researchPackage';
+import { generationContextFromBrief } from './editorialBrief';
+import { capabilitiesFromKnowledge, capabilityGuidance } from './productKnowledge';
 import { reviewCurrentRevision } from './reviewRun';
 import type { ArticleRecord } from './types';
 
@@ -110,7 +112,12 @@ export async function runArticleGenerationJob(job: WorkflowJob): Promise<Article
 			throw new Error('Approve the research before generating. Generation uses only the approved research version.');
 		}
 		research = articleResearchFromApproved(pkg);
-		brief = workspaceArticle.workspace.brief;
+		const baseBrief = workspaceArticle.workspace.brief;
+		const guidance = [
+			generationContextFromBrief(workspaceArticle.workspace.editorialBrief?.current),
+			capabilityGuidance(capabilitiesFromKnowledge(brain.knowledge)),
+		].filter(Boolean).join('\n\n');
+		brief = baseBrief ? { ...baseBrief, instructions: [baseBrief.instructions, guidance].filter(Boolean).join('\n\n') } : baseBrief;
 	} else {
 		const { getAgentStore } = await import('@/lib/agent/controlStore');
 		const { selectRelevantResearch } = await import('@/lib/research/retrieve');

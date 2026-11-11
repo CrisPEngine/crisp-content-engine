@@ -7,6 +7,7 @@ import { BriefPanel, type BriefValues } from '@/components/articles/BriefPanel';
 import { JobPanel } from '@/components/articles/JobPanel';
 import { LifecycleBadges, type Lifecycle } from '@/components/articles/LifecycleBadges';
 import { ResearchPanel } from '@/components/articles/ResearchPanel';
+import { EditorialDeskPanel } from '@/components/articles/EditorialDeskPanel';
 import { ReviewPanel, type RevisionResult } from '@/components/articles/ReviewPanel';
 import { DraftWorkspace } from '@/components/articles/DraftWorkspace';
 import { ImagePanel } from '@/components/articles/ImagePanel';
@@ -390,7 +391,7 @@ export default function ArticleWorkspacePage() {
 			<details className="card p-4 text-sm">
 				<summary className="font-medium">Revision history</summary>
 				<div className="pt-2">
-					<RevisionHistory key={workspace?.revision?.id ?? 'none'} revisions={detail.revisions} bodies={bodies} currentId={workspace?.revision?.id ?? null} />
+					<RevisionHistory key={workspace?.revision?.id ?? 'none'} revisions={detail.revisions} bodies={bodies} currentId={workspace?.revision?.id ?? null} onRestore={(revisionId) => actBool('restore_revision', { revisionId }, 'Previous revision restored as a new revision. Nothing was published.')} />
 				</div>
 			</details>
 			{workspace ? (
@@ -406,6 +407,16 @@ export default function ArticleWorkspacePage() {
 				</details>
 			) : null}
 
+			{workspace ? (
+				<EditorialDeskPanel
+					desk={workspace.editorialDesk}
+					brief={workspace.editorialBrief}
+					body={article.body}
+					exampleNotes={workspace.exampleConsistency}
+					busy={busy}
+					act={actBool}
+				/>
+			) : null}
 			{workspace ? (
 				<ReviewPanel
 					editorial={workspace.editorial}

@@ -8,6 +8,7 @@ import {
 	briefTerms,
 	emptyResearchPackage,
 	mergeResearchRecord,
+	researchApprovalGap,
 	setItemExcluded,
 } from '../researchPackage';
 import type { ArticleRecord } from '../types';
@@ -90,6 +91,9 @@ describe('article research package', () => {
 		const approvedVersion = pkg.version;
 		setItemExcluded(pkg, pkg.items[0].id, true, 'Not needed');
 		expect(pkg.status).toBe('changed_since_approval');
+		expect(researchApprovalGap(pkg).required).toBe(true);
+		expect(researchApprovalGap(pkg).message).toContain(`approved version ${approvedVersion}`);
+		expect(researchApprovalGap(pkg).changes.every((update) => update.version > approvedVersion)).toBe(true);
 		const research = articleResearchFromApproved(pkg);
 		expect(research.packageVersion).toBe(approvedVersion);
 		expect(research.claims.map((claim) => claim.text)).toContain('The Snowflake Method grows a one-sentence novel summary into a full scene list.');

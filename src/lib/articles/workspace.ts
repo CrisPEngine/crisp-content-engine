@@ -39,7 +39,10 @@ import {
 	matchesArticleView,
 	type ArticleListItem,
 } from '@/lib/articles/meta';
+import { critiqueDraft, emptyEditorialDesk, planFromFeedback, reconcileCritique, type RevisionProposal } from '@/lib/articles/editorialDesk';
+import { approveBriefVersion, applyModelStrategy, buildEditorialBrief, reviseBrief, sectionResearchQuestion, type ModelBriefStrategy } from '@/lib/articles/editorialBrief';
 import { normaliseTargetWords, previewArticleImprovement, type ArticleImprovementPreview } from '@/lib/articles/pipeline';
+import { capabilitiesFromKnowledge, capabilityGuidance } from '@/lib/articles/productKnowledge';
 import {
 	applyGeneratedMetadata,
 	generateArticleMetadata,
@@ -64,7 +67,7 @@ import {
 	updateNotes,
 	type RelevanceVerdict,
 } from '@/lib/articles/researchPackage';
-import { commitRevision, ensureRevision, listRevisions } from '@/lib/articles/revisions';
+import { commitRevision, ensureRevision, listRevisions, revisionBody } from '@/lib/articles/revisions';
 import { reviewCurrentRevision } from '@/lib/articles/reviewRun';
 import { articleWordCount, stripCmsTitleHeading, validateArticleStructure } from '@/lib/articles/structure';
 import { unlinkRepeats } from '@/lib/articles/quality';
@@ -936,6 +939,9 @@ export async function startArticleGeneration(ownerUserId: string, articleId: str
 	await releaseStaleJobs(ownerUserId, articleId);
 	const article = await requireArticle(ownerUserId, articleId);
 	const workspace = ensureWorkspace(article);
+	if (workspace.editorialBrief?.current && workspace.editorialBrief.current.status !== 'approved') {
+		throw new ArticleWorkflowError('Approve the latest editorial brief before generating. The previous approval no longer covers this version.', 400, 'brief_needs_reapproval');
+	}
 	if (!workspace.briefApprovedAt) {
 		throw new ArticleWorkflowError('Approve the brief before generating a draft.', 400, 'brief_not_approved');
 	}
@@ -2044,6 +2050,272 @@ export async function regenerateArticleSeo(ownerUserId: string, articleId: strin
 	if (issues.length) throw new ArticleWorkflowError(issues.map((issue) => issue.message).join(' '), 422, 'metadata_invalid');
 	article.workspace = workspace;
 	return persist(article);
+}
+
+export async function generateWorkspaceEditorialBrief(ownerUserId: string, articleId: string, instruction?: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const workspace = ensureWorkspace(article);
+	const brand = await requireBrand(ownerUserId, article.brandId);
+	if (workspace.research?.sources) {
+		workspace.research.sources = withSourceClasses(workspace.research.sources, { brandDomain: brandDomain(brand.identity.website) });
+	}
+	const builtBase = buildEditorialBrief({
+		topic: article.topic,
+		title: article.title,
+		searchIntent: article.searchIntent,
+		primaryKeyword: article.primaryKeyword,
+		audience: article.audience,
+		targetWords: article.targetWords,
+		brief: workspace.brief,
+		research: workspace.research,
+		capabilities: capabilitiesFromKnowledge(brand.knowledge),
+		brandName: brand.identity.name,
+		destinationLabel: workspace.destinationId,
+		instruction,
+	});
+	let built = builtBase;
+	if (process.env.VITEST !== 'true') {
+		try {
+			const siblings = await getNativeContentStore().listArticles(ownerUserId, article.brandId);
+			const strategy = await getIntelligenceStore().getStrategyForBrand(ownerUserId, brand.id);
+			const completion = await getIntelligenceAi().completeJson<ModelBriefStrategy>(
+				'STRATEGY',
+				[
+					{
+						role: 'system',
+						content: [
+							'Propose an article strategy as JSON. Fields: primaryKeyword, supportingKeywords, searchIntent, audience, seoTitle, publishedH1, alternativeTitles, sections, internalLinks, cta, targetWords, differentiation, brandPositioning.',
+							'Each section has heading, level (2 or 3), parentHeading, questions, examples, exercises, takeaways, evidenceNeeded, proposedDirection.',
+							'Use only the supplied research as evidence. Put new ideas in proposed fields. Do not invent search volume, rankings, citations, statistics, or product capabilities.',
+							'Check keyword spelling. Do not repeat the primary keyword. For a long practical guide, add an H3 only when an H2 covers a distinct second step. Do not add H3s to a short definition.',
+							'Name an existing article in differentiation when the topic would compete with it. Do not claim a keyword is unclaimed.',
+						].join(' '),
+					},
+					{
+						role: 'user',
+						content: JSON.stringify({
+							topic: article.topic,
+							title: article.title,
+							searchIntent: article.searchIntent,
+							audience: article.audience,
+							targetWords: article.targetWords,
+							instruction,
+							confirmedResearch: builtBase.confirmed,
+							verifiedCapabilities: builtBase.capabilities.filter((item) => item.verified),
+							existingArticles: siblings.filter((item) => item.id !== article.id).map((item) => item.title).slice(0, 20),
+							strategy: strategy ? { positioning: strategy.positioning, objectives: strategy.objectives, pillars: strategy.contentPillars } : null,
+						}),
+					},
+				],
+				'editorial_brief_strategy',
+				ownerUserId,
+			);
+			built = applyModelStrategy(builtBase, completion.data, siblings.filter((item) => item.id !== article.id).map((item) => item.title));
+		} catch {
+			built = builtBase;
+		}
+	}
+	const current = workspace.editorialBrief?.current ?? null;
+	if (current?.status === 'approved') {
+		const revised = reviseBrief(current, built);
+		workspace.editorialBrief = {
+			current: { ...revised.current, instruction: instruction?.trim() || current.instruction },
+			history: [...(workspace.editorialBrief?.history ?? []), ...revised.history],
+		};
+		workspace.briefApprovedAt = null;
+		workspace.briefChangedAfterApproval = true;
+	} else {
+		workspace.editorialBrief = {
+			current: { ...built, instruction: instruction?.trim() || current?.instruction || '' },
+			history: workspace.editorialBrief?.history ?? [],
+		};
+	}
+	const brief = workspace.editorialBrief.current;
+	if (brief) {
+		workspace.sectionPlan = brief.sections.map((section) => ({
+			heading: section.heading,
+			readerQuestion: section.questions[0] ?? '',
+			contribution: section.proposedDirection,
+			practicalElement: section.confirmedEvidence[0] ?? '',
+			targetWords: Math.max(120, Math.round(article.targetWords / Math.max(brief.sections.length, 1))),
+			evidence: [],
+			links: brief.internalLinks,
+		}));
+	}
+	article.workspace = workspace;
+	return persist(article);
+}
+
+export async function researchEditorialSection(ownerUserId: string, articleId: string, heading: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const section = article.workspace?.editorialBrief?.current?.sections.find((item) => item.heading === heading);
+	if (!section) throw new ArticleWorkflowError('Generate an editorial brief before researching a section.', 400, 'brief_missing');
+	const updated = await researchArticle(ownerUserId, articleId, { mode: 'follow_up', question: sectionResearchQuestion(section) });
+	if (updated.workspace?.research?.status === 'approved') {
+		throw new ArticleWorkflowError('New section research was marked approved automatically. It must be reviewed first.', 409, 'research_auto_approved');
+	}
+	return updated;
+}
+
+export async function approveWorkspaceEditorialBrief(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const workspace = ensureWorkspace(article);
+	const current = workspace.editorialBrief?.current;
+	if (!current) throw new ArticleWorkflowError('Generate an editorial brief before approving it.', 400, 'brief_missing');
+	const at = new Date().toISOString();
+	workspace.editorialBrief = { ...workspace.editorialBrief, current: approveBriefVersion(current, at), history: workspace.editorialBrief?.history ?? [] };
+	workspace.briefApprovedAt = at;
+	workspace.briefChangedAfterApproval = false;
+	article.workspace = workspace;
+	return persist(article);
+}
+
+export async function restoreWorkspaceRevision(ownerUserId: string, articleId: string, revisionId: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	assertNotApproved(article, 'Revision restore');
+	const found = revisionBody(article, revisionId);
+	if (!found) throw new ArticleWorkflowError('That revision was not found.', 404, 'revision_missing');
+	if (article.workspace?.revision?.id === revisionId) return article;
+	commitRevision(article, found.body, 'manual', `Restored revision ${found.revision.number}.`, { refreshMetadata: false });
+	article.approval = { required: true, approver: 'human', status: 'pending' };
+	const workspace = ensureWorkspace(article);
+	workspace.approvedAt = null;
+	workspace.approvedRevisionId = null;
+	article.workspace = workspace;
+	return persist(article);
+}
+
+export async function critiqueWorkspaceArticle(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	if (!article.body.trim()) throw new ArticleWorkflowError('There is no draft to critique.', 400, 'draft_missing');
+	const workspace = ensureWorkspace(article);
+	const brand = await requireBrand(ownerUserId, article.brandId);
+	const assessed = reconcileCritique(workspace.editorialDesk?.critique ?? null, critiqueDraft({
+		title: article.title,
+		topic: article.topic,
+		body: article.body,
+		brandName: brand.identity.name,
+		productFacts: brand.knowledge.productFacts,
+		sourceClasses: (workspace.research?.sources ?? []).filter((source) => !source.excluded).map((source) => source.classification),
+		sourceTitles: (workspace.research?.sources ?? []).filter((source) => !source.excluded).map((source) => source.title),
+		targetWords: article.targetWords,
+	}));
+	workspace.editorialDesk = {
+		...(workspace.editorialDesk ?? emptyEditorialDesk()),
+		critique: {
+			...assessed,
+			revisionId: workspace.revision?.id ?? null,
+			createdAt: new Date().toISOString(),
+		},
+		updatedAt: new Date().toISOString(),
+	};
+	article.workspace = workspace;
+	return persist(article);
+}
+
+export async function recordEditorialFeedback(ownerUserId: string, articleId: string, feedback: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const text = feedback.trim();
+	if (!text) throw new ArticleWorkflowError('Enter editorial feedback before planning a revision.', 400, 'feedback_required');
+	const workspace = ensureWorkspace(article);
+	const proposals = planFromFeedback(text, article.body);
+	workspace.editorialDesk = {
+		...(workspace.editorialDesk ?? emptyEditorialDesk()),
+		feedback: text,
+		proposals,
+		updatedAt: new Date().toISOString(),
+	};
+	article.workspace = workspace;
+	return persist(article);
+}
+
+export async function decideEditorialProposal(
+	ownerUserId: string,
+	articleId: string,
+	proposalId: string,
+	status: RevisionProposal['status'],
+): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const workspace = ensureWorkspace(article);
+	const proposals = workspace.editorialDesk?.proposals ?? [];
+	const proposal = proposals.find((item) => item.id === proposalId);
+	if (!proposal) throw new ArticleWorkflowError('That revision proposal was not found.', 404, 'proposal_missing');
+	if (proposal.status === 'applied') throw new ArticleWorkflowError('An applied proposal cannot be changed.', 409, 'proposal_applied');
+	proposal.status = status;
+	workspace.editorialDesk = { ...(workspace.editorialDesk ?? emptyEditorialDesk()), proposals, preview: null, updatedAt: new Date().toISOString() };
+	article.workspace = workspace;
+	return persist(article);
+}
+
+export async function previewAcceptedEditorialProposals(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	assertNotApproved(article, 'Selective revision');
+	const workspace = ensureWorkspace(article);
+	const proposals = workspace.editorialDesk?.proposals ?? [];
+	const accepted = proposals.filter((item) => item.status === 'accepted');
+	if (!accepted.length) throw new ArticleWorkflowError('Accept at least one proposal before previewing a revision.', 400, 'nothing_accepted');
+	if (!workspace.revision) throw new ArticleWorkflowError('There is no saved revision to revise.', 400, 'draft_missing');
+	const brand = await requireBrand(ownerUserId, article.brandId);
+	const guidance = capabilityGuidance(capabilitiesFromKnowledge(brand.knowledge));
+	const preview = await previewArticleImprovement({
+		ownerUserId,
+		article,
+		brand,
+		brief: workspace.brief,
+		findings: [],
+		extraInstructions: [
+			...accepted.map((item) => `${item.action} Reason: ${item.reason}`),
+			guidance,
+			`Stay near ${article.targetWords} words.`,
+			'Preserve paragraphs that no accepted proposal mentions.',
+		],
+	});
+	workspace.editorialDesk = {
+		...(workspace.editorialDesk ?? emptyEditorialDesk()),
+		preview: {
+			baseRevisionId: preview.baseRevisionId,
+			proposedBody: preview.proposedBody,
+			summary: preview.summary,
+			acceptedIds: accepted.map((item) => item.id),
+			preservedIds: proposals.filter((item) => item.status === 'rejected' || item.status === 'deferred').map((item) => item.id),
+			wordCountBefore: articleWordCount(article.body),
+			wordCountAfter: articleWordCount(preview.proposedBody),
+			createdAt: new Date().toISOString(),
+		},
+		updatedAt: new Date().toISOString(),
+	};
+	article.workspace = workspace;
+	return persist(article);
+}
+
+export async function applyAcceptedEditorialProposals(ownerUserId: string, articleId: string): Promise<{ article: ArticleRecord; summary: string }> {
+	const article = await requireArticle(ownerUserId, articleId);
+	assertNotApproved(article, 'Selective revision');
+	const workspace = ensureWorkspace(article);
+	const proposals = workspace.editorialDesk?.proposals ?? [];
+	const accepted = proposals.filter((item) => item.status === 'accepted');
+	const preview = workspace.editorialDesk?.preview;
+	if (!accepted.length) throw new ArticleWorkflowError('Accept at least one proposal before applying a revision.', 400, 'nothing_accepted');
+	if (!preview) throw new ArticleWorkflowError('Preview the accepted changes before applying them.', 400, 'preview_required');
+	if (!workspace.revision || preview.baseRevisionId !== workspace.revision.id) {
+		throw new ArticleWorkflowError('The article changed after the preview. Preview the accepted changes again.', 409, 'preview_stale');
+	}
+	const sameAccepted = preview.acceptedIds.length === accepted.length && preview.acceptedIds.every((id) => accepted.some((item) => item.id === id));
+	if (!sameAccepted) throw new ArticleWorkflowError('The accepted proposals changed after the preview. Preview again.', 409, 'preview_stale');
+	article.workspace = workspace;
+	commitRevision(article, preview.proposedBody, 'improvement', `Accepted proposals ${accepted.map((item) => item.id).join(', ')}. ${preview.summary}`, { refreshMetadata: false });
+	for (const proposal of proposals) {
+		if (proposal.status === 'accepted') proposal.status = 'applied';
+	}
+	workspace.editorialDesk = { ...(workspace.editorialDesk ?? emptyEditorialDesk()), proposals, preview: null, updatedAt: new Date().toISOString() };
+	article.approval = { required: true, approver: 'human', status: 'pending' };
+	workspace.approvedAt = null;
+	workspace.approvedRevisionId = null;
+	if (article.status === 'approved') article.status = 'draft';
+	article.workspace = workspace;
+	await persist(article);
+	const reviewed = await critiqueWorkspaceArticle(ownerUserId, articleId);
+	return { article: reviewed, summary: preview.summary };
 }
 
 export async function previewArticleEditorialImprovement(ownerUserId: string, articleId: string): Promise<ArticleImprovementPreview> {

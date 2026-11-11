@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { SOURCE_CLASS_LABELS, evidenceLevel, type EvidenceLevel } from '@/lib/articles/sourceClass';
+import { researchApprovalGap } from '@/lib/articles/researchPackage';
 import type { ResearchItemKind, ResearchPackage, ResearchPackageItem, ResearchPackageSource } from '@/lib/articles/types';
 
 type Act = (action: string, extra?: Record<string, unknown>, success?: string) => Promise<boolean>;
@@ -110,6 +111,17 @@ export function ResearchPanel({ research, busy, pending, act }: { research: Rese
 				</p>
 			</div>
 			<p className="text-sm text-text-soft">Generation uses only the approved version. New research is added as a new version and never changes the approved copy until you approve again. Community sources stay audience insight, not expert advice.</p>
+			{researchApprovalGap(pkg).required ? (
+				<div className="text-sm space-y-1">
+					<p>{researchApprovalGap(pkg).message}</p>
+					{researchApprovalGap(pkg).changes.map((update) => (
+						<p className="text-text-soft" key={`${update.version}-${update.createdAt}`}>
+							Changed in version {update.version}: {update.kind.replaceAll('_', ' ')} — {update.summary}
+							{update.question ? ` Question: ${update.question}` : ''}
+						</p>
+					))}
+				</div>
+			) : null}
 			{(pkg?.questions?.length ?? 0) > 0 ? (
 				<div className="text-sm space-y-1">
 					<p className="font-medium">Research questions</p>

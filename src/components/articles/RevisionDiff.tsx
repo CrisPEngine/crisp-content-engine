@@ -44,10 +44,12 @@ export function RevisionHistory({
 	revisions,
 	bodies,
 	currentId,
+	onRestore,
 }: {
 	revisions: ArticleRevisionRef[];
 	bodies: Record<string, string>;
 	currentId: string | null;
+	onRestore?: (revisionId: string) => void;
 }) {
 	const ordered = [...revisions].sort((a, b) => b.number - a.number);
 	const [afterId, setAfterId] = useState(currentId ?? ordered[0]?.id ?? '');
@@ -60,6 +62,9 @@ export function RevisionHistory({
 					<li key={revision.id}>
 						Revision {revision.number}{revision.id === currentId ? ' (current)' : ''} · {SOURCE_LABELS[revision.source]} · {revision.wordCount.toLocaleString()} words · {new Date(revision.createdAt).toLocaleString()}
 						{revision.note ? ` — ${revision.note}` : ''}
+						{onRestore && revision.id !== currentId ? (
+							<button className="btn ml-2" type="button" onClick={() => onRestore(revision.id)}>Restore as new revision</button>
+						) : null}
 						<span className="text-xs text-text-dim"> · {revision.contentHash.slice(0, 10)}</span>
 					</li>
 				))}
