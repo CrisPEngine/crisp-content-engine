@@ -338,6 +338,7 @@ export type ArticleWorkspace = {
 			error?: string | null;
 		} | null;
 	};
+	editorialDesk?: import('./editorialDesk').EditorialDeskState;
 	approvedAt?: string | null;
 	approvedRevisionId?: string | null;
 	seoEdited?: {

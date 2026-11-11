@@ -7,6 +7,7 @@ import { BriefPanel, type BriefValues } from '@/components/articles/BriefPanel';
 import { JobPanel } from '@/components/articles/JobPanel';
 import { LifecycleBadges, type Lifecycle } from '@/components/articles/LifecycleBadges';
 import { ResearchPanel } from '@/components/articles/ResearchPanel';
+import { EditorialDeskPanel } from '@/components/articles/EditorialDeskPanel';
 import { ReviewPanel, type RevisionResult } from '@/components/articles/ReviewPanel';
 import { DraftWorkspace } from '@/components/articles/DraftWorkspace';
 import { ImagePanel } from '@/components/articles/ImagePanel';
@@ -406,6 +407,7 @@ export default function ArticleWorkspacePage() {
 				</details>
 			) : null}
 
+			{workspace ? <EditorialDeskPanel desk={workspace.editorialDesk} busy={busy} act={actBool} /> : null}
 			{workspace ? (
 				<ReviewPanel
 					editorial={workspace.editorial}

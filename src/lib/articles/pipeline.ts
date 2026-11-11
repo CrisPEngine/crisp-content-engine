@@ -734,23 +734,34 @@ export async function previewArticleImprovement(input: {
 	brand: BrandBrain;
 	brief?: ArticleBriefDetails;
 	findings?: ArticleEditorialFinding[];
+	/** When set, these instructions replace the default full-article improvement list. */
+	extraInstructions?: string[];
 }): Promise<ArticleImprovementPreview> {
 	const article = input.article;
 	const revision = article.workspace?.revision;
 	if (!revision) throw new Error('There is no saved revision to improve.');
 	const ai = getIntelligenceAi();
-	const accepted = (input.findings ?? []).filter(
-		(finding) => finding.revisionId === revision.id && (finding.decision === 'accepted' || (finding.decision === 'pending' && finding.source === 'llm')),
-	);
+	const accepted = input.extraInstructions?.length
+		? []
+		: (input.findings ?? []).filter(
+				(finding) => finding.revisionId === revision.id && (finding.decision === 'accepted' || (finding.decision === 'pending' && finding.source === 'llm')),
+			);
 	const structural = validateArticleStructure(article.body).issues
 		.filter((issue) => issue.severity === 'critical')
 		.map((issue) => issue.message);
-	const instructions = [
-		'Improve coverage for the brief and search intent without inventing facts or statistics.',
-		`Reduce repetition and weak explanations. Keep ${input.brand.identity.name} mentions restrained (at most one useful brand mention).`,
-		...accepted.map((finding) => effectiveInstruction(finding)),
-		...structural.map((message) => `Fix the structural issue: ${message}`),
-	];
+	const instructions = input.extraInstructions?.length
+		? [
+				...input.extraInstructions,
+				'Apply only these authorised changes. Do not rewrite unrelated sections.',
+				'Preserve existing tables and checklists unless an instruction explicitly edits a cell.',
+				'Do not invent sources, statistics or product capabilities.',
+			]
+		: [
+				'Improve coverage for the brief and search intent without inventing facts or statistics.',
+				`Reduce repetition and weak explanations. Keep ${input.brand.identity.name} mentions restrained (at most one useful brand mention).`,
+				...accepted.map((finding) => effectiveInstruction(finding)),
+				...structural.map((message) => `Fix the structural issue: ${message}`),
+			];
 	const messages = [
 		{
 			role: 'system' as const,

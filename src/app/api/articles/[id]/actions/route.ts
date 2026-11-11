@@ -24,7 +24,11 @@ import {
 	proposeArticleImageReferences,
 	publishWorkspaceArticle,
 	refreshArticleImageAlt,
+	applyAcceptedEditorialProposals,
+	critiqueWorkspaceArticle,
+	decideEditorialProposal,
 	previewArticleEditorialImprovement,
+	recordEditorialFeedback,
 	previewArticleStructuralRepair,
 	recordArticlePublication,
 	regenerateArticleSeo,
@@ -220,6 +224,21 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 						: undefined,
 				});
 			}
+			case 'critique_article':
+				return NextResponse.json({ article: await critiqueWorkspaceArticle(userId, id) });
+			case 'editorial_feedback':
+				return NextResponse.json({ article: await recordEditorialFeedback(userId, id, text(body.feedback)) });
+			case 'editorial_proposal':
+				return NextResponse.json({
+					article: await decideEditorialProposal(
+						userId,
+						id,
+						text(body.proposalId),
+						text(body.status) as 'proposed' | 'accepted' | 'rejected' | 'deferred' | 'applied',
+					),
+				});
+			case 'apply_editorial_proposals':
+				return NextResponse.json(await applyAcceptedEditorialProposals(userId, id));
 			case 'request_approval':
 				return NextResponse.json({ article: await requestArticleApproval(userId, id) });
 			case 'approve':

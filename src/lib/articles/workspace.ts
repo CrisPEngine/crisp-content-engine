@@ -39,6 +39,7 @@ import {
 	matchesArticleView,
 	type ArticleListItem,
 } from '@/lib/articles/meta';
+import { critiqueDraft, emptyEditorialDesk, planFromFeedback, type RevisionProposal } from '@/lib/articles/editorialDesk';
 import { normaliseTargetWords, previewArticleImprovement, type ArticleImprovementPreview } from '@/lib/articles/pipeline';
 import {
 	applyGeneratedMetadata,
@@ -2044,6 +2045,101 @@ export async function regenerateArticleSeo(ownerUserId: string, articleId: strin
 	if (issues.length) throw new ArticleWorkflowError(issues.map((issue) => issue.message).join(' '), 422, 'metadata_invalid');
 	article.workspace = workspace;
 	return persist(article);
+}
+
+export async function critiqueWorkspaceArticle(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	if (!article.body.trim()) throw new ArticleWorkflowError('There is no draft to critique.', 400, 'draft_missing');
+	const workspace = ensureWorkspace(article);
+	const brand = await requireBrand(ownerUserId, article.brandId);
+	const assessed = critiqueDraft({
+		title: article.title,
+		topic: article.topic,
+		body: article.body,
+		brandName: brand.identity.name,
+		productFacts: brand.knowledge.productFacts,
+		sourceClasses: (workspace.research?.sources ?? []).filter((source) => !source.excluded).map((source) => source.classification),
+		sourceTitles: (workspace.research?.sources ?? []).filter((source) => !source.excluded).map((source) => source.title),
+		targetWords: article.targetWords,
+	});
+	workspace.editorialDesk = {
+		...(workspace.editorialDesk ?? emptyEditorialDesk()),
+		critique: {
+			...assessed,
+			revisionId: workspace.revision?.id ?? null,
+			createdAt: new Date().toISOString(),
+		},
+		updatedAt: new Date().toISOString(),
+	};
+	article.workspace = workspace;
+	return persist(article);
+}
+
+export async function recordEditorialFeedback(ownerUserId: string, articleId: string, feedback: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const text = feedback.trim();
+	if (!text) throw new ArticleWorkflowError('Enter editorial feedback before planning a revision.', 400, 'feedback_required');
+	const workspace = ensureWorkspace(article);
+	const proposals = planFromFeedback(text, article.body);
+	workspace.editorialDesk = {
+		...(workspace.editorialDesk ?? emptyEditorialDesk()),
+		feedback: text,
+		proposals,
+		updatedAt: new Date().toISOString(),
+	};
+	article.workspace = workspace;
+	return persist(article);
+}
+
+export async function decideEditorialProposal(
+	ownerUserId: string,
+	articleId: string,
+	proposalId: string,
+	status: RevisionProposal['status'],
+): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const workspace = ensureWorkspace(article);
+	const proposals = workspace.editorialDesk?.proposals ?? [];
+	const proposal = proposals.find((item) => item.id === proposalId);
+	if (!proposal) throw new ArticleWorkflowError('That revision proposal was not found.', 404, 'proposal_missing');
+	if (proposal.status === 'applied') throw new ArticleWorkflowError('An applied proposal cannot be changed.', 409, 'proposal_applied');
+	proposal.status = status;
+	workspace.editorialDesk = { ...(workspace.editorialDesk ?? emptyEditorialDesk()), proposals, updatedAt: new Date().toISOString() };
+	article.workspace = workspace;
+	return persist(article);
+}
+
+export async function applyAcceptedEditorialProposals(ownerUserId: string, articleId: string): Promise<{ article: ArticleRecord; summary: string }> {
+	const article = await requireArticle(ownerUserId, articleId);
+	assertNotApproved(article, 'Selective revision');
+	const workspace = ensureWorkspace(article);
+	const accepted = (workspace.editorialDesk?.proposals ?? []).filter((item) => item.status === 'accepted');
+	if (!accepted.length) throw new ArticleWorkflowError('Accept at least one proposal before applying a revision.', 400, 'nothing_accepted');
+	if (!workspace.revision) throw new ArticleWorkflowError('There is no saved revision to revise.', 400, 'draft_missing');
+	const brand = await requireBrand(ownerUserId, article.brandId);
+	const preview = await previewArticleImprovement({
+		ownerUserId,
+		article,
+		brand,
+		brief: workspace.brief,
+		findings: [],
+		extraInstructions: [
+			...accepted.map((item) => `${item.action} Reason: ${item.reason}`),
+			...(brand.knowledge.productFacts ?? []).slice(0, 12).map((fact) => `Verified product fact: ${fact}`),
+			`Stay near ${article.targetWords} words.`,
+		],
+	});
+	commitRevision(article, preview.proposedBody, 'improvement', preview.summary, { refreshMetadata: false });
+	for (const proposal of workspace.editorialDesk?.proposals ?? []) {
+		if (proposal.status === 'accepted') proposal.status = 'applied';
+	}
+	if (workspace.editorialDesk) workspace.editorialDesk.updatedAt = new Date().toISOString();
+	article.approval = { required: true, approver: 'human', status: 'pending' };
+	workspace.approvedAt = null;
+	workspace.approvedRevisionId = null;
+	if (article.status === 'approved') article.status = 'draft';
+	article.workspace = workspace;
+	return { article: await persist(article), summary: preview.summary };
 }
 
 export async function previewArticleEditorialImprovement(ownerUserId: string, articleId: string): Promise<ArticleImprovementPreview> {
