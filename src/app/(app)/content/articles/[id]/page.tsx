@@ -469,6 +469,7 @@ export default function ArticleWorkspacePage() {
 
 			{workspace ? (
 				<ImagePanel
+					articleId={articleId}
 					imageRequirements={workspace.imageRequirements}
 					media={workspace.media}
 					busy={busy}

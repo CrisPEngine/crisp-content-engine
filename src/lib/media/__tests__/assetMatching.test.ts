@@ -25,6 +25,8 @@ describe('assetMatching', () => {
 			orientation: 'landscape',
 			cropSuitability: 'Works for Instagram feed crop',
 			suggestedTopics: ['New arrivals', 'Ferrari diecast collection'],
+			suggestedChannels: ['INSTAGRAM'],
+			detectedText: [],
 			altText: 'Red Ferrari diecast model on a stand',
 			searchTags: ['ferrari', 'diecast', 'scale-model'],
 			analyzedAt: new Date().toISOString(),

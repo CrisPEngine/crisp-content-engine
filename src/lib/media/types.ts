@@ -168,6 +168,9 @@ export type PublicAsset = {
 	sourceAttribution?: string;
 	rightsNotes?: string;
 	staleScreenshot?: boolean;
+	generationProvider?: string;
+	generationModel?: string;
+	generationPrompt?: string;
 };
 
 export type ImageGenerationRequest = {

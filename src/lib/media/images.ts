@@ -64,6 +64,9 @@ export function publicAsset(asset: ContentAssetRecord): PublicAsset {
 		collectionId: asset.collectionId,
 		sourceAttribution: asset.sourceAttribution,
 		rightsNotes: asset.rightsNotes,
+		generationProvider: asset.generationProvider,
+		generationModel: asset.generationModel,
+		generationPrompt: asset.generationPrompt,
 	};
 }
 
@@ -135,6 +138,20 @@ export async function generateAssetFromProposal(input: {
 		concept: decision.visualConcept,
 		title: decision.visualConcept,
 	});
+	const referenceIds = decision.referenceAssetIds ?? [];
+	const referenceImageUrls: string[] = [];
+	let hasProductReference = false;
+	for (const referenceId of referenceIds) {
+		const reference = await store.getAsset(input.ownerUserId, referenceId);
+		const permitted =
+			reference?.url &&
+			(!reference.brandId || reference.brandId === input.brandId) &&
+			(reference.verifiedReference ? reference.referenceAllowed !== false : reference.libraryType === 'PRODUCT_SCREENSHOT' || reference.libraryType === 'PRODUCT_UI' || reference.sourceType === 'upload');
+		if (permitted && reference.url) {
+			referenceImageUrls.push(reference.url);
+			if (reference.libraryType === 'PRODUCT_SCREENSHOT' || reference.libraryType === 'PRODUCT_UI') hasProductReference = true;
+		}
+	}
 	const instructions = input.promptOverride?.trim()
 		? { prompt: input.promptOverride.trim(), visualGuidanceStored: Boolean(input.brandStyleNotes?.trim()) }
 		: buildImagePrompt({
@@ -145,22 +162,12 @@ export async function generateAssetFromProposal(input: {
 				aspectRatio: decision.aspectRatio ?? '1:1',
 				purpose: decision.mediaRole,
 				altTextDirection,
-				excerpt: input.excerpt,
 				negativeConstraints: input.negativeConstraints,
 				revisionInstructions: input.revisionInstructions,
 				brandStyleOverride: input.brandStyleNotes,
 				roleFraming: input.roleFraming,
+				hasProductReference,
 			});
-	const referenceIds = decision.referenceAssetIds ?? [];
-	const referenceImageUrls: string[] = [];
-	for (const referenceId of referenceIds) {
-		const reference = await store.getAsset(input.ownerUserId, referenceId);
-		const permitted =
-			reference?.url &&
-			(!reference.brandId || reference.brandId === input.brandId) &&
-			(reference.verifiedReference ? reference.referenceAllowed !== false : reference.libraryType === 'PRODUCT_SCREENSHOT' || reference.libraryType === 'PRODUCT_UI' || reference.sourceType === 'upload');
-		if (permitted && reference.url) referenceImageUrls.push(reference.url);
-	}
 	const generated = await provider.generate({
 		concept: decision.visualConcept ?? decision.reason,
 		prompt: instructions.prompt,
@@ -184,7 +191,7 @@ export async function generateAssetFromProposal(input: {
 		width: stored.width || generated.width || width,
 		height: stored.height || generated.height || height,
 		aspectRatio: decision.aspectRatio ?? undefined,
-		altText: altTextDirection,
+		altText: '',
 		title: decision.visualConcept ?? 'Generated image',
 		generationPrompt: generated.promptUsed,
 		generationProvider: provider.id,

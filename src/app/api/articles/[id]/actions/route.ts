@@ -18,8 +18,11 @@ import {
 	generateArticleMedia,
 	getWorkspaceArticle,
 	lookupArticleDraft,
+	acceptArticleImageCandidate,
 	prepareArticleImageBrief,
+	proposeArticleImageReferences,
 	publishWorkspaceArticle,
+	refreshArticleImageAlt,
 	previewArticleEditorialImprovement,
 	previewArticleStructuralRepair,
 	recordArticlePublication,
@@ -149,7 +152,26 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 			}
 			case 'prepare_image_brief': {
 				const role = body.role === 'og' ? 'og' : 'hero';
-				return NextResponse.json(await prepareArticleImageBrief(userId, id, role));
+				return NextResponse.json(
+					await prepareArticleImageBrief(userId, id, role, {
+						rebuildPrompt: body.rebuildPrompt === true,
+						applySuggestedConcept: body.applySuggestedConcept === true,
+					}),
+				);
+			}
+			case 'propose_image_references': {
+				const role = body.role === 'og' ? 'og' : 'hero';
+				return NextResponse.json(await proposeArticleImageReferences(userId, id, role));
+			}
+			case 'refresh_image_alt': {
+				const role = body.role === 'og' ? 'og' : 'hero';
+				return NextResponse.json({ article: await refreshArticleImageAlt(userId, id, role) });
+			}
+			case 'accept_image_candidate': {
+				const role = body.role === 'og' ? 'og' : 'hero';
+				return NextResponse.json({
+					article: await acceptArticleImageCandidate(userId, id, role, text(body.assetId || body.selectAssetId)),
+				});
 			}
 			case 'save_image_brief': {
 				const role = body.role === 'og' ? 'og' : 'hero';
@@ -157,12 +179,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 					article: await saveArticleImageBrief(userId, id, role, {
 						concept: typeof body.concept === 'string' ? body.concept : undefined,
 						prompt: typeof body.prompt === 'string' ? body.prompt : undefined,
+						promptManuallyEdited: body.promptManuallyEdited === true,
 						negativeConstraints: typeof body.negativeConstraints === 'string' ? body.negativeConstraints : undefined,
 						revisionInstructions: typeof body.revisionInstructions === 'string' ? body.revisionInstructions : undefined,
 						brandStyleNotes: typeof body.brandStyleNotes === 'string' ? body.brandStyleNotes : undefined,
 						referenceAssetIds: Array.isArray(body.referenceAssetIds)
 							? body.referenceAssetIds.filter((value): value is string => typeof value === 'string')
 							: undefined,
+						effectivePrompt: typeof body.effectivePrompt === 'string' ? body.effectivePrompt : undefined,
 					}),
 				});
 			}

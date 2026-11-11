@@ -38,6 +38,12 @@ describe('asset alt text', () => {
 				altTextDirection: 'State what the visual shows.',
 				topic: 'Canon and continuity',
 			}),
-		).toBe('Visual supporting: Canon and continuity.');
+		).toBe('');
+		expect(
+			resolveAssetAltText({
+				altText: 'A notebook beside a laptop on a café table.',
+				altTextDirection: 'State what the visual shows.',
+			}),
+		).toBe('A notebook beside a laptop on a café table.');
 	});
 });

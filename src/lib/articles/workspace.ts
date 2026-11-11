@@ -81,13 +81,18 @@ import {
 	emptyMediaCreativeState,
 	mergeImageBrief,
 	suggestImageConcept,
+	type AltTextStatus,
 	type ArticleImageRole,
 	type ImageCreativeBrief,
 	type MediaCreativeState,
 } from '@/lib/articles/imageBrief';
 import { suggestArticleTitles, type TitleSuggestion } from '@/lib/articles/titleSuggestions';
+import { isPlaceholderAltText } from '@/lib/media/altText';
 import { generateAssetFromProposal } from '@/lib/media/images';
+import { assessGeneratedImageQuality, estimateRegenerationCostUsd } from '@/lib/media/imageQuality';
+import { imageModelReport, resolveImageModelId } from '@/lib/media/imageModels';
 import { planMedia } from '@/lib/media/planner';
+import { brandAssetTypeLabel, brandHasProductScreenshot, proposeReferenceAssets } from '@/lib/media/referenceAssets';
 import { runAssetVisionAnalysis } from '@/lib/media/runAssetVision';
 import { getNativeContentStore } from '@/lib/media/store';
 import type { MediaDecision } from '@/lib/media/types';
@@ -1262,11 +1267,15 @@ export async function prepareArticleImageBrief(
 	ownerUserId: string,
 	articleId: string,
 	role: ArticleImageRole,
-): Promise<{ article: ArticleRecord; brief: ImageCreativeBrief }> {
+	options?: { rebuildPrompt?: boolean; applySuggestedConcept?: boolean },
+): Promise<{ article: ArticleRecord; brief: ImageCreativeBrief; references: ReturnType<typeof proposeReferenceAssets> }> {
 	const article = await requireArticle(ownerUserId, articleId);
 	const brain = await requireBrand(ownerUserId, article.brandId);
 	const workspace = ensureWorkspace(article);
 	const creative = ensureMediaCreative(workspace);
+	const store = getNativeContentStore();
+	const brandAssets = await store.listAssets(ownerUserId, article.brandId);
+	const hasProductScreenshot = brandHasProductScreenshot(brandAssets);
 	const suggested = suggestImageConcept({
 		role,
 		title: article.title,
@@ -1274,36 +1283,69 @@ export async function prepareArticleImageBrief(
 		excerpt: article.excerpt || article.body.slice(0, 400),
 		audience: article.audience,
 		imageRequirements: workspace.imageRequirements,
+		brandName: brain.identity.name,
+		hasProductScreenshot,
 	});
 	const brandStyleNotes = creative[role].brandStyleNotes || '';
-	const concept = creative[role].concept.trim() || suggested;
+	const applySuggested = options?.applySuggestedConcept === true || !creative[role].concept.trim();
+	const concept = applySuggested ? suggested : creative[role].concept.trim();
+	const references = proposeReferenceAssets({
+		brandId: article.brandId,
+		concept,
+		topic: article.topic,
+		title: article.title,
+		assets: brandAssets,
+	});
+	const recommendedIds = references.filter((row) => row.recommended).map((row) => row.asset.id).slice(0, 2);
+	const referenceAssetIds =
+		!applySuggested && creative[role].referenceAssetIds.length ? creative[role].referenceAssetIds : recommendedIds;
 	const built = buildArticleImagePrompt({
 		role,
 		brand: brain,
 		topic: article.topic,
 		concept,
-		excerpt: article.excerpt || article.body.slice(0, 400),
 		negativeConstraints: creative[role].negativeConstraints,
+		revisionInstructions: creative[role].revisionInstructions,
 		brandStyleNotes,
+		hasProductReference: referenceAssetIds.some((id) =>
+			brandAssets.some(
+				(asset) =>
+					asset.id === id &&
+					(asset.libraryType === 'PRODUCT_SCREENSHOT' ||
+						asset.libraryType === 'PRODUCT_UI' ||
+						/screenshot|planner|interface|dashboard/i.test(`${asset.title || ''} ${asset.description || ''}`)),
+			),
+		),
 	});
-	const recent = (await getNativeContentStore().listAssets(ownerUserId, article.brandId))
+	const recent = brandAssets
 		.filter((asset) => asset.sourceType === 'generated')
 		.slice(0, 12)
 		.map((asset) => String(asset.provenance.concept ?? asset.title ?? ''))
 		.filter(Boolean);
+	const rebuildPrompt =
+		options?.rebuildPrompt === true ||
+		applySuggested ||
+		!creative[role].promptManuallyEdited ||
+		!creative[role].prompt.trim();
+	const nextPrompt = rebuildPrompt ? built.prompt : creative[role].prompt;
 	creative[role] = {
 		...creative[role],
 		suggestedConcept: suggested,
 		concept,
-		prompt: creative[role].prompt.trim() || built.prompt,
+		prompt: nextPrompt,
+		effectivePrompt: nextPrompt,
+		promptManuallyEdited: rebuildPrompt ? false : creative[role].promptManuallyEdited,
+		referenceAssetIds,
 		brandStyleNotes: brandStyleNotes || creative[role].brandStyleNotes,
 		dimensions: built.dimensions,
 		similarityWarning: conceptSimilarityWarning(concept, recent),
-		estimatedCostUsd: creative[role].estimatedCostUsd,
+		estimatedCostUsd: estimateRegenerationCostUsd(referenceAssetIds.length > 0),
+		provider: 'openai',
+		model: resolveImageModelId(),
 	};
 	article.workspace = workspace;
 	await persist(article);
-	return { article, brief: creative[role] };
+	return { article, brief: creative[role], references };
 }
 
 export async function saveArticleImageBrief(
@@ -1347,6 +1389,8 @@ export async function generateArticleMedia(
 	const workspace = ensureWorkspace(article);
 	const creative = ensureMediaCreative(workspace);
 	const brief = creative[role];
+	const brandAssets = await getNativeContentStore().listAssets(ownerUserId, article.brandId);
+	const hasProductScreenshot = brandHasProductScreenshot(brandAssets);
 	const suggested = suggestImageConcept({
 		role,
 		title: article.title,
@@ -1354,21 +1398,32 @@ export async function generateArticleMedia(
 		excerpt: article.excerpt || article.body.slice(0, 400),
 		audience: article.audience,
 		imageRequirements: workspace.imageRequirements,
+		brandName: brain.identity.name,
+		hasProductScreenshot,
 	});
 	const concept = (options.concept ?? brief.concept ?? suggested).trim() || suggested;
 	const negativeConstraints = options.negativeConstraints ?? brief.negativeConstraints;
 	const revisionInstructions = options.revisionInstructions ?? brief.revisionInstructions;
 	const brandStyleNotes = options.brandStyleNotes ?? brief.brandStyleNotes;
 	const referenceAssetIds = options.referenceAssetIds ?? brief.referenceAssetIds;
+	const hasProductReference = referenceAssetIds.some((id) =>
+		brandAssets.some(
+			(asset) =>
+				asset.id === id &&
+				(asset.libraryType === 'PRODUCT_SCREENSHOT' ||
+					asset.libraryType === 'PRODUCT_UI' ||
+					/screenshot|planner|interface|dashboard/i.test(`${asset.title || ''} ${asset.description || ''}`)),
+		),
+	);
 	const built = buildArticleImagePrompt({
 		role,
 		brand: brain,
 		topic: article.topic,
 		concept,
-		excerpt: article.excerpt || article.body.slice(0, 400),
 		negativeConstraints,
 		revisionInstructions,
 		brandStyleNotes,
+		hasProductReference,
 	});
 	const prompt = (options.prompt ?? brief.prompt ?? built.prompt).trim() || built.prompt;
 	const forceNew =
@@ -1389,7 +1444,7 @@ export async function generateArticleMedia(
 		preferredSource: referenceAssetIds.length ? 'generate' : planned.preferredSource,
 		referenceAssetIds,
 		generateNow: forceNew,
-		altTextDirection: role === 'og' ? 'Describe the social share image accurately for a small preview.' : 'Describe the hero image accurately for accessibility.',
+		altTextDirection: null,
 		textOverlayRecommendation: planned.textOverlayRecommendation,
 	};
 
@@ -1406,7 +1461,6 @@ export async function generateArticleMedia(
 			brand: brain,
 			channel: 'BLOG',
 			topic: article.topic,
-			excerpt: article.excerpt || article.body.slice(0, 400),
 			explicitRequest: true,
 			promptOverride: prompt,
 			negativeConstraints,
@@ -1425,6 +1479,7 @@ export async function generateArticleMedia(
 	}
 
 	let asset = generated.asset;
+	creative[role].altStatus = 'pending';
 	if (!generated.reused) {
 		const analyzed = await runAssetVisionAnalysis({
 			ownerUserId,
@@ -1432,8 +1487,30 @@ export async function generateArticleMedia(
 			brandName: brain.identity.name,
 			force: true,
 		});
-		if (analyzed) asset = { ...asset, altText: analyzed.altText || asset.altText, visionAnalysis: analyzed.visionAnalysis, visionAnalysisStatus: analyzed.visionAnalysisStatus };
+		if (analyzed) {
+			asset = {
+				...asset,
+				altText: analyzed.altText || '',
+				visionAnalysis: analyzed.visionAnalysis,
+				visionAnalysisStatus: analyzed.visionAnalysisStatus,
+			};
+		}
 	}
+
+	const qualityFindings = assessGeneratedImageQuality({
+		vision: asset.visionAnalysis,
+		visionStatus: asset.visionAnalysisStatus,
+		concept,
+		prompt,
+		hasProductReference,
+	});
+	const visionAlt = asset.altText?.trim() && !isPlaceholderAltText(asset.altText) ? asset.altText.trim() : '';
+	const altStatus: AltTextStatus =
+		asset.visionAnalysisStatus === 'failed' || asset.visionAnalysisStatus === 'skipped'
+			? 'failed'
+			: visionAlt
+				? 'generated'
+				: 'needs_review';
 
 	const url = asset.url ?? null;
 	const verified =
@@ -1443,7 +1520,13 @@ export async function generateArticleMedia(
 				: { ok: false, error: 'The image has no delivery URL.' }
 			: await verifyMediaUrl(url ?? undefined);
 
+	const model = generated.asset.generationModel || resolveImageModelId();
 	const now = new Date().toISOString();
+	const previousCandidates = brief.candidates.map((item) => ({
+		...item,
+		selected: false,
+		rejected: item.selected && !item.accepted ? true : item.rejected,
+	}));
 	const candidate = {
 		assetId: asset.id,
 		url: url ?? '',
@@ -1452,24 +1535,35 @@ export async function generateArticleMedia(
 		createdAt: now,
 		estimatedCostUsd: generated.estimatedCostUsd,
 		selected: true,
+		accepted: false,
+		rejected: false,
+		model,
+		provider: 'openai' as const,
+		qualityFindings,
+		altText: visionAlt,
+		altStatus,
 	};
-	const previousCandidates = brief.candidates.map((item) => ({ ...item, selected: false }));
 	creative[role] = {
 		...brief,
 		suggestedConcept: suggested,
 		concept,
 		prompt,
+		effectivePrompt: prompt,
 		negativeConstraints,
 		revisionInstructions: '',
 		referenceAssetIds,
 		brandStyleNotes,
 		dimensions: aspectRatioForRole(role),
 		lastCostUsd: generated.estimatedCostUsd,
-		estimatedCostUsd: generated.estimatedCostUsd,
+		estimatedCostUsd: estimateRegenerationCostUsd(referenceAssetIds.length > 0),
 		similarityWarning: conceptSimilarityWarning(
 			concept,
 			previousCandidates.map((item) => item.concept),
 		),
+		qualityFindings,
+		altStatus,
+		provider: 'openai',
+		model,
 		history: [
 			{
 				at: now,
@@ -1480,30 +1574,27 @@ export async function generateArticleMedia(
 				reused: generated.reused,
 				estimatedCostUsd: generated.estimatedCostUsd,
 				revisionInstructions: options.revisionInstructions || null,
+				model,
+				provider: 'openai',
+				qualityFindings,
 			},
 			...brief.history,
 		].slice(0, 20),
 		candidates: [candidate, ...previousCandidates.filter((item) => item.assetId !== asset.id)].slice(0, 12),
 	};
 
-	const visionAlt = asset.altText?.trim();
-	const needsManualAlt = !visionAlt || /^Visual supporting:/i.test(visionAlt) || asset.visionAnalysisStatus === 'skipped' || asset.visionAnalysisStatus === 'failed';
+	// New image version must not inherit previous alt text.
 	if (role === 'hero') {
 		workspace.media.heroAssetId = asset.id;
 		workspace.media.heroUrl = url;
-		workspace.media.heroAlt = needsManualAlt
-			? workspace.media.heroAlt || ''
-			: visionAlt || workspace.media.heroAlt;
-		if (needsManualAlt && !workspace.media.heroAlt) {
-			workspace.media.deliveryError = verified.error;
-		}
+		workspace.media.heroAlt = visionAlt;
 		article.featuredAssetId = asset.id;
 		workspace.media.deliveryVerified = verified.ok;
 		workspace.media.deliveryError = verified.error;
 	} else {
 		workspace.media.ogAssetId = asset.id;
 		workspace.media.ogUrl = url;
-		workspace.media.ogAlt = needsManualAlt ? workspace.media.ogAlt || '' : visionAlt || workspace.media.ogAlt;
+		workspace.media.ogAlt = visionAlt;
 	}
 	article.workspace = workspace;
 	await persist(article);
@@ -1521,6 +1612,82 @@ export async function generateArticleMedia(
 	return persist(article);
 }
 
+export async function proposeArticleImageReferences(ownerUserId: string, articleId: string, role: ArticleImageRole = 'hero') {
+	const article = await requireArticle(ownerUserId, articleId);
+	const workspace = ensureWorkspace(article);
+	const creative = ensureMediaCreative(workspace);
+	const assets = await getNativeContentStore().listAssets(ownerUserId, article.brandId);
+	const concept = creative[role].concept || creative[role].suggestedConcept || article.title;
+	const proposals = proposeReferenceAssets({
+		brandId: article.brandId,
+		concept,
+		topic: article.topic,
+		title: article.title,
+		assets,
+	});
+	return {
+		brandId: article.brandId,
+		role,
+		proposals: proposals.map((row) => ({
+			asset: row.asset,
+			score: row.score,
+			matchReason: row.matchReason,
+			libraryType: row.libraryType,
+			recommended: row.recommended,
+			typeLabel: brandAssetTypeLabel(row.libraryType),
+		})),
+		modelReport: imageModelReport(),
+	};
+}
+
+export async function refreshArticleImageAlt(ownerUserId: string, articleId: string, role: ArticleImageRole): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const brain = await requireBrand(ownerUserId, article.brandId);
+	const workspace = ensureWorkspace(article);
+	const creative = ensureMediaCreative(workspace);
+	const assetId = role === 'hero' ? workspace.media.heroAssetId : workspace.media.ogAssetId;
+	if (!assetId) throw new ArticleWorkflowError('Select an image before generating alt text.', 400, 'image_missing');
+	creative[role].altStatus = 'pending';
+	article.workspace = workspace;
+	await persist(article);
+	const analyzed = await runAssetVisionAnalysis({ ownerUserId, assetId, brandName: brain.identity.name, force: true });
+	if (!analyzed || analyzed.visionAnalysisStatus === 'failed' || analyzed.visionAnalysisStatus === 'skipped') {
+		creative[role].altStatus = 'failed';
+		article.workspace = workspace;
+		return persist(article);
+	}
+	const alt = analyzed.altText?.trim() && !isPlaceholderAltText(analyzed.altText) ? analyzed.altText.trim() : '';
+	creative[role].altStatus = alt ? 'generated' : 'needs_review';
+	creative[role].candidates = creative[role].candidates.map((candidate) =>
+		candidate.assetId === assetId ? { ...candidate, altText: alt, altStatus: creative[role].altStatus } : candidate,
+	);
+	if (role === 'hero') workspace.media.heroAlt = alt;
+	else workspace.media.ogAlt = alt;
+	article.workspace = workspace;
+	return persist(article);
+}
+
+export async function acceptArticleImageCandidate(
+	ownerUserId: string,
+	articleId: string,
+	role: ArticleImageRole,
+	assetId: string,
+): Promise<ArticleRecord> {
+	const article = await replaceArticleMedia(ownerUserId, articleId, assetId, role);
+	const workspace = ensureWorkspace(article);
+	const creative = ensureMediaCreative(workspace);
+	creative[role].candidates = creative[role].candidates.map((candidate) => ({
+		...candidate,
+		selected: candidate.assetId === assetId,
+		accepted: candidate.assetId === assetId,
+		rejected: candidate.assetId !== assetId ? candidate.rejected : false,
+	}));
+	if (role === 'hero') workspace.media.acceptedHeroAssetId = assetId;
+	else workspace.media.acceptedOgAssetId = assetId;
+	article.workspace = workspace;
+	return persist(article);
+}
+
 export async function replaceArticleMedia(ownerUserId: string, articleId: string, assetId: string, role: 'hero' | 'og'): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
 	const asset = await getNativeContentStore().getAsset(ownerUserId, assetId);
@@ -1533,25 +1700,27 @@ export async function replaceArticleMedia(ownerUserId: string, articleId: string
 		role === 'hero' && asset.url
 			? await verifyHeroDestinationDelivery(ownerUserId, article, workspace, asset.url)
 			: await verifyMediaUrl(asset.url);
+	const priorAlt = role === 'hero' ? workspace.media.heroAlt : workspace.media.ogAlt;
+	const assetAlt = asset.altText?.trim() && !isPlaceholderAltText(asset.altText) ? asset.altText.trim() : '';
+	const candidateAlt = creative[role].candidates.find((item) => item.assetId === asset.id)?.altText?.trim();
+	const nextAlt = assetAlt || (candidateAlt && !isPlaceholderAltText(candidateAlt) ? candidateAlt : '');
+	const altChanged = Boolean(priorAlt && nextAlt && priorAlt !== nextAlt) || Boolean(priorAlt && !nextAlt);
+	const nextAltStatus: AltTextStatus = nextAlt ? (altChanged ? 'needs_review' : 'generated') : 'needs_review';
 	if (role === 'hero') {
-		if (workspace.media.acceptedHeroAssetId && workspace.media.acceptedHeroAssetId !== asset.id) {
-			// Keep the previously accepted asset id for history; selection replaces the active pointer only.
-		}
 		workspace.media.heroAssetId = asset.id;
 		workspace.media.heroUrl = asset.url ?? null;
-		workspace.media.heroAlt = asset.altText || workspace.media.heroAlt || '';
+		workspace.media.heroAlt = nextAlt;
 		article.featuredAssetId = asset.id;
 		workspace.media.deliveryVerified = verified.ok;
 		workspace.media.deliveryError = verified.error;
-		workspace.media.acceptedHeroAssetId = asset.id;
 	} else {
 		workspace.media.ogAssetId = asset.id;
 		workspace.media.ogUrl = asset.url ?? null;
-		workspace.media.ogAlt = asset.altText || workspace.media.ogAlt || '';
-		workspace.media.acceptedOgAssetId = asset.id;
+		workspace.media.ogAlt = nextAlt;
 	}
 	creative[role] = {
 		...creative[role],
+		altStatus: nextAltStatus,
 		candidates: [
 			{
 				assetId: asset.id,
@@ -1561,6 +1730,10 @@ export async function replaceArticleMedia(ownerUserId: string, articleId: string
 				createdAt: new Date().toISOString(),
 				estimatedCostUsd: null,
 				selected: true,
+				model: asset.generationModel,
+				provider: asset.generationProvider,
+				altText: nextAlt,
+				altStatus: nextAltStatus,
 			},
 			...creative[role].candidates.map((item) => ({ ...item, selected: item.assetId === asset.id })),
 		]
