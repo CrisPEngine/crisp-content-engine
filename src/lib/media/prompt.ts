@@ -8,11 +8,11 @@ export type ImagePromptInput = {
 	aspectRatio: string;
 	purpose: string;
 	altTextDirection?: string;
-	excerpt?: string;
 	negativeConstraints?: string;
 	revisionInstructions?: string;
 	brandStyleOverride?: string;
 	roleFraming?: string;
+	hasProductReference?: boolean;
 };
 
 export type ImagePrompt = {
@@ -23,11 +23,12 @@ export type ImagePrompt = {
 const AVOID = [
 	'glowing AI brains',
 	'robots',
-	'generic laptops with blank invent screens',
+	'generic blank laptops with invented screens',
 	'floating neon interfaces',
 	'a random author typing at a desk',
 	'text, logos, or captions baked into the image',
 	'fabricated product UI that invents buttons or menus',
+	'malformed hands or duplicated limbs',
 ];
 
 function storedVisualGuidance(brand: ImagePromptInput['brand']): string | null {
@@ -49,19 +50,20 @@ export function buildImagePrompt(input: ImagePromptInput): ImagePrompt {
 		`Create one ${input.aspectRatio} photograph or illustration for ${name}.`,
 		`Channel: ${input.channel}. Purpose: ${input.purpose}.`,
 		input.roleFraming ?? '',
-		`Visual concept: ${input.concept}`,
-		input.topic ? `Subject: ${input.topic}` : '',
+		`Approved visual concept (primary direction): ${input.concept}`,
+		input.topic ? `Article topic for context only (do not paint as lettering): ${input.topic}` : '',
 		positioning ? `Brand position, for context only: ${positioning}` : '',
 		tone ? `Tone: ${tone}` : '',
-		input.excerpt ? `The image should support this idea without repeating it as lettering: ${input.excerpt.slice(0, 400)}` : '',
 		guidance
 			? `Stored visual guidance: ${guidance}`
 			: 'No verified visual-brand system is stored. Use restrained direction: a quiet, specific, physical image. Do not invent a permanent palette, logo, or brand rule.',
+		input.hasProductReference
+			? 'A genuine product screenshot is supplied as a reference. Composite that exact UI into the scene. Preserve layout, colours, buttons, navigation and legibility. Do not redraw or invent the interface.'
+			: 'Do not invent product interfaces. If a screen is visible and no screenshot reference is attached, keep it blank, darkened, or out of frame.',
 		`Do not depict: ${[...AVOID, ...extraAvoid].join('; ')}.`,
 		input.revisionInstructions?.trim()
 			? `Revision instructions for this generation (must change the image accordingly): ${input.revisionInstructions.trim()}`
 			: '',
-		'If a reference product screenshot is provided, preserve its real UI pixels and legibility. Composite it into the scene; do not redraw or invent the interface.',
 		input.altTextDirection ? `A viewer who cannot see the image should be able to understand: ${input.altTextDirection}` : '',
 	];
 	return {

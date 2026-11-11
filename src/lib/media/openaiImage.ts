@@ -1,6 +1,8 @@
 import { AgentError } from '@/lib/agent/errors';
+import { resolveImageModelId } from './imageModels';
 import type { ImageGenerationProvider, ImageGenerationRequest, ImageGenerationResult } from './types';
 
+/** @deprecated Prefer resolveImageModelId() — kept for existing imports. */
 export const IMAGE_MODEL = 'gpt-image-2.5-flare';
 const TEXT_INPUT_PER_MILLION = 5;
 const IMAGE_INPUT_PER_MILLION = 8;
@@ -54,12 +56,13 @@ export const openaiImageProvider: ImageGenerationProvider = {
 		if (!apiKey) {
 			throw new AgentError('image_provider_unavailable', 'Image generation is not configured.', 503);
 		}
+		const model = resolveImageModelId();
 		const size = imageSizeForRatio(request.aspectRatio);
 		const references = (request.referenceImageUrls ?? []).filter((url) => url.startsWith('https://') || url.startsWith('data:image/'));
 		const endpoint = references.length > 0 ? 'https://api.openai.com/v1/images/edits' : 'https://api.openai.com/v1/images/generations';
 		const body = references.length > 0
-			? { model: IMAGE_MODEL, prompt: request.prompt, images: references.slice(0, 8).map((image_url) => ({ image_url })), size: size.size, quality: 'medium', output_format: 'jpeg', output_compression: 85, n: 1 }
-			: { model: IMAGE_MODEL, prompt: request.prompt, size: size.size, quality: 'medium', output_format: 'jpeg', output_compression: 85, n: 1 };
+			? { model, prompt: request.prompt, images: references.slice(0, 8).map((image_url) => ({ image_url })), size: size.size, quality: 'medium', output_format: 'jpeg', output_compression: 85, n: 1 }
+			: { model, prompt: request.prompt, size: size.size, quality: 'medium', output_format: 'jpeg', output_compression: 85, n: 1 };
 		let response: Response;
 		try {
 			response = await fetch(endpoint, {
@@ -88,7 +91,7 @@ export const openaiImageProvider: ImageGenerationProvider = {
 		return {
 			bytes: Buffer.from(encoded, 'base64'),
 			mimeType: 'image/jpeg',
-			model: IMAGE_MODEL,
+			model,
 			promptUsed: request.prompt,
 			estimatedCostUsd: estimateImageCostUsd(payload.usage),
 			width: size.width,

@@ -1,3 +1,4 @@
+import { isPlaceholderAltText } from './altText';
 import { embedAssetRecord } from './assetEmbeddings';
 import { analyzeAssetImage, assetVisionStatus } from './assetVision';
 import type { ContentAssetRecord } from './types';
@@ -47,12 +48,13 @@ export async function runAssetVisionAnalysis(input: {
 	}
 
 	const mergedTags = Array.from(new Set([...(asset.tags ?? []), ...analysis.searchTags])).slice(0, 40);
+	const keepExistingAlt = asset.visionUserLocked || (asset.altText?.trim() && !isPlaceholderAltText(asset.altText));
 	const withVision: ContentAssetRecord = {
 		...asset,
 		visionAnalysis: analysis,
 		visionAnalysisStatus: 'complete',
 		description: asset.visionUserLocked ? asset.description : asset.description || analysis.summary,
-		altText: asset.visionUserLocked ? asset.altText : asset.altText || analysis.altText,
+		altText: keepExistingAlt ? asset.altText : analysis.altText || '',
 		tags: asset.visionUserLocked ? asset.tags : mergedTags,
 		updatedAt: new Date().toISOString(),
 	};

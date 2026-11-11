@@ -17,7 +17,17 @@ type MediaState = {
 	creative?: MediaCreativeState;
 };
 
+type ReferenceProposal = {
+	asset: { id: string; url?: string; title?: string; altText?: string; libraryType?: string };
+	score: number;
+	matchReason: string;
+	libraryType: string;
+	recommended: boolean;
+	typeLabel: string;
+};
+
 type Props = {
+	articleId: string;
 	imageRequirements: string;
 	media: MediaState;
 	busy: boolean;
@@ -32,6 +42,7 @@ const emptyBrief = (role: 'hero' | 'og'): ImageCreativeBrief => ({
 	suggestedConcept: '',
 	concept: '',
 	prompt: '',
+	promptManuallyEdited: false,
 	negativeConstraints: '',
 	referenceAssetIds: [],
 	brandStyleNotes: '',
@@ -42,181 +53,340 @@ const emptyBrief = (role: 'hero' | 'og'): ImageCreativeBrief => ({
 	similarityWarning: null,
 	history: [],
 	candidates: [],
+	qualityFindings: [],
+	altStatus: undefined,
+	effectivePrompt: '',
 });
 
-export function ImagePanel({ imageRequirements, media, busy, pending, act, onMetaChange, meta }: Props) {
+export function ImagePanel({ articleId, imageRequirements, media, busy, pending, act, onMetaChange, meta }: Props) {
 	const [role, setRole] = useState<'hero' | 'og'>('hero');
 	const [brief, setBrief] = useState<ImageCreativeBrief>(media.creative?.[role] ?? emptyBrief(role));
-	const [referenceId, setReferenceId] = useState('');
+	const [proposals, setProposals] = useState<ReferenceProposal[]>([]);
+	const [showAdvanced, setShowAdvanced] = useState(false);
+	const [conceptDirty, setConceptDirty] = useState(false);
 
 	useEffect(() => {
 		setBrief(media.creative?.[role] ?? emptyBrief(role));
+		setConceptDirty(false);
 	}, [media.creative, role]);
 
 	const activeUrl = role === 'hero' ? media.heroUrl : media.ogUrl;
 	const activeAssetId = role === 'hero' ? media.heroAssetId : media.ogAssetId;
+	const estimated = brief.estimatedCostUsd ?? 0.05;
+	const findings = brief.qualityFindings ?? [];
+
+	async function loadReferences() {
+		const response = await fetch(`/api/articles/${articleId}/actions`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ action: 'propose_image_references', role }),
+		});
+		const payload = await response.json();
+		if (response.ok && Array.isArray(payload.proposals)) setProposals(payload.proposals);
+	}
 
 	return (
-		<section className="card p-4 space-y-3" id="images">
-			<h2 className="font-medium">Images</h2>
-			<p className="text-sm">
-				Requirement: {imageRequirements || '—'} · delivery {media.deliveryVerified ? 'verified' : 'not verified'}
-				{media.deliveryError ? ` · ${media.deliveryError}` : ''}
-			</p>
+		<section className="card p-4 space-y-4" id="images">
+			<div className="flex flex-wrap items-baseline justify-between gap-2">
+				<div>
+					<h2 className="font-medium">Images</h2>
+					<p className="text-sm text-text-soft">
+						Workflow: concept → references → generate → quality → alt text → accept → delivery
+					</p>
+				</div>
+				<p className="text-sm">
+					Requirement: {imageRequirements || '—'} · delivery {media.deliveryVerified ? 'verified' : 'not verified'}
+					{media.deliveryError ? ` · ${media.deliveryError}` : ''}
+				</p>
+			</div>
+
 			<div className="flex flex-wrap gap-2">
 				<button className={`btn ${role === 'hero' ? '' : 'opacity-70'}`} type="button" onClick={() => setRole('hero')}>
-					Hero
+					Hero {media.heroUrl ? '· set' : '· empty'}
 				</button>
 				<button className={`btn ${role === 'og' ? '' : 'opacity-70'}`} type="button" onClick={() => setRole('og')}>
-					Social
-				</button>
-				<button
-					className="btn"
-					type="button"
-					disabled={busy}
-					onClick={() => void act('prepare_image_brief', { role }, 'Image brief prepared from the article and brand.')}
-				>
-					Suggest concept
+					Social {media.ogUrl ? '· set' : '· empty'}
 				</button>
 			</div>
+
 			<div className="flex flex-wrap gap-4">
 				{media.heroUrl ? (
 					<figure className="text-xs">
-						<img src={`${media.heroUrl}${media.heroAssetId ? `?v=${media.heroAssetId}` : ''}`} alt={media.heroAlt || 'Hero'} className="max-h-48 rounded" />
-						<figcaption>Hero {media.heroAssetId ? `· ${media.heroAssetId.slice(0, 8)}` : ''}</figcaption>
+						<img src={`${media.heroUrl}?v=${media.heroAssetId || 'hero'}`} alt={media.heroAlt || ''} className="max-h-48 rounded" />
+						<figcaption>Hero {activeAssetId && role === 'hero' ? '(selected role)' : ''}</figcaption>
 					</figure>
 				) : null}
 				{media.ogUrl ? (
 					<figure className="text-xs">
-						<img src={`${media.ogUrl}${media.ogAssetId ? `?v=${media.ogAssetId}` : ''}`} alt={media.ogAlt || 'Social'} className="max-h-48 rounded" />
-						<figcaption>Social {media.ogAssetId ? `· ${media.ogAssetId.slice(0, 8)}` : ''}</figcaption>
+						<img src={`${media.ogUrl}?v=${media.ogAssetId || 'og'}`} alt={media.ogAlt || ''} className="max-h-48 rounded" />
+						<figcaption>Social</figcaption>
 					</figure>
 				) : null}
 			</div>
-			{brief.similarityWarning ? <p className="text-sm text-amber-700">{brief.similarityWarning}</p> : null}
-			<div className="grid gap-3 md:grid-cols-2">
-				<label className="block text-sm md:col-span-2">
-					Concept
-					<textarea className="input w-full min-h-20" value={brief.concept} onChange={(event) => setBrief({ ...brief, concept: event.target.value })} />
-					{brief.suggestedConcept ? <span className="text-xs text-text-soft">Suggested: {brief.suggestedConcept}</span> : null}
-				</label>
-				<label className="block text-sm md:col-span-2">
-					Editable prompt
-					<textarea className="input w-full min-h-28 font-mono text-xs" value={brief.prompt} onChange={(event) => setBrief({ ...brief, prompt: event.target.value })} />
-				</label>
-				<label className="block text-sm">
-					Negative constraints
-					<textarea className="input w-full min-h-16" value={brief.negativeConstraints} onChange={(event) => setBrief({ ...brief, negativeConstraints: event.target.value })} />
-				</label>
-				<label className="block text-sm">
-					Revision instructions
-					<textarea className="input w-full min-h-16" value={brief.revisionInstructions} onChange={(event) => setBrief({ ...brief, revisionInstructions: event.target.value })} placeholder="Only used when regenerating" />
-				</label>
-				<label className="block text-sm">
-					Brand style notes
-					<textarea className="input w-full min-h-16" value={brief.brandStyleNotes} onChange={(event) => setBrief({ ...brief, brandStyleNotes: event.target.value })} />
-				</label>
-				<label className="block text-sm">
-					Reference asset ID (product screenshot)
-					<input className="input w-full" value={referenceId} onChange={(event) => setReferenceId(event.target.value)} placeholder="Library asset UUID" />
+
+			<section className="space-y-2">
+				<h3 className="text-sm font-medium">1. Image concept</h3>
+				<textarea
+					className="input w-full min-h-24"
+					value={brief.concept}
+					onChange={(event) => {
+						setBrief({ ...brief, concept: event.target.value });
+						setConceptDirty(true);
+					}}
+					placeholder="Visually actionable scene: subject, setting, action, mood, composition"
+				/>
+				{brief.similarityWarning ? <p className="text-sm text-amber-700">{brief.similarityWarning}</p> : null}
+				<div className="flex flex-wrap gap-2">
 					<button
-						className="btn mt-1"
+						className="btn"
 						type="button"
-						disabled={!referenceId.trim()}
-						onClick={() => {
-							const ids = Array.from(new Set([...(brief.referenceAssetIds ?? []), referenceId.trim()]));
-							setBrief({ ...brief, referenceAssetIds: ids });
-							setReferenceId('');
-						}}
+						disabled={busy}
+						onClick={() =>
+							void act(
+								'prepare_image_brief',
+								{ role, rebuildPrompt: true, applySuggestedConcept: true },
+								'Visual concept suggested and prompt rebuilt.',
+							)
+						}
 					>
-						Add reference
+						Suggest concept
 					</button>
-					{brief.referenceAssetIds.length ? <p className="text-xs mt-1">Refs: {brief.referenceAssetIds.join(', ')}</p> : null}
+					{conceptDirty ? (
+						<button
+							className="btn"
+							type="button"
+							disabled={busy}
+							onClick={() =>
+								void act(
+									'save_image_brief',
+									{ role, concept: brief.concept },
+									'Concept saved.',
+								).then((ok) => ok && act('prepare_image_brief', { role, rebuildPrompt: true }, 'Technical prompt rebuilt from the concept.'))
+							}
+						>
+							Rebuild prompt from concept
+						</button>
+					) : null}
+				</div>
+			</section>
+
+			<section className="space-y-2">
+				<h3 className="text-sm font-medium">2. Reference assets</h3>
+				<p className="text-xs text-text-soft">Brand-scoped only. Product screenshots preserve real UI; they are not required for every article.</p>
+				<button className="btn" type="button" disabled={busy} onClick={() => void loadReferences()}>
+					Find brand assets
+				</button>
+				{proposals.length ? (
+					<ul className="grid gap-2 md:grid-cols-2">
+						{proposals.map((proposal) => {
+							const selected = brief.referenceAssetIds.includes(proposal.asset.id);
+							return (
+								<li key={proposal.asset.id} className="rounded border border-edge/50 p-2 text-sm space-y-1">
+									{proposal.asset.url ? (
+										<img src={proposal.asset.url} alt={proposal.asset.altText || proposal.asset.title || ''} className="h-20 w-full object-cover rounded" />
+									) : null}
+									<p className="font-medium">{proposal.asset.title || proposal.typeLabel}</p>
+									<p className="text-xs text-text-soft">
+										{proposal.typeLabel}
+										{proposal.recommended ? ' · recommended' : ''} · {proposal.matchReason}
+									</p>
+									<button
+										className="btn"
+										type="button"
+										onClick={() => {
+											const referenceAssetIds = selected
+												? brief.referenceAssetIds.filter((id) => id !== proposal.asset.id)
+												: [...brief.referenceAssetIds, proposal.asset.id];
+											setBrief({ ...brief, referenceAssetIds });
+										}}
+									>
+										{selected ? 'Remove' : 'Use as reference'}
+									</button>
+								</li>
+							);
+						})}
+					</ul>
+				) : null}
+				{brief.referenceAssetIds.length ? (
+					<div className="flex flex-wrap gap-2 items-center text-xs">
+						<span>Selected ({brief.referenceAssetIds.length}):</span>
+						{brief.referenceAssetIds.map((id) => {
+							const proposal = proposals.find((row) => row.asset.id === id);
+							return proposal?.asset.url ? (
+								<img key={id} src={proposal.asset.url} alt={proposal.asset.title || 'Reference'} className="h-10 w-14 object-cover rounded" title={proposal.typeLabel} />
+							) : (
+								<span key={id} className="rounded border border-edge/40 px-1.5 py-0.5">
+									{proposal?.asset.title || proposal?.typeLabel || 'Reference'}
+								</span>
+							);
+						})}
+						{brief.referenceAssetIds.some((id) => {
+							const type = proposals.find((row) => row.asset.id === id)?.libraryType;
+							return type === 'PRODUCT_SCREENSHOT' || type === 'PRODUCT_UI';
+						}) ? (
+							<span className="text-text-soft">Product screenshots keep real UI; the model must not invent interface chrome.</span>
+						) : null}
+					</div>
+				) : null}
+			</section>
+
+			<section className="space-y-2">
+				<h3 className="text-sm font-medium">3. Generate</h3>
+				<p className="text-xs text-text-soft">
+					Estimated cost ≈ ${estimated.toFixed(3)} · model {brief.model || 'configured default'} · {brief.dimensions}
+				</p>
+				<label className="block text-sm">
+					Revision instructions (optional)
+					<textarea
+						className="input w-full min-h-16"
+						value={brief.revisionInstructions}
+						onChange={(event) => setBrief({ ...brief, revisionInstructions: event.target.value })}
+						placeholder="Only applied on regenerate"
+					/>
 				</label>
-			</div>
-			<p className="text-xs text-text-soft">
-				Purpose: {role} · Dimensions: {brief.dimensions}
-				{brief.lastCostUsd != null ? ` · Last cost ≈ $${brief.lastCostUsd.toFixed(4)}` : ''}
-				{activeAssetId ? ` · Active ${activeAssetId}` : ''}
-				{activeUrl ? '' : ' · No active image yet'}
-			</p>
-			<div className="flex flex-wrap gap-2">
-				<button
-					className="btn"
-					type="button"
-					disabled={busy}
-					onClick={() =>
-						void act(
-							'save_image_brief',
-							{
-								role,
-								concept: brief.concept,
-								prompt: brief.prompt,
-								negativeConstraints: brief.negativeConstraints,
-								revisionInstructions: brief.revisionInstructions,
-								brandStyleNotes: brief.brandStyleNotes,
-								referenceAssetIds: brief.referenceAssetIds,
-							},
-							'Image brief saved.',
-						)
-					}
-				>
-					Save brief
+				<div className="flex flex-wrap gap-2">
+					<button
+						className="btn"
+						type="button"
+						disabled={busy}
+						onClick={() =>
+							void act(
+								'save_image_brief',
+								{
+									role,
+									concept: brief.concept,
+									prompt: brief.prompt,
+									promptManuallyEdited: brief.promptManuallyEdited,
+									negativeConstraints: brief.negativeConstraints,
+									revisionInstructions: brief.revisionInstructions,
+									brandStyleNotes: brief.brandStyleNotes,
+									referenceAssetIds: brief.referenceAssetIds,
+									effectivePrompt: brief.prompt,
+								},
+								'Brief saved.',
+							)
+						}
+					>
+						Save brief
+					</button>
+					<button
+						className="btn"
+						type="button"
+						disabled={busy}
+						onClick={() =>
+							void act(
+								'media',
+								{
+									role,
+									prompt: brief.prompt,
+									concept: brief.concept,
+									negativeConstraints: brief.negativeConstraints,
+									revisionInstructions: brief.revisionInstructions,
+									brandStyleNotes: brief.brandStyleNotes,
+									referenceAssetIds: brief.referenceAssetIds,
+									forceNew: true,
+								},
+								`${role === 'hero' ? 'Hero' : 'Social'} image generated as a new version.`,
+							)
+						}
+					>
+						{pending === 'media' ? 'Generating…' : activeUrl ? 'Regenerate (new version)' : 'Generate'}
+					</button>
+				</div>
+			</section>
+
+			<details open={showAdvanced} onToggle={(event) => setShowAdvanced((event.target as HTMLDetailsElement).open)}>
+				<summary className="text-sm font-medium cursor-pointer">Advanced technical prompt</summary>
+				<div className="pt-2 space-y-2">
+					<label className="block text-sm">
+						Effective prompt sent to the model
+						<textarea
+							className="input w-full min-h-36 font-mono text-xs"
+							value={brief.prompt}
+							onChange={(event) => setBrief({ ...brief, prompt: event.target.value, promptManuallyEdited: true, effectivePrompt: event.target.value })}
+						/>
+					</label>
+					<label className="block text-sm">
+						Negative constraints
+						<textarea
+							className="input w-full min-h-16"
+							value={brief.negativeConstraints}
+							onChange={(event) => setBrief({ ...brief, negativeConstraints: event.target.value })}
+						/>
+					</label>
+					<label className="block text-sm">
+						Brand style notes
+						<textarea
+							className="input w-full min-h-16"
+							value={brief.brandStyleNotes}
+							onChange={(event) => setBrief({ ...brief, brandStyleNotes: event.target.value })}
+						/>
+					</label>
+				</div>
+			</details>
+
+			<section className="space-y-2">
+				<h3 className="text-sm font-medium">4. Quality review</h3>
+				{findings.length ? (
+					<ul className="text-sm space-y-1">
+						{findings.map((finding) => (
+							<li key={finding.code}>
+								<span className="font-medium">{finding.severity}</span>: {finding.message}
+							</li>
+						))}
+					</ul>
+				) : (
+					<p className="text-sm text-text-soft">Generate an image to run advisory quality checks.</p>
+				)}
+				<p className="text-xs text-text-soft">Automated assessment is advisory and can be overridden when you accept an image.</p>
+			</section>
+
+			<section className="space-y-2">
+				<h3 className="text-sm font-medium">5. Alt text</h3>
+				<p className="text-xs">Status: {brief.altStatus || (role === 'hero' ? (meta.heroAlt ? 'manual/generated' : 'empty') : meta.ogAlt ? 'manual/generated' : 'empty')}</p>
+				<div className="grid gap-3 md:grid-cols-2">
+					<label className="block text-sm">
+						Hero alt text
+						<input className="input w-full" value={meta.heroAlt} onChange={(event) => onMetaChange({ ...meta, heroAlt: event.target.value })} />
+					</label>
+					<label className="block text-sm">
+						Social alt text
+						<input className="input w-full" value={meta.ogAlt} onChange={(event) => onMetaChange({ ...meta, ogAlt: event.target.value })} />
+					</label>
+				</div>
+				<button className="btn" type="button" disabled={busy || !activeAssetId} onClick={() => void act('refresh_image_alt', { role }, 'Alt text refreshed from the selected image.')}>
+					Retry alt text from selected image
 				</button>
-				<button
-					className="btn"
-					type="button"
-					disabled={busy}
-					onClick={() =>
-						void act(
-							'media',
-							{
-								role,
-								prompt: brief.prompt,
-								concept: brief.concept,
-								negativeConstraints: brief.negativeConstraints,
-								revisionInstructions: brief.revisionInstructions,
-								brandStyleNotes: brief.brandStyleNotes,
-								referenceAssetIds: brief.referenceAssetIds,
-								forceNew: true,
-							},
-							role === 'hero' ? 'Hero image generated.' : 'Social image generated.',
-						)
-					}
-				>
-					{pending === 'media' ? 'Generating…' : activeUrl ? 'Regenerate with this brief' : 'Generate'}
-				</button>
-			</div>
-			{brief.candidates.length ? (
-				<details className="text-sm">
-					<summary>Generation history ({brief.candidates.length})</summary>
-					<ul className="mt-2 space-y-2">
+			</section>
+
+			<section className="space-y-2">
+				<h3 className="text-sm font-medium">6. Accept / history</h3>
+				{brief.candidates.length ? (
+					<ul className="space-y-2 text-sm">
 						{brief.candidates.map((candidate) => (
 							<li key={candidate.assetId} className="flex flex-wrap items-center gap-2 border-b border-edge/40 pb-2">
 								{candidate.url ? <img src={`${candidate.url}?v=${candidate.assetId}`} alt="" className="h-12 w-20 object-cover rounded" /> : null}
-								<span className="text-xs grow">{candidate.concept.slice(0, 100)}{candidate.selected ? ' · selected' : ''}</span>
-								<button
-									className="btn"
-									type="button"
-									disabled={busy || candidate.selected}
-									onClick={() => void act('media', { role, selectAssetId: candidate.assetId }, 'Selected previous image. Accepted asset was not deleted.')}
-								>
-									Use this version
+								<span className="text-xs grow">
+									{candidate.concept.slice(0, 100)}
+									{candidate.selected ? ' · selected' : ''}
+									{candidate.accepted ? ' · accepted' : ''}
+									{candidate.model ? ` · ${candidate.model}` : ''}
+								</span>
+								<button className="btn" type="button" disabled={busy} onClick={() => void act('media', { role, selectAssetId: candidate.assetId }, 'Previous version selected.')}>
+									Select
+								</button>
+								<button className="btn" type="button" disabled={busy} onClick={() => void act('accept_image_candidate', { role, assetId: candidate.assetId }, 'Image accepted.')}>
+									Accept
 								</button>
 							</li>
 						))}
 					</ul>
-				</details>
-			) : null}
+				) : (
+					<p className="text-sm text-text-soft">No generation history yet for this role.</p>
+				)}
+			</section>
+
 			<div className="grid gap-3 md:grid-cols-2">
-				<label className="block text-sm">
-					Hero alt text
-					<input className="input w-full" value={meta.heroAlt} onChange={(event) => onMetaChange({ ...meta, heroAlt: event.target.value })} placeholder={media.heroUrl && !meta.heroAlt ? 'Vision unavailable — describe the image' : ''} />
-				</label>
-				<label className="block text-sm">
-					Social image alt text
-					<input className="input w-full" value={meta.ogAlt} onChange={(event) => onMetaChange({ ...meta, ogAlt: event.target.value })} />
-				</label>
 				<label className="block text-sm">
 					Credit
 					<input className="input w-full" value={meta.credit} onChange={(event) => onMetaChange({ ...meta, credit: event.target.value })} placeholder="Optional" />
