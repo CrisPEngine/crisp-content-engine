@@ -144,7 +144,7 @@ export default function ArticleWorkspacePage() {
 				credit: article.workspace?.media.credit ?? '',
 				license: article.workspace?.media.license ?? '',
 			});
-			setExternalId(article.workspace?.externalId ?? '');
+			setExternalId(article.workspace?.externalId ?? article.workspace?.cms?.externalId ?? '');
 		}
 	}, []);
 
@@ -482,17 +482,30 @@ export default function ArticleWorkspacePage() {
 
 			<section className="card p-4 space-y-3" id="cms">
 				<h2 className="font-medium">CMS draft</h2>
-				<p className="text-sm text-text-soft">CCE sends drafts only. Publishing happens in the CMS, by a person.</p>
+				<p className="text-sm text-text-soft">CCE sends drafts only. Publishing happens in the CMS, by a person. Each article gets its own unique CMS external ID for this destination.</p>
 				<div className="flex flex-wrap gap-2 items-end">
 					<label className="text-sm grow">External ID
-						<input className="input w-full" value={externalId} disabled={Boolean(workspace?.externalId)} onChange={(event) => setExternalId(event.target.value)} placeholder="cce_pillar_novel-first-draft" />
+						<input
+							className="input w-full"
+							value={externalId}
+							disabled={Boolean(workspace?.externalId || workspace?.cms.externalId)}
+							onChange={(event) => setExternalId(event.target.value)}
+							placeholder="Auto-assigned on send, e.g. cce_your-article-slug"
+						/>
 					</label>
-					<button className="btn" type="button" disabled={busy || !externalId.trim() || !workspace?.destinationId} onClick={() => actBool('lookup_draft', { externalId })}>Look up in CMS</button>
-					{!workspace?.externalId ? (
-						<button className="btn" type="button" disabled={busy || !externalId.trim()} onClick={() => void patch({ externalId }, 'link', 'External ID linked. Updates go to that CMS entry.')}>Link</button>
+					<button className="btn" type="button" disabled={busy || !workspace?.destinationId} onClick={() => actBool('ensure_cms_external_id', {}, 'Unique CMS external ID assigned for this article.')}>
+						{pending === 'ensure_cms_external_id' ? 'Assigning…' : workspace?.externalId || workspace?.cms.externalId ? 'ID assigned' : 'Assign unique ID'}
+					</button>
+					<button className="btn" type="button" disabled={busy || !(externalId.trim() || workspace?.externalId) || !workspace?.destinationId} onClick={() => actBool('lookup_draft', { externalId: externalId || workspace?.externalId })}>Look up in CMS</button>
+					{!(workspace?.externalId || workspace?.cms.externalId) && externalId.trim() ? (
+						<button className="btn" type="button" disabled={busy} onClick={() => void patch({ externalId }, 'link', 'External ID linked. Updates go to that CMS entry.')}>Link</button>
 					) : null}
 				</div>
-				{workspace?.externalId ? <p className="text-xs text-text-soft">Linked to {workspace.externalId}. The link cannot be changed, so a second CMS entry is never created.</p> : null}
+				{(workspace?.externalId || workspace?.cms.externalId) ? (
+					<p className="text-xs text-text-soft">Linked to <code>{workspace?.externalId || workspace?.cms.externalId}</code>. This ID is unique to this article and cannot be reused by another article.</p>
+				) : (
+					<p className="text-xs text-text-soft">No CMS identity yet. Assign a unique ID, or send the draft and CCE will allocate one automatically. Do not reuse another article’s ID.</p>
+				)}
 				{lookup ? (
 					<p className="text-sm">
 						{lookup.draft.exists
@@ -509,8 +522,29 @@ export default function ArticleWorkspacePage() {
 						{workspace.cms.draftUrl ? <> · <a className="underline" href={workspace.cms.draftUrl} target="_blank" rel="noreferrer">Open in CMS</a></> : null}
 					</p>
 				) : null}
+				{workspace?.cms.lastSubmission ? (
+					<div className={`text-sm border rounded p-3 space-y-1 ${workspace.cms.lastSubmission.ok ? 'border-edge/60' : 'border-danger/60'}`}>
+						<p className="font-medium">Last submission {workspace.cms.lastSubmission.ok ? 'succeeded' : 'failed'}</p>
+						<p>
+							{workspace.cms.lastSubmission.destinationName || workspace.cms.lastSubmission.destinationId}
+							{' · '}{workspace.cms.lastSubmission.httpMethod}
+							{' · '}{workspace.cms.lastSubmission.action}
+							{' · '}{workspace.cms.lastSubmission.externalId}
+							{workspace.cms.lastSubmission.cmsRevision != null ? ` · revision ${workspace.cms.lastSubmission.cmsRevision}` : ''}
+							{workspace.cms.lastSubmission.cmsStatus ? ` · status ${workspace.cms.lastSubmission.cmsStatus}` : ''}
+						</p>
+						{workspace.cms.lastSubmission.error ? <p className="text-danger" role="alert">{workspace.cms.lastSubmission.error}</p> : null}
+						{(workspace.cms.lastSubmission.adminUrl || workspace.cms.lastSubmission.previewUrl) ? (
+							<p>
+								{workspace.cms.lastSubmission.adminUrl ? <a className="underline" href={workspace.cms.lastSubmission.adminUrl} target="_blank" rel="noreferrer">Open CMS draft</a> : null}
+								{workspace.cms.lastSubmission.adminUrl && workspace.cms.lastSubmission.previewUrl ? ' · ' : null}
+								{workspace.cms.lastSubmission.previewUrl ? <a className="underline" href={workspace.cms.lastSubmission.previewUrl} target="_blank" rel="noreferrer">Preview</a> : null}
+							</p>
+						) : null}
+					</div>
+				) : null}
 				{detail.lifecycle.submittedToCms && !detail.lifecycle.cmsCurrent ? <p className="text-sm text-warning">The CMS has an older revision than CCE.</p> : null}
-				{workspace?.cms.lastError ? <p className="text-sm text-danger">{workspace.cms.lastError}</p> : null}
+				{workspace?.cms.lastError ? <p className="text-sm text-danger" role="alert">{workspace.cms.lastError}</p> : null}
 				<div className="flex flex-wrap gap-2">
 					<button className="btn" type="button" disabled={busy || !workspace?.destinationId} onClick={() => actBool('destination_preview', {}, 'CMS compatibility preview ready.')}>
 						{pending === 'destination_preview' ? 'Checking…' : 'Preview CMS mapping'}

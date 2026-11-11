@@ -143,8 +143,18 @@ export async function reviewCurrentRevision(input: {
 			: `Review of revision ${revision.number} found no open critical issues. A person still has to approve.`,
 		coherenceFindings: findings.map((finding) => `${finding.dimension}:${finding.code}`),
 	};
-	if (article.status === 'approved') {
+	syncApprovalWithReviewedRevision(article, revision.id);
+}
+
+/** Withdraw approval only when the reviewed body revision differs from the approved one. */
+export function syncApprovalWithReviewedRevision(article: ArticleRecord, reviewedRevisionId: string): void {
+	const approvedRevisionId = article.workspace?.approvedRevisionId;
+	if (article.status === 'approved' && approvedRevisionId && approvedRevisionId !== reviewedRevisionId) {
 		article.status = 'review';
 		article.approval = { required: true, approver: 'human', status: 'pending' };
+		if (article.workspace) {
+			article.workspace.approvedAt = null;
+			article.workspace.approvedRevisionId = null;
+		}
 	}
 }

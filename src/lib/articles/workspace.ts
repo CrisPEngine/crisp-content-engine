@@ -30,6 +30,7 @@ import {
 	imagesRequired,
 	matchingTools,
 	normaliseExternalId,
+	suggestCmsExternalId,
 	openCriticalFindings,
 	recommendArticleStructure,
 	relatedArticleSlugs,
@@ -1781,6 +1782,35 @@ export async function updateArticleMediaMeta(
 	return persist(article);
 }
 
+async function ensureUniqueCmsExternalId(ownerUserId: string, article: ArticleRecord, preferred?: string | null): Promise<string> {
+	const workspace = ensureWorkspace(article);
+	const current = workspace.externalId || workspace.cms.externalId;
+	if (current) return current;
+	const siblings = await getNativeContentStore().listArticles(ownerUserId, article.brandId);
+	const taken = new Set(
+		siblings
+			.filter((other) => other.id !== article.id)
+			.flatMap((other) => [other.workspace?.externalId, other.workspace?.cms.externalId])
+			.filter((value): value is string => Boolean(value)),
+	);
+	let candidate = preferred?.trim()
+		? normaliseExternalId(preferred)
+		: suggestCmsExternalId({ articleId: article.id, slug: article.slug });
+	if (taken.has(candidate)) {
+		candidate = suggestCmsExternalId({ articleId: article.id, slug: article.slug, disambiguate: true });
+	}
+	if (taken.has(candidate)) {
+		candidate = suggestCmsExternalId({ articleId: article.id, slug: null, disambiguate: true });
+	}
+	if (taken.has(candidate)) {
+		throw new ArticleWorkflowError('Could not allocate a unique CMS external ID for this article.', 409, 'external_id_exhausted');
+	}
+	workspace.externalId = candidate;
+	workspace.cms.externalId = candidate;
+	article.workspace = workspace;
+	return candidate;
+}
+
 /** Looks up the CMS draft for the article's external ID without changing anything. */
 export async function lookupArticleDraft(ownerUserId: string, articleId: string, externalId?: string) {
 	const article = await requireArticle(ownerUserId, articleId);
@@ -1788,12 +1818,29 @@ export async function lookupArticleDraft(ownerUserId: string, articleId: string,
 	if (!workspace.destinationId) throw new ArticleWorkflowError('Choose a website destination first.', 400, 'destination_required');
 	const id = externalId?.trim() ? normaliseExternalId(externalId) : workspace.externalId || workspace.cms.externalId;
 	if (!id) throw new ArticleWorkflowError('Enter an external ID to look up.', 400, 'external_id_required');
+	const clash = (await getNativeContentStore().listArticles(ownerUserId, article.brandId)).find(
+		(other) => other.id !== article.id && (other.workspace?.externalId === id || other.workspace?.cms.externalId === id),
+	);
+	if (clash) {
+		throw new ArticleWorkflowError(
+			`That external ID belongs to another CCE article (“${clash.title}”). Use a unique ID so Article drafts cannot overwrite each other.`,
+			409,
+			'external_id_in_use',
+		);
+	}
 	const { adapter, connection } = await resolveConnection(ownerUserId, article.brandId, workspace.destinationId).catch(asWorkflowError);
 	try {
-		return { externalId: id, draft: await adapter.lookupDraft(connection, id) };
+		return { externalId: id, draft: await adapter.lookupDraft(connection, id), clashArticleId: null as string | null };
 	} catch (error) {
 		throw new ArticleWorkflowError(error instanceof Error ? error.message : 'Draft lookup failed.', 502, 'cms_lookup_failed');
 	}
+}
+
+/** Allocates a unique CMS external ID for the article if one is not already linked. */
+export async function ensureArticleCmsExternalId(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	await ensureUniqueCmsExternalId(ownerUserId, article);
+	return persist(article);
 }
 
 async function uploadIfChanged(
@@ -1817,8 +1864,7 @@ export async function submitArticleDraft(ownerUserId: string, articleId: string,
 	const article = await requireArticle(ownerUserId, articleId);
 	const workspace = ensureWorkspace(article);
 	if (!workspace.destinationId) throw new ArticleWorkflowError('Choose a website destination first.', 400, 'destination_required');
-	const externalId = workspace.externalId || workspace.cms.externalId;
-	if (!externalId) throw new ArticleWorkflowError('Set an external ID so the CMS updates the same draft every time.', 400, 'external_id_required');
+	const externalId = await ensureUniqueCmsExternalId(ownerUserId, article);
 	if (!article.categories[0]) throw new ArticleWorkflowError('Choose a destination category before sending the draft.', 400, 'category_required');
 	if (!article.body.trim()) throw new ArticleWorkflowError('There is no draft to send.', 400, 'draft_missing');
 	const structure = validateArticleStructure(article.body);
@@ -1839,6 +1885,16 @@ export async function submitArticleDraft(ownerUserId: string, articleId: string,
 	if (blocking.length) {
 		throw new ArticleWorkflowError(`The draft contains content ${destination.name} cannot store, so it was not sent: ${blocking.map((issue) => issue.message).join(' ')}`, 409, 'destination_incompatible');
 	}
+	const clash = (await getNativeContentStore().listArticles(ownerUserId, article.brandId)).find(
+		(other) => other.id !== article.id && (other.workspace?.externalId === externalId || other.workspace?.cms.externalId === externalId),
+	);
+	if (clash) {
+		throw new ArticleWorkflowError(
+			`External ID “${externalId}” belongs to “${clash.title}”. CCE refused the send so that CMS entry cannot be overwritten.`,
+			409,
+			'external_id_in_use',
+		);
+	}
 	let existing;
 	try {
 		existing = await adapter.lookupDraft(connection, externalId);
@@ -1846,6 +1902,14 @@ export async function submitArticleDraft(ownerUserId: string, articleId: string,
 		throw new ArticleWorkflowError(error instanceof Error ? error.message : 'Draft lookup failed.', 502, 'cms_lookup_failed');
 	}
 	const correction = options?.correction === true;
+	const previouslySynced = Boolean(workspace.cms.lastSyncAt && (workspace.cms.externalId === externalId || workspace.externalId === externalId));
+	if (existing.exists && !previouslySynced && !correction) {
+		throw new ArticleWorkflowError(
+			`The CMS already has a draft for “${externalId}”${existing.title ? ` titled “${existing.title}”` : ''}${existing.slug ? ` (slug ${existing.slug})` : ''}. Link a different unique external ID, or open that CMS entry deliberately. CCE will not overwrite another article’s CMS identity.`,
+			409,
+			'cms_identity_collision',
+		);
+	}
 	if (existing.exists && existing.status === 'published' && !correction) {
 		throw new ArticleWorkflowError('The CMS entry for this external ID is published. CCE does not change published entries. Edit it in the CMS.', 409, 'cms_published');
 	}
@@ -1853,6 +1917,7 @@ export async function submitArticleDraft(ownerUserId: string, articleId: string,
 		throw new ArticleWorkflowError('There is no published CMS entry to correct.', 404, 'cms_missing');
 	}
 	const mode = correction ? 'correction' : existing.exists ? 'proposal' : 'update';
+	const submissionAction = correction ? 'correction' : existing.exists ? 'proposal' : 'create';
 	const baseRevision = existing.exists ? existing.revision : undefined;
 	const hero = workspace.media.heroUrl && workspace.media.deliveryVerified ? workspace.media.heroUrl : undefined;
 	const credit = workspace.media.credit || 'Crisp Content Engine';
@@ -1878,14 +1943,30 @@ export async function submitArticleDraft(ownerUserId: string, articleId: string,
 	const now = new Date().toISOString();
 	workspace.cms.externalId = externalId;
 	workspace.externalId = externalId;
-	workspace.cms.lastSyncAt = now;
 	workspace.cms.mode = mode;
+	workspace.cms.lastSubmission = {
+		at: now,
+		ok: result.ok,
+		action: submissionAction,
+		destinationId: workspace.destinationId,
+		destinationName: destination.name,
+		externalId,
+		httpMethod: 'PUT',
+		statusCode: result.ok ? 200 : null,
+		cmsDocumentId: externalId,
+		cmsRevision: result.ok && typeof result.revision === 'number' ? result.revision : baseRevision ?? null,
+		cmsStatus: result.ok ? 'draft' : existing.exists ? existing.status ?? null : null,
+		adminUrl: result.ok ? result.adminUrl ?? null : null,
+		previewUrl: result.ok ? result.previewUrl ?? null : null,
+		error: result.ok ? null : result.error,
+	};
 	if (!result.ok) {
 		workspace.cms.lastError = result.error;
 		article.workspace = workspace;
 		await persist(article);
 		throw new ArticleWorkflowError(result.error, 422, 'cms_rejected');
 	}
+	workspace.cms.lastSyncAt = now;
 	workspace.cms.lastError = null;
 	workspace.cms.draftUrl = result.previewUrl ?? result.adminUrl ?? workspace.cms.draftUrl;
 	workspace.cms.revision = typeof result.revision === 'number' ? result.revision : baseRevision ?? workspace.cms.revision;

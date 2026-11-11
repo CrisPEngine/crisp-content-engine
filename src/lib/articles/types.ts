@@ -320,6 +320,23 @@ export type ArticleWorkspace = {
 		heroSourceUrl?: string | null;
 		ogMediaId?: string | null;
 		ogSourceUrl?: string | null;
+		/** Last submission attempt — success or failure — for operator feedback. */
+		lastSubmission?: {
+			at: string;
+			ok: boolean;
+			action: 'create' | 'update' | 'proposal' | 'correction';
+			destinationId: string;
+			destinationName?: string | null;
+			externalId: string;
+			httpMethod: 'PUT';
+			statusCode?: number | null;
+			cmsDocumentId?: string | null;
+			cmsRevision?: number | null;
+			cmsStatus?: string | null;
+			adminUrl?: string | null;
+			previewUrl?: string | null;
+			error?: string | null;
+		} | null;
 	};
 	approvedAt?: string | null;
 	approvedRevisionId?: string | null;

@@ -518,3 +518,34 @@ export function normaliseExternalId(value: string): string {
 	}
 	return id;
 }
+
+/**
+ * Stable, destination-agnostic CMS identity for an article.
+ * Prefer the article slug; fall back to a short article id so two articles never share a hard-coded ID.
+ */
+export function suggestCmsExternalId(input: {
+	articleId: string;
+	slug?: string | null;
+	/** When the preferred id is already taken, append a short unique suffix. */
+	disambiguate?: boolean;
+}): string {
+	const slugPart = (input.slug || '')
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-|-$/g, '')
+		.slice(0, 48);
+	const shortId = input.articleId.replace(/-/g, '').slice(0, 10);
+	const base = slugPart ? `cce_${slugPart}` : `cce_article_${shortId}`;
+	const candidate = input.disambiguate ? `${base}_${shortId}` : base;
+	return normaliseExternalId(candidate.slice(0, 81));
+}
+
+export function articleOwnsExternalId(
+	article: Pick<ArticleRecord, 'id' | 'workspace'>,
+	externalId: string,
+): boolean {
+	const workspace = article.workspace;
+	const owned = workspace?.externalId || workspace?.cms?.externalId;
+	return Boolean(owned && owned === externalId);
+}
