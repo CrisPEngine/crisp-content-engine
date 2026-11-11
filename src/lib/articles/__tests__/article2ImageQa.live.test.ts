@@ -71,27 +71,51 @@ describe.runIf(live)('Article 2 image quality live QA', () => {
 				const { openaiImageProvider } = await import('@/lib/media/openaiImage');
 				registerImageProviderForTests(openaiImageProvider);
 				expect(imageProviderStatus().configured).toBe(true);
-				const generated = await generateArticleMedia(ownerUserId, articleId, 'hero', {
-					concept: prepared.brief.concept,
-					prompt: prepared.brief.prompt,
-					referenceAssetIds: prepared.brief.referenceAssetIds,
-					forceNew: true,
-				});
-				let article = generated;
-				if (!article.workspace?.media?.heroAlt || /describe the hero/i.test(article.workspace.media.heroAlt)) {
-					article = await refreshArticleImageAlt(ownerUserId, articleId, 'hero');
-				}
-				expect(article.workspace?.media?.heroUrl).toBeTruthy();
-				expect(article.workspace?.media?.heroAlt || '').not.toMatch(/describe the hero/i);
-				summary.generate = {
-					heroAlt: article.workspace?.media?.heroAlt,
-					altStatus: article.workspace?.media?.creative?.hero?.altStatus,
-					qualityFindings: article.workspace?.media?.creative?.hero?.qualityFindings,
-					model: article.workspace?.media?.creative?.hero?.model,
-					lastCostUsd: article.workspace?.media?.creative?.hero?.lastCostUsd,
-					candidates: article.workspace?.media?.creative?.hero?.candidates?.length,
-					deliveryVerified: article.workspace?.media?.deliveryVerified,
+				const generateRole = async (role: 'hero' | 'og') => {
+					const brief =
+						role === 'hero'
+							? prepared
+							: await prepareArticleImageBrief(ownerUserId, articleId, 'og', {
+									applySuggestedConcept: true,
+									rebuildPrompt: true,
+								});
+					const generated = await generateArticleMedia(ownerUserId, articleId, role, {
+						concept: brief.brief.concept,
+						prompt: brief.brief.prompt,
+						referenceAssetIds: brief.brief.referenceAssetIds,
+						forceNew: true,
+					});
+					let article = generated;
+					const alt = role === 'hero' ? article.workspace?.media?.heroAlt : article.workspace?.media?.ogAlt;
+					if (!alt || /^describe /i.test(alt)) {
+						article = await refreshArticleImageAlt(ownerUserId, articleId, role);
+					}
+					return article;
 				};
+				const heroArticle = await generateRole('hero');
+				expect(heroArticle.workspace?.media?.heroUrl).toBeTruthy();
+				expect(heroArticle.workspace?.media?.heroAlt || '').not.toMatch(/describe the hero/i);
+				summary.generate = {
+					heroAlt: heroArticle.workspace?.media?.heroAlt,
+					altStatus: heroArticle.workspace?.media?.creative?.hero?.altStatus,
+					qualityFindings: heroArticle.workspace?.media?.creative?.hero?.qualityFindings,
+					model: heroArticle.workspace?.media?.creative?.hero?.model,
+					lastCostUsd: heroArticle.workspace?.media?.creative?.hero?.lastCostUsd,
+					candidates: heroArticle.workspace?.media?.creative?.hero?.candidates?.length,
+					deliveryVerified: heroArticle.workspace?.media?.deliveryVerified,
+				};
+				if (process.env.ARTICLE2_IMAGE_GENERATE_OG === '1') {
+					const ogArticle = await generateRole('og');
+					expect(ogArticle.workspace?.media?.ogUrl).toBeTruthy();
+					expect(ogArticle.workspace?.media?.ogAlt || '').not.toMatch(/^describe /i);
+					summary.og = {
+						concept: ogArticle.workspace?.media?.creative?.og?.concept,
+						ogAlt: ogArticle.workspace?.media?.ogAlt,
+						altStatus: ogArticle.workspace?.media?.creative?.og?.altStatus,
+						model: ogArticle.workspace?.media?.creative?.og?.model,
+						lastCostUsd: ogArticle.workspace?.media?.creative?.og?.lastCostUsd,
+					};
+				}
 			}
 			console.log(JSON.stringify(summary, null, 2));
 		},
