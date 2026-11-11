@@ -2301,6 +2301,7 @@ export async function applyAcceptedEditorialProposals(ownerUserId: string, artic
 	}
 	const sameAccepted = preview.acceptedIds.length === accepted.length && preview.acceptedIds.every((id) => accepted.some((item) => item.id === id));
 	if (!sameAccepted) throw new ArticleWorkflowError('The accepted proposals changed after the preview. Preview again.', 409, 'preview_stale');
+	article.workspace = workspace;
 	commitRevision(article, preview.proposedBody, 'improvement', preview.summary, { refreshMetadata: false });
 	for (const proposal of proposals) {
 		if (proposal.status === 'accepted') proposal.status = 'applied';

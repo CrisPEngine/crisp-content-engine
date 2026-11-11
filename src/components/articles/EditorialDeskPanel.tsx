@@ -80,11 +80,9 @@ export function EditorialDeskPanel({
 								{section.takeaways?.length ? <p>Takeaways: {section.takeaways.join(' · ')}</p> : null}
 								{section.confirmedEvidence.length ? <p>Confirmed evidence: {section.confirmedEvidence.join(' · ')}</p> : <p>No approved evidence is mapped to this section.</p>}
 								{section.evidenceNeeded?.length ? <p>Evidence still needed: {section.evidenceNeeded.join(' · ')}</p> : null}
-								{section.researchGap ? (
-									<button className="btn" type="button" disabled={busy} onClick={() => act('research_section', { heading: section.heading }, 'Section research added to the dossier. Approve it before generating.')}>
-										Research this section
-									</button>
-								) : null}
+								<button className="btn" type="button" disabled={busy} onClick={() => act('research_section', { heading: section.heading }, 'Section research added to the dossier. It is not used for drafting until you approve research.')}>
+									Research this section
+								</button>
 								{section.knowledgeGaps.length ? <p>Knowledge gaps: {section.knowledgeGaps.join(' · ')}</p> : null}
 							</div>
 						))}

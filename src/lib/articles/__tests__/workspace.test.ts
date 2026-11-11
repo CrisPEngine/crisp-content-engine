@@ -233,6 +233,7 @@ describe('article workspace', () => {
 		expect(after.find((item) => item.id === change!.id)?.status).toBe('applied');
 		if (extra) expect(after.find((item) => item.id === extra.id)?.status).toBe('deferred');
 		expect(applied.article.workspace?.revision?.number ?? 0).toBeGreaterThan(revisionBefore);
+		expect(applied.article.workspace?.revision?.source).toBe('improvement');
 	});
 
 	it('schedules a website article only after approval and keeps it off the social queue', async () => {

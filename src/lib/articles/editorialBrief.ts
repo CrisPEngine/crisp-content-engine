@@ -89,8 +89,12 @@ function headingsFromResearch(research: ResearchPackage | null | undefined, ques
 export function buildEditorialBrief(input: EditorialBriefInput, previous: EditorialBriefVersion | null = null): EditorialBriefVersion {
 	const research = input.research;
 	const approved = research?.status === 'approved' || Boolean(research?.approved);
+	const sources = (research?.sources ?? []).filter((source) => !source.excluded);
+	const vendorSourceIds = new Set(sources.filter((source) => source.classification === 'vendor_marketing' || source.classification === 'competitor').map((source) => source.id));
 	const confirmedFindings = (approved ? research?.approved?.items ?? research?.items ?? [] : [])
 		.filter((item) => item && !item.excluded && item.supported)
+		.filter((item) => !(item.sourceIds.length && item.sourceIds.every((id) => vendorSourceIds.has(id))))
+		.filter((item) => !/\b(best|top)\b.{0,40}\b(tool|software|ai)\b|\bwas built to\b/i.test(item.text))
 		.map((item) => item.text.trim())
 		.filter(Boolean);
 	const questions = lines(input.brief?.questions);
@@ -102,7 +106,6 @@ export function buildEditorialBrief(input: EditorialBriefInput, previous: Editor
 		capabilities,
 		input.brandName,
 	);
-	const sources = (research?.sources ?? []).filter((source) => !source.excluded);
 	const citations = sources.map((source) => {
 		const classification = source.classification ?? 'background';
 		const level = evidenceLevel(classification as SourceClass);
@@ -288,11 +291,16 @@ export function applyModelStrategy(base: EditorialBriefVersion, model: ModelBrie
 			} satisfies EditorialBriefSection;
 		})
 		.filter((section): section is EditorialBriefSection => Boolean(section));
+	const proposed = [
+		...base.proposed,
+		modelSections.length ? 'Section structure was proposed by the strategy model and still requires approval.' : '',
+		model.searchIntent && model.searchIntent !== base.searchIntent ? `Proposed search intent: ${cleanProposal(model.searchIntent, 80)}. The article intent stays ${base.searchIntent}.` : '',
+	].filter(Boolean);
 	return {
 		...base,
 		primaryKeyword: cleanProposal(model.primaryKeyword, 80) || base.primaryKeyword,
 		supportingKeywords: cleanList(model.supportingKeywords, 12).length ? cleanList(model.supportingKeywords, 12) : base.supportingKeywords,
-		searchIntent: cleanProposal(model.searchIntent, 80) || base.searchIntent,
+		searchIntent: base.searchIntent || cleanProposal(model.searchIntent, 80) || base.searchIntent,
 		audience: cleanProposal(model.audience, 160) || base.audience,
 		seoTitle: cleanProposal(model.seoTitle, 70) || base.seoTitle,
 		publishedH1: cleanProposal(model.publishedH1, 120) || base.publishedH1,
@@ -303,10 +311,7 @@ export function applyModelStrategy(base: EditorialBriefVersion, model: ModelBrie
 		targetWords,
 		differentiation: differentiation || base.differentiation,
 		brandRelevance: mentionsUnverified ? base.brandRelevance : positioning || base.brandRelevance,
-		proposed: [
-			...base.proposed,
-			modelSections.length ? 'Section structure was proposed by the strategy model and still requires approval.' : '',
-		].filter(Boolean),
+		proposed,
 		confirmed: base.confirmed,
 		capabilities: base.capabilities,
 	};
