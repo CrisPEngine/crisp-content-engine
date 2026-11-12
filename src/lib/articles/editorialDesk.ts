@@ -1,4 +1,5 @@
 import type { EvidenceLevel, SourceClass } from './sourceClass';
+import { classifyFictionalConsistency } from './fictionConsistency';
 
 export type CritiqueSeverity = 'critical' | 'major' | 'minor';
 
@@ -53,6 +54,9 @@ export type RevisionProposal = {
 	needsBrandVerification: boolean;
 	status: 'proposed' | 'accepted' | 'rejected' | 'deferred' | 'applied';
 	sourceFeedback: string;
+	sourceFindingId?: string | null;
+	sourceRevisionId?: string | null;
+	localFix?: { url: string; keepFirst: number } | null;
 };
 
 export type RevisionPreview = {
@@ -170,23 +174,25 @@ export function critiqueDraft(input: CritiqueInput): Omit<EditorialCritique, 're
 	const findings: EditorialCritiqueFinding[] = [];
 	const brand = input.brandName?.trim();
 
-	if (intro.length < 280 || !/continuity error|contradict/i.test(intro)) {
+	const introWords = intro.split(/\s+/).filter(Boolean).length;
+	const longGuide = (input.targetWords ?? 0) >= 1200 || body.split(/\s+/).filter(Boolean).length >= 1200;
+	if (introWords < 40 && (longGuide || /how to|guide|practical/i.test(`${input.title} ${input.topic}`))) {
 		findings.push(
 			finding({
 				id: 'intro-weak',
 				category: 'structure',
 				severity: 'major',
 				section: heads[0] ?? null,
-				explanation: 'The draft opens inside a later section instead of defining the reader problem. A practical guide needs a short opening that shows what a continuity error is and why it matters.',
+				explanation: 'The draft opens inside a later section instead of defining the reader’s problem, why it matters, and what the guide will help them do.',
 				evidence: [intro.slice(0, 180) || 'No introduction before the first heading.'],
-				recommendation: 'Add an opening scene of a realistic continuity mistake, then state the article’s promise before the first H2.',
+				recommendation: 'Add a short opening before the first H2. Define the problem and the practical promise. Do not rewrite an opening that already does this.',
 				expectedBenefit: 'Readers and search systems can see the primary answer immediately.',
 				confidence: 'high',
 			}),
 		);
 	}
 
-	if (!/what is a continuity error|a continuity error (is|happens|occurs)/i.test(body.slice(0, 2500))) {
+	if (/continuity/i.test(`${input.title} ${input.topic}`) && !/what is a continuity error|a continuity error (is|happens|occurs)/i.test(body.slice(0, 2500))) {
 		findings.push(
 			finding({
 				id: 'definition-thin',
@@ -201,22 +207,40 @@ export function critiqueDraft(input: CritiqueInput): Omit<EditorialCritique, 're
 		);
 	}
 
-	const conflicts = exampleConsistencyIssues(body);
-	if (conflicts.length) {
+	const fiction = classifyFictionalConsistency(body);
+	const accidental = fiction.filter((item) => item.kind === 'accidental');
+	const uncertain = fiction.filter((item) => item.kind === 'uncertain');
+	if (accidental.length) {
 		findings.push(
 			finding({
 				id: 'example-conflict',
 				category: 'examples',
 				severity: 'critical',
 				section: null,
-				explanation: 'Recurring fictional facts disagree with each other.',
-				evidence: conflicts,
-				recommendation: 'Make the fictional examples use one consistent set of names, dates and events.',
+				explanation: 'Fictional examples contradict each other without presenting the clash as a teaching case.',
+				evidence: accidental.flatMap((item) => item.evidence),
+				recommendation: 'Keep one cast, setting and timeline. Leave deliberate mistakes only where the article explains them as continuity errors.',
 				expectedBenefit: 'The article demonstrates the standard it teaches.',
 				confidence: 'high',
 			}),
 		);
 	}
+	if (uncertain.length) {
+		findings.push(
+			finding({
+				id: 'example-uncertain',
+				category: 'examples',
+				severity: 'minor',
+				section: null,
+				explanation: 'A fictional detail may be inconsistent. It is not clear whether the article is teaching that mistake.',
+				evidence: uncertain.flatMap((item) => item.evidence),
+				recommendation: 'Leave the passage unchanged until an editor confirms whether the contradiction is intentional.',
+				expectedBenefit: 'A teaching example is not rewritten by accident.',
+				confidence: 'low',
+			}),
+		);
+	}
+	const intentionalExamples = fiction.some((item) => item.kind === 'intentional');
 
 	if (brand && new RegExp(brand, 'i').test(body)) {
 		const cautious = /may or may not|it is unclear whether|cannot confirm|not verified|investigate whether|candidate to explore|positioning around/i.test(body);
@@ -298,6 +322,7 @@ export function critiqueDraft(input: CritiqueInput): Omit<EditorialCritique, 're
 	if (/\|.+\|/.test(body)) strengths.push('Practical tables or checklists are present and should be preserved.');
 	if (heads.length >= 4) strengths.push('The article already has a multi-section structure a reader can scan.');
 	if (/\bchapter\b/i.test(body)) strengths.push('It uses manuscript-level examples rather than only abstract advice.');
+	if (intentionalExamples) strengths.push('Deliberate continuity mistakes are explained as examples.');
 	const weaknesses = findings.map((item) => item.explanation);
 	const overall = findings.some((item) => item.severity === 'critical' || item.severity === 'major')
 		? 'The draft has useful practical material, but it does not yet fully achieve an authoritative guide: the opening, examples, evidence, or product positioning need directed revision.'

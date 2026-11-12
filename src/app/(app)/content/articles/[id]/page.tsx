@@ -10,12 +10,13 @@ import { LifecycleBadges, type Lifecycle } from '@/components/articles/Lifecycle
 import { ResearchPanel } from '@/components/articles/ResearchPanel';
 import { EditorialDeskPanel } from '@/components/articles/EditorialDeskPanel';
 import { EditorialReviewBoard } from '@/components/articles/EditorialReviewBoard';
-import { ReviewPanel, type RevisionResult } from '@/components/articles/ReviewPanel';
+import type { RevisionResult } from '@/components/articles/ReviewPanel';
 import { DraftWorkspace } from '@/components/articles/DraftWorkspace';
 import { ImagePanel } from '@/components/articles/ImagePanel';
 import { RevisionHistory } from '@/components/articles/RevisionDiff';
 import { validateArticleStructure } from '@/lib/articles/structure';
 import { reviewPrimary } from '@/lib/articles/reviewWorkflow';
+import { summariseRevisionChange } from '@/lib/articles/revisionSummary';
 import { findingGroup, findingTitle, passageAnchor, stageTone, workspaceStageFromLocation, type WorkspaceStageId } from '@/lib/articles/workspaceNavigation';
 import type { ArticleRecord, ArticleRevisionRef } from '@/lib/articles/types';
 
@@ -194,6 +195,18 @@ export default function ArticleWorkspacePage() {
 	const [reading, setReading] = useState(true);
 	const [anchor, setAnchor] = useState<string | null>(null);
 	const [justApplied, setJustApplied] = useState(false);
+	const [changeSnippets, setChangeSnippets] = useState<string[]>([]);
+	const [showChanges, setShowChanges] = useState(false);
+	const [revisionSummary, setRevisionSummary] = useState<{
+		current: number;
+		previous: number;
+		previousWords: number;
+		nextWords: number;
+		applied: number;
+		resolved: number;
+		remaining: number;
+		bullets: string[];
+	} | null>(null);
 	useEffect(() => {
 		if (!articleId) return;
 		const stored = window.localStorage.getItem(`cce-stage:${articleId}`);
@@ -312,6 +325,21 @@ export default function ArticleWorkspacePage() {
 	const editorialBrief = workspace?.editorialBrief?.current;
 	const acceptedProposals = (workspace?.editorialDesk?.proposals ?? []).filter((item) => item.status === 'accepted');
 	const critique = workspace?.editorialDesk?.critique;
+	const previousRevision = detail.revisions.find((item) => item.number === (workspace?.revision?.number ?? 0) - 1);
+	const savedChange = !revisionSummary && workspace?.revision?.source === 'improvement' && previousRevision && bodies[previousRevision.id]
+		? summariseRevisionChange(bodies[previousRevision.id], article.body)
+		: null;
+	const visibleSummary = revisionSummary ?? (savedChange && workspace?.revision ? {
+		current: workspace.revision.number,
+		previous: previousRevision?.number ?? workspace.revision.number - 1,
+		previousWords: previousRevision?.wordCount ?? savedChange.previousWords,
+		nextWords: article.wordCount,
+		applied: (workspace.revision.note?.match(/proposal-/g) ?? []).length || savedChange.added,
+		resolved: (critique?.findings ?? []).filter((item) => item.status === 'resolved').length,
+		remaining: (critique?.findings ?? []).filter((item) => item.status === 'open').length,
+		bullets: savedChange.bullets,
+	} : null);
+	const visibleSnippets = showChanges ? (changeSnippets.length ? changeSnippets : savedChange?.addedSnippets ?? []) : [];
 	const reviewStale = Boolean(workspace?.revision && critique && critique.revisionId !== workspace.revision.id);
 	const blockingOpen = (critique?.findings ?? []).filter((finding) => finding.status === 'open' && finding.severity === 'critical').length;
 	const reviewAction = reviewPrimary({
@@ -343,12 +371,29 @@ export default function ArticleWorkspacePage() {
 				else if (reviewAction.action === 'images') chooseStage('images');
 				else if (reviewAction.action === 'preview') void actBool('preview_editorial_proposals', {}, 'Preview ready. The article was not changed.');
 				else if (reviewAction.action === 'apply') {
+					const beforeBody = article.body;
+					const beforeNumber = workspace?.revision?.number ?? 0;
+					const openBefore = (critique?.findings ?? []).filter((item) => item.status === 'open').length;
 					void act('apply_editorial_proposals', {}, 'Accepted changes saved as a new revision.').then((result) => {
 						if (!result.ok) return;
-						const revision = (result.payload?.article as ArticleRecord | undefined)?.workspace?.revision?.number;
+						const saved = result.payload?.article as ArticleRecord | undefined;
+						const change = summariseRevisionChange(beforeBody, saved?.body ?? beforeBody);
+						const remaining = (saved?.workspace?.editorialDesk?.critique?.findings ?? []).filter((item) => item.status === 'open').length;
+						setRevisionSummary({
+							current: saved?.workspace?.revision?.number ?? beforeNumber,
+							previous: beforeNumber,
+							previousWords: change.previousWords,
+							nextWords: saved?.wordCount ?? change.nextWords,
+							applied: acceptedProposals.length,
+							resolved: Math.max(0, openBefore - remaining),
+							remaining,
+							bullets: change.bullets,
+						});
+						setChangeSnippets(change.addedSnippets);
+						setShowChanges(true);
 						setJustApplied(true);
 						setReading(true);
-						setToast({ kind: 'ok', text: `Revision ${revision ?? ''} created. ${acceptedProposals.length} editorial change${acceptedProposals.length === 1 ? '' : 's'} applied.`, at: Date.now() });
+						setToast({ kind: 'ok', text: `Revision ${saved?.workspace?.revision?.number ?? ''} saved. ${change.added} passage${change.added === 1 ? '' : 's'} changed.`, at: Date.now() });
 						chooseStage('draft');
 					});
 				} else void actBool('critique_article', {}, 'Critique saved. The article was not rewritten.');
@@ -526,9 +571,27 @@ export default function ArticleWorkspacePage() {
 			</div>
 
 			<div className={stage === 'draft' || stage === 'seo' ? 'space-y-4' : 'hidden'}>
+			{stage === 'draft' && visibleSummary ? (
+				<section className="card mx-auto max-w-3xl space-y-2 p-4 text-sm">
+					<h2 className="font-medium">Revision {visibleSummary.current} saved successfully</h2>
+					<p>{visibleSummary.applied} editorial change{visibleSummary.applied === 1 ? '' : 's'} applied.</p>
+					<ul className="list-disc pl-5">
+						{visibleSummary.bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}
+					</ul>
+					<p className="text-text-soft">
+						Previous revision {visibleSummary.previous} ({visibleSummary.previousWords.toLocaleString()} words) · current revision {visibleSummary.current} ({visibleSummary.nextWords.toLocaleString()} words)
+						· {visibleSummary.resolved} finding{visibleSummary.resolved === 1 ? '' : 's'} resolved · {visibleSummary.remaining} remaining
+					</p>
+					<div className="flex flex-wrap gap-2">
+						<button className="btn" type="button" onClick={() => { setShowChanges(true); setReading(true); document.getElementById('change-0')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}>View changes in article</button>
+						<button className="btn" type="button" onClick={() => setShowChanges(false)}>Clean reading</button>
+						<button className="btn" type="button" onClick={() => chooseStage('review')}>View editorial findings</button>
+					</div>
+				</section>
+			) : null}
 			{stage === 'draft' ? (
 				<div className="mx-auto flex max-w-3xl items-center justify-between">
-					<p className="text-sm text-text-soft">{reading ? 'Reading view' : 'Markdown source'}</p>
+					<p className="text-sm text-text-soft">{reading ? 'Reading view' : 'Markdown source'}{showChanges ? ' · changes highlighted' : ''}</p>
 					<button className="btn" type="button" onClick={() => setReading((value) => !value)}>{reading ? 'Edit source' : 'Read article'}</button>
 				</div>
 			) : (
@@ -565,6 +628,7 @@ export default function ArticleWorkspacePage() {
 				surface={stage === 'seo' ? 'seo' : 'draft'}
 				reading={reading}
 				anchor={anchor}
+				highlights={visibleSnippets}
 			/>
 			</div>
 			<details className={`card p-4 text-sm ${stage === 'draft' || stage === 'review' ? '' : 'hidden'}`}>
@@ -598,24 +662,11 @@ export default function ArticleWorkspacePage() {
 					reviewStale={reviewStale}
 					busy={busy}
 					act={actBool}
+					validationFindings={workspace.editorial.findings}
+					currentRevisionId={workspace.revision?.id ?? null}
+					onResearch={() => chooseStage('research')}
 				/>
 			) : null}
-			<details className="card p-4 text-sm">
-				<summary className="font-medium">Automatic checks</summary>
-				<p className="pt-2 text-text-soft">These are structural and publication checks. They are separate from editorial suggestions. Accepting one does not change the draft until its own fix is applied.</p>
-			{workspace ? (
-				<ReviewPanel
-					editorial={workspace.editorial}
-					currentRevision={workspace.revision ? { id: workspace.revision.id, number: workspace.revision.number } : null}
-					revisionResult={detail.revisionResult}
-					revisionRunning={running(revisionJob?.status)}
-					approved={article.approval.status === 'approved'}
-					busy={busy}
-					pending={pending}
-					act={actBool}
-				/>
-			) : null}
-			</details>
 			</div>
 			{detail.revisionResult?.baseRevisionId &&
 			detail.revisionResult.resultRevisionId &&
@@ -641,6 +692,8 @@ export default function ArticleWorkspacePage() {
 			{workspace ? (
 				<ImagePanel
 					articleId={articleId}
+					title={article.title}
+					topic={article.topic}
 					imageRequirements={workspace.imageRequirements}
 					media={workspace.media}
 					busy={busy}
