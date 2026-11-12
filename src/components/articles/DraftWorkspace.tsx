@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { ArticleReader } from './ArticleReader';
 import { DiffView } from './RevisionDiff';
 import type { StructuralRepairPreview } from '@/lib/articles/structuralRepair';
 import { validateArticleStructure } from '@/lib/articles/structure';
@@ -44,6 +45,9 @@ export function DraftWorkspace({
 	onSaved,
 	publishedTitle,
 	workingTitle,
+	surface,
+	reading,
+	anchor,
 }: {
 	articleId: string;
 	body: string;
@@ -63,6 +67,9 @@ export function DraftWorkspace({
 	onSaved: () => Promise<void>;
 	publishedTitle: string;
 	workingTitle: string;
+	surface: 'draft' | 'seo';
+	reading: boolean;
+	anchor: string | null;
 }) {
 	const [repair, setRepair] = useState<StructuralRepairPreview | null>(null);
 	const [improve, setImprove] = useState<ImprovePreview | null>(null);
@@ -117,7 +124,7 @@ export function DraftWorkspace({
 				</p>
 			</div>
 
-			<div className="flex flex-wrap gap-2 items-center">
+			{surface === 'draft' ? <div className="flex flex-wrap gap-2 items-center">
 				<button className="btn" type="button" disabled={busy || jobRunning || Boolean(generateBlocked)} onClick={() => void act('generate', {}, 'Generation started.')}>
 					{pending === 'generate' ? 'Starting…' : articleBody.trim() ? 'Regenerate draft' : 'Generate draft'}
 				</button>
@@ -150,9 +157,9 @@ export function DraftWorkspace({
 					{pending === 'preview_improve' ? 'Preparing…' : 'Improve article with AI'}
 				</button>
 				{generateBlocked ? <span className="text-xs text-text-soft">{generateBlocked}</span> : null}
-			</div>
+			</div> : null}
 
-			{structure ? (
+			{surface === 'draft' && structure ? (
 				<div className="rounded border border-edge/60 p-3 text-sm space-y-1" aria-label="Structural validation">
 					<p className="font-medium">Structural validation {structure.ok ? 'passed' : `${criticalStructure} critical issue${criticalStructure === 1 ? '' : 's'}`}</p>
 					<p className="text-text-soft">
@@ -167,7 +174,7 @@ export function DraftWorkspace({
 				</div>
 			) : null}
 
-			{repair ? (
+			{surface === 'draft' && repair ? (
 				<div className="rounded border border-edge/60 p-3 space-y-2 text-sm">
 					<p className="font-medium">Structural repair preview</p>
 					<p>
@@ -209,7 +216,7 @@ export function DraftWorkspace({
 				</div>
 			) : null}
 
-			{improve ? (
+			{surface === 'draft' && improve ? (
 				<div className="rounded border border-edge/60 p-3 space-y-2 text-sm">
 					<p className="font-medium">AI improvement preview</p>
 					<p>{improve.summary}</p>
@@ -234,9 +241,12 @@ export function DraftWorkspace({
 				</div>
 			) : null}
 
-			<textarea className="input w-full min-h-[28rem] font-mono resize-y" aria-label="Article body (Markdown)" value={body} onChange={(event) => setBody(event.target.value)} />
+			{surface === 'draft' && reading ? <ArticleReader title={title} body={body} anchor={anchor} /> : null}
+			{surface === 'draft' && !reading ? (
+				<textarea className="input w-full min-h-[28rem] font-mono resize-y" aria-label="Article body (Markdown)" value={body} onChange={(event) => setBody(event.target.value)} />
+			) : null}
 
-			<div className="space-y-3">
+			{surface === 'seo' ? <div className="space-y-3">
 				<div className="flex flex-wrap items-center justify-between gap-2">
 					<h3 className="text-sm font-medium">Titles</h3>
 					<button
@@ -301,10 +311,10 @@ export function DraftWorkspace({
 						<textarea className="input w-full min-h-[5.5rem] resize-y" value={seo.excerpt} onChange={(event) => setSeo({ ...seo, excerpt: event.target.value })} />
 					</label>
 				</div>
-			</div>
+			</div> : null}
 
 			<div className="flex flex-wrap gap-2 items-center">
-				<button className="btn" type="button" disabled={busy || jobRunning || (!bodyDirty && !seoDirty && !titleDirty)} onClick={() => void saveDraft()}>
+				<button id="save-article" className="btn" type="button" disabled={busy || jobRunning || (!bodyDirty && !seoDirty && !titleDirty)} onClick={() => void saveDraft()}>
 					{pending === 'save' ? 'Saving…' : bodyDirty || seoDirty || titleDirty ? 'Save in CCE' : 'Saved in CCE'}
 				</button>
 				{bodyDirty ? <button className="btn" type="button" onClick={() => setBody(articleBody)}>Discard body edits</button> : null}

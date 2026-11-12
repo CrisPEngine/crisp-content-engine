@@ -22,6 +22,7 @@ export function EditorialDeskPanel({
 	exampleNotes,
 	busy,
 	act,
+	focus,
 }: {
 	desk: EditorialDeskState | null | undefined;
 	brief: EditorialBriefState | null | undefined;
@@ -29,6 +30,7 @@ export function EditorialDeskPanel({
 	exampleNotes?: string[];
 	busy: boolean;
 	act: Act;
+	focus?: 'brief' | 'review';
 }) {
 	const [feedback, setFeedback] = useState(desk?.feedback ?? '');
 	const [instruction, setInstruction] = useState(brief?.current?.instruction ?? '');
@@ -38,7 +40,7 @@ export function EditorialDeskPanel({
 	const current = brief?.current;
 	return (
 		<section className="card p-4 space-y-4 text-sm">
-			<div className="space-y-2">
+			{focus === 'review' ? null : <div className="space-y-2">
 				<div className="flex flex-wrap items-center justify-between gap-2">
 					<h2 className="font-medium">Editorial brief</h2>
 					<div className="flex flex-wrap gap-2">
@@ -96,13 +98,14 @@ export function EditorialDeskPanel({
 				) : (
 					<p className="text-text-soft">The editorial brief is separate from the topic request and the research dossier.</p>
 				)}
-			</div>
+			</div>}
 			{(exampleNotes?.length ?? 0) > 0 ? (
 				<div>
 					<p className="text-xs uppercase text-text-soft">Example consistency</p>
 					<ul className="list-disc pl-5">{exampleNotes!.map((item) => <li key={item}>{item}</li>)}</ul>
 				</div>
 			) : null}
+			{focus === 'brief' ? null : <div className="space-y-4">
 			<div className="flex flex-wrap items-center justify-between gap-2 border-t border-edge/50 pt-3">
 				<h2 className="font-medium">Editorial critique</h2>
 				<button className="btn" type="button" disabled={busy} onClick={() => act('critique_article', {}, 'Critique saved. The article was not rewritten.')}>
@@ -132,8 +135,9 @@ export function EditorialDeskPanel({
 				<p className="text-text-soft">Critique reads the current draft and does not change it.</p>
 			)}
 			<div className="space-y-2 border-t border-edge/50 pt-3">
-				<h3 className="font-medium">Give editorial feedback</h3>
-				<textarea className="input w-full" rows={5} value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="Describe what should change. This creates a revision plan. It does not rewrite the article." />
+				<h3 className="font-medium">What would you like to improve?</h3>
+				<p className="text-xs text-text-soft">This applies to the whole article and creates a revision plan. It does not rewrite the article. To limit a change, name the section in the instruction.</p>
+				<textarea className="input w-full" rows={5} value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="Strengthen the introduction. Make one section more practical. Rewrite the conclusion without sounding promotional." />
 				<button className="btn" type="button" disabled={busy || !feedback.trim()} onClick={() => act('editorial_feedback', { feedback }, 'Revision plan created. Nothing was rewritten.')}>
 					Plan revision
 				</button>
@@ -173,6 +177,7 @@ export function EditorialDeskPanel({
 					) : null}
 				</div>
 			) : null}
+			</div>}
 		</section>
 	);
 }
