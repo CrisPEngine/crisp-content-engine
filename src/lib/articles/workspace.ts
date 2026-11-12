@@ -2342,7 +2342,7 @@ export async function previewAcceptedEditorialProposals(ownerUserId: string, art
 			acceptedIds: accepted.map((item) => item.id),
 			preservedIds: proposals.filter((item) => item.status === 'rejected' || item.status === 'deferred').map((item) => item.id),
 			wordCountBefore: articleWordCount(article.body),
-			wordCountAfter: articleWordCount(preview.proposedBody),
+			wordCountAfter: articleWordCount(proposedBody),
 			createdAt: new Date().toISOString(),
 		},
 		updatedAt: new Date().toISOString(),
