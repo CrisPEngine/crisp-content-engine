@@ -172,7 +172,7 @@ export function ReviewPanel({
 					{pending === 'review' ? 'Reviewing…' : editorial.status === 'not_run' ? 'Run review' : 'Re-run review'}
 				</button>
 				<button className="btn" type="button" disabled={busy || Boolean(applyBlocked)} onClick={() => act('apply_revisions', {}, 'Revision started for accepted recommendations.')}>
-					{revisionRunning || pending === 'apply_revisions' ? 'Revising…' : 'Apply accepted revisions'}
+					{revisionRunning || pending === 'apply_revisions' ? 'Revising…' : 'Apply automatic fixes'}
 				</button>
 			</div>
 			{applyBlocked && accepted.length ? <p className="text-xs text-text-soft">{applyBlocked}</p> : null}

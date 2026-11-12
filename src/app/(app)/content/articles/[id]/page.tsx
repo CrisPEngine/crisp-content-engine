@@ -9,11 +9,13 @@ import { JobPanel } from '@/components/articles/JobPanel';
 import { LifecycleBadges, type Lifecycle } from '@/components/articles/LifecycleBadges';
 import { ResearchPanel } from '@/components/articles/ResearchPanel';
 import { EditorialDeskPanel } from '@/components/articles/EditorialDeskPanel';
+import { EditorialReviewBoard } from '@/components/articles/EditorialReviewBoard';
 import { ReviewPanel, type RevisionResult } from '@/components/articles/ReviewPanel';
 import { DraftWorkspace } from '@/components/articles/DraftWorkspace';
 import { ImagePanel } from '@/components/articles/ImagePanel';
 import { RevisionHistory } from '@/components/articles/RevisionDiff';
 import { validateArticleStructure } from '@/lib/articles/structure';
+import { reviewPrimary } from '@/lib/articles/reviewWorkflow';
 import { findingGroup, findingTitle, passageAnchor, stageTone, workspaceStageFromLocation, type WorkspaceStageId } from '@/lib/articles/workspaceNavigation';
 import type { ArticleRecord, ArticleRevisionRef } from '@/lib/articles/types';
 
@@ -191,6 +193,7 @@ export default function ArticleWorkspacePage() {
 	const [contextOpen, setContextOpen] = useState(true);
 	const [reading, setReading] = useState(true);
 	const [anchor, setAnchor] = useState<string | null>(null);
+	const [justApplied, setJustApplied] = useState(false);
 	useEffect(() => {
 		if (!articleId) return;
 		const stored = window.localStorage.getItem(`cce-stage:${articleId}`);
@@ -308,6 +311,17 @@ export default function ArticleWorkspacePage() {
 	};
 	const editorialBrief = workspace?.editorialBrief?.current;
 	const acceptedProposals = (workspace?.editorialDesk?.proposals ?? []).filter((item) => item.status === 'accepted');
+	const critique = workspace?.editorialDesk?.critique;
+	const reviewStale = Boolean(workspace?.revision && critique && critique.revisionId !== workspace.revision.id);
+	const blockingOpen = (critique?.findings ?? []).filter((finding) => finding.status === 'open' && finding.severity === 'critical').length;
+	const reviewAction = reviewPrimary({
+		hasCritique: Boolean(critique),
+		reviewStale,
+		accepted: acceptedProposals.length,
+		hasPreview: Boolean(workspace?.editorialDesk?.preview),
+		justApplied,
+		blockingOpen,
+	});
 	function chooseStage(next: WorkspaceStageId) {
 		if (unsaved && next !== stage && !window.confirm('You have unsaved changes. Switch stage without saving?')) return;
 		setStage(next);
@@ -320,12 +334,30 @@ export default function ArticleWorkspacePage() {
 		brief: { label: editorialBrief?.status === 'approved' ? 'Brief approved' : 'Approve brief', disabled: busy || !editorialBrief || editorialBrief.status === 'approved', run: () => void actBool('approve_editorial_brief', {}, 'Editorial brief approved.') },
 		research: { label: research?.status === 'approved' ? 'Research approved' : 'Review research', disabled: busy || !research?.version || research.status === 'approved', run: () => void actBool('approve_research', {}, 'Research approved. Generation will use this version.') },
 		draft: { label: reading ? 'Edit article' : 'Read article', run: () => setReading((value) => !value) },
-		review: { label: acceptedProposals.length ? `Apply ${acceptedProposals.length} accepted change${acceptedProposals.length === 1 ? '' : 's'}` : 'Critique article', disabled: busy, run: () => void actBool(acceptedProposals.length ? 'apply_editorial_proposals' : 'critique_article', {}, acceptedProposals.length ? 'Accepted changes saved as a new revision.' : 'Critique saved. The article was not rewritten.') },
+		review: {
+			label: reviewAction.label,
+			disabled: busy,
+			run: () => {
+				if (reviewAction.action === 'stay') return;
+				if (reviewAction.action === 'draft') chooseStage('draft');
+				else if (reviewAction.action === 'images') chooseStage('images');
+				else if (reviewAction.action === 'preview') void actBool('preview_editorial_proposals', {}, 'Preview ready. The article was not changed.');
+				else if (reviewAction.action === 'apply') {
+					void act('apply_editorial_proposals', {}, 'Accepted changes saved as a new revision.').then((result) => {
+						if (!result.ok) return;
+						const revision = (result.payload?.article as ArticleRecord | undefined)?.workspace?.revision?.number;
+						setJustApplied(true);
+						setReading(true);
+						setToast({ kind: 'ok', text: `Revision ${revision ?? ''} created. ${acceptedProposals.length} editorial change${acceptedProposals.length === 1 ? '' : 's'} applied.`, at: Date.now() });
+						chooseStage('draft');
+					});
+				} else void actBool('critique_article', {}, 'Critique saved. The article was not rewritten.');
+			},
+		},
 		images: { label: 'Review images', run: () => chooseStage('images') },
 		seo: { label: seoDirty ? 'Save metadata' : 'Metadata saved', disabled: !seoDirty, run: () => document.getElementById('save-article')?.click() },
 		publish: { label: workspace?.cms.lastSyncAt ? 'Update CMS draft' : 'Send to CMS as draft', disabled: busy || !workspace?.destinationId || unsaved, run: () => void actBool('submit_draft', {}, 'Draft sent to the CMS. It is not published.') },
 	};
-	const critique = workspace?.editorialDesk?.critique;
 
 	return (
 		<WorkspaceFrame
@@ -556,16 +588,21 @@ export default function ArticleWorkspacePage() {
 
 			<div className={stage === 'review' ? 'space-y-6' : 'hidden'}>
 			{workspace ? (
-				<EditorialDeskPanel
-					desk={workspace.editorialDesk}
-					brief={workspace.editorialBrief}
+				<EditorialReviewBoard
+					critique={critique ?? null}
+					proposals={workspace.editorialDesk?.proposals ?? []}
+					preview={workspace.editorialDesk?.preview ?? null}
 					body={article.body}
-					exampleNotes={workspace.exampleConsistency}
+					currentRevision={workspace.revision?.number ?? null}
+					reviewedRevision={workspace.editorial.reviewedRevisionNumber ?? null}
+					reviewStale={reviewStale}
 					busy={busy}
 					act={actBool}
-					focus="review"
 				/>
 			) : null}
+			<details className="card p-4 text-sm">
+				<summary className="font-medium">Automatic checks</summary>
+				<p className="pt-2 text-text-soft">These are structural and publication checks. They are separate from editorial suggestions. Accepting one does not change the draft until its own fix is applied.</p>
 			{workspace ? (
 				<ReviewPanel
 					editorial={workspace.editorial}
@@ -578,6 +615,7 @@ export default function ArticleWorkspacePage() {
 					act={actBool}
 				/>
 			) : null}
+			</details>
 			</div>
 			{detail.revisionResult?.baseRevisionId &&
 			detail.revisionResult.resultRevisionId &&
