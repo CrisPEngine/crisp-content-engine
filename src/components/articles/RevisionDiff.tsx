@@ -17,15 +17,38 @@ export function DiffView({ before, after }: { before: string; after: string }) {
 	const parts = useMemo(() => diffParagraphs(before, after), [before, after]);
 	const changed = parts.filter((part) => part.type !== 'same').length;
 	const [showSame, setShowSame] = useState(false);
+	const [sideBySide, setSideBySide] = useState(false);
 	if (!changed) return <p className="text-sm">No differences.</p>;
+	const visible = parts.filter((part) => showSame || part.type !== 'same');
 	return (
 		<div className="space-y-2 text-sm">
-			<label className="flex items-center gap-2">
-				<input type="checkbox" checked={showSame} onChange={(event) => setShowSame(event.target.checked)} /> Show unchanged paragraphs
-			</label>
-			<div className="max-h-[32rem] overflow-auto space-y-2">
-				{parts.map((part, index) =>
-					part.type === 'same' && !showSame ? null : (
+			<div className="flex flex-wrap gap-3">
+				<label className="flex items-center gap-2">
+					<input type="checkbox" checked={showSame} onChange={(event) => setShowSame(event.target.checked)} /> Show unchanged paragraphs
+				</label>
+				<label className="flex items-center gap-2">
+					<input type="checkbox" checked={sideBySide} onChange={(event) => setSideBySide(event.target.checked)} /> Side by side
+				</label>
+			</div>
+			<p className="text-xs text-text-soft">{parts.filter((part) => part.type === 'added').length} additions · {parts.filter((part) => part.type === 'removed').length} deletions</p>
+			{sideBySide ? (
+				<div className="grid gap-3 md:grid-cols-2">
+					<div className="space-y-2">
+						<p className="text-xs uppercase text-text-dim">Before</p>
+						{visible.filter((part) => part.type !== 'added').map((part, index) => (
+							<p key={index} className={`whitespace-pre-wrap rounded p-2 ${part.type === 'removed' ? 'bg-danger/15 line-through' : 'text-text-soft'}`}>{part.text}</p>
+						))}
+					</div>
+					<div className="space-y-2">
+						<p className="text-xs uppercase text-text-dim">After</p>
+						{visible.filter((part) => part.type !== 'removed').map((part, index) => (
+							<p key={index} className={`whitespace-pre-wrap rounded p-2 ${part.type === 'added' ? 'bg-accent/15' : 'text-text-soft'}`}>{part.text}</p>
+						))}
+					</div>
+				</div>
+			) : (
+				<div className="max-h-[32rem] overflow-auto space-y-2">
+					{visible.map((part, index) => (
 						<div
 							key={index}
 							className={`whitespace-pre-wrap rounded p-2 ${part.type === 'added' ? 'bg-accent/15 border-l-2 border-accent' : part.type === 'removed' ? 'bg-danger/15 border-l-2 border-danger line-through decoration-danger/50' : 'text-text-soft'}`}
@@ -33,9 +56,9 @@ export function DiffView({ before, after }: { before: string; after: string }) {
 							<span className="sr-only">{part.type === 'added' ? 'Added: ' : part.type === 'removed' ? 'Removed: ' : ''}</span>
 							{part.text}
 						</div>
-					),
-				)}
-			</div>
+					))}
+				</div>
+			)}
 		</div>
 	);
 }
@@ -65,7 +88,6 @@ export function RevisionHistory({
 						{onRestore && revision.id !== currentId ? (
 							<button className="btn ml-2" type="button" onClick={() => onRestore(revision.id)}>Restore as new revision</button>
 						) : null}
-						<span className="text-xs text-text-dim"> · {revision.contentHash.slice(0, 10)}</span>
 					</li>
 				))}
 			</ol>

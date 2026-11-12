@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BriefPanel, type BriefValues } from '@/components/articles/BriefPanel';
+import { WorkspaceFrame } from '@/components/articles/WorkspaceFrame';
 import { JobPanel } from '@/components/articles/JobPanel';
 import { LifecycleBadges, type Lifecycle } from '@/components/articles/LifecycleBadges';
 import { ResearchPanel } from '@/components/articles/ResearchPanel';
@@ -13,6 +14,7 @@ import { DraftWorkspace } from '@/components/articles/DraftWorkspace';
 import { ImagePanel } from '@/components/articles/ImagePanel';
 import { RevisionHistory } from '@/components/articles/RevisionDiff';
 import { validateArticleStructure } from '@/lib/articles/structure';
+import { findingGroup, findingTitle, passageAnchor, stageTone, workspaceStageFromLocation, type WorkspaceStageId } from '@/lib/articles/workspaceNavigation';
 import type { ArticleRecord, ArticleRevisionRef } from '@/lib/articles/types';
 
 type ArticleDetail = {
@@ -185,6 +187,15 @@ export default function ArticleWorkspacePage() {
 	const bodyDirty = Boolean(detail) && body !== detail?.article.body;
 	const seoDirty = Boolean(detail) && (seo.seoTitle !== detail?.article.seo.seoTitle || seo.metaDescription !== detail?.article.seo.metaDescription || seo.slug !== detail?.article.seo.slug || seo.excerpt !== detail?.article.excerpt);
 	const unsaved = bodyDirty || seoDirty || briefDirty;
+	const [stage, setStage] = useState<WorkspaceStageId>('draft');
+	const [contextOpen, setContextOpen] = useState(true);
+	const [reading, setReading] = useState(true);
+	const [anchor, setAnchor] = useState<string | null>(null);
+	useEffect(() => {
+		if (!articleId) return;
+		const stored = window.localStorage.getItem(`cce-stage:${articleId}`);
+		setStage(workspaceStageFromLocation(window.location.search, stored));
+	}, [articleId]);
 	useEffect(() => {
 		if (!unsaved) return;
 		const warn = (event: BeforeUnloadEvent) => event.preventDefault();
@@ -273,7 +284,6 @@ export default function ArticleWorkspacePage() {
 	const workspace = article.workspace;
 	const busy = pending !== '';
 	const stages = stageState(article, detail.lifecycle, detail.taxonomy);
-	const currentStage = STAGES.find((stage) => !stages[stage]);
 	const research = workspace?.research;
 	const generateBlocked = !workspace?.briefApprovedAt
 		? 'Approve the brief first.'
@@ -287,32 +297,123 @@ export default function ArticleWorkspacePage() {
 	const categoryName = (id: string) => detail.taxonomy?.categories.find((category) => category.id === id)?.name ?? id;
 	const gate = detail.approvalGate;
 
+	const tones = {
+		brief: stageTone('brief', { briefApproved: stages.Brief, briefNeedsReapproval: Boolean(workspace?.briefChangedAfterApproval), researchApproved: stages.Research, researchChanged: research?.status === 'changed_since_approval', hasDraft: stages.Draft, reviewCurrent: stages.Review, reviewBlocked: !stages.Review && stages.Draft, imagesReady: stages.Images, seoReady: Boolean(article.seo.seoTitle && article.seo.metaDescription), cmsCurrent: stages.CMS }),
+		research: stageTone('research', { briefApproved: stages.Brief, briefNeedsReapproval: false, researchApproved: stages.Research, researchChanged: research?.status === 'changed_since_approval', hasDraft: stages.Draft, reviewCurrent: stages.Review, reviewBlocked: false, imagesReady: stages.Images, seoReady: true, cmsCurrent: stages.CMS }),
+		draft: stageTone('draft', { briefApproved: true, briefNeedsReapproval: false, researchApproved: true, researchChanged: false, hasDraft: stages.Draft, reviewCurrent: true, reviewBlocked: false, imagesReady: true, seoReady: true, cmsCurrent: true }),
+		review: stageTone('review', { briefApproved: true, briefNeedsReapproval: false, researchApproved: true, researchChanged: false, hasDraft: true, reviewCurrent: stages.Review, reviewBlocked: stages.Draft && !stages.Review, imagesReady: true, seoReady: true, cmsCurrent: true }),
+		images: stageTone('images', { briefApproved: true, briefNeedsReapproval: false, researchApproved: true, researchChanged: false, hasDraft: true, reviewCurrent: true, reviewBlocked: false, imagesReady: stages.Images, seoReady: true, cmsCurrent: true }),
+		seo: stageTone('seo', { briefApproved: true, briefNeedsReapproval: false, researchApproved: true, researchChanged: false, hasDraft: true, reviewCurrent: true, reviewBlocked: false, imagesReady: true, seoReady: Boolean(article.seo.seoTitle && article.seo.metaDescription && article.seo.slug), cmsCurrent: true }),
+		publish: stageTone('publish', { briefApproved: true, briefNeedsReapproval: false, researchApproved: true, researchChanged: false, hasDraft: true, reviewCurrent: true, reviewBlocked: false, imagesReady: true, seoReady: true, cmsCurrent: stages.CMS && detail.lifecycle.cmsCurrent }),
+	};
+	const editorialBrief = workspace?.editorialBrief?.current;
+	const acceptedProposals = (workspace?.editorialDesk?.proposals ?? []).filter((item) => item.status === 'accepted');
+	function chooseStage(next: WorkspaceStageId) {
+		if (unsaved && next !== stage && !window.confirm('You have unsaved changes. Switch stage without saving?')) return;
+		setStage(next);
+		window.localStorage.setItem(`cce-stage:${articleId}`, next);
+		const url = new URL(window.location.href);
+		url.searchParams.set('stage', next);
+		window.history.replaceState(null, '', url);
+	}
+	const primary: Record<WorkspaceStageId, { label: string; run: () => void; disabled?: boolean }> = {
+		brief: { label: editorialBrief?.status === 'approved' ? 'Brief approved' : 'Approve brief', disabled: busy || !editorialBrief || editorialBrief.status === 'approved', run: () => void actBool('approve_editorial_brief', {}, 'Editorial brief approved.') },
+		research: { label: research?.status === 'approved' ? 'Research approved' : 'Review research', disabled: busy || !research?.version || research.status === 'approved', run: () => void actBool('approve_research', {}, 'Research approved. Generation will use this version.') },
+		draft: { label: reading ? 'Edit article' : 'Read article', run: () => setReading((value) => !value) },
+		review: { label: acceptedProposals.length ? `Apply ${acceptedProposals.length} accepted change${acceptedProposals.length === 1 ? '' : 's'}` : 'Critique article', disabled: busy, run: () => void actBool(acceptedProposals.length ? 'apply_editorial_proposals' : 'critique_article', {}, acceptedProposals.length ? 'Accepted changes saved as a new revision.' : 'Critique saved. The article was not rewritten.') },
+		images: { label: 'Review images', run: () => chooseStage('images') },
+		seo: { label: seoDirty ? 'Save metadata' : 'Metadata saved', disabled: !seoDirty, run: () => document.getElementById('save-article')?.click() },
+		publish: { label: workspace?.cms.lastSyncAt ? 'Update CMS draft' : 'Send to CMS as draft', disabled: busy || !workspace?.destinationId || unsaved, run: () => void actBool('submit_draft', {}, 'Draft sent to the CMS. It is not published.') },
+	};
+	const critique = workspace?.editorialDesk?.critique;
+
 	return (
-		<div className="mx-auto max-w-5xl p-6 space-y-6">
-			<header className="space-y-3">
-				<Link className="text-sm underline" href="/content/articles">Articles</Link>
-				<h1 className="text-2xl font-semibold">{article.title}</h1>
-				<LifecycleBadges lifecycle={detail.lifecycle} />
-				<ol className="flex flex-wrap gap-1 text-xs" aria-label="Workflow stages">
-					{STAGES.map((stage, index) => (
-						<li
-							key={stage}
-							aria-current={stage === currentStage ? 'step' : undefined}
-							className={`rounded px-2 py-1 border ${stages[stage] ? 'border-accent/50 bg-accent/10' : stage === currentStage ? 'border-primary bg-primary/15 font-medium' : 'border-edge text-text-dim'}`}
-						>
-							{index + 1}. {stage}{stages[stage] ? ' ✓' : ''}
-						</li>
-					))}
-				</ol>
-				{detail.nextStep ? (
-					<div className="card p-4">
-						<p className="text-sm text-text-soft">Next step · {detail.nextStep.stage}</p>
-						<p className="font-medium">{detail.nextStep.action}</p>
-						<p className="text-sm text-text-soft">{detail.nextStep.detail}</p>
-					</div>
-				) : null}
-				{unsaved ? <p className="text-sm text-warning">You have unsaved changes on this page.</p> : null}
-			</header>
+		<WorkspaceFrame
+			stage={stage}
+			onStage={chooseStage}
+			tones={tones}
+			title={article.title}
+			meta={
+				<>
+					<Link className="underline" href="/content/articles">Articles</Link>
+					<span>{article.status}</span>
+					<span>{article.wordCount.toLocaleString()} words</span>
+					<span>{workspace?.revision ? `Revision ${workspace.revision.number}` : 'No revision'}</span>
+					<span>Saved {new Date(article.updatedAt).toLocaleString()}</span>
+					{unsaved ? <span className="text-warning">Unsaved changes</span> : null}
+				</>
+			}
+			primaryLabel={primary[stage].label}
+			onPrimary={primary[stage].run}
+			primaryDisabled={primary[stage].disabled}
+			contextOpen={contextOpen}
+			onToggleContext={() => setContextOpen((value) => !value)}
+			context={
+				<div className="space-y-4 text-sm">
+					{detail.nextStep ? (
+						<div>
+							<p className="text-xs uppercase text-text-dim">Next</p>
+							<p className="font-medium">{detail.nextStep.action}</p>
+							<p className="text-text-soft">{detail.nextStep.detail}</p>
+						</div>
+					) : null}
+					{stage === 'brief' && editorialBrief ? (
+						<div className="space-y-2">
+							<p className="font-medium">Confirmed</p>
+							<ul className="list-disc pl-4">{editorialBrief.confirmed.length ? editorialBrief.confirmed.map((item) => <li key={item}>{item}</li>) : <li>No confirmed research yet.</li>}</ul>
+							<p className="font-medium">Proposed direction</p>
+							<ul className="list-disc pl-4">{editorialBrief.proposed.map((item) => <li key={item}>{item}</li>)}</ul>
+						</div>
+					) : null}
+					{stage === 'research' ? <p>Generation uses the approved research snapshot. A follow-up stays unapproved until you approve it here.</p> : null}
+					{stage === 'draft' ? (
+						<div className="space-y-2">
+							<p>Read the article, then switch to Edit only when you want to change the Markdown source.</p>
+							<button className="btn" type="button" disabled={busy || Boolean(generateBlocked)} onClick={() => void actBool('preview_improve', {}, '')}>Improve article</button>
+							{generateBlocked ? <p className="text-text-soft">{generateBlocked}</p> : null}
+						</div>
+					) : null}
+					{stage === 'review' && critique ? (
+						<div className="space-y-3">
+							<p>{critique.overall}</p>
+							{(['Blocking', 'Important', 'Suggested improvements'] as const).map((group) => {
+								const items = critique.findings.filter((finding) => findingGroup(finding.severity) === group);
+								if (!items.length) return null;
+								return (
+									<div key={group}>
+										<p className="font-medium">{group}</p>
+										<ul className="space-y-2">
+											{items.map((finding) => {
+												const located = passageAnchor(article.body, finding);
+												return (
+													<li key={finding.id}>
+														<button type="button" className="text-left underline" onClick={() => { setAnchor(located); chooseStage('draft'); setReading(true); }}>
+															{findingTitle(finding.category)}
+														</button>
+														<p className="text-text-soft">{finding.explanation}</p>
+														<p>{finding.recommendation}</p>
+														<p className="text-xs text-text-dim">{finding.status}{located ? '' : ' · not tied to one passage'}</p>
+													</li>
+												);
+											})}
+										</ul>
+									</div>
+								);
+							})}
+							{acceptedProposals.length ? (
+								<div>
+									<p className="font-medium">Apply {acceptedProposals.length} accepted change{acceptedProposals.length === 1 ? '' : 's'}</p>
+									<ul className="list-disc pl-4">{acceptedProposals.map((item) => <li key={item.id}>{item.action}</li>)}</ul>
+								</div>
+							) : null}
+						</div>
+					) : null}
+					{stage === 'publish' ? <p>CCE sends a draft. A person publishes it in the destination CMS.</p> : null}
+					<LifecycleBadges lifecycle={detail.lifecycle} />
+				</div>
+			}
+		>
+		<div className="space-y-6">
 
 			<div aria-live="polite" className="sticky top-2 z-10">
 				{toast ? (
@@ -343,6 +444,32 @@ export default function ArticleWorkspacePage() {
 				</div>
 			) : null}
 
+			<div className={stage === 'brief' ? 'space-y-6' : 'hidden'}>
+			{editorialBrief ? (
+				<article className="mx-auto max-w-3xl space-y-3">
+					<p className="text-xs uppercase text-text-dim">Editorial brief · version {editorialBrief.version} · {editorialBrief.status.replaceAll('_', ' ')}</p>
+					<h2 className="text-3xl font-semibold">{editorialBrief.publishedH1 || editorialBrief.title}</h2>
+					<p><span className="text-text-soft">Primary keyword.</span> {editorialBrief.primaryKeyword}</p>
+					<p><span className="text-text-soft">Secondary keywords.</span> {editorialBrief.supportingKeywords.join(', ') || 'None yet'}</p>
+					<p><span className="text-text-soft">Search intent.</span> {editorialBrief.searchIntent}</p>
+					<p><span className="text-text-soft">Audience.</span> {editorialBrief.audience}</p>
+					<p><span className="text-text-soft">Objective.</span> {editorialBrief.outcome}</p>
+					<p><span className="text-text-soft">SEO title.</span> {editorialBrief.seoTitle || editorialBrief.title}</p>
+					<p><span className="text-text-soft">Words.</span> {editorialBrief.targetWords}</p>
+					<p><span className="text-text-soft">Product.</span> {editorialBrief.brandRelevance}</p>
+					<p><span className="text-text-soft">CTA.</span> {editorialBrief.cta}</p>
+					{editorialBrief.sections.map((section) => (
+						<div key={`${section.level}-${section.heading}`}>
+							<h3 className="font-medium">{section.level === 3 ? 'H3' : 'H2'} · {section.heading}</h3>
+							<p className="text-text-soft">{section.proposedDirection}</p>
+							{section.confirmedEvidence.length ? <p>Confirmed: {section.confirmedEvidence.join(' · ')}</p> : <p>No confirmed evidence for this section.</p>}
+						</div>
+					))}
+				</article>
+			) : <p className="text-sm">Generate an editorial brief when the topic request below is ready.</p>}
+			{workspace ? (
+				<EditorialDeskPanel desk={workspace.editorialDesk} brief={workspace.editorialBrief} body={article.body} busy={busy} act={actBool} focus="brief" />
+			) : null}
 			<BriefPanel
 				key={JSON.stringify(briefValues(article))}
 				initial={briefValues(article)}
@@ -360,9 +487,25 @@ export default function ArticleWorkspacePage() {
 				onDirtyChange={setBriefDirty}
 				save={(values) => patch({ ...values }, 'save_brief', 'Brief saved in CCE.')}
 			/>
+			</div>
 
+			<div className={stage === 'research' ? 'space-y-6' : 'hidden'}>
 			<ResearchPanel key={`${research?.version ?? 0}-${research?.status ?? 'empty'}`} research={research} busy={busy} pending={pending} act={actBool} />
+			</div>
 
+			<div className={stage === 'draft' || stage === 'seo' ? 'space-y-4' : 'hidden'}>
+			{stage === 'draft' ? (
+				<div className="mx-auto flex max-w-3xl items-center justify-between">
+					<p className="text-sm text-text-soft">{reading ? 'Reading view' : 'Markdown source'}</p>
+					<button className="btn" type="button" onClick={() => setReading((value) => !value)}>{reading ? 'Edit source' : 'Read article'}</button>
+				</div>
+			) : (
+				<div className="mx-auto max-w-3xl text-sm">
+					<p className="text-text-soft">These fields are recommendations and page metadata. CCE does not have search-volume or ranking data for this article.</p>
+					{article.primaryKeyword ? <p>Primary keyword: {article.primaryKeyword}</p> : null}
+					<p>Search intent: {article.searchIntent}</p>
+				</div>
+			)}
 			<DraftWorkspace
 				articleId={articleId}
 				body={body}
@@ -387,14 +530,18 @@ export default function ArticleWorkspacePage() {
 				}}
 				act={act}
 				onSaved={() => load(true)}
+				surface={stage === 'seo' ? 'seo' : 'draft'}
+				reading={reading}
+				anchor={anchor}
 			/>
-			<details className="card p-4 text-sm">
+			</div>
+			<details className={`card p-4 text-sm ${stage === 'draft' || stage === 'review' ? '' : 'hidden'}`}>
 				<summary className="font-medium">Revision history</summary>
 				<div className="pt-2">
 					<RevisionHistory key={workspace?.revision?.id ?? 'none'} revisions={detail.revisions} bodies={bodies} currentId={workspace?.revision?.id ?? null} onRestore={(revisionId) => actBool('restore_revision', { revisionId }, 'Previous revision restored as a new revision. Nothing was published.')} />
 				</div>
 			</details>
-			{workspace ? (
+			{workspace && stage === 'draft' ? (
 				<details className="card p-4 text-sm">
 					<summary className="font-medium">Generation details</summary>
 					<p className="pt-2">Model role {detail.model.role}: {workspace.generation.model || detail.model.resolved}</p>
@@ -407,6 +554,7 @@ export default function ArticleWorkspacePage() {
 				</details>
 			) : null}
 
+			<div className={stage === 'review' ? 'space-y-6' : 'hidden'}>
 			{workspace ? (
 				<EditorialDeskPanel
 					desk={workspace.editorialDesk}
@@ -415,6 +563,7 @@ export default function ArticleWorkspacePage() {
 					exampleNotes={workspace.exampleConsistency}
 					busy={busy}
 					act={actBool}
+					focus="review"
 				/>
 			) : null}
 			{workspace ? (
@@ -429,6 +578,7 @@ export default function ArticleWorkspacePage() {
 					act={actBool}
 				/>
 			) : null}
+			</div>
 			{detail.revisionResult?.baseRevisionId &&
 			detail.revisionResult.resultRevisionId &&
 			bodies[detail.revisionResult.baseRevisionId] &&
@@ -449,6 +599,22 @@ export default function ArticleWorkspacePage() {
 				</details>
 			) : null}
 
+			<div className={stage === 'images' ? 'space-y-6' : 'hidden'}>
+			{workspace ? (
+				<ImagePanel
+					articleId={articleId}
+					imageRequirements={workspace.imageRequirements}
+					media={workspace.media}
+					busy={busy}
+					pending={pending}
+					act={actBool}
+					meta={media}
+					onMetaChange={setMedia}
+				/>
+			) : null}
+			</div>
+
+			<div className={stage === 'publish' ? 'space-y-6' : 'hidden'}>
 			<section className="card p-4 space-y-3" id="category">
 				<h2 className="font-medium">Category</h2>
 				{!workspace?.destinationId ? <p className="text-sm">Choose a website destination in the brief first.</p> : null}
@@ -477,19 +643,6 @@ export default function ArticleWorkspacePage() {
 					</div>
 				) : null}
 			</section>
-
-			{workspace ? (
-				<ImagePanel
-					articleId={articleId}
-					imageRequirements={workspace.imageRequirements}
-					media={workspace.media}
-					busy={busy}
-					pending={pending}
-					act={actBool}
-					meta={media}
-					onMetaChange={setMedia}
-				/>
-			) : null}
 
 			<section className="card p-4 space-y-3" id="cms">
 				<h2 className="font-medium">CMS draft</h2>
@@ -613,6 +766,8 @@ export default function ArticleWorkspacePage() {
 				</details>
 				{article.publication?.url ? <p className="text-sm"><a className="underline" href={article.publication.url}>Published URL</a></p> : null}
 			</section>
+			</div>
 		</div>
+		</WorkspaceFrame>
 	);
 }
