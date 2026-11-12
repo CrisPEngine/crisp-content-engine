@@ -2234,6 +2234,7 @@ export async function decideEditorialProposal(
 	articleId: string,
 	proposalId: string,
 	status: RevisionProposal['status'],
+	instruction?: string,
 ): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
 	const workspace = ensureWorkspace(article);
@@ -2242,6 +2243,7 @@ export async function decideEditorialProposal(
 	if (!proposal) throw new ArticleWorkflowError('That revision proposal was not found.', 404, 'proposal_missing');
 	if (proposal.status === 'applied') throw new ArticleWorkflowError('An applied proposal cannot be changed.', 409, 'proposal_applied');
 	proposal.status = status;
+	if (instruction?.trim()) proposal.action = instruction.trim().slice(0, 500);
 	workspace.editorialDesk = { ...(workspace.editorialDesk ?? emptyEditorialDesk()), proposals, preview: null, updatedAt: new Date().toISOString() };
 	article.workspace = workspace;
 	return persist(article);
@@ -2288,7 +2290,21 @@ export async function previewAcceptedEditorialProposals(ownerUserId: string, art
 	return persist(article);
 }
 
+const editorialApplyLocks = new Set<string>();
+
 export async function applyAcceptedEditorialProposals(ownerUserId: string, articleId: string): Promise<{ article: ArticleRecord; summary: string }> {
+	if (editorialApplyLocks.has(articleId)) {
+		throw new ArticleWorkflowError('Those accepted changes are already being applied.', 409, 'apply_in_progress');
+	}
+	editorialApplyLocks.add(articleId);
+	try {
+		return await applyAcceptedEditorialProposalsOnce(ownerUserId, articleId);
+	} finally {
+		editorialApplyLocks.delete(articleId);
+	}
+}
+
+async function applyAcceptedEditorialProposalsOnce(ownerUserId: string, articleId: string): Promise<{ article: ArticleRecord; summary: string }> {
 	const article = await requireArticle(ownerUserId, articleId);
 	assertNotApproved(article, 'Selective revision');
 	const workspace = ensureWorkspace(article);

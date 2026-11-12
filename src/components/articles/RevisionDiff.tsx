@@ -10,7 +10,7 @@ const SOURCE_LABELS: Record<ArticleRevisionRef['source'], string> = {
 	revision: 'Recommendations applied',
 	legacy: 'Imported',
 	structural_repair: 'Structural repair',
-	improvement: 'AI editorial improvement',
+	improvement: 'Editorial improvements',
 };
 
 export function DiffView({ before, after }: { before: string; after: string }) {
@@ -83,7 +83,7 @@ export function RevisionHistory({
 			<ol className="text-sm space-y-1">
 				{ordered.map((revision) => (
 					<li key={revision.id}>
-						Revision {revision.number}{revision.id === currentId ? ' (current)' : ''} · {SOURCE_LABELS[revision.source]} · {revision.wordCount.toLocaleString()} words · {new Date(revision.createdAt).toLocaleString()}
+						Revision {revision.number}{revision.id === currentId ? ' (current)' : ''}: {SOURCE_LABELS[revision.source]} · {new Date(revision.createdAt).toLocaleString()} · {revision.wordCount.toLocaleString()} words
 						{revision.note ? ` — ${revision.note}` : ''}
 						{onRestore && revision.id !== currentId ? (
 							<button className="btn ml-2" type="button" onClick={() => onRestore(revision.id)}>Restore as new revision</button>

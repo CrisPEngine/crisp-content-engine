@@ -246,6 +246,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 						id,
 						text(body.proposalId),
 						text(body.status) as 'proposed' | 'accepted' | 'rejected' | 'deferred' | 'applied',
+						typeof body.instruction === 'string' ? body.instruction : undefined,
 					),
 				});
 			case 'preview_editorial_proposals':
