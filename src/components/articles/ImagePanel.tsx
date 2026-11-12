@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { ImageCreativeBrief, MediaCreativeState } from '@/lib/articles/imageBrief';
+import { conceptRelevanceWarning, conceptSimilarityWarning, suggestImageConcepts, type ImageConceptOption, type ImageCreativeBrief, type MediaCreativeState } from '@/lib/articles/imageBrief';
 
 type MediaState = {
 	heroAssetId: string | null;
@@ -28,6 +28,8 @@ type ReferenceProposal = {
 
 type Props = {
 	articleId: string;
+	title: string;
+	topic: string;
 	imageRequirements: string;
 	media: MediaState;
 	busy: boolean;
@@ -58,12 +60,14 @@ const emptyBrief = (role: 'hero' | 'og'): ImageCreativeBrief => ({
 	effectivePrompt: '',
 });
 
-export function ImagePanel({ articleId, imageRequirements, media, busy, pending, act, onMetaChange, meta }: Props) {
+export function ImagePanel({ articleId, title, topic, imageRequirements, media, busy, pending, act, onMetaChange, meta }: Props) {
 	const [role, setRole] = useState<'hero' | 'og'>('hero');
 	const [brief, setBrief] = useState<ImageCreativeBrief>(media.creative?.[role] ?? emptyBrief(role));
 	const [proposals, setProposals] = useState<ReferenceProposal[]>([]);
 	const [showAdvanced, setShowAdvanced] = useState(false);
 	const [conceptDirty, setConceptDirty] = useState(false);
+	const [options, setOptions] = useState<ImageConceptOption[]>([]);
+	const [referenceRoles, setReferenceRoles] = useState<Record<string, string>>({});
 
 	useEffect(() => {
 		setBrief(media.creative?.[role] ?? emptyBrief(role));
@@ -136,20 +140,26 @@ export function ImagePanel({ articleId, imageRequirements, media, busy, pending,
 					placeholder="Visually actionable scene: subject, setting, action, mood, composition"
 				/>
 				{brief.similarityWarning ? <p className="text-sm text-amber-700">{brief.similarityWarning}</p> : null}
+				{conceptRelevanceWarning(brief.concept, title, topic) ? <p className="text-sm text-danger">{conceptRelevanceWarning(brief.concept, title, topic)}</p> : null}
+				{brief.history[0]?.concept && brief.concept.trim() && brief.history[0].concept.trim() !== brief.concept.trim() ? (
+					<p className="text-sm text-warning">The current image was generated from an older concept. Editing this text does not change that image.</p>
+				) : null}
 				<div className="flex flex-wrap gap-2">
 					<button
 						className="btn"
 						type="button"
 						disabled={busy}
-						onClick={() =>
-							void act(
-								'prepare_image_brief',
-								{ role, rebuildPrompt: true, applySuggestedConcept: true },
-								'Visual concept suggested and prompt rebuilt.',
-							)
-						}
+						onClick={() => {
+							const next = suggestImageConcepts({ role, title, topic, imageRequirements });
+							setOptions(next);
+							const choice = next.find((item) => !conceptRelevanceWarning(item.description, title, topic)) ?? next[0];
+							if (!choice) return;
+							const warning = conceptSimilarityWarning(choice.description, brief.history.map((item) => item.concept));
+							setBrief({ ...brief, concept: choice.description, suggestedConcept: choice.description, revisionInstructions: '', similarityWarning: warning });
+							setConceptDirty(true);
+						}}
 					>
-						Suggest concept
+						Suggest three concepts
 					</button>
 					{conceptDirty ? (
 						<button
@@ -168,6 +178,18 @@ export function ImagePanel({ articleId, imageRequirements, media, busy, pending,
 						</button>
 					) : null}
 				</div>
+				{options.length ? (
+					<ul className="space-y-2">
+						{options.map((option) => (
+							<li key={option.id} className="rounded border border-edge/50 p-2">
+								<p className="font-medium">{option.title}</p>
+								<p>{option.description}</p>
+								<p className="text-xs text-text-soft">{option.rationale} Intended message: {option.message}</p>
+								<button className="btn mt-2" type="button" onClick={() => { setBrief({ ...brief, concept: option.description, revisionInstructions: '' }); setConceptDirty(true); }}>Use this concept</button>
+							</li>
+						))}
+					</ul>
+				) : null}
 			</section>
 
 			<section className="space-y-2">
@@ -190,6 +212,19 @@ export function ImagePanel({ articleId, imageRequirements, media, busy, pending,
 										{proposal.typeLabel}
 										{proposal.recommended ? ' · recommended' : ''} · {proposal.matchReason}
 									</p>
+									<label className="block text-xs">
+										Role
+										<select
+											className="input ml-2"
+											value={referenceRoles[proposal.asset.id] ?? (proposal.libraryType === 'PRODUCT_SCREENSHOT' || proposal.libraryType === 'PRODUCT_UI' ? 'product' : 'style')}
+											onChange={(event) => setReferenceRoles({ ...referenceRoles, [proposal.asset.id]: event.target.value })}
+										>
+											<option value="product">Product UI reference</option>
+											<option value="style">Style reference</option>
+											<option value="composition">Composition reference</option>
+											<option value="subject">Subject reference</option>
+										</select>
+									</label>
 									<button
 										className="btn"
 										type="button"
@@ -200,7 +235,7 @@ export function ImagePanel({ articleId, imageRequirements, media, busy, pending,
 											setBrief({ ...brief, referenceAssetIds });
 										}}
 									>
-										{selected ? 'Remove' : 'Use as reference'}
+										{selected ? 'Remove from generation' : 'Use as reference'}
 									</button>
 								</li>
 							);
@@ -236,12 +271,12 @@ export function ImagePanel({ articleId, imageRequirements, media, busy, pending,
 					Estimated cost ≈ ${estimated.toFixed(3)} · model {brief.model || 'configured default'} · {brief.dimensions}
 				</p>
 				<label className="block text-sm">
-					Revision instructions (optional)
+					Changes for the existing image
 					<textarea
 						className="input w-full min-h-16"
 						value={brief.revisionInstructions}
 						onChange={(event) => setBrief({ ...brief, revisionInstructions: event.target.value })}
-						placeholder="Only applied on regenerate"
+						placeholder="Used only by Revise existing image. A new concept ignores this."
 					/>
 				</label>
 				<div className="flex flex-wrap gap-2">
@@ -272,25 +307,48 @@ export function ImagePanel({ articleId, imageRequirements, media, busy, pending,
 					<button
 						className="btn"
 						type="button"
-						disabled={busy}
+						disabled={busy || !brief.concept.trim()}
 						onClick={() =>
 							void act(
 								'media',
 								{
 									role,
-									prompt: brief.prompt,
+									concept: brief.concept,
+									negativeConstraints: brief.negativeConstraints,
+									revisionInstructions: '',
+									brandStyleNotes: [brief.brandStyleNotes, ...brief.referenceAssetIds.map((id) => `${referenceRoles[id] ?? 'style'} reference`)].filter(Boolean).join('. '),
+									referenceAssetIds: brief.referenceAssetIds,
+									forceNew: true,
+									useStoredPrompt: false,
+								},
+								'New image generated from the selected concept. The previous image remains in history.',
+							)
+						}
+					>
+						{pending === 'media' ? 'Generating…' : 'Generate from new concept'}
+					</button>
+					<button
+						className="btn"
+						type="button"
+						disabled={busy || !activeUrl || !brief.revisionInstructions.trim()}
+						onClick={() =>
+							void act(
+								'media',
+								{
+									role,
 									concept: brief.concept,
 									negativeConstraints: brief.negativeConstraints,
 									revisionInstructions: brief.revisionInstructions,
 									brandStyleNotes: brief.brandStyleNotes,
 									referenceAssetIds: brief.referenceAssetIds,
 									forceNew: true,
+									useStoredPrompt: false,
 								},
-								`${role === 'hero' ? 'Hero' : 'Social'} image generated as a new version.`,
+								'Existing image revised. The previous version remains in history.',
 							)
 						}
 					>
-						{pending === 'media' ? 'Generating…' : activeUrl ? 'Regenerate (new version)' : 'Generate'}
+						Revise existing image
 					</button>
 				</div>
 			</section>

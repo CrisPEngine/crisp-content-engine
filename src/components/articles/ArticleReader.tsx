@@ -31,11 +31,12 @@ function textOf(nodes: CanonicalInline[]): string {
 	return nodes.map((node) => (node.type === 'text' ? node.value : node.type === 'link' ? textOf(node.children) : '')).join('');
 }
 
-function marked(value: string, anchor: string | null): boolean {
-	return Boolean(anchor && value.includes(anchor));
+function marked(value: string, anchor: string | null, highlights: string[]): boolean {
+	if (anchor && value.includes(anchor)) return true;
+	return highlights.some((snippet) => snippet.length > 16 && value.includes(snippet.slice(0, 40)));
 }
 
-function Blocks({ blocks, anchor }: { blocks: CanonicalBlock[]; anchor: string | null }) {
+function Blocks({ blocks, anchor, highlights }: { blocks: CanonicalBlock[]; anchor: string | null; highlights: string[] }) {
 	return (
 		<>
 			{blocks.map((block, index) => {
@@ -43,14 +44,14 @@ function Blocks({ blocks, anchor }: { blocks: CanonicalBlock[]; anchor: string |
 					const text = textOf(block.children);
 					const Tag = block.level <= 2 ? 'h2' : 'h3';
 					return (
-						<Tag key={index} id={`section-${index}`} className={`font-semibold tracking-tight ${block.level <= 2 ? 'mt-10 text-2xl' : 'mt-6 text-xl'} ${marked(text, anchor) ? 'rounded bg-warning/15 px-2' : ''}`}>
+						<Tag key={index} id={`section-${index}`} className={`font-semibold tracking-tight ${block.level <= 2 ? 'mt-10 text-2xl' : 'mt-6 text-xl'} ${marked(text, anchor, highlights) ? 'rounded bg-accent/20 px-2' : ''}`}>
 							<Inline nodes={block.children} />
 						</Tag>
 					);
 				}
 				if (block.type === 'paragraph') {
 					return (
-						<p key={index} className={`mt-4 text-[1.05rem] leading-8 ${marked(textOf(block.children), anchor) ? 'rounded bg-warning/15 px-2' : ''}`}>
+						<p key={index} id={marked(textOf(block.children), anchor, highlights) ? `change-${index}` : undefined} className={`mt-4 text-[1.05rem] leading-8 ${marked(textOf(block.children), anchor, highlights) ? 'rounded bg-accent/20 px-2' : ''}`}>
 							<Inline nodes={block.children} />
 						</p>
 					);
@@ -60,13 +61,13 @@ function Blocks({ blocks, anchor }: { blocks: CanonicalBlock[]; anchor: string |
 					return (
 						<List key={index} className={`mt-4 space-y-2 pl-6 ${block.ordered ? 'list-decimal' : 'list-disc'}`}>
 							{block.items.map((item, itemIndex) => (
-								<li key={itemIndex} className="leading-7"><Blocks blocks={item} anchor={anchor} /></li>
+								<li key={itemIndex} className="leading-7"><Blocks blocks={item} anchor={anchor} highlights={highlights} /></li>
 							))}
 						</List>
 					);
 				}
 				if (block.type === 'quote') {
-					return <blockquote key={index} className="mt-4 border-l-2 border-primary/50 pl-4 text-text-soft"><Blocks blocks={block.children} anchor={anchor} /></blockquote>;
+					return <blockquote key={index} className="mt-4 border-l-2 border-primary/50 pl-4 text-text-soft"><Blocks blocks={block.children} anchor={anchor} highlights={highlights} /></blockquote>;
 				}
 				if (block.type === 'table') {
 					return (
@@ -92,12 +93,12 @@ function Blocks({ blocks, anchor }: { blocks: CanonicalBlock[]; anchor: string |
 	);
 }
 
-export function ArticleReader({ title, body, anchor }: { title: string; body: string; anchor?: string | null }) {
+export function ArticleReader({ title, body, anchor, highlights = [] }: { title: string; body: string; anchor?: string | null; highlights?: string[] }) {
 	const blocks = body.trim() ? parseCanonicalBlocks(body) : [];
 	return (
 		<article className="mx-auto max-w-3xl px-2 py-4 text-text">
 			<h1 className="text-4xl font-semibold leading-tight tracking-tight">{title}</h1>
-			{blocks.length ? <Blocks blocks={blocks} anchor={anchor ?? null} /> : <p className="mt-6 text-text-soft">This article has no draft yet.</p>}
+			{blocks.length ? <Blocks blocks={blocks} anchor={anchor ?? null} highlights={highlights} /> : <p className="mt-6 text-text-soft">This article has no draft yet.</p>}
 		</article>
 	);
 }

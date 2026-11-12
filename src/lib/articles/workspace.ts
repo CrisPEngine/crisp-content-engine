@@ -1375,6 +1375,8 @@ export type GenerateArticleMediaOptions = {
 	negativeConstraints?: string;
 	revisionInstructions?: string;
 	referenceAssetIds?: string[];
+	/** When false, rebuild the prompt from the concept instead of reusing a previously saved prompt. */
+	useStoredPrompt?: boolean;
 	brandStyleNotes?: string;
 	/** Force a new asset even when the concept matches a prior generation. */
 	forceNew?: boolean;
@@ -1432,7 +1434,9 @@ export async function generateArticleMedia(
 		brandStyleNotes,
 		hasProductReference,
 	});
-	const prompt = (options.prompt ?? brief.prompt ?? built.prompt).trim() || built.prompt;
+	const prompt = options.useStoredPrompt === false
+		? built.prompt
+		: (options.prompt ?? brief.prompt ?? built.prompt).trim() || built.prompt;
 	const forceNew =
 		options.forceNew === true ||
 		Boolean(revisionInstructions?.trim()) ||
@@ -2229,6 +2233,44 @@ export async function recordEditorialFeedback(ownerUserId: string, articleId: st
 	return persist(article);
 }
 
+export async function queueEditorialChange(
+	ownerUserId: string,
+	articleId: string,
+	input: { findingId: string; instruction: string; reason: string; section?: string | null; localFix?: { url: string; keepFirst: number } | null },
+): Promise<ArticleRecord> {
+	const instruction = input.instruction.trim();
+	if (!instruction) throw new ArticleWorkflowError('Write the change to queue.', 400, 'instruction_required');
+	const article = await requireArticle(ownerUserId, articleId);
+	const workspace = ensureWorkspace(article);
+	const proposals = workspace.editorialDesk?.proposals ?? [];
+	const existing = proposals.find((item) => item.sourceFindingId === input.findingId && item.status !== 'applied');
+	if (existing) {
+		existing.action = instruction.slice(0, 500);
+		existing.status = 'accepted';
+		existing.sourceRevisionId = workspace.revision?.id ?? null;
+		existing.localFix = input.localFix ?? null;
+	} else {
+		proposals.push({
+			id: `proposal-${proposals.length + 1}-${input.findingId.slice(0, 12)}`,
+			scope: 'section',
+			section: input.section ?? null,
+			reason: input.reason.slice(0, 400),
+			action: instruction.slice(0, 500),
+			benefit: 'The change stays in the revision plan until it is previewed.',
+			needsResearch: /research|source|evidence/i.test(instruction),
+			needsBrandVerification: /product|capabilit|verified/i.test(instruction),
+			status: 'accepted',
+			sourceFeedback: input.reason.slice(0, 400),
+			sourceFindingId: input.findingId,
+			sourceRevisionId: workspace.revision?.id ?? null,
+			localFix: input.localFix ?? null,
+		});
+	}
+	workspace.editorialDesk = { ...(workspace.editorialDesk ?? emptyEditorialDesk()), proposals, preview: null, updatedAt: new Date().toISOString() };
+	article.workspace = workspace;
+	return persist(article);
+}
+
 export async function decideEditorialProposal(
 	ownerUserId: string,
 	articleId: string,
@@ -2244,6 +2286,7 @@ export async function decideEditorialProposal(
 	if (proposal.status === 'applied') throw new ArticleWorkflowError('An applied proposal cannot be changed.', 409, 'proposal_applied');
 	proposal.status = status;
 	if (instruction?.trim()) proposal.action = instruction.trim().slice(0, 500);
+	if (status === 'accepted') proposal.sourceRevisionId = workspace.revision?.id ?? null;
 	workspace.editorialDesk = { ...(workspace.editorialDesk ?? emptyEditorialDesk()), proposals, preview: null, updatedAt: new Date().toISOString() };
 	article.workspace = workspace;
 	return persist(article);
@@ -2257,27 +2300,45 @@ export async function previewAcceptedEditorialProposals(ownerUserId: string, art
 	const accepted = proposals.filter((item) => item.status === 'accepted');
 	if (!accepted.length) throw new ArticleWorkflowError('Accept at least one proposal before previewing a revision.', 400, 'nothing_accepted');
 	if (!workspace.revision) throw new ArticleWorkflowError('There is no saved revision to revise.', 400, 'draft_missing');
+	const stale = accepted.find((item) => item.sourceRevisionId && item.sourceRevisionId !== workspace.revision?.id);
+	if (stale) throw new ArticleWorkflowError('Review current revision. An accepted change belongs to an older draft.', 409, 'preview_stale');
 	const brand = await requireBrand(ownerUserId, article.brandId);
 	const guidance = capabilityGuidance(capabilitiesFromKnowledge(brand.knowledge));
-	const preview = await previewArticleImprovement({
-		ownerUserId,
-		article,
-		brand,
-		brief: workspace.brief,
-		findings: [],
-		extraInstructions: [
-			...accepted.map((item) => `${item.action} Reason: ${item.reason}`),
-			guidance,
-			`Stay near ${article.targetWords} words.`,
-			'Preserve paragraphs that no accepted proposal mentions.',
-		],
-	});
+	const narrative = accepted.filter((item) => !item.localFix);
+	let proposedBody = article.body;
+	let summary = 'Deterministic fixes only.';
+	let baseRevisionId = workspace.revision.id;
+	if (narrative.length) {
+		const preview = await previewArticleImprovement({
+			ownerUserId,
+			article,
+			brand,
+			brief: workspace.brief,
+			findings: [],
+			extraInstructions: [
+				...narrative.map((item) => `${item.action} Reason: ${item.reason}`),
+				guidance,
+				`Stay near ${article.targetWords} words.`,
+				'Preserve paragraphs that no accepted proposal mentions.',
+				'Keep deliberate continuity mistakes that the article explains as teaching examples.',
+			],
+		});
+		proposedBody = preview.proposedBody;
+		summary = preview.summary;
+		baseRevisionId = preview.baseRevisionId;
+	}
+	for (const item of accepted) {
+		if (!item.localFix) continue;
+		const fixed = unlinkRepeats(proposedBody, item.localFix.url, item.localFix.keepFirst);
+		proposedBody = fixed.body;
+		summary = `${summary} Deterministic fix removed ${fixed.removed} repeated link${fixed.removed === 1 ? '' : 's'}.`.trim();
+	}
 	workspace.editorialDesk = {
 		...(workspace.editorialDesk ?? emptyEditorialDesk()),
 		preview: {
-			baseRevisionId: preview.baseRevisionId,
-			proposedBody: preview.proposedBody,
-			summary: preview.summary,
+			baseRevisionId,
+			proposedBody,
+			summary,
 			acceptedIds: accepted.map((item) => item.id),
 			preservedIds: proposals.filter((item) => item.status === 'rejected' || item.status === 'deferred').map((item) => item.id),
 			wordCountBefore: articleWordCount(article.body),

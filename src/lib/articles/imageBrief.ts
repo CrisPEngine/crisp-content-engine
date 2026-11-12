@@ -134,6 +134,92 @@ function clampConceptWords(concept: string): string {
 	return summariseCoherently(words.join(' '), CONCEPT_MAX_WORDS * 7);
 }
 
+export type ImageConceptOption = {
+	id: string;
+	title: string;
+	description: string;
+	rationale: string;
+	message: string;
+};
+
+function topicText(input: { title: string; topic: string }): string {
+	return `${input.title} ${input.topic}`.toLowerCase();
+}
+
+function sceneFor(kind: 'start' | 'continuity' | 'general', role: ArticleImageRole, input: { title: string; topic: string; excerpt?: string; audience?: string }, productCue: string): string[] {
+	const ratio = role === 'og' ? OG_RATIO : HERO_RATIO;
+	const crop = role === 'og' ? `Tight ${ratio} social crop, readable at thumbnail size.` : `Composition: ${ratio} editorial photograph, restrained mood.`;
+	if (kind === 'start') {
+		return [
+			`A first-time writer beginning a book in a contemporary café, morning light across a small table, focused posture, and a creative project taking shape. ${crop}${productCue}`,
+			`A quiet desk photograph of a blank first page, one pen, and a short list of story ideas, with natural side light and no crowded background. ${crop}`,
+			`An overhead photograph of a notebook opened to a first scene, beside a closed laptop with a blank screen, showing the moment a book starts. ${crop}`,
+		];
+	}
+	if (kind === 'continuity') {
+		return [
+			`Overhead editorial photograph of manuscript pages, character reference sheets and a story timeline being cross-referenced on a wooden desk. Setting is an editor’s table. ${crop} No laptop unless a product screenshot is explicitly selected.`,
+			`A photographic composition of chapter notes, dated events and a manuscript arranged in story order so the chronology is visible. Soft directional light, one pair of hands comparing two pages. ${crop}`,
+			`Writer’s reference materials showing character profiles, relationships and pencil annotations across manuscript pages, communicating character consistency. ${crop}`,
+		];
+	}
+	const subject = summariseCoherently(input.title || input.topic, 70);
+	const audience = input.audience?.trim() || 'the reader';
+	return [
+		`An editorial ${ratio} photograph whose subject and setting make “${subject}” concrete for ${audience}. Mood is specific and physical. Composition centres one action.${productCue}`,
+		`A close photographic detail of the materials a practitioner would actually use for “${subject}”, with natural light and a clear foreground. ${crop}`,
+		`A wider editorial scene showing the work in progress for “${subject}”, one person and one task, without a generic café or empty desk. ${crop}`,
+	];
+}
+
+/** Three different visual directions. The first is the default suggestion. */
+export function suggestImageConcepts(input: {
+	role: ArticleImageRole;
+	title: string;
+	topic: string;
+	excerpt?: string;
+	audience?: string;
+	imageRequirements?: string;
+	brandName?: string;
+	hasProductScreenshot?: boolean;
+}): ImageConceptOption[] {
+	const topic = topicText(input);
+	const kind = /continuity|story bible|character consistency|timeline/.test(topic)
+		? 'continuity'
+		: /start writing|first page|first idea|begin a book|first-time/.test(topic)
+			? 'start'
+			: 'general';
+	const productCue = input.hasProductScreenshot
+		? ' A selected product screenshot may appear on a device. Do not invent interface text.'
+		: '';
+	const titles = kind === 'continuity'
+		? ['Editorial desk', 'Story chronology', 'Character consistency']
+		: kind === 'start'
+			? ['Starting the book', 'First page', 'First scene']
+			: ['Subject in context', 'Working materials', 'Work in progress'];
+	const messages = kind === 'continuity'
+		? ['Story continuity through cross-referencing', 'Chronology can be checked', 'Characters stay consistent across pages']
+		: kind === 'start'
+			? ['A book is beginning', 'The first page is the task', 'A scene is chosen']
+			: ['The subject is concrete', 'The work uses real materials', 'One task is underway'];
+	return sceneFor(kind, input.role, input, productCue).map((description, index) => ({
+		id: `${kind}-${index + 1}`,
+		title: titles[index] ?? `Direction ${index + 1}`,
+		description: clampConceptWords(description),
+		rationale: kind === 'continuity' ? 'The image should show continuity work, not the act of starting a novel.' : 'The scene follows this article’s subject.',
+		message: messages[index] ?? '',
+	}));
+}
+
+export function conceptRelevanceWarning(concept: string, title: string, topic: string): string | null {
+	const subject = topicText({ title, topic });
+	const cafeStart = /caf[eé]|first-time writer|beginning a book/i.test(concept);
+	if (cafeStart && /continuity|story bible|timeline|character consistency/.test(subject)) {
+		return 'This concept shows someone beginning a novel in a café. The article is about preventing continuity errors, so the image should show manuscript cross-referencing, chronology, or character consistency.';
+	}
+	return null;
+}
+
 /** Deterministic visual concept — describes a scene, does not paste article prose. */
 export function suggestImageConcept(input: {
 	role: ArticleImageRole;
@@ -145,25 +231,8 @@ export function suggestImageConcept(input: {
 	brandName?: string;
 	hasProductScreenshot?: boolean;
 }): string {
-	const topic = `${input.title} ${input.topic}`.toLowerCase();
-	const audience = input.audience?.trim() || 'the reader';
-	const writing = /writ|book|novel|manuscript|author|draft|outline|premise/.test(topic);
-	const productCue = input.hasProductScreenshot
-		? ' Include a laptop or device that displays the genuine product interface from the selected screenshot—do not invent UI chrome.'
-		: ' Keep any screens blank or out of focus unless a verified product screenshot is attached.';
-
-	let scene: string;
-	if (input.role === 'og') {
-		scene = writing
-			? `Tight ${OG_RATIO} social crop of a first-time writer starting a book in a contemporary café: one clear subject, open notebook or laptop edge, natural light, restrained editorial mood.${productCue}`
-			: `Tight ${OG_RATIO} social crop with one clear subject that expresses “${summariseCoherently(input.title || input.topic, 60)}”, readable at thumbnail size, restrained editorial styling.`;
-	} else if (writing) {
-		scene = `A first-time writer beginning a book in a contemporary café, morning light across a small table, focused posture, and a clear sense of a creative project taking shape.${productCue} Composition: ${HERO_RATIO} editorial photograph, shallow depth of field, restrained mood; no stock handshake, no generic empty desk montage.`;
-	} else {
-		const intent = summariseCoherently(input.excerpt || input.topic || input.title, 90);
-		scene = `An editorial ${HERO_RATIO} photograph whose main subject and setting make “${summariseCoherently(input.title || input.topic, 70)}” concrete for ${audience}. Mood: specific and physical rather than symbolic. Composition centres one action.${intent ? ` Intent cue (do not paint as text): ${intent}.` : ''}${productCue}`;
-	}
-
+	const options = suggestImageConcepts(input);
+	let scene = options[0]?.description ?? '';
 	if (
 		input.imageRequirements?.trim() &&
 		!/^\s*(none|no images?)\s*$/i.test(input.imageRequirements) &&

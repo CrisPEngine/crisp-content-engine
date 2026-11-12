@@ -28,6 +28,7 @@ import {
 	approveWorkspaceEditorialBrief,
 	critiqueWorkspaceArticle,
 	decideEditorialProposal,
+	queueEditorialChange,
 	generateWorkspaceEditorialBrief,
 	previewAcceptedEditorialProposals,
 	previewArticleEditorialImprovement,
@@ -157,6 +158,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 							? body.referenceAssetIds.filter((value): value is string => typeof value === 'string')
 							: undefined,
 						forceNew: body.forceNew === true,
+						useStoredPrompt: body.useStoredPrompt === false ? false : undefined,
 					}),
 				});
 			}
@@ -239,6 +241,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 				return NextResponse.json({ article: await critiqueWorkspaceArticle(userId, id) });
 			case 'editorial_feedback':
 				return NextResponse.json({ article: await recordEditorialFeedback(userId, id, text(body.feedback)) });
+			case 'queue_editorial_change':
+				return NextResponse.json({
+					article: await queueEditorialChange(userId, id, {
+						findingId: text(body.findingId),
+						instruction: text(body.instruction),
+						reason: typeof body.reason === 'string' ? body.reason : 'Editorial finding',
+						section: typeof body.section === 'string' ? body.section : null,
+						localFix: body.localFix && typeof body.localFix === 'object' ? body.localFix as { url: string; keepFirst: number } : null,
+					}),
+				});
 			case 'editorial_proposal':
 				return NextResponse.json({
 					article: await decideEditorialProposal(

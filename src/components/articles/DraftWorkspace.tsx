@@ -48,6 +48,7 @@ export function DraftWorkspace({
 	surface,
 	reading,
 	anchor,
+	highlights,
 }: {
 	articleId: string;
 	body: string;
@@ -70,6 +71,7 @@ export function DraftWorkspace({
 	surface: 'draft' | 'seo';
 	reading: boolean;
 	anchor: string | null;
+	highlights?: string[];
 }) {
 	const [repair, setRepair] = useState<StructuralRepairPreview | null>(null);
 	const [improve, setImprove] = useState<ImprovePreview | null>(null);
@@ -241,7 +243,7 @@ export function DraftWorkspace({
 				</div>
 			) : null}
 
-			{surface === 'draft' && reading ? <ArticleReader title={title} body={body} anchor={anchor} /> : null}
+			{surface === 'draft' && reading ? <ArticleReader title={title} body={body} anchor={anchor} highlights={highlights} /> : null}
 			{surface === 'draft' && !reading ? (
 				<textarea className="input w-full min-h-[28rem] font-mono resize-y" aria-label="Article body (Markdown)" value={body} onChange={(event) => setBody(event.target.value)} />
 			) : null}
