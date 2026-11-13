@@ -10,7 +10,7 @@ import { HumanBrandBrain } from '@/components/HumanBrandBrain';
 import { CapabilityCatalogue } from '@/components/intelligence/CapabilityCatalogue';
 import { IntelligenceHome } from '@/components/intelligence/IntelligenceHome';
 import { CardSkeleton } from '@/components/skeletons/Skeleton';
-import { CRISP_CANONICAL_AIRTABLE_ID, CRISP_RECONCILIATION_REASON, CRISP_RETAINED_PRODUCT_PROFILE_ID } from '@/lib/intelligence/crisp/nativeBrand';
+import { CRISP_CANONICAL_AIRTABLE_ID, CRISP_RETAINED_PRODUCT_PROFILE_ID } from '@/lib/intelligence/crisp/nativeBrand';
 
 type BrandProfile = { id: string; name: string };
 type Tab = 'overview' | 'brain' | 'strategy' | 'themes' | 'learnings' | 'diagnostics';
@@ -98,6 +98,7 @@ function IntelligencePageInner() {
 	const [brandId, setBrandId] = useState<string>('');
 	const brainAirtableId = brandId === CRISP_RETAINED_PRODUCT_PROFILE_ID ? CRISP_CANONICAL_AIRTABLE_ID : brandId;
 	const [loading, setLoading] = useState(true);
+	const [brainLoading, setBrainLoading] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
@@ -235,8 +236,19 @@ function IntelligencePageInner() {
 
 	useEffect(() => {
 		if (!brandId) return;
-		loadIntelligence(brainAirtableId).catch((err) => setError(err.message));
-	}, [brandId, loadIntelligence]);
+		let cancelled = false;
+		setBrainLoading(true);
+		loadIntelligence(brainAirtableId)
+			.catch((err) => {
+				if (!cancelled) setError(err.message);
+			})
+			.finally(() => {
+				if (!cancelled) setBrainLoading(false);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [brandId, brainAirtableId, loadIntelligence]);
 
 	useEffect(() => {
 		if (!brandId || tab !== 'strategy') return;
@@ -610,13 +622,14 @@ function IntelligencePageInner() {
 				{error ? <div className="card border-danger/40 bg-danger/10 p-4 text-sm text-danger" role="alert">{error} You can try the action again. Unrelated records were not changed.</div> : null}
 				{notice ? <div className="card border-primary/40 bg-primary/10 p-4 text-sm">{notice}</div> : null}
 			</div>
-			{brandId && !payload?.brain ? (
+			{brainLoading ? <p className="text-sm text-text-soft" aria-live="polite">Loading {brandName}…</p> : null}
+			{brandId && !brainLoading && !payload?.brain ? (
 				<div className="card space-y-2 border-warning/40 bg-warning/10 p-4 text-sm">
 					<p>This brand does not have a Brand Brain yet.</p>
 					<button type="button" onClick={() => void activateBrand()} disabled={saving} className="rounded-xl2 border border-primary/40 bg-primary/10 px-4 py-2 text-sm">{saving ? 'Activating…' : 'Activate brand'}</button>
 				</div>
 			) : null}
-			{brandId === CRISP_RETAINED_PRODUCT_PROFILE_ID ? <p className="text-sm text-text-dim">{CRISP_RECONCILIATION_REASON} Brand Intelligence uses the consultancy brain. The content queue and LinkedIn connection stay on the product profile.</p> : null}
+			{brandId === CRISP_RETAINED_PRODUCT_PROFILE_ID ? <p className="text-sm text-text-dim">Brand Intelligence uses the CrisP Digital consultancy brain. The content queue and LinkedIn connection stay on the Content Engine profile.</p> : null}
 
 			{tab === 'overview' && brainAirtableId && payload?.brain ? <IntelligenceHome brandId={brainAirtableId} brandName={brandName} onOpen={(section, extra) => openWorkspace(section, extra)} /> : null}
 
@@ -629,7 +642,7 @@ function IntelligencePageInner() {
 					</nav>
 					<div className="space-y-4">
 						{area === 'capabilities' && brainAirtableId ? (
-							<CapabilityCatalogue brandId={brainAirtableId} initialFilter={knowledgeFilter} initialRecord={recordId} onRecord={(id) => openWorkspace('brain', { area: 'capabilities', filter: knowledgeFilter, record: id })} />
+							<CapabilityCatalogue key={brainAirtableId} brandId={brainAirtableId} initialFilter={knowledgeFilter} initialRecord={recordId} onRecord={(id) => openWorkspace('brain', { area: 'capabilities', filter: knowledgeFilter, record: id })} />
 						) : (
 							<>
 								<HumanBrandBrain focus={area === 'capabilities' ? 'identity' : area} identityJson={identity} voiceJson={voice} guardrailsJson={guardrails} knowledgeJson={knowledge} onIdentity={setIdentity} onVoice={setVoice} onGuardrails={setGuardrails} onKnowledge={setKnowledge} />
