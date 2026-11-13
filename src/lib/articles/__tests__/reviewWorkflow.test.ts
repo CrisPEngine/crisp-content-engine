@@ -5,9 +5,10 @@ describe('review workflow', () => {
 	const base = { hasCritique: true, reviewStale: false, accepted: 0, hasPreview: false, justApplied: false, blockingOpen: 2 };
 
 	it('keeps acceptance separate from application', () => {
-		expect(acceptanceLabel('accepted')).toBe('Approved. The draft has not changed.');
+		expect(acceptanceLabel('accepted')).toBe('Approved, awaiting application');
 		expect(acceptanceLabel('applied')).toBe('Applied to the draft');
-		expect(reviewPrimary({ ...base, accepted: 4 }).label).toBe('Apply Suggested Edits to Draft');
+		expect(reviewPrimary({ ...base, accepted: 4 }).label).toBe('Apply 4 Approved Edits to Draft');
+		expect(reviewPrimary({ ...base, accepted: 1 }).label).toBe('Apply 1 Approved Edit to Draft');
 		expect(reviewPrimary({ ...base, accepted: 4, hasPreview: true }).action).toBe('apply');
 	});
 

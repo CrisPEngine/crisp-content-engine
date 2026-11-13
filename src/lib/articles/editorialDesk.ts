@@ -1,5 +1,6 @@
 import type { EvidenceLevel, SourceClass } from './sourceClass';
 import { classifyFictionalConsistency } from './fictionConsistency';
+import { capabilitiesFromKnowledge, usableCapabilities, type ProductCapability } from './productKnowledge';
 
 export type CritiqueSeverity = 'critical' | 'major' | 'minor';
 
@@ -32,6 +33,8 @@ export type EditorialCritiqueFinding = {
 	expectedBenefit: string;
 	confidence: 'high' | 'medium' | 'low';
 	status: 'open' | 'accepted' | 'rejected' | 'deferred' | 'resolved';
+	/** Why a previously decided finding was seen again. It does not reopen the decision. */
+	historyNote?: string | null;
 };
 
 export type EditorialCritique = {
@@ -56,6 +59,7 @@ export type RevisionProposal = {
 	sourceFeedback: string;
 	sourceFindingId?: string | null;
 	sourceRevisionId?: string | null;
+	appliedRevisionNumber?: number | null;
 	localFix?: { url: string; keepFirst: number } | null;
 };
 
@@ -84,6 +88,7 @@ export type CritiqueInput = {
 	body: string;
 	brandName?: string | null;
 	productFacts?: string[];
+	capabilities?: ProductCapability[];
 	sourceClasses?: Array<SourceClass | undefined>;
 	sourceTitles?: string[];
 	targetWords?: number;
@@ -176,7 +181,23 @@ export function critiqueDraft(input: CritiqueInput): Omit<EditorialCritique, 're
 
 	const introWords = intro.split(/\s+/).filter(Boolean).length;
 	const longGuide = (input.targetWords ?? 0) >= 1200 || body.split(/\s+/).filter(Boolean).length >= 1200;
-	if (introWords < 40 && (longGuide || /how to|guide|practical/i.test(`${input.title} ${input.topic}`))) {
+	const needsIntro = introWords < 40 && (longGuide || /how to|guide|practical/i.test(`${input.title} ${input.topic}`));
+	const needsDefinition = /continuity/i.test(`${input.title} ${input.topic}`) && !/what is a continuity error|a continuity error (is|happens|occurs)/i.test(body.slice(0, 2500));
+	if (needsIntro && needsDefinition) {
+		findings.push(
+			finding({
+				id: 'opening-guide',
+				category: 'structure',
+				severity: 'major',
+				section: heads[0] ?? null,
+				explanation: 'The opening is missing a reader-facing introduction and an early explanation of continuity errors. These are one problem, not two rewrites.',
+				evidence: [intro.slice(0, 180) || 'No introduction before the first heading.', 'No early definition of a continuity error.'],
+				recommendation: 'Add one opening before the first H2. Define a continuity error, why it appears between chapters, and what this guide will help the reader do. Do not add a second introduction later.',
+				expectedBenefit: 'The guide answers its primary question once, at the start.',
+				confidence: 'high',
+			}),
+		);
+	} else if (needsIntro) {
 		findings.push(
 			finding({
 				id: 'intro-weak',
@@ -190,9 +211,7 @@ export function critiqueDraft(input: CritiqueInput): Omit<EditorialCritique, 're
 				confidence: 'high',
 			}),
 		);
-	}
-
-	if (/continuity/i.test(`${input.title} ${input.topic}`) && !/what is a continuity error|a continuity error (is|happens|occurs)/i.test(body.slice(0, 2500))) {
+	} else if (needsDefinition) {
 		findings.push(
 			finding({
 				id: 'definition-thin',
@@ -203,6 +222,23 @@ export function critiqueDraft(input: CritiqueInput): Omit<EditorialCritique, 're
 				evidence: ['No early definition of a continuity error.'],
 				recommendation: 'Explain how continuity errors occur and how writers detect them, with one consistent fictional example.',
 				expectedBenefit: 'The guide answers the primary question instead of assuming the reader already knows the term.',
+			}),
+		);
+	}
+
+	const processNotes = [...body.matchAll(/approved research does not|supplied brand material|the editorial recommendation|task to evaluate, not a verified/gi)].map((match) => match[0]);
+	if (processNotes.length) {
+		findings.push(
+			finding({
+				id: 'process-language',
+				category: 'writing',
+				severity: 'major',
+				section: null,
+				explanation: 'The draft contains research or editorial process notes. A reader should not see how the article was assembled.',
+				evidence: [...new Set(processNotes)].slice(0, 4),
+				recommendation: 'Rewrite those sentences as reader-facing prose. Do not replace them with an unsupported claim, and do not add a disclaimer paragraph.',
+				expectedBenefit: 'The article reads as a guide rather than an internal review note.',
+				confidence: 'high',
 			}),
 		);
 	}
@@ -243,21 +279,34 @@ export function critiqueDraft(input: CritiqueInput): Omit<EditorialCritique, 're
 	const intentionalExamples = fiction.some((item) => item.kind === 'intentional');
 
 	if (brand && new RegExp(brand, 'i').test(body)) {
-		const cautious = /may or may not|it is unclear whether|cannot confirm|not verified|investigate whether|candidate to explore|positioning around/i.test(body);
+		const cautious = /may or may not|it is unclear whether|cannot confirm|not verified|investigate whether|candidate to explore|positioning around|supplied brand material/i.test(body);
+		const capabilities = input.capabilities?.length ? input.capabilities : capabilitiesFromKnowledge({ productFacts: input.productFacts });
+		const usable = usableCapabilities(capabilities);
 		const facts = (input.productFacts ?? []).filter(Boolean);
-		if (cautious || facts.length === 0) {
+		if (usable.length && cautious) {
 			findings.push(
 				finding({
 					id: 'product-cautious',
 					category: 'product',
 					severity: 'major',
 					section: heads.find((heading) => /software|tool/i.test(heading)) ?? null,
-					explanation: facts.length
-						? `The draft treats ${brand} cautiously even where verified product facts exist.`
-						: `The draft mentions ${brand} without a verified capability list, so product claims stay vague or overly cautious.`,
+					explanation: `The draft hedges ${brand} even though verified capabilities are on record. Verified capabilities can be stated directly. Marketing copy and planned features cannot.`,
+					evidence: usable.slice(0, 3).map((item) => item.name),
+					recommendation: `State these verified capabilities directly: ${usable.slice(0, 4).map((item) => item.name).join('; ')}. Do not describe planned or unverified features as available.`,
+					expectedBenefit: 'Product writing uses verified knowledge without a disclaimer.',
+				}),
+			);
+		} else if (!usable.length && (cautious || facts.length > 0)) {
+			findings.push(
+				finding({
+					id: 'product-cautious',
+					category: 'product',
+					severity: 'major',
+					section: heads.find((heading) => /software|tool/i.test(heading)) ?? null,
+					explanation: `Brand Brain does not have a verified capability for ${brand}. First-party notes are not proof of a feature, and they are not a reason to fill the article with disclaimers.`,
 					evidence: facts.slice(0, 3),
-					recommendation: 'Use only verified product capabilities. Do not describe planned features as available, and do not hedge facts that are already verified.',
-					expectedBenefit: 'Product relevance improves without unsupported claims.',
+					recommendation: `Name the exact ${brand} capability that still needs verification and link the editor to Brand Brain. Do not invent the capability and do not add a paragraph saying the material could not verify it.`,
+					expectedBenefit: 'The gap is visible to the editor without weakening the article.',
 				}),
 			);
 		}
@@ -446,11 +495,21 @@ export function planFromFeedback(feedback: string, body: string): RevisionPropos
 }
 
 export function reconcileCritique(previous: EditorialCritique | null, next: Omit<EditorialCritique, 'revisionId' | 'createdAt'>): Omit<EditorialCritique, 'revisionId' | 'createdAt'> {
-	const nextIds = new Set(next.findings.map((item) => item.id));
+	const previousById = new Map((previous?.findings ?? []).map((item) => [item.id, item]));
+	const findings = next.findings.map((item) => {
+		const prior = previousById.get(item.id);
+		if (!prior || (prior.status !== 'rejected' && prior.status !== 'deferred')) return item;
+		return {
+			...item,
+			status: prior.status,
+			historyNote: `Raised again because the issue is still in the draft. The earlier decision remains ${prior.status}.`,
+		};
+	});
+	const nextIds = new Set(findings.map((item) => item.id));
 	const resolved = (previous?.findings ?? [])
 		.filter((item) => item.status !== 'resolved' && !nextIds.has(item.id))
 		.map((item) => ({ ...item, status: 'resolved' as const }));
-	return { ...next, findings: [...next.findings, ...resolved] };
+	return { ...next, findings: [...findings, ...resolved] };
 }
 
 export function emptyEditorialDesk(): EditorialDeskState {

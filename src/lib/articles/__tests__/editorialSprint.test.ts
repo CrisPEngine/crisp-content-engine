@@ -7,6 +7,8 @@ import { consolidateFindings } from '@/lib/articles/unifiedFindings';
 
 describe('editorial sprint', () => {
 	it('treats an explained continuity mistake as a lesson and a name clash as accidental', () => {
+		const ordinary = classifyFictionalConsistency('Mark the next chapter. Record the change. Character names stay in the table. Mara reaches the outpost.');
+		expect(ordinary.some((item) => /Mark|Record|Character/.test(item.message))).toBe(false);
 		const taught = classifyFictionalConsistency('Mara reaches the lunar outpost before the rover journey finishes. These conflicts are visible. The ferry example is only there to show the mistake.');
 		expect(taught.some((item) => item.kind === 'intentional')).toBe(true);
 		const mixed = classifyFictionalConsistency('The lunar crew meets at the island archive and boards the ferry. Sela Ortiz and Sena Ortiz share the scene.');

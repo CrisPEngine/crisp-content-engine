@@ -248,6 +248,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 						instruction: text(body.instruction),
 						reason: typeof body.reason === 'string' ? body.reason : 'Editorial finding',
 						section: typeof body.section === 'string' ? body.section : null,
+						status: body.status === 'rejected' || body.status === 'deferred' || body.status === 'proposed' ? body.status : 'accepted',
 						localFix: body.localFix && typeof body.localFix === 'object' ? body.localFix as { url: string; keepFirst: number } : null,
 					}),
 				});

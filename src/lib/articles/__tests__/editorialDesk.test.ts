@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { critiqueDraft, exampleConsistencyIssues, planFromFeedback } from '@/lib/articles/editorialDesk';
+import { critiqueDraft, exampleConsistencyIssues, planFromFeedback, reconcileCritique } from '@/lib/articles/editorialDesk';
 
 const FEEDBACK =
 	'Improve this article’s authority and usefulness. Open with a realistic continuity mistake. Make the fictional examples consistent. Strengthen the explanation of how continuity errors occur and how writers detect them. Use verified Folian capabilities rather than unnecessarily cautious product language. Improve the research and distinguish independent sources from competitor marketing. Strengthen the final CTA. Preserve the practical tables and checklists. Keep the article close to 2,200 words.';
@@ -26,8 +26,9 @@ describe('editorial desk', () => {
 			targetWords: 2200,
 		});
 		const ids = critique.findings.map((finding) => finding.id);
-		expect(ids).toContain('intro-weak');
-		expect(ids).toContain('definition-thin');
+		expect(ids).toContain('opening-guide');
+		expect(ids).not.toContain('intro-weak');
+		expect(ids).not.toContain('definition-thin');
 		expect(ids).toContain('product-cautious');
 		expect(ids).toContain('vendor-research');
 		expect(ids).toContain('cta-weak');
@@ -42,6 +43,19 @@ describe('editorial desk', () => {
 		expect(proposals.some((item) => item.needsBrandVerification)).toBe(true);
 		const rejected = proposals.map((item, index) => (index === 0 ? { ...item, status: 'rejected' as const } : { ...item, status: 'accepted' as const }));
 		expect(rejected.filter((item) => item.status === 'accepted').every((item) => item.id !== rejected[0]?.id)).toBe(true);
+	});
+
+	it('keeps a rejected finding rejected when the same issue is still present', () => {
+		const next = critiqueDraft({ title: 'How to Prevent Continuity Errors', topic: 'continuity', body: '## Later\n\nA short note.', targetWords: 2000 });
+		const previous = {
+			revisionId: 'old',
+			createdAt: '2026-01-01T00:00:00.000Z',
+			...next,
+			findings: next.findings.map((item) => (item.id === 'opening-guide' ? { ...item, status: 'rejected' as const } : item)),
+		};
+		const reconciled = reconcileCritique(previous, next);
+		expect(reconciled.findings.find((item) => item.id === 'opening-guide')?.status).toBe('rejected');
+		expect(reconciled.findings.find((item) => item.id === 'opening-guide')?.historyNote).toMatch(/still in the draft/);
 	});
 
 	it('flags incompatible fictional facts', () => {
