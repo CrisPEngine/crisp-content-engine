@@ -93,6 +93,12 @@ export async function generateArticleMetadataWithAi(
 	if (process.env.VITEST === 'true') {
 		return { metadata: generateArticleMetadata(article), model: 'stub' };
 	}
+	const { loadResolvedIntelligence } = await import('@/lib/intelligence/knowledge/load');
+	const { getIntelligenceStore } = await import('@/lib/intelligence/actions');
+	const brain =
+		(await getIntelligenceStore().getBrandBrainById(ownerUserId, article.brandId)) ??
+		(await getIntelligenceStore().getBrandBrain(ownerUserId, article.brandId));
+	const intelligence = brain ? await loadResolvedIntelligence(ownerUserId, brain, `${article.title} ${article.topic}`, 'seo') : null;
 	const completion = await ai.completeJson<{ seoTitle?: string; metaDescription?: string; excerpt?: string; slug?: string }>(
 		'REVIEW',
 		[
@@ -110,6 +116,7 @@ export async function generateArticleMetadataWithAi(
 					primaryKeyword: article.primaryKeyword,
 					targetWords: article.targetWords,
 					bodyPreview: plainText(article.body).slice(0, 4000),
+					productKnowledge: intelligence?.prompt,
 				}),
 			},
 		],

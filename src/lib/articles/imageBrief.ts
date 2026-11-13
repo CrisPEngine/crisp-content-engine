@@ -182,6 +182,7 @@ export function suggestImageConcepts(input: {
 	imageRequirements?: string;
 	brandName?: string;
 	hasProductScreenshot?: boolean;
+	verifiedCapabilityNames?: string[];
 }): ImageConceptOption[] {
 	const topic = topicText(input);
 	const kind = /continuity|story bible|character consistency|timeline/.test(topic)
@@ -189,9 +190,10 @@ export function suggestImageConcepts(input: {
 		: /start writing|first page|first idea|begin a book|first-time/.test(topic)
 			? 'start'
 			: 'general';
-	const productCue = input.hasProductScreenshot
-		? ' A selected product screenshot may appear on a device. Do not invent interface text.'
-		: '';
+	const productCue = [
+		input.hasProductScreenshot ? 'A selected product screenshot may appear on a device. Do not invent interface text.' : '',
+		input.verifiedCapabilityNames?.length ? `Verified product areas: ${input.verifiedCapabilityNames.join(', ')}.` : 'Do not depict a product screen for an unverified capability.',
+	].filter(Boolean).join(' ');
 	const titles = kind === 'continuity'
 		? ['Editorial desk', 'Story chronology', 'Character consistency']
 		: kind === 'start'
@@ -230,6 +232,7 @@ export function suggestImageConcept(input: {
 	imageRequirements?: string;
 	brandName?: string;
 	hasProductScreenshot?: boolean;
+	verifiedCapabilityNames?: string[];
 }): string {
 	const options = suggestImageConcepts(input);
 	let scene = options[0]?.description ?? '';

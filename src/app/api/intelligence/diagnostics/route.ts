@@ -11,11 +11,18 @@ export async function GET(request: Request) {
 		await requireIntelligenceUserOrCron(request);
 		const smoke = await runProductionSmoke();
 		const { getSupabaseService } = await import('@/lib/supabaseService');
-		const { data: recent } = await getSupabaseService()
+		const wide = await getSupabaseService()
 			.from('ai_usage_logs')
-			.select('role, provider, model, fallback_used, error_code, duration_ms, ok, feature, created_at')
+			.select('role, provider, model, fallback_used, error_code, duration_ms, ok, feature, created_at, brand_id, content_id, correlation_id, prompt_tokens, completion_tokens, estimated_cost_usd')
 			.order('created_at', { ascending: false })
 			.limit(20);
+		const recent = wide.error
+			? (await getSupabaseService()
+				.from('ai_usage_logs')
+				.select('role, provider, model, fallback_used, error_code, duration_ms, ok, feature, created_at')
+				.order('created_at', { ascending: false })
+				.limit(20)).data
+			: wide.data;
 		return NextResponse.json({
 			ok: smoke.ok,
 			roles: MODEL_ROLES.map((role) => {

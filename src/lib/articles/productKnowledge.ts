@@ -14,6 +14,8 @@ export type ProductCapability = {
 	approvedLanguage?: string;
 	prohibitedClaims?: string[];
 	productUrl?: string;
+	/** Separate from availability. Absent on records saved before verification existed. */
+	verificationStatus?: 'verified' | 'unverified' | 'verification_required' | 'evidence_outdated' | 'disputed';
 };
 
 export type KnowledgeGap = {
@@ -36,7 +38,11 @@ export function capabilitiesFromKnowledge(input: { capabilities?: ProductCapabil
 }
 
 export function usableCapabilities(capabilities: ProductCapability[]): ProductCapability[] {
-	return capabilities.filter((item) => USABLE.has(item.availability) && item.evidence?.trim() && item.lastVerified);
+	return capabilities.filter((item) => {
+		if (!USABLE.has(item.availability) || !item.evidence?.trim() || !item.lastVerified) return false;
+		if (item.verificationStatus && item.verificationStatus !== 'verified') return false;
+		return true;
+	});
 }
 
 /** A capability may be described as currently available only when it is available or beta and has evidence. */

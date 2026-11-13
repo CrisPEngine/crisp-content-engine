@@ -42,7 +42,6 @@ import {
 import { critiqueDraft, emptyEditorialDesk, planFromFeedback, reconcileCritique, type RevisionProposal } from '@/lib/articles/editorialDesk';
 import { approveBriefVersion, applyModelStrategy, buildEditorialBrief, reviseBrief, sectionResearchQuestion, type ModelBriefStrategy } from '@/lib/articles/editorialBrief';
 import { normaliseTargetWords, previewArticleImprovement, type ArticleImprovementPreview } from '@/lib/articles/pipeline';
-import { capabilitiesFromKnowledge, capabilityGuidance } from '@/lib/articles/productKnowledge';
 import {
 	applyGeneratedMetadata,
 	generateArticleMetadata,
@@ -1284,6 +1283,9 @@ export async function prepareArticleImageBrief(
 	const store = getNativeContentStore();
 	const brandAssets = await store.listAssets(ownerUserId, article.brandId);
 	const hasProductScreenshot = brandHasProductScreenshot(brandAssets);
+	const { loadResolvedIntelligence } = await import('@/lib/intelligence/knowledge/load');
+	const imageIntelligence = await loadResolvedIntelligence(ownerUserId, brain, `${article.title} ${article.topic}`, 'image');
+	workspace.intelligence = (await import('@/lib/intelligence/knowledge/resolver')).intelligenceManifest(imageIntelligence);
 	const suggested = suggestImageConcept({
 		role,
 		title: article.title,
@@ -1293,6 +1295,7 @@ export async function prepareArticleImageBrief(
 		imageRequirements: workspace.imageRequirements,
 		brandName: brain.identity.name,
 		hasProductScreenshot,
+		verifiedCapabilityNames: imageIntelligence.verified.map((item) => item.name),
 	});
 	const brandStyleNotes = creative[role].brandStyleNotes || '';
 	const applySuggested = options?.applySuggestedConcept === true || !creative[role].concept.trim();
@@ -2068,6 +2071,10 @@ export async function generateWorkspaceEditorialBrief(ownerUserId: string, artic
 	if (workspace.research?.sources) {
 		workspace.research.sources = withSourceClasses(workspace.research.sources, { brandDomain: brandDomain(brand.identity.website) });
 	}
+	const { loadResolvedIntelligence } = await import('@/lib/intelligence/knowledge/load');
+	const { intelligenceManifest } = await import('@/lib/intelligence/knowledge/resolver');
+	const briefIntelligence = await loadResolvedIntelligence(ownerUserId, brand, `${article.title} ${article.topic}`, 'brief');
+	workspace.intelligence = intelligenceManifest(briefIntelligence);
 	const builtBase = buildEditorialBrief({
 		topic: article.topic,
 		title: article.title,
@@ -2077,7 +2084,7 @@ export async function generateWorkspaceEditorialBrief(ownerUserId: string, artic
 		targetWords: article.targetWords,
 		brief: workspace.brief,
 		research: workspace.research,
-		capabilities: capabilitiesFromKnowledge(brand.knowledge),
+		capabilities: [...briefIntelligence.verified, ...briefIntelligence.unverified, ...briefIntelligence.planned],
 		brandName: brand.identity.name,
 		destinationLabel: workspace.destinationId,
 		instruction,
@@ -2111,6 +2118,7 @@ export async function generateWorkspaceEditorialBrief(ownerUserId: string, artic
 							instruction,
 							confirmedResearch: builtBase.confirmed,
 							verifiedCapabilities: builtBase.capabilities.filter((item) => item.verified),
+							productKnowledge: briefIntelligence.prompt,
 							existingArticles: siblings.filter((item) => item.id !== article.id).map((item) => item.title).slice(0, 20),
 							strategy: strategy ? { positioning: strategy.positioning, objectives: strategy.objectives, pillars: strategy.contentPillars } : null,
 						}),
@@ -2199,13 +2207,17 @@ export async function critiqueWorkspaceArticle(ownerUserId: string, articleId: s
 	if (!article.body.trim()) throw new ArticleWorkflowError('There is no draft to critique.', 400, 'draft_missing');
 	const workspace = ensureWorkspace(article);
 	const brand = await requireBrand(ownerUserId, article.brandId);
+	const { loadResolvedIntelligence } = await import('@/lib/intelligence/knowledge/load');
+	const { intelligenceManifest } = await import('@/lib/intelligence/knowledge/resolver');
+	const intelligence = await loadResolvedIntelligence(ownerUserId, brand, `${article.title} ${article.topic}`, 'revision');
+	workspace.intelligence = intelligenceManifest(intelligence);
 	const drafted = critiqueDraft({
 		title: article.title,
 		topic: article.topic,
 		body: article.body,
 		brandName: brand.identity.name,
-		productFacts: brand.knowledge.productFacts,
-		capabilities: brand.knowledge.capabilities,
+		productFacts: [],
+		capabilities: [...intelligence.verified, ...intelligence.unverified, ...intelligence.planned],
 		sourceClasses: (workspace.research?.sources ?? []).filter((source) => !source.excluded).map((source) => source.classification),
 		sourceTitles: (workspace.research?.sources ?? []).filter((source) => !source.excluded).map((source) => source.title),
 		targetWords: article.targetWords,
@@ -2293,6 +2305,10 @@ export async function queueEditorialChange(
 	}
 	workspace.editorialDesk = { ...(workspace.editorialDesk ?? emptyEditorialDesk()), proposals, preview: null, updatedAt: new Date().toISOString() };
 	article.workspace = workspace;
+	if (status === 'rejected') {
+		const { proposeEditorialLearning } = await import('@/lib/intelligence/knowledge/proposeLearning');
+		await proposeEditorialLearning(ownerUserId, article.brandId, instruction).catch(() => undefined);
+	}
 	return persist(article);
 }
 
@@ -2328,7 +2344,11 @@ export async function previewAcceptedEditorialProposals(ownerUserId: string, art
 	const stale = accepted.find((item) => item.sourceRevisionId && item.sourceRevisionId !== workspace.revision?.id);
 	if (stale) throw new ArticleWorkflowError('Review current revision. An accepted change belongs to an older draft.', 409, 'preview_stale');
 	const brand = await requireBrand(ownerUserId, article.brandId);
-	const guidance = capabilityGuidance(capabilitiesFromKnowledge(brand.knowledge));
+	const { loadResolvedIntelligence } = await import('@/lib/intelligence/knowledge/load');
+	const { intelligenceManifest } = await import('@/lib/intelligence/knowledge/resolver');
+	const intelligence = await loadResolvedIntelligence(ownerUserId, brand, `${article.title} ${article.topic}`, 'revision');
+	workspace.intelligence = intelligenceManifest(intelligence);
+	const guidance = intelligence.prompt;
 	const narrative = accepted.filter((item) => !item.localFix);
 	let proposedBody = article.body;
 	let summary = 'Deterministic fixes only.';
@@ -2516,6 +2536,18 @@ export async function publishWorkspaceArticle(ownerUserId: string, articleId: st
 	const article = await requireArticle(ownerUserId, articleId);
 	if (article.approval.status !== 'approved' || article.status !== 'approved') {
 		throw new ArticleWorkflowError('Publish only after a person approves the article. This did not publish.', 403, 'approval_required');
+	}
+	const brand = await requireBrand(ownerUserId, article.brandId);
+	const { loadResolvedIntelligence } = await import('@/lib/intelligence/knowledge/load');
+	const { publicationBlocks } = await import('@/lib/intelligence/knowledge/resolver');
+	const publishIntelligence = await loadResolvedIntelligence(ownerUserId, brand, `${article.title} ${article.topic}`, 'publish');
+	const blocked = publicationBlocks(article.body, publishIntelligence);
+	if (blocked.length) {
+		return {
+			article,
+			published: false,
+			message: `Automated publication is blocked because the draft contains a prohibited claim: ${blocked[0]}`,
+		};
 	}
 	if (websitePublishingEnabled()) {
 		return {

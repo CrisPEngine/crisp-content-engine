@@ -33,7 +33,12 @@ export async function GET(request: Request) {
 		}
 		const store = getIntelligenceStore();
 		const brain = await store.getBrandBrain(userId, airtableBrandId);
-		const strategy = brain ? await store.getStrategyForBrand(userId, brain.id) : null;
+		let strategy = brain ? await store.getStrategyForBrand(userId, brain.id) : null;
+		if (strategy) {
+			const { stuckStrategyRecovery } = await import('@/lib/intelligence/strategy/stuckStrategy');
+			const recovered = stuckStrategyRecovery(strategy);
+			if (recovered) strategy = await store.upsertStrategy(userId, recovered);
+		}
 		const themes = brain ? await store.listThemes(userId, brain.id) : [];
 		const completeness = strategy ? scoreStrategyCompleteness(strategy) : null;
 		const nativePhase = strategy ? strategyGenerationPhase(strategy) : 'missing';

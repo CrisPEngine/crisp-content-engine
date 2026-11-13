@@ -136,6 +136,7 @@ async function draftArticleSection(input: {
 	voice: string;
 	evidence: EvidenceItem[];
 	gaps: string[];
+	productKnowledge?: string;
 	brief?: ArticleBriefDetails;
 	alreadyCovered: string[];
 	alreadyLinked: string[];
@@ -179,6 +180,7 @@ async function draftArticleSection(input: {
 				requiredLinks: input.plan.links,
 				evidence: input.evidence,
 				gaps: input.gaps,
+				productKnowledge: input.productKnowledge,
 			}),
 		},
 	];
@@ -220,7 +222,6 @@ async function draftArticleSection(input: {
 function researchFromBrand(brain: BrandBrain, strategy: BrandStrategy | null, packets: ResearchRecord[] = []): ArticleResearch {
 	const facts = [
 		...(brain.knowledge.brandFacts ?? []),
-		...(brain.knowledge.productFacts ?? []),
 		...(brain.knowledge.proofPoints ?? []),
 		...(strategy?.proofPoints ?? []),
 	].filter(Boolean);
@@ -259,6 +260,7 @@ function researchFromBrand(brain: BrandBrain, strategy: BrandStrategy | null, pa
 		gaps: [
 			'No independent customer evidence is stored.',
 			'Current or numerical claims need a dated research source before they are stated as fact.',
+			'Unstructured product facts are not verified capabilities and are not supplied as claims.',
 		],
 		usedExternalResearch: sources.length > 1,
 	};
@@ -318,8 +320,22 @@ export async function generateArticle(input: {
 	const store = getNativeContentStore();
 	const existing = input.articleId ? await store.getArticle(input.ownerUserId, input.articleId) : null;
 	const theme = input.themes.find((item) => item.status === 'active') ?? input.themes[0];
-	const research = input.research ?? researchFromBrand(input.brand, input.strategy, input.researchRecords ?? []);
 	const topic = input.topic ?? theme?.title ?? input.strategy?.objectives[0] ?? input.brand.identity.name;
+	const { loadResolvedIntelligence } = await import('@/lib/intelligence/knowledge/load');
+	const intelligence = await loadResolvedIntelligence(input.ownerUserId, input.brand, topic, 'article');
+	const baseResearch = input.research ?? researchFromBrand(input.brand, input.strategy, input.researchRecords ?? []);
+	const verifiedClaims = intelligence.verified.map((item) => ({
+		text: item.approvedLanguage || `${item.name}: ${item.description}`,
+		sourceLabel: 'Verified capability',
+		confidence: 'stored' as const,
+		kind: 'brand' as const,
+		sourceClass: undefined,
+	}));
+	const research = {
+		...baseResearch,
+		claims: input.research ? baseResearch.claims : [...baseResearch.claims, ...verifiedClaims],
+		gaps: [...baseResearch.gaps, ...intelligence.gaps.filter((gap) => !baseResearch.gaps.includes(gap))],
+	};
 	const questions = splitLines(input.brief?.questions);
 	const ai = getIntelligenceAi();
 	await stage('Planning the outline');
@@ -362,6 +378,7 @@ export async function generateArticle(input: {
 					requiredLinks,
 					evidence: research.claims.map((claim, index) => ({ index, text: claim.text, kind: claim.sourceClass ?? claim.kind })),
 					gaps: research.gaps,
+					productKnowledge: intelligence.prompt,
 				}),
 			},
 		],
@@ -400,6 +417,7 @@ export async function generateArticle(input: {
 			voice: input.brand.voice.tone ?? '',
 			evidence: plan.evidence.map((position) => evidence[position]).filter((entry) => !entry.url || !linked.has(normaliseUrl(entry.url))),
 			gaps: research.gaps,
+			productKnowledge: intelligence.prompt,
 			brief: input.brief,
 			alreadyCovered: [...covered],
 			alreadyLinked: [...linked.values()],
@@ -542,6 +560,8 @@ export async function generateArticle(input: {
 	const workspace = ensureWorkspace(article);
 	const { exampleConsistencyIssues } = await import('./editorialDesk');
 	workspace.exampleConsistency = exampleConsistencyIssues(finalBody);
+	const { intelligenceManifest } = await import('@/lib/intelligence/knowledge/resolver');
+	workspace.intelligence = intelligenceManifest(intelligence);
 	article.sections = sections;
 	article.performanceContentId = article.id;
 	article.publishDestination = destinationId ?? article.publishDestination;
@@ -631,6 +651,10 @@ export async function applyArticleRevision(input: {
 	}));
 	if (input.instruction?.trim()) recommendations.push({ id: 'instruction', severity: 'major', instruction: input.instruction.trim(), section: null, evidence: undefined, proposedFix: undefined });
 	if (!recommendations.length) throw new Error('There is nothing to apply.');
+	const { loadResolvedIntelligence } = await import('@/lib/intelligence/knowledge/load');
+	const { intelligenceManifest } = await import('@/lib/intelligence/knowledge/resolver');
+	const revisionIntelligence = await loadResolvedIntelligence(input.ownerUserId, input.brand, `${article.title} ${article.topic}`, 'revision');
+	if (article.workspace) article.workspace.intelligence = intelligenceManifest(revisionIntelligence);
 	const current = parseSections(article.body);
 	const explicitTarget = input.sectionId ? article.sections.find((section) => section.id === input.sectionId) : undefined;
 	const headingOf = (name: string | null) => (name ? current.find((section) => section.heading.trim().toLowerCase() === name.trim().toLowerCase())?.heading ?? null : null);
@@ -667,6 +691,7 @@ export async function applyArticleRevision(input: {
 					section: batch.heading ?? undefined,
 					recommendations: batch.items,
 					approvedResearch: article.research.claims.slice(0, 30).map((claim) => ({ text: claim.text, source: claim.sourceUrl ?? claim.sourceLabel })),
+					productKnowledge: revisionIntelligence.prompt,
 					text: sourceText,
 				}),
 			},
