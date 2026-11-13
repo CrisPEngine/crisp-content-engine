@@ -59,7 +59,7 @@ export function resolveIntelligence(input: {
 	const stored = input.snapshot?.available ? fromStored(input.snapshot.capabilities) : [];
 	const catalogue = stored.length ? stored : capabilitiesFromKnowledge(input.brain.knowledge);
 	const verified = usableCapabilities(catalogue);
-	const planned = catalogue.filter((item) => item.availability === 'planned' || item.availability === 'in_development');
+	const planned = catalogue.filter((item) => item.availability === 'planned' || item.availability === 'in_development' || item.availability === 'private_preview');
 	const unverified = catalogue.filter((item) => !verified.includes(item) && !planned.includes(item));
 	const scopedVerified = relevant(verified, input.topic);
 	const scopedUnverified = relevant(unverified, input.topic);

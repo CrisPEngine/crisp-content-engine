@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { withIntelligenceLogScope } from '@/lib/ai/logging';
 import { resolveModelForRole } from '@/lib/ai/roles';
 import { AgentError } from '@/lib/agent/errors';
 import { DEFAULT_RATE_LIMIT } from '@/lib/agent/policy';
@@ -2054,7 +2055,10 @@ export async function regenerateArticleSeo(ownerUserId: string, articleId: strin
 	if (!article.body.trim()) throw new ArticleWorkflowError('Write or generate a draft before regenerating SEO metadata.', 400, 'draft_missing');
 	const workspace = ensureWorkspace(article);
 	const generated = options?.useAi
-		? (await generateArticleMetadataWithAi(article, getIntelligenceAi(), ownerUserId)).metadata
+		? (await withIntelligenceLogScope(
+			{ brandId: article.brandId, contentId: article.id, correlationId: article.id },
+			() => generateArticleMetadataWithAi(article, getIntelligenceAi(), ownerUserId),
+		)).metadata
 		: generateArticleMetadata(article);
 	applyGeneratedMetadata(article, generated, { overwriteEdited: options?.overwriteEdited });
 	if (options?.overwriteEdited) workspace.seoEdited = {};
