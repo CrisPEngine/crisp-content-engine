@@ -41,6 +41,7 @@ export function KnowledgeOverview({ brandId, onOpenTab }: { brandId: string; onO
 	const [overview, setOverview] = useState<Overview | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
+	const [selected, setSelected] = useState<string[]>([]);
 	const [selectedCapabilities, setSelectedCapabilities] = useState<string[]>([]);
 	const [notice, setNotice] = useState<string | null>(null);
 
