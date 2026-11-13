@@ -2199,7 +2199,7 @@ export async function critiqueWorkspaceArticle(ownerUserId: string, articleId: s
 	if (!article.body.trim()) throw new ArticleWorkflowError('There is no draft to critique.', 400, 'draft_missing');
 	const workspace = ensureWorkspace(article);
 	const brand = await requireBrand(ownerUserId, article.brandId);
-	const assessed = reconcileCritique(workspace.editorialDesk?.critique ?? null, critiqueDraft({
+	const drafted = critiqueDraft({
 		title: article.title,
 		topic: article.topic,
 		body: article.body,
@@ -2209,7 +2209,20 @@ export async function critiqueWorkspaceArticle(ownerUserId: string, articleId: s
 		sourceClasses: (workspace.research?.sources ?? []).filter((source) => !source.excluded).map((source) => source.classification),
 		sourceTitles: (workspace.research?.sources ?? []).filter((source) => !source.excluded).map((source) => source.title),
 		targetWords: article.targetWords,
-	}));
+	});
+	const decisions = new Map(
+		(workspace.editorialDesk?.proposals ?? [])
+			.filter((item) => item.sourceFindingId && (item.status === 'rejected' || item.status === 'deferred'))
+			.map((item) => [item.sourceFindingId, item.status] as const),
+	);
+	const assessed = reconcileCritique(workspace.editorialDesk?.critique ?? null, {
+		...drafted,
+		findings: drafted.findings.map((item) => {
+			const decision = decisions.get(item.id);
+			if (!decision) return item;
+			return { ...item, status: decision, historyNote: `Raised again because the issue is still in the draft. The earlier decision remains ${decision}.` };
+		}),
+	});
 	workspace.editorialDesk = {
 		...(workspace.editorialDesk ?? emptyEditorialDesk()),
 		critique: {

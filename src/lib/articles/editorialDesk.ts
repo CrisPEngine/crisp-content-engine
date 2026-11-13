@@ -182,7 +182,7 @@ export function critiqueDraft(input: CritiqueInput): Omit<EditorialCritique, 're
 	const introWords = intro.split(/\s+/).filter(Boolean).length;
 	const longGuide = (input.targetWords ?? 0) >= 1200 || body.split(/\s+/).filter(Boolean).length >= 1200;
 	const needsIntro = introWords < 40 && (longGuide || /how to|guide|practical/i.test(`${input.title} ${input.topic}`));
-	const needsDefinition = /continuity/i.test(`${input.title} ${input.topic}`) && !/what is a continuity error|a continuity error (is|happens|occurs)/i.test(body.slice(0, 2500));
+	const needsDefinition = /continuity/i.test(`${input.title} ${input.topic}`) && !/what is a continuity error|a continuity error (is|happens|occurs)|continuity errors (are|happen)/i.test(body.slice(0, 2500));
 	if (needsIntro && needsDefinition) {
 		findings.push(
 			finding({
