@@ -123,6 +123,7 @@ export function EditorialReviewBoard({
 					{critique && !reviewStale && !critiqueStale ? ' · Editorial pass complete for this revision' : reviewStale || critiqueStale ? ' · Editorial pass outdated' : ' · Editorial pass not run'}
 				</p>
 				{critique ? <p>Editorial pass completed. {identified} finding{identified === 1 ? '' : 's'} identified. Review and approve the changes you want to make.</p> : <p className="text-text-soft">Critique reads the draft and does not change it.</p>}
+				<button className="btn" type="button" disabled={busy} onClick={() => void act('critique_article', {}, 'Editorial pass completed. The draft was not rewritten.')}>Run Editorial Pass of Draft</button>
 			</div>
 			{reviewStale || critiqueStale ? (
 				<p className="text-warning">This review belongs to an older draft. Run the editorial pass again before applying changes.</p>
@@ -212,10 +213,10 @@ function FindingSection({
 										<button className="btn" type="button" disabled={busy} onClick={() => onDecide(card, 'accepted')}>{card.state === 'applied-unresolved' ? 'Approve again' : 'Approve'}</button>
 									) : null}
 									{card.state === 'approved' ? <span className="btn">✓ Approved, awaiting application</span> : null}
-									{card.state === 'pending' || card.state === 'approved' || card.state === 'deferred' ? (
+									{card.state === 'pending' || card.state === 'approved' || card.state === 'deferred' || card.state === 'applied-unresolved' ? (
 										<button className="btn" type="button" disabled={busy} onClick={() => onDecide(card, 'rejected')}>Reject</button>
 									) : null}
-									{card.state === 'pending' || card.state === 'approved' || card.state === 'rejected' ? (
+									{card.state === 'pending' || card.state === 'approved' || card.state === 'rejected' || card.state === 'applied-unresolved' ? (
 										<button className="btn" type="button" disabled={busy} onClick={() => onDecide(card, 'deferred')}>Defer</button>
 									) : null}
 									{onUndo && (card.state === 'approved' || card.state === 'rejected' || card.state === 'deferred') ? (
