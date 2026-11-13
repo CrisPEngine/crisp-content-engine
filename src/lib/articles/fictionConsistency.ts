@@ -6,15 +6,17 @@ export type FictionIssue = {
 	evidence: string[];
 };
 
-const TEACHING = /conflicts are visible|these are separate problems|continuity error|deliberate|illustrative|for this example|suppose|teaching/i;
+const TEACHING = /conflicts are visible|these are separate problems|continuity error|deliberate|illustrative|for this example|suppose|teaching|example of|to illustrate|find the (error|mistake)|check whether/i;
+const COMMON = new Set(['The', 'This', 'That', 'Chapter', 'When', 'After', 'Before', 'Suppose', 'Ask', 'Start', 'Place', 'Your', 'For', 'Here', 'Now', 'These', 'Those', 'Table', 'Entity', 'Story', 'Bible', 'Island', 'Mainland', 'Lunar', 'Crew', 'Mark', 'Record', 'Records', 'Character', 'Characters', 'Noon', 'Moon', 'Put', 'But', 'Take', 'Make', 'Change', 'Changes', 'Changed', 'Name', 'Names', 'What', 'Where', 'Which', 'While', 'With', 'From', 'Into', 'Each', 'Every', 'Some', 'Many', 'Most', 'Only', 'Also', 'Then', 'Than', 'There', 'Their', 'Once', 'Keep', 'Leave', 'Open', 'Close', 'Using', 'Used', 'Note', 'Notes', 'And', 'Not', 'You', 'Can', 'May', 'One', 'Two', 'New', 'Old', 'Add', 'Use', 'See', 'Let', 'Did', 'Was', 'Are', 'Has', 'Had', 'Its', 'Our', 'Who', 'How', 'Why', 'All', 'Any', 'Out', 'Too', 'Very', 'During', 'Between', 'Within', 'Without', 'About', 'Above', 'Below', 'Under', 'Over', 'Such', 'Same', 'Other', 'Another', 'First', 'Last', 'Next', 'Later', 'Earlier']);
 
 function names(body: string): string[] {
 	const found = new Set<string>();
 	for (const match of body.matchAll(/\b[A-Z][a-z]{2,}\b/g)) {
 		const name = match[0] ?? '';
-		if (!/^(The|This|That|Chapter|When|After|Before|Suppose|Ask|Start|Place|Your|For|Here|Now|These|Table|Entity|Story|Bible|Island|Mainland|Lunar|Crew)$/.test(name)) found.add(name);
+		if (COMMON.has(name)) continue;
+		found.add(name);
 	}
-	return [...found];
+	return [...found].filter((name, _index, list) => !list.some((other) => other !== name && (name === `${other}s` || name === `${other}es`)));
 }
 
 function nearDuplicate(a: string, b: string): boolean {

@@ -2205,6 +2205,7 @@ export async function critiqueWorkspaceArticle(ownerUserId: string, articleId: s
 		body: article.body,
 		brandName: brand.identity.name,
 		productFacts: brand.knowledge.productFacts,
+		capabilities: brand.knowledge.capabilities,
 		sourceClasses: (workspace.research?.sources ?? []).filter((source) => !source.excluded).map((source) => source.classification),
 		sourceTitles: (workspace.research?.sources ?? []).filter((source) => !source.excluded).map((source) => source.title),
 		targetWords: article.targetWords,
@@ -2227,11 +2228,17 @@ export async function recordEditorialFeedback(ownerUserId: string, articleId: st
 	const text = feedback.trim();
 	if (!text) throw new ArticleWorkflowError('Enter editorial feedback before planning a revision.', 400, 'feedback_required');
 	const workspace = ensureWorkspace(article);
-	const proposals = planFromFeedback(text, article.body);
+	const existing = workspace.editorialDesk?.proposals ?? [];
+	const added = planFromFeedback(text, article.body).map((item, index) => ({
+		...item,
+		id: `proposal-extra-${existing.length + index + 1}`,
+		sourceRevisionId: workspace.revision?.id ?? null,
+	}));
 	workspace.editorialDesk = {
 		...(workspace.editorialDesk ?? emptyEditorialDesk()),
 		feedback: text,
-		proposals,
+		proposals: [...existing, ...added],
+		preview: null,
 		updatedAt: new Date().toISOString(),
 	};
 	article.workspace = workspace;
@@ -2241,17 +2248,18 @@ export async function recordEditorialFeedback(ownerUserId: string, articleId: st
 export async function queueEditorialChange(
 	ownerUserId: string,
 	articleId: string,
-	input: { findingId: string; instruction: string; reason: string; section?: string | null; localFix?: { url: string; keepFirst: number } | null },
+	input: { findingId: string; instruction: string; reason: string; section?: string | null; status?: 'accepted' | 'rejected' | 'deferred' | 'proposed'; localFix?: { url: string; keepFirst: number } | null },
 ): Promise<ArticleRecord> {
 	const instruction = input.instruction.trim();
 	if (!instruction) throw new ArticleWorkflowError('Write the change to queue.', 400, 'instruction_required');
+	const status = input.status ?? 'accepted';
 	const article = await requireArticle(ownerUserId, articleId);
 	const workspace = ensureWorkspace(article);
 	const proposals = workspace.editorialDesk?.proposals ?? [];
 	const existing = proposals.find((item) => item.sourceFindingId === input.findingId && item.status !== 'applied');
 	if (existing) {
 		existing.action = instruction.slice(0, 500);
-		existing.status = 'accepted';
+		existing.status = status;
 		existing.sourceRevisionId = workspace.revision?.id ?? null;
 		existing.localFix = input.localFix ?? null;
 	} else {
@@ -2264,7 +2272,7 @@ export async function queueEditorialChange(
 			benefit: 'The change stays in the revision plan until it is previewed.',
 			needsResearch: /research|source|evidence/i.test(instruction),
 			needsBrandVerification: /product|capabilit|verified/i.test(instruction),
-			status: 'accepted',
+			status,
 			sourceFeedback: input.reason.slice(0, 400),
 			sourceFindingId: input.findingId,
 			sourceRevisionId: workspace.revision?.id ?? null,
@@ -2326,10 +2334,16 @@ export async function previewAcceptedEditorialProposals(ownerUserId: string, art
 				`Stay near ${article.targetWords} words.`,
 				'Preserve paragraphs that no accepted proposal mentions.',
 				'Keep deliberate continuity mistakes that the article explains as teaching examples.',
+				'The editor’s instruction takes precedence over the original recommendation, within factual and safety limits.',
+				'Preserve story-bible templates, scene ledgers, software criteria and checklists unless an instruction edits a specific cell.',
 			],
 		});
 		proposedBody = preview.proposedBody;
-		summary = preview.summary;
+		const calls = preview.modelCalls;
+		const callNote = calls <= 1
+			? 'One coordinated rewrite. Model calls: 1.'
+			: `One coordinated rewrite. Model calls: ${calls}. Extra calls continued a truncated draft. They were not one call per finding.`;
+		summary = `${preview.summary} ${callNote}`;
 		baseRevisionId = preview.baseRevisionId;
 	}
 	for (const item of accepted) {
@@ -2386,8 +2400,12 @@ async function applyAcceptedEditorialProposalsOnce(ownerUserId: string, articleI
 	if (!sameAccepted) throw new ArticleWorkflowError('The accepted proposals changed after the preview. Preview again.', 409, 'preview_stale');
 	article.workspace = workspace;
 	commitRevision(article, preview.proposedBody, 'improvement', `Accepted proposals ${accepted.map((item) => item.id).join(', ')}. ${preview.summary}`, { refreshMetadata: false });
+	const appliedRevision = article.workspace?.revision?.number ?? null;
 	for (const proposal of proposals) {
-		if (proposal.status === 'accepted') proposal.status = 'applied';
+		if (proposal.status === 'accepted') {
+			proposal.status = 'applied';
+			proposal.appliedRevisionNumber = appliedRevision;
+		}
 	}
 	workspace.editorialDesk = { ...(workspace.editorialDesk ?? emptyEditorialDesk()), proposals, preview: null, updatedAt: new Date().toISOString() };
 	article.approval = { required: true, approver: 'human', status: 'pending' };

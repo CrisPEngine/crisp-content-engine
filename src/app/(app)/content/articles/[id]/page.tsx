@@ -397,7 +397,12 @@ export default function ArticleWorkspacePage() {
 						setToast({ kind: 'ok', text: `Editorial edits applied successfully. Revision ${beforeNumber} → Revision ${saved?.workspace?.revision?.number ?? ''}.`, at: Date.now() });
 						chooseStage('draft');
 					});
-				} else void actBool('critique_article', {}, 'Editorial pass complete. The draft was not rewritten.');
+				} else void act('critique_article').then((result) => {
+					if (!result.ok) return;
+					const saved = result.payload?.article as ArticleRecord | undefined;
+					const count = (saved?.workspace?.editorialDesk?.critique?.findings ?? []).filter((item) => item.status !== 'resolved').length;
+					setToast({ kind: 'ok', text: `Editorial pass completed. ${count} findings identified. Review and approve the changes you want to make.`, at: Date.now() });
+				});
 			},
 		},
 		images: { label: 'Review images', run: () => chooseStage('images') },
@@ -575,8 +580,7 @@ export default function ArticleWorkspacePage() {
 			<div className={stage === 'draft' || stage === 'seo' ? 'space-y-4' : 'hidden'}>
 			{stage === 'draft' && visibleSummary ? (
 				<section className="card mx-auto max-w-3xl space-y-2 p-4 text-sm">
-					<h2 className="font-medium">Revision {visibleSummary.current} saved successfully</h2>
-					<p>{visibleSummary.applied} editorial change{visibleSummary.applied === 1 ? '' : 's'} applied.</p>
+					<h2 className="font-medium">Revision {visibleSummary.current} created. {visibleSummary.applied} editorial change{visibleSummary.applied === 1 ? '' : 's'} applied.</h2>
 					<ul className="list-disc pl-5">
 						{visibleSummary.bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}
 					</ul>
@@ -588,6 +592,7 @@ export default function ArticleWorkspacePage() {
 						<button className="btn" type="button" onClick={() => { setShowChanges(true); setReading(true); document.getElementById('change-0')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}>View changes in article</button>
 						<button className="btn" type="button" onClick={() => setShowChanges(false)}>Clean reading</button>
 						<button className="btn" type="button" onClick={() => chooseStage('review')}>View editorial findings</button>
+						<button className="btn" type="button" onClick={() => document.getElementById('revision-history')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Revision history</button>
 					</div>
 				</section>
 			) : null}
@@ -634,7 +639,7 @@ export default function ArticleWorkspacePage() {
 			/>
 			</div>
 			<details className={`card p-4 text-sm ${stage === 'draft' || stage === 'review' ? '' : 'hidden'}`}>
-				<summary className="font-medium">Revision history</summary>
+				<summary id="revision-history" className="font-medium">Revision history</summary>
 				<div className="pt-2">
 					<RevisionHistory key={workspace?.revision?.id ?? 'none'} revisions={detail.revisions} bodies={bodies} currentId={workspace?.revision?.id ?? null} onRestore={(revisionId) => actBool('restore_revision', { revisionId }, 'Previous revision restored as a new revision. Nothing was published.')} />
 				</div>

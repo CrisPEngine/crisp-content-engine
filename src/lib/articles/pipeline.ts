@@ -722,6 +722,7 @@ export type ArticleImprovementPreview = {
 	proposedBody: string;
 	summary: string;
 	model: string | null;
+	modelCalls: number;
 	baseRevisionId: string;
 	instructions: string[];
 };
@@ -748,6 +749,7 @@ export async function previewArticleImprovement(input: {
 			proposedBody,
 			summary: 'Applied the accepted editorial proposals in the test double.',
 			model: 'stub',
+			modelCalls: 0,
 			baseRevisionId: revision.id,
 			instructions: input.extraInstructions,
 		};
@@ -801,6 +803,7 @@ export async function previewArticleImprovement(input: {
 	type ImproveJson = { body?: string; summary?: string };
 	let data: ImproveJson;
 	let model: string | null = null;
+	let modelCalls = 1;
 	if (process.env.VITEST === 'true') {
 		const completion = await ai.completeJson<ImproveJson>('WRITING', messages, 'article_improvement', input.ownerUserId);
 		data = completion.data;
@@ -815,6 +818,7 @@ export async function previewArticleImprovement(input: {
 		});
 		data = completion.data;
 		model = completion.model ?? null;
+		modelCalls = 1 + completion.meta.continuationPasses;
 	}
 	const proposedBody = stripCmsTitleHeading(
 		postProcessPlainDraft(data.body?.trim() ?? ''),
@@ -829,6 +833,7 @@ export async function previewArticleImprovement(input: {
 		proposedBody,
 		summary: data.summary?.trim() || 'Proposed editorial improvements.',
 		model,
+		modelCalls,
 		baseRevisionId: revision.id,
 		instructions,
 	};
