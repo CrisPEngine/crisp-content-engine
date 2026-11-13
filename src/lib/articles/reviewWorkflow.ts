@@ -16,21 +16,20 @@ export function reviewPrimary(input: {
 	justApplied: boolean;
 	blockingOpen: number;
 }): ReviewPrimary {
-	if (input.justApplied) return { action: 'draft', label: 'View updated draft' };
-	if (!input.hasCritique) return { action: 'critique', label: 'Critique article' };
+	if (input.justApplied) return { action: 'draft', label: 'Review changes' };
+	if (!input.hasCritique || input.reviewStale) return { action: input.hasCritique ? 'rereview' : 'critique', label: 'Run Editorial Pass of Draft' };
 	if (input.accepted > 0 && !input.hasPreview) {
-		return { action: 'preview', label: `Preview and apply ${input.accepted} change${input.accepted === 1 ? '' : 's'}` };
+		return { action: 'preview', label: 'Apply Suggested Edits to Draft' };
 	}
 	if (input.accepted > 0 && input.hasPreview) {
-		return { action: 'apply', label: `Apply ${input.accepted} accepted change${input.accepted === 1 ? '' : 's'}` };
+		return { action: 'apply', label: 'Confirm and save these edits' };
 	}
-	if (input.reviewStale) return { action: 'rereview', label: 'Re-run review' };
 	if (input.blockingOpen === 0) return { action: 'images', label: 'Continue to Images' };
-	return { action: 'stay', label: 'Review findings' };
+	return { action: 'stay', label: 'Approve edits' };
 }
 
 export function acceptanceLabel(status: 'proposed' | 'accepted' | 'rejected' | 'deferred' | 'applied'): string {
-	if (status === 'accepted') return 'Accepted, awaiting application';
+	if (status === 'accepted') return 'Approved. The draft has not changed.';
 	if (status === 'applied') return 'Applied to the draft';
 	if (status === 'rejected') return 'Rejected';
 	if (status === 'deferred') return 'Deferred';

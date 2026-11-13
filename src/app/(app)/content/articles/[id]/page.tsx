@@ -370,12 +370,12 @@ export default function ArticleWorkspacePage() {
 				if (reviewAction.action === 'stay') return;
 				if (reviewAction.action === 'draft') chooseStage('draft');
 				else if (reviewAction.action === 'images') chooseStage('images');
-				else if (reviewAction.action === 'preview') void actBool('preview_editorial_proposals', {}, 'Preview ready. The article was not changed.');
+				else if (reviewAction.action === 'preview') void actBool('preview_editorial_proposals', {}, 'Preview ready. Confirm to save these edits. The draft has not changed yet.');
 				else if (reviewAction.action === 'apply') {
 					const beforeBody = article.body;
 					const beforeNumber = workspace?.revision?.number ?? 0;
 					const openBefore = (critique?.findings ?? []).filter((item) => item.status === 'open').length;
-					void act('apply_editorial_proposals', {}, 'Accepted changes saved as a new revision.').then((result) => {
+					void act('apply_editorial_proposals', {}, 'Editorial edits applied successfully.').then((result) => {
 						if (!result.ok) return;
 						const saved = result.payload?.article as ArticleRecord | undefined;
 						const change = summariseRevisionChange(beforeBody, saved?.body ?? beforeBody);
@@ -394,10 +394,10 @@ export default function ArticleWorkspacePage() {
 						setShowChanges(true);
 						setJustApplied(true);
 						setReading(true);
-						setToast({ kind: 'ok', text: `Revision ${saved?.workspace?.revision?.number ?? ''} saved. ${change.added} passage${change.added === 1 ? '' : 's'} changed.`, at: Date.now() });
+						setToast({ kind: 'ok', text: `Editorial edits applied successfully. Revision ${beforeNumber} → Revision ${saved?.workspace?.revision?.number ?? ''}.`, at: Date.now() });
 						chooseStage('draft');
 					});
-				} else void actBool('critique_article', {}, 'Critique saved. The article was not rewritten.');
+				} else void actBool('critique_article', {}, 'Editorial pass complete. The draft was not rewritten.');
 			},
 		},
 		images: { label: 'Review images', run: () => chooseStage('images') },
