@@ -77,6 +77,11 @@ export function EditorialReviewBoard({
 		<section className="card mx-auto max-w-3xl space-y-4 p-4 text-sm">
 			<div>
 				<h2 className="font-medium">Editorial review</h2>
+				<ol className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
+					<li>1. Run Editorial Pass — {critique ? (reviewStale ? 'Outdated' : 'Complete') : 'Not run'}</li>
+					<li>2. Approve Edits — {accepted.length ? `${accepted.length} approved` : 'None approved'}</li>
+					<li>3. Apply Edits to Draft — {accepted.length ? 'Not yet applied' : proposals.some((item) => item.status === 'applied') ? 'Saved on this revision' : 'Waiting for approval'}</li>
+				</ol>
 				<p className="text-text-soft">
 					Current revision {currentRevision ?? '—'}
 					{reviewedRevision ? ` · last reviewed revision ${reviewedRevision}` : ' · not reviewed yet'}
@@ -86,7 +91,7 @@ export function EditorialReviewBoard({
 			{reviewStale || unified.some((item) => item.stale) ? (
 				<div className="space-y-2">
 					<p className="text-warning">Review is outdated. Findings tied to an older revision cannot be applied until they are checked again.</p>
-					<button className="btn" type="button" disabled={busy} onClick={() => void act('critique_article', {}, 'Critique saved against the current revision. The article was not rewritten.')}>Review current revision</button>
+					<button className="btn" type="button" disabled={busy} onClick={() => void act('critique_article', {}, 'Editorial pass complete. The draft was not rewritten.')}>Run Editorial Pass of Draft</button>
 				</div>
 			) : null}
 			{accepted.length ? (
@@ -120,7 +125,7 @@ export function EditorialReviewBoard({
 										disabled={busy || item.stale || item.status === 'accepted' || item.status === 'applied'}
 										onClick={() => void act('queue_editorial_change', { findingId: item.id, instruction: item.correction, reason: item.explanation, section: item.section }, 'Added to the revision plan. The article has not changed.')}
 									>
-										{item.status === 'accepted' ? 'In the revision plan' : 'Accept into revision plan'}
+										{item.status === 'accepted' ? 'Approved' : 'Approve'}
 									</button>
 								</li>
 							))}
@@ -146,7 +151,7 @@ export function EditorialReviewBoard({
 							{proposal.needsBrandVerification ? <a className="btn" href="/intelligence">Verify the product capability</a> : null}
 							{proposal.status !== 'applied' ? (
 								<div className="mt-2 flex flex-wrap gap-2">
-									<button className="btn" type="button" disabled={busy} onClick={() => void act('editorial_proposal', { proposalId: proposal.id, status: 'accepted' }, 'Accepted. The article has not changed.')}>Accept</button>
+									<button className="btn" type="button" disabled={busy} onClick={() => void act('editorial_proposal', { proposalId: proposal.id, status: 'accepted' }, 'Approved. The draft has not changed.')}>Approve</button>
 									<button className="btn" type="button" disabled={busy} onClick={() => void act('editorial_proposal', { proposalId: proposal.id, status: 'rejected' }, 'Proposal rejected.')}>Reject</button>
 									<button className="btn" type="button" disabled={busy} onClick={() => void act('editorial_proposal', { proposalId: proposal.id, status: 'deferred' }, 'Proposal deferred.')}>Defer</button>
 									{editing === proposal.id ? (
