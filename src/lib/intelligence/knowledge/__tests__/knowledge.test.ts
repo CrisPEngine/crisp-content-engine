@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { usableCapabilities, type ProductCapability } from '@/lib/articles/productKnowledge';
 import { folianOfficialSiteDrafts, isFolianOfficialSite } from '@/lib/intelligence/knowledge/folianOfficialSite';
+import { humanVerification, nextIntelligenceAction } from '@/lib/intelligence/knowledge/presentation';
 import { draftsForBrand } from '@/lib/intelligence/knowledge/repository';
 import { publicationBlocks, resolveIntelligence } from '@/lib/intelligence/knowledge/resolver';
 import { stuckStrategyRecovery } from '@/lib/intelligence/strategy/stuckStrategy';
@@ -99,5 +100,11 @@ describe('brand knowledge', () => {
 		expect(recovered?.status).toBe('draft');
 		expect(recovered?.objectives).toEqual(['Keep the existing objective']);
 		expect(stuckStrategyRecovery({ ...strategy, generationMetadata: { phase: 'generating', startedAt: '2026-11-13T00:00:00.000Z' } }, Date.parse('2026-11-13T01:00:00.000Z'))).toBeNull();
+	});
+
+	it('points the overview at the next unfinished knowledge task', () => {
+		expect(humanVerification('verification_required')).toBe('Needs verification');
+		expect(nextIntelligenceAction({ verified: 0, pendingProposals: 3, strategyStatus: 'active', activeThemes: 2, pendingLearnings: 0 }).section).toBe('brain');
+		expect(nextIntelligenceAction({ verified: 4, pendingProposals: 0, strategyStatus: 'active', activeThemes: 2, pendingLearnings: 0 }).title).toContain('article');
 	});
 });

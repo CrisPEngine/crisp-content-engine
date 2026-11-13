@@ -144,9 +144,10 @@ export function EditorialDeskPanel({
 			</div>
 			{proposals.length ? (
 				<div className="space-y-3">
+					<p className="text-sm">{proposals.length} findings in this plan. {accepted} approved, {proposals.filter((item) => item.status === 'rejected').length} rejected, {proposals.filter((item) => item.status === 'deferred').length} deferred.</p>
 					<div className="flex flex-wrap gap-2">
 						<button className="btn" type="button" disabled={busy || accepted === 0} onClick={() => act('preview_editorial_proposals', {}, 'Preview ready. The article was not changed.')}>
-							Preview accepted ({accepted})
+							{busy ? 'Working…' : `Preview approved changes (${accepted})`}
 						</button>
 						<button className="btn" type="button" disabled={busy || !desk?.preview} onClick={() => act('apply_editorial_proposals', {}, 'Accepted changes applied. The article was critiqued again.')}>
 							Apply accepted

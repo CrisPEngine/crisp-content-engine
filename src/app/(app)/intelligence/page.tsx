@@ -3,16 +3,18 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, Brain, Map, Layers, Activity, Lightbulb } from 'lucide-react';
+import { Loader2, Brain, Map, Layers, Activity, Lightbulb, LayoutDashboard } from 'lucide-react';
 import { resolveWorkingBrandId, writeWorkingBrandId } from '@/lib/brands/workingBrand';
 import type { StrategyCompletenessResult } from '@/lib/intelligence/strategy/strategyCompleteness';
 import { HumanBrandBrain } from '@/components/HumanBrandBrain';
-import { ProductCapabilityEditor } from '@/components/ProductCapabilityEditor';
-import { KnowledgeOverview } from '@/components/intelligence/KnowledgeOverview';
+import { CapabilityCatalogue } from '@/components/intelligence/CapabilityCatalogue';
+import { IntelligenceHome } from '@/components/intelligence/IntelligenceHome';
+import { CardSkeleton } from '@/components/skeletons/Skeleton';
 import { CRISP_CANONICAL_AIRTABLE_ID, CRISP_RECONCILIATION_REASON, CRISP_RETAINED_PRODUCT_PROFILE_ID } from '@/lib/intelligence/crisp/nativeBrand';
 
 type BrandProfile = { id: string; name: string };
-type Tab = 'brain' | 'strategy' | 'themes' | 'learnings' | 'diagnostics';
+type Tab = 'overview' | 'brain' | 'strategy' | 'themes' | 'learnings' | 'diagnostics';
+type BrainArea = 'identity' | 'products' | 'capabilities' | 'audiences' | 'voice' | 'guardrails' | 'claims';
 type LearningRow = { id: string; scope?: string; channel?: string; observation: string; confidence?: string };
 type EditLearningRow = { id: string; signalType: string; observation: string; confidence: string; status: string; occurrenceCount: number };
 type DiagnosticRole = {
@@ -85,7 +87,13 @@ export default function IntelligencePage() {
 function IntelligencePageInner() {
 	const searchParams = useSearchParams();
 	const router = useRouter();
-	const [tab, setTab] = useState<Tab>('brain');
+	const [tab, setTab] = useState<Tab>('overview');
+	const [area, setArea] = useState<BrainArea>('identity');
+	const [recordId, setRecordId] = useState('');
+	const [knowledgeFilter, setKnowledgeFilter] = useState('all');
+	const [themeQuery, setThemeQuery] = useState('');
+	const [learningFilter, setLearningFilter] = useState('all');
+	const [savedBrain, setSavedBrain] = useState('');
 	const [brands, setBrands] = useState<BrandProfile[]>([]);
 	const [brandId, setBrandId] = useState<string>('');
 	const brainAirtableId = brandId === CRISP_RETAINED_PRODUCT_PROFILE_ID ? CRISP_CANONICAL_AIRTABLE_ID : brandId;
@@ -114,8 +122,13 @@ function IntelligencePageInner() {
 	} | null>(null);
 
 	useEffect(() => {
-		const requested = searchParams.get('tab');
-		if (requested === 'brain' || requested === 'strategy' || requested === 'themes' || requested === 'learnings' || requested === 'diagnostics') setTab(requested);
+		const requested = searchParams.get('section') || searchParams.get('tab');
+		if (requested === 'overview' || requested === 'brain' || requested === 'strategy' || requested === 'themes' || requested === 'learnings' || requested === 'diagnostics') setTab(requested);
+		const nextArea = searchParams.get('area');
+		if (nextArea === 'identity' || nextArea === 'products' || nextArea === 'capabilities' || nextArea === 'audiences' || nextArea === 'voice' || nextArea === 'guardrails' || nextArea === 'claims') setArea(nextArea);
+		setRecordId(searchParams.get('record') || '');
+		setKnowledgeFilter(searchParams.get('filter') || 'all');
+		setLearningFilter(searchParams.get('learning') || 'all');
 	}, [searchParams]);
 
 	useEffect(() => {
@@ -174,10 +187,15 @@ function IntelligencePageInner() {
 		setPayload(data);
 		setCompleteness(data.completeness ?? null);
 		if (data.brain) {
-			setIdentity(JSON.stringify(data.brain.identity ?? {}, null, 2));
-			setVoice(JSON.stringify(data.brain.voice ?? {}, null, 2));
-			setGuardrails(JSON.stringify(data.brain.guardrails ?? {}, null, 2));
-			setKnowledge(JSON.stringify(data.brain.knowledge ?? {}, null, 2));
+			const nextIdentity = JSON.stringify(data.brain.identity ?? {}, null, 2);
+			const nextVoice = JSON.stringify(data.brain.voice ?? {}, null, 2);
+			const nextGuardrails = JSON.stringify(data.brain.guardrails ?? {}, null, 2);
+			const nextKnowledge = JSON.stringify(data.brain.knowledge ?? {}, null, 2);
+			setIdentity(nextIdentity);
+			setVoice(nextVoice);
+			setGuardrails(nextGuardrails);
+			setKnowledge(nextKnowledge);
+			setSavedBrain(`${nextIdentity}\n${nextVoice}\n${nextGuardrails}\n${nextKnowledge}`);
 		}
 		if (data.strategy) {
 			setStrategyJson(
@@ -265,6 +283,24 @@ function IntelligencePageInner() {
 		if (!completeness) return true;
 		return !completeness.complete || completeness.isSkeleton || completeness.phase === 'missing' || completeness.phase === 'failed';
 	}, [completeness]);
+
+	function openWorkspace(section: Tab, extra?: { area?: string; filter?: string; record?: string }) {
+		setTab(section);
+		const areas: BrainArea[] = ['identity', 'products', 'capabilities', 'audiences', 'voice', 'guardrails', 'claims'];
+		if (extra?.area && areas.includes(extra.area as BrainArea)) setArea(extra.area as BrainArea);
+		if (extra?.filter) setKnowledgeFilter(extra.filter);
+		if (extra && 'record' in extra) setRecordId(extra.record || '');
+		const params = new URLSearchParams(searchParams.toString());
+		params.set('section', section);
+		params.delete('tab');
+		if (extra?.area) params.set('area', extra.area);
+		else if (section !== 'brain') params.delete('area');
+		if (extra?.filter) params.set('filter', extra.filter);
+		else params.delete('filter');
+		if (extra?.record) params.set('record', extra.record);
+		else params.delete('record');
+		router.push(`/intelligence?${params.toString()}`);
+	}
 
 	function onBrandChange(nextBrandId: string) {
 		setBrandId(nextBrandId);
@@ -496,97 +532,116 @@ function IntelligencePageInner() {
 		}
 	}
 
+	const brainDirty = Boolean(savedBrain) && savedBrain !== `${identity}\n${voice}\n${guardrails}\n${knowledge}`;
+	useEffect(() => {
+		if (!brainDirty) return;
+		const warn = (event: BeforeUnloadEvent) => {
+			event.preventDefault();
+			event.returnValue = '';
+		};
+		window.addEventListener('beforeunload', warn);
+		return () => window.removeEventListener('beforeunload', warn);
+	}, [brainDirty]);
+
 	if (loading) {
 		return (
-			<div className="mx-auto max-w-5xl p-6">
-				<div className="card p-8 text-center">
-					<Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
-					<p className="text-text-soft">Loading brand intelligence…</p>
-				</div>
+			<div className="mx-auto max-w-6xl p-6 space-y-3" aria-busy="true">
+				<p className="text-sm text-text-soft">Loading brand intelligence…</p>
+				<CardSkeleton />
+				<CardSkeleton />
 			</div>
 		);
 	}
 
+	const brandName = brands.find((brand) => brand.id === brandId)?.name || 'Brand';
+	const sectionLabel: Record<Tab, string> = {
+		overview: 'Overview',
+		brain: 'Brand Brain',
+		strategy: 'Strategy',
+		themes: 'Themes',
+		learnings: 'Learnings',
+		diagnostics: 'Diagnostics',
+	};
+	const areaLabel: Record<BrainArea, string> = {
+		identity: 'Identity',
+		products: 'Products and services',
+		capabilities: 'Capabilities',
+		audiences: 'Audiences',
+		voice: 'Voice and messaging',
+		guardrails: 'Guardrails',
+		claims: 'Claims and evidence',
+	};
+
 	return (
-		<div className="mx-auto max-w-5xl p-6 space-y-6">
-			<div>
-				<h1 className="text-3xl font-semibold">Brand Intelligence</h1>
-				<p className="text-sm text-text-dim mt-2">
-					Brand Brain, strategy, and themes for this brand. Research stays a proposal until you confirm it.
-				</p>
-			</div>
-
-			{brands.length > 1 && (
-				<select
-					value={brandId}
-					onChange={(event) => onBrandChange(event.target.value)}
-					className="rounded-xl2 border border-edge/60 bg-surface/30 px-3 py-2 text-sm"
-				>
-					{brands.map((brand) => (
-						<option key={brand.id} value={brand.id}>
-							{brand.name}
-						</option>
+		<div className="mx-auto max-w-6xl p-4 sm:p-6 space-y-5">
+			<header className="sticky top-0 z-20 -mx-4 border-b border-edge/60 bg-bg/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+				<p className="text-xs text-text-dim">CCE / Intelligence / {brandName} / {sectionLabel[tab]}{tab === 'brain' ? ` / ${areaLabel[area]}` : ''}</p>
+				<div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+					<h1 className="text-2xl font-semibold">{brandName}</h1>
+					{brands.length > 1 ? (
+						<label className="text-sm">
+							<span className="sr-only">Brand</span>
+							<select value={brandId} onChange={(event) => onBrandChange(event.target.value)} className="w-full rounded-xl2 border border-edge/60 bg-surface/30 px-3 py-2 sm:w-auto">
+								{brands.map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}
+							</select>
+						</label>
+					) : null}
+				</div>
+				<nav className="mt-3 flex gap-2 overflow-x-auto" aria-label="Brand Intelligence">
+					{(
+						[
+							['overview', 'Overview', LayoutDashboard],
+							['brain', 'Brand Brain', Brain],
+							['strategy', 'Strategy', Map],
+							['themes', 'Themes', Layers],
+							['learnings', 'Learnings', Lightbulb],
+							['diagnostics', 'Diagnostics', Activity],
+						] as const
+					).map(([id, label, Icon]) => (
+						<button key={id} type="button" aria-current={tab === id ? 'page' : undefined} onClick={() => openWorkspace(id)} className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-sm ${tab === id ? 'border-primary bg-primary/15 font-medium' : 'border-transparent text-text-dim'}`}>
+							<Icon className="h-4 w-4" aria-hidden />
+							{label}
+						</button>
 					))}
-				</select>
-			)}
+				</nav>
+			</header>
 
-			{error && <div className="card p-4 border-danger/40 bg-danger/10 text-danger text-sm">{error}</div>}
-			{notice && <div className="card p-4 border-primary/40 bg-primary/10 text-sm">{notice}</div>}
+			<div aria-live="polite">
+				{error ? <div className="card border-danger/40 bg-danger/10 p-4 text-sm text-danger" role="alert">{error} You can try the action again. Unrelated records were not changed.</div> : null}
+				{notice ? <div className="card border-primary/40 bg-primary/10 p-4 text-sm">{notice}</div> : null}
+			</div>
 			{brandId && !payload?.brain ? (
-				<div className="card p-4 border-warning/40 bg-warning/10 text-sm space-y-2">
-					<p>This Airtable brand does not have a native brand brain yet. Connections and brand assets need an active brain.</p>
-					<button type="button" onClick={() => void activateBrand()} disabled={saving} className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 text-sm">
-						{saving ? 'Activating…' : 'Activate brand'}
-					</button>
+				<div className="card space-y-2 border-warning/40 bg-warning/10 p-4 text-sm">
+					<p>This brand does not have a Brand Brain yet.</p>
+					<button type="button" onClick={() => void activateBrand()} disabled={saving} className="rounded-xl2 border border-primary/40 bg-primary/10 px-4 py-2 text-sm">{saving ? 'Activating…' : 'Activate brand'}</button>
 				</div>
 			) : null}
-
-			{brainAirtableId && payload?.brain ? <KnowledgeOverview brandId={brainAirtableId} onOpenTab={setTab} /> : null}
 			{brandId === CRISP_RETAINED_PRODUCT_PROFILE_ID ? <p className="text-sm text-text-dim">{CRISP_RECONCILIATION_REASON} Brand Intelligence uses the consultancy brain. The content queue and LinkedIn connection stay on the product profile.</p> : null}
 
-			<div className="flex gap-2 border-b border-edge/60">
-				{(
-					[
-						['brain', 'Brand Brain', Brain],
-						['strategy', 'Strategy', Map],
-						['themes', 'Themes', Layers],
-						['learnings', 'Learnings', Lightbulb],
-						['diagnostics', 'Diagnostics', Activity],
-					] as const
-				).map(([id, label, Icon]) => (
-					<button
-						key={id}
-						onClick={() => setTab(id)}
-						className={`px-4 py-3 text-sm font-medium border-b-2 ${
-							tab === id ? 'border-primary text-primary' : 'border-transparent text-text-dim'
-						}`}
-					>
-						<span className="inline-flex items-center gap-2">
-							<Icon className="w-4 h-4" />
-							{label}
-						</span>
-					</button>
-				))}
-			</div>
+			{tab === 'overview' && brainAirtableId && payload?.brain ? <IntelligenceHome brandId={brainAirtableId} brandName={brandName} onOpen={(section, extra) => openWorkspace(section, extra)} /> : null}
 
-			{tab === 'brain' && (
-				<div className="space-y-4">
-					<ProductCapabilityEditor knowledgeJson={knowledge} onKnowledge={setKnowledge} />
-					<HumanBrandBrain
-						identityJson={identity}
-						voiceJson={voice}
-						guardrailsJson={guardrails}
-						knowledgeJson={knowledge}
-						onIdentity={setIdentity}
-						onVoice={setVoice}
-						onGuardrails={setGuardrails}
-						onKnowledge={setKnowledge}
-					/>
-					<button onClick={saveBrain} disabled={saving || !brandId} className="px-4 py-2 rounded-xl2 border border-primary/40 bg-primary/10 text-sm">
-						{saving ? 'Saving…' : 'Save Brand Brain'}
-					</button>
+			{tab === 'brain' && payload?.brain ? (
+				<div className="grid gap-4 lg:grid-cols-[14rem_minmax(0,1fr)]">
+					<nav className="flex gap-2 overflow-x-auto lg:block lg:space-y-1" aria-label="Brand Brain">
+						{(Object.keys(areaLabel) as BrainArea[]).map((id) => (
+							<button key={id} type="button" aria-current={area === id ? 'page' : undefined} className={`shrink-0 rounded-lg px-3 py-2 text-left text-sm lg:w-full ${area === id ? 'bg-primary/15 font-medium' : 'hover:bg-surface'}`} onClick={() => openWorkspace('brain', { area: id })}>{areaLabel[id]}</button>
+						))}
+					</nav>
+					<div className="space-y-4">
+						{area === 'capabilities' && brainAirtableId ? (
+							<CapabilityCatalogue brandId={brainAirtableId} initialFilter={knowledgeFilter} initialRecord={recordId} onRecord={(id) => openWorkspace('brain', { area: 'capabilities', filter: knowledgeFilter, record: id })} />
+						) : (
+							<>
+								<HumanBrandBrain focus={area === 'capabilities' ? 'identity' : area} identityJson={identity} voiceJson={voice} guardrailsJson={guardrails} knowledgeJson={knowledge} onIdentity={setIdentity} onVoice={setVoice} onGuardrails={setGuardrails} onKnowledge={setKnowledge} />
+								<div className="flex flex-wrap items-center gap-3">
+									<button type="button" onClick={() => void saveBrain()} disabled={saving || !brandId || !brainDirty} className="rounded-xl2 border border-primary/40 bg-primary/10 px-4 py-2 text-sm">{saving ? 'Saving…' : brainDirty ? 'Save changes' : 'Saved'}</button>
+									<p className="text-sm text-text-dim">{saving ? 'Saving this section…' : brainDirty ? 'Unsaved changes' : 'All changes saved'}</p>
+								</div>
+							</>
+						)}
+					</div>
 				</div>
-			)}
+			) : null}
 
 			{tab === 'strategy' && (
 				<div className="space-y-4">
@@ -740,6 +795,7 @@ function IntelligencePageInner() {
 
 			{tab === 'themes' && (
 				<div className="space-y-4">
+					<input className="w-full rounded-xl2 border border-edge/60 bg-surface/30 px-3 py-2 text-sm" placeholder="Search themes" value={themeQuery} onChange={(event) => setThemeQuery(event.target.value)} />
 					<div className="grid gap-3">
 						<input className="rounded-xl2 border border-edge/60 bg-surface/30 px-3 py-2 text-sm" placeholder="Theme title" value={themeTitle} onChange={(e) => setThemeTitle(e.target.value)} />
 						<input className="rounded-xl2 border border-edge/60 bg-surface/30 px-3 py-2 text-sm" placeholder="Objective" value={themeObjective} onChange={(e) => setThemeObjective(e.target.value)} />
@@ -749,7 +805,7 @@ function IntelligencePageInner() {
 						</button>
 					</div>
 					<div className="space-y-2">
-						{(payload?.themes || []).map((theme) => (
+						{(payload?.themes || []).filter((theme) => `${theme.title} ${theme.objective || ''} ${theme.description || ''}`.toLowerCase().includes(themeQuery.trim().toLowerCase())).map((theme) => (
 							<div key={theme.id} className="card p-4 space-y-1">
 								<div className="font-medium">{theme.title}</div>
 								<div className="text-sm text-text-dim">{theme.description || theme.objective}</div>
@@ -757,15 +813,17 @@ function IntelligencePageInner() {
 								<button
 									type="button"
 									className="text-sm underline"
+									disabled={saving}
 									onClick={() => {
+										setSaving(true);
 										void fetch('/api/intelligence/actions', {
 											method: 'POST',
 											headers: { 'Content-Type': 'application/json' },
 											body: JSON.stringify({ action: 'create_theme', input: { airtableBrandId: brainAirtableId, id: theme.id, title: theme.title, objective: theme.objective, description: theme.description, channels: theme.channels, status: theme.status === 'paused' ? 'active' : 'paused' } }),
-										}).then(() => loadIntelligence(brainAirtableId));
+										}).then(() => loadIntelligence(brainAirtableId)).finally(() => setSaving(false));
 									}}
 								>
-									{theme.status === 'paused' ? 'Resume' : 'Pause'}
+									{saving ? 'Saving…' : theme.status === 'paused' ? 'Resume' : 'Pause'}
 								</button>
 							</div>
 						))}
@@ -775,9 +833,12 @@ function IntelligencePageInner() {
 
 			{tab === 'learnings' && (
 				<div className="space-y-4">
-					<p className="text-sm text-text-soft">
-						Edit, rejection, and performance signals captured from your approvals and analytics. Native generation reads accepted signals and observational performance hints only.
-					</p>
+					<p className="text-sm text-text-soft">Accepted learnings can influence future writing. Proposed, rejected, and deferred learnings do not.</p>
+					<div className="flex gap-2 overflow-x-auto">
+						{['all', 'pending', 'accepted', 'rejected', 'deferred'].map((item) => (
+							<button key={item} type="button" className={`shrink-0 rounded-full border px-3 py-1 text-sm capitalize ${learningFilter === item ? 'border-primary bg-primary/15' : 'border-edge'}`} onClick={() => setLearningFilter(item)}>{item === 'pending' ? 'Pending' : item}</button>
+						))}
+					</div>
 					{!learningsPayload ? (
 						<p className="text-sm text-text-dim">Loading learnings…</p>
 					) : (
@@ -803,7 +864,7 @@ function IntelligencePageInner() {
 									<p className="text-sm text-text-dim">No edit patterns yet.</p>
 								) : (
 									<ul className="space-y-2 text-sm">
-										{learningsPayload.edits.slice(0, 12).map((row) => (
+										{learningsPayload.edits.filter((row) => learningFilter === 'all' || (learningFilter === 'pending' ? row.status === 'proposed' : row.status === learningFilter)).map((row) => (
 											<li key={row.id} className="border-b border-edge/40 pb-2">
 												<span className="text-text-dim">{row.signalType} ({row.confidence}, {row.status}): </span>
 												{row.observation}
@@ -856,6 +917,7 @@ function IntelligencePageInner() {
 										<th className="py-2 pr-4">Fallback</th>
 										<th className="py-2 pr-4">Latency</th>
 										<th className="py-2 pr-4">Result</th>
+										<th className="py-2 pr-4">Cost</th>
 										<th className="py-2">Brand</th>
 									</tr>
 								</thead>
@@ -867,8 +929,9 @@ function IntelligencePageInner() {
 											<td className="py-2 pr-4 font-mono text-xs">{row.model}</td>
 											<td className="py-2 pr-4">{row.fallback_used ? row.error_code || 'yes' : 'no'}</td>
 											<td className="py-2 pr-4">{row.duration_ms ?? '—'} ms</td>
-											<td className="py-2 pr-4">{row.ok ? 'success' : row.error_code || 'failed'}</td>
-											<td className="py-2 font-mono text-xs">{row.brand_id ? row.brand_id.slice(0, 8) : 'Not recorded'}</td>
+											<td className="py-2 pr-4">{row.ok ? 'Succeeded' : row.error_code || 'Failed'}</td>
+											<td className="py-2 pr-4">{row.estimated_cost_usd ?? '—'}</td>
+											<td className="py-2 font-mono text-xs">{row.brand_id ? `${row.brand_id.slice(0, 8)}…` : 'Not recorded'}</td>
 										</tr>
 									))}
 								</tbody>
