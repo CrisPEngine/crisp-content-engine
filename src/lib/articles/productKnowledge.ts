@@ -1,4 +1,4 @@
-export const CAPABILITY_AVAILABILITY = ['available', 'beta', 'in_development', 'planned', 'deprecated', 'unverified'] as const;
+export const CAPABILITY_AVAILABILITY = ['available', 'beta', 'private_preview', 'in_development', 'planned', 'deprecated', 'unverified'] as const;
 
 export type CapabilityAvailability = (typeof CAPABILITY_AVAILABILITY)[number];
 

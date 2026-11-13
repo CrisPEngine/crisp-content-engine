@@ -27,8 +27,8 @@ function missingTable(error: { message?: string; code?: string } | null): boolea
 }
 
 function mapAvailability(value: AvailabilityStatus): CapabilityAvailability {
-	if (value === 'private_preview') return 'beta';
 	if (value === 'discontinued') return 'deprecated';
+	if (value === 'private_preview') return 'private_preview';
 	return value;
 }
 
@@ -191,6 +191,24 @@ export async function discoverKnowledge(userId: string, brain: BrandBrain, suppl
 		.eq('session_key', sessionKey);
 	if (existing.error) throw new Error(missingTable(existing.error) ? 'Brand knowledge tables are not available. Apply migration 040.' : existing.error.message);
 	const seen = new Set((existing.data ?? []).map((row) => row.natural_key));
+	const currentRows = await db
+		.from('brand_knowledge_proposals')
+		.select('id, natural_key, status, payload')
+		.eq('user_id', userId)
+		.eq('brand_brain_id', brain.id)
+		.eq('session_key', sessionKey);
+	if (currentRows.error) throw new Error(currentRows.error.message);
+	for (const draft of drafts) {
+		const current = (currentRows.data ?? []).find((row) => row.natural_key === draft.naturalKey);
+		if (!current || current.status !== 'proposed') continue;
+		const payload = (current.payload ?? {}) as CatalogueDraft & { customerDescription?: string };
+		const refreshed = {
+			...draft,
+			customerDescription: payload.customerDescription,
+			description: payload.customerDescription || draft.description,
+		};
+		await db.from('brand_knowledge_proposals').update({ payload: refreshed }).eq('id', current.id).eq('user_id', userId);
+	}
 	const rows = drafts
 		.filter((draft) => !seen.has(draft.naturalKey))
 		.map((draft) => ({
@@ -211,6 +229,24 @@ export async function discoverKnowledge(userId: string, brain: BrandBrain, suppl
 	const saved = await db.from('brand_knowledge_proposals').insert(rows).select('*');
 	if (saved.error) throw new Error(saved.error.message);
 	return (saved.data ?? []).map((row) => mapProposal(row as Record<string, unknown>));
+}
+
+export async function reviseProposalDescription(
+	userId: string,
+	brandBrainId: string,
+	proposalId: string,
+	customerDescription: string,
+): Promise<void> {
+	const description = customerDescription.trim();
+	if (!description) throw new Error('The customer-facing description cannot be empty.');
+	const db = getSupabaseService();
+	const found = await db.from('brand_knowledge_proposals').select('id, status, payload').eq('id', proposalId).eq('user_id', userId).eq('brand_brain_id', brandBrainId).maybeSingle();
+	if (found.error) throw new Error(found.error.message);
+	if (!found.data) throw new Error('Proposal not found.');
+	if (found.data.status === 'applied' || found.data.status === 'rejected') throw new Error('This proposal can no longer be edited here.');
+	const payload = { ...(found.data.payload as Record<string, unknown>), customerDescription: description, description };
+	const updated = await db.from('brand_knowledge_proposals').update({ payload }).eq('id', proposalId).eq('user_id', userId);
+	if (updated.error) throw new Error(updated.error.message);
 }
 
 export async function decideProposals(

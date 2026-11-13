@@ -23,8 +23,10 @@ describe('brand knowledge', () => {
 		const drafts = folianOfficialSiteDrafts();
 		expect(drafts.length).toBeGreaterThan(8);
 		expect(drafts.every((item) => item.verificationStatus === 'verification_required')).toBe(true);
-		expect(drafts.find((item) => item.name === 'Folian Studio')?.availability).toBe('planned');
-		expect(drafts.find((item) => item.name === 'Windows app')?.availability).toBe('in_development');
+		expect(drafts.find((item) => item.name === 'Folian Studio')?.availability).toBe('private_preview');
+		expect(drafts.find((item) => item.naturalKey === 'capability:ask-folian')?.verificationStatus).toBe('verification_required');
+		expect(drafts.every((item) => item.verificationStatus === 'verification_required')).toBe(true);
+		expect(drafts.find((item) => item.naturalKey === 'capability:windows')?.availability).toBe('in_development');
 		expect(drafts.some((item) => item.prohibited)).toBe(true);
 		expect(isFolianOfficialSite('https://folian.app')).toBe(true);
 		expect(isFolianOfficialSite('https://www.premiumdiecast.com')).toBe(false);

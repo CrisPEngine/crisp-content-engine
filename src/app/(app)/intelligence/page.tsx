@@ -9,6 +9,7 @@ import type { StrategyCompletenessResult } from '@/lib/intelligence/strategy/str
 import { HumanBrandBrain } from '@/components/HumanBrandBrain';
 import { ProductCapabilityEditor } from '@/components/ProductCapabilityEditor';
 import { KnowledgeOverview } from '@/components/intelligence/KnowledgeOverview';
+import { CRISP_CANONICAL_AIRTABLE_ID, CRISP_RECONCILIATION_REASON, CRISP_RETAINED_PRODUCT_PROFILE_ID } from '@/lib/intelligence/crisp/nativeBrand';
 
 type BrandProfile = { id: string; name: string };
 type Tab = 'brain' | 'strategy' | 'themes' | 'learnings' | 'diagnostics';
@@ -87,6 +88,7 @@ function IntelligencePageInner() {
 	const [tab, setTab] = useState<Tab>('brain');
 	const [brands, setBrands] = useState<BrandProfile[]>([]);
 	const [brandId, setBrandId] = useState<string>('');
+	const brainAirtableId = brandId === CRISP_RETAINED_PRODUCT_PROFILE_ID ? CRISP_CANONICAL_AIRTABLE_ID : brandId;
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -151,7 +153,11 @@ function IntelligencePageInner() {
 		const data = (await res.json()) as { profiles?: Array<{ id: string; client_name?: string; brand_name?: string }> };
 		const profiles: BrandProfile[] = (data.profiles || []).map((row: { id: string; client_name?: string; brand_name?: string }) => ({
 			id: row.id,
-			name: row.client_name || row.brand_name || 'Unnamed Brand',
+			name: row.id === CRISP_RETAINED_PRODUCT_PROFILE_ID
+				? 'CrisP Digital'
+				: row.id === CRISP_CANONICAL_AIRTABLE_ID
+					? 'CrisP Digital consultancy'
+					: row.client_name || row.brand_name || 'Unnamed Brand',
 		}));
 		setBrands(profiles);
 		const ids = profiles.map((row) => row.id);
@@ -211,7 +217,7 @@ function IntelligencePageInner() {
 
 	useEffect(() => {
 		if (!brandId) return;
-		loadIntelligence(brandId).catch((err) => setError(err.message));
+		loadIntelligence(brainAirtableId).catch((err) => setError(err.message));
 	}, [brandId, loadIntelligence]);
 
 	useEffect(() => {
@@ -222,7 +228,7 @@ function IntelligencePageInner() {
 	useEffect(() => {
 		if (!brandId || tab !== 'learnings') return;
 		let cancelled = false;
-		fetch(`/api/intelligence/learnings?airtableBrandId=${encodeURIComponent(brandId)}`, { cache: 'no-store' })
+		fetch(`/api/intelligence/learnings?airtableBrandId=${encodeURIComponent(brainAirtableId)}`, { cache: 'no-store' })
 			.then(async (res) => {
 				const data = (await res.json()) as {
 					content?: LearningRow[];
@@ -250,7 +256,7 @@ function IntelligencePageInner() {
 	useEffect(() => {
 		if (payload?.strategy?.generationMetadata?.phase !== 'generating') return;
 		const timer = setInterval(() => {
-			loadIntelligence(brandId).catch(() => undefined);
+			loadIntelligence(brainAirtableId).catch(() => undefined);
 		}, 4000);
 		return () => clearInterval(timer);
 	}, [payload?.strategy?.generationMetadata?.phase, brandId, loadIntelligence]);
@@ -304,12 +310,12 @@ function IntelligencePageInner() {
 			const res = await fetch('/api/intelligence/activate', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ airtableBrandId: brandId }),
+				body: JSON.stringify({ airtableBrandId: brainAirtableId }),
 			});
 			const data = (await res.json()) as { error?: string; brandId?: string; alreadyActive?: boolean };
 			if (!res.ok) throw new Error(data.error || 'Activation failed');
 			setNotice(data.alreadyActive ? 'Brand brain was already active.' : 'Brand brain activated from Airtable profile.');
-			await loadIntelligence(brandId);
+			await loadIntelligence(brainAirtableId);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Activation failed');
 		} finally {
@@ -326,7 +332,7 @@ function IntelligencePageInner() {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					airtableBrandId: brandId,
+					airtableBrandId: brainAirtableId,
 					identity: JSON.parse(identity),
 					voice: JSON.parse(voice),
 					guardrails: JSON.parse(guardrails),
@@ -336,7 +342,7 @@ function IntelligencePageInner() {
 			const data = await res.json();
 			if (!res.ok) throw new Error(data.error || 'Save failed');
 			setNotice('Brand Brain saved. Existing Airtable strategy was not modified.');
-			await loadIntelligence(brandId);
+			await loadIntelligence(brainAirtableId);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Save failed');
 		} finally {
@@ -354,7 +360,7 @@ function IntelligencePageInner() {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					airtableBrandId: brandId,
+					airtableBrandId: brainAirtableId,
 					escalate: true,
 					runWebsiteResearch: true,
 				}),
@@ -371,7 +377,7 @@ function IntelligencePageInner() {
 					? 'Regeneration started using your legacy Make strategy as reference input. Watch progress below; nothing is activated until you choose Activate draft.'
 					: 'Regeneration started from brand brain and website research. Watch progress below; nothing is activated until you choose Activate draft.',
 			);
-			await loadIntelligence(brandId);
+			await loadIntelligence(brainAirtableId);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Native strategy regeneration failed');
 		} finally {
@@ -389,7 +395,7 @@ function IntelligencePageInner() {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					airtableBrandId: brandId,
+					airtableBrandId: brainAirtableId,
 					researchId: strategyResearchId.trim() || undefined,
 					instructions: strategyInstructions || undefined,
 					escalate: strategyEscalate,
@@ -401,7 +407,7 @@ function IntelligencePageInner() {
 			setNotice(
 				'Native strategy draft is ready for review. Your Make/Airtable strategy is unchanged until you activate this draft.',
 			);
-			await loadIntelligence(brandId);
+			await loadIntelligence(brainAirtableId);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Native strategy generation failed');
 		} finally {
@@ -418,12 +424,12 @@ function IntelligencePageInner() {
 			const res = await fetch('/api/intelligence/strategy/activate', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ airtableBrandId: brandId }),
+				body: JSON.stringify({ airtableBrandId: brainAirtableId }),
 			});
 			const data = (await res.json()) as { error?: string };
 			if (!res.ok) throw new Error(data.error || 'Activation failed');
 			setNotice('Native strategy activated and synced to Airtable for approval. You can open the strategy page to approve.');
-			await loadIntelligence(brandId);
+			await loadIntelligence(brainAirtableId);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Activation failed');
 		} finally {
@@ -440,12 +446,12 @@ function IntelligencePageInner() {
 			const res = await fetch('/api/intelligence/strategy', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ airtableBrandId: brandId, ...parsed }),
+				body: JSON.stringify({ airtableBrandId: brainAirtableId, ...parsed }),
 			});
 			const data = await res.json();
 			if (!res.ok) throw new Error(data.error || 'Save failed');
 			setNotice('Native strategy saved alongside Airtable. Make strategy flows are unchanged.');
-			await loadIntelligence(brandId);
+			await loadIntelligence(brainAirtableId);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Save failed');
 		} finally {
@@ -462,7 +468,7 @@ function IntelligencePageInner() {
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					action: 'create_theme',
-					input: { airtableBrandId: brandId, title: themeTitle, objective: themeObjective, channels: ['linkedin', 'x', 'blog'] },
+					input: { airtableBrandId: brainAirtableId, title: themeTitle, objective: themeObjective, channels: ['linkedin', 'x', 'blog'] },
 				}),
 			});
 			const data = await res.json();
@@ -481,7 +487,7 @@ function IntelligencePageInner() {
 			}
 			setThemeTitle('');
 			setThemeObjective('');
-			await loadIntelligence(brandId);
+			await loadIntelligence(brainAirtableId);
 			setNotice('Theme saved. Multi-channel plan generated if a core idea was provided.');
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Theme failed');
@@ -535,7 +541,8 @@ function IntelligencePageInner() {
 				</div>
 			) : null}
 
-			{brandId && payload?.brain ? <KnowledgeOverview brandId={brandId} onOpenTab={setTab} /> : null}
+			{brainAirtableId && payload?.brain ? <KnowledgeOverview brandId={brainAirtableId} onOpenTab={setTab} /> : null}
+			{brandId === CRISP_RETAINED_PRODUCT_PROFILE_ID ? <p className="text-sm text-text-dim">{CRISP_RECONCILIATION_REASON} Brand Intelligence uses the consultancy brain. The content queue and LinkedIn connection stay on the product profile.</p> : null}
 
 			<div className="flex gap-2 border-b border-edge/60">
 				{(
@@ -754,8 +761,8 @@ function IntelligencePageInner() {
 										void fetch('/api/intelligence/actions', {
 											method: 'POST',
 											headers: { 'Content-Type': 'application/json' },
-											body: JSON.stringify({ action: 'create_theme', input: { airtableBrandId: brandId, id: theme.id, title: theme.title, objective: theme.objective, description: theme.description, channels: theme.channels, status: theme.status === 'paused' ? 'active' : 'paused' } }),
-										}).then(() => loadIntelligence(brandId));
+											body: JSON.stringify({ action: 'create_theme', input: { airtableBrandId: brainAirtableId, id: theme.id, title: theme.title, objective: theme.objective, description: theme.description, channels: theme.channels, status: theme.status === 'paused' ? 'active' : 'paused' } }),
+										}).then(() => loadIntelligence(brainAirtableId));
 									}}
 								>
 									{theme.status === 'paused' ? 'Resume' : 'Pause'}

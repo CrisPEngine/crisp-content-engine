@@ -7,7 +7,21 @@ type Proposal = {
 	recordType: string;
 	naturalKey: string;
 	status: string;
-	payload: { name?: string; description?: string; availability?: string; verificationStatus?: string; evidence?: string; prohibited?: boolean };
+	payload: {
+		name?: string;
+		description?: string;
+		customerDescription?: string;
+		availability?: string;
+		verificationStatus?: string;
+		evidence?: string;
+		platform?: string;
+		implementationEvidence?: string;
+		qaEvidence?: string;
+		publicReleaseEvidence?: string;
+		recommendation?: string;
+		limitations?: string;
+		prohibited?: boolean;
+	};
 };
 
 type CapabilityRow = {
@@ -162,27 +176,83 @@ export function KnowledgeOverview({ brandId, onOpenTab }: { brandId: string; onO
 				{overview.proposals.length ? (
 					<ul className="divide-y">
 						{overview.proposals.map((proposal) => (
-							<li key={proposal.id} className="py-3">
-								<label className="flex gap-3 text-sm">
-									<input
-										type="checkbox"
-										checked={selected.includes(proposal.id)}
-										disabled={proposal.status === 'applied'}
-										onChange={(event) => setSelected((current) => event.target.checked ? [...current, proposal.id] : current.filter((id) => id !== proposal.id))}
-									/>
-									<span>
-										<span className="font-medium">{proposal.payload.name || proposal.naturalKey}</span>
-										<span className="text-text-dim"> · {proposal.status} · {proposal.payload.availability || proposal.recordType} · {proposal.payload.verificationStatus || 'verification required'}</span>
-										<span className="block text-text-dim">{proposal.payload.description}</span>
-										{proposal.payload.evidence ? <span className="block">{proposal.payload.evidence}</span> : null}
-									</span>
-								</label>
-							</li>
+							<ProposalCard
+								key={proposal.id}
+								proposal={proposal}
+								selected={selected.includes(proposal.id)}
+								busy={busy}
+								onToggle={(checked) => setSelected((current) => checked ? [...current, proposal.id] : current.filter((id) => id !== proposal.id))}
+								onSave={async (description) => {
+									setBusy(true);
+									setError(null);
+									try {
+										const res = await fetch('/api/intelligence/knowledge', {
+											method: 'POST',
+											headers: { 'content-type': 'application/json' },
+											body: JSON.stringify({ airtableBrandId: brandId, action: 'describe', proposalId: proposal.id, text: description }),
+										});
+										const data = (await res.json()) as { error?: string };
+										if (!res.ok) throw new Error(data.error || 'Description was not saved');
+										setNotice('Customer-facing description saved. Verification was not changed.');
+										await load();
+									} catch (err) {
+										setError(err instanceof Error ? err.message : 'Description was not saved');
+									} finally {
+										setBusy(false);
+									}
+								}}
+							/>
 						))}
 					</ul>
 				) : <p className="text-sm text-text-dim">No knowledge proposals.</p>}
 			</div>
 		</section>
+	);
+}
+
+function ProposalCard({ proposal, selected, busy, onToggle, onSave }: {
+	proposal: Proposal;
+	selected: boolean;
+	busy: boolean;
+	onToggle: (checked: boolean) => void;
+	onSave: (description: string) => Promise<void>;
+}) {
+	const [description, setDescription] = useState(proposal.payload.customerDescription || proposal.payload.description || '');
+	const evidence = [
+		['Product and platform', [proposal.payload.platform, proposal.payload.availability].filter(Boolean).join(' · ')],
+		['Implementation', proposal.payload.implementationEvidence],
+		['QA', proposal.payload.qaEvidence],
+		['Public release', proposal.payload.publicReleaseEvidence || proposal.payload.evidence],
+		['Recommendation', proposal.payload.recommendation],
+		['Limits', proposal.payload.limitations],
+	].filter((row): row is [string, string] => Boolean(row[1]));
+	return (
+		<li className="py-3">
+			<label className="flex gap-3 text-sm">
+				<input type="checkbox" checked={selected} disabled={proposal.status === 'applied'} onChange={(event) => onToggle(event.target.checked)} />
+				<span>
+					<span className="font-medium">{proposal.payload.name || proposal.naturalKey}</span>
+					<span className="text-text-dim"> · {proposal.status} · {proposal.payload.availability || proposal.recordType} · {proposal.payload.verificationStatus || 'verification required'}</span>
+				</span>
+			</label>
+			{proposal.status !== 'applied' ? (
+				<div className="mt-2 ml-7 space-y-2">
+					<label className="block text-sm">
+						<span className="text-text-dim">Customer-facing description</span>
+						<textarea className="mt-1 w-full rounded-xl2 border bg-transparent p-2" rows={3} value={description} onChange={(event) => setDescription(event.target.value)} />
+					</label>
+					<button type="button" className="px-3 py-2 rounded-xl2 border text-sm" disabled={busy || !description.trim()} onClick={() => void onSave(description)}>Save description</button>
+				</div>
+			) : <p className="mt-2 ml-7 text-sm text-text-dim">{proposal.payload.description}</p>}
+			<dl className="mt-2 ml-7 space-y-1 text-sm">
+				{evidence.map(([label, value]) => (
+					<div key={label}>
+						<dt className="text-text-dim">{label}</dt>
+						<dd>{value}</dd>
+					</div>
+				))}
+			</dl>
+		</li>
 	);
 }
 

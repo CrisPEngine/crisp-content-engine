@@ -2,15 +2,16 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { jsonError, requireIntelligenceUser } from '@/lib/intelligence/http';
-import { applyApprovedProposals, countsFromSnapshot, decideProposals, discoverKnowledge, loadKnowledgeSnapshot, setCapabilityVerification } from '@/lib/intelligence/knowledge/repository';
+import { applyApprovedProposals, countsFromSnapshot, decideProposals, discoverKnowledge, loadKnowledgeSnapshot, reviseProposalDescription, setCapabilityVerification } from '@/lib/intelligence/knowledge/repository';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const bodySchema = z.object({
 	airtableBrandId: z.string().min(1),
-	action: z.enum(['discover', 'decide', 'apply', 'verify']),
+	action: z.enum(['discover', 'decide', 'apply', 'verify', 'describe']),
 	text: z.string().optional(),
+	proposalId: z.string().optional(),
 	ids: z.array(z.string()).optional(),
 	status: z.enum(['approved', 'rejected', 'deferred']).optional(),
 	verificationStatus: z.enum(['verified', 'unverified', 'verification_required', 'evidence_outdated', 'disputed']).optional(),
@@ -71,6 +72,11 @@ export async function POST(request: Request) {
 			if (!body.status || !body.ids?.length) return NextResponse.json({ error: 'Choose proposals and a decision.' }, { status: 400 });
 			const updated = await decideProposals(userId, brain.id, body.ids, body.status);
 			return NextResponse.json({ updated, modelCalls: 0 });
+		}
+		if (body.action === 'describe') {
+			if (!body.proposalId || !body.text) return NextResponse.json({ error: 'Choose a proposal and a description.' }, { status: 400 });
+			await reviseProposalDescription(userId, brain.id, body.proposalId, body.text);
+			return NextResponse.json({ updated: 1, modelCalls: 0 });
 		}
 		if (body.action === 'verify') {
 			if (!body.verificationStatus || !body.ids?.length) return NextResponse.json({ error: 'Choose capabilities and a verification status.' }, { status: 400 });
