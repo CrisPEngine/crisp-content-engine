@@ -84,6 +84,7 @@ import {
 	conceptSimilarityWarning,
 	emptyMediaCreativeState,
 	mergeImageBrief,
+	normaliseImageBrief,
 	suggestImageConcept,
 	type AltTextStatus,
 	type ArticleImageRole,
@@ -1397,7 +1398,8 @@ export async function generateArticleMedia(
 	const brain = await requireBrand(ownerUserId, article.brandId);
 	const workspace = ensureWorkspace(article);
 	const creative = ensureMediaCreative(workspace);
-	const brief = creative[role];
+	const brief = normaliseImageBrief(creative[role], role);
+	creative[role] = brief;
 	const brandAssets = await getNativeContentStore().listAssets(ownerUserId, article.brandId);
 	const hasProductScreenshot = brandHasProductScreenshot(brandAssets);
 	const suggested = suggestImageConcept({
@@ -1410,11 +1412,14 @@ export async function generateArticleMedia(
 		brandName: brain.identity.name,
 		hasProductScreenshot,
 	});
-	const concept = (options.concept ?? brief.concept ?? suggested).trim() || suggested;
-	const negativeConstraints = options.negativeConstraints ?? brief.negativeConstraints;
-	const revisionInstructions = options.revisionInstructions ?? brief.revisionInstructions;
-	const brandStyleNotes = options.brandStyleNotes ?? brief.brandStyleNotes;
-	const referenceAssetIds = options.referenceAssetIds ?? brief.referenceAssetIds;
+	const asText = (value: unknown, fallback = '') => typeof value === 'string' ? value : fallback;
+	const concept = asText(options.concept ?? brief.concept, suggested).trim() || suggested;
+	const negativeConstraints = asText(options.negativeConstraints ?? brief.negativeConstraints);
+	const revisionInstructions = asText(options.revisionInstructions ?? brief.revisionInstructions);
+	const brandStyleNotes = asText(options.brandStyleNotes ?? brief.brandStyleNotes);
+	const referenceAssetIds = Array.isArray(options.referenceAssetIds)
+		? options.referenceAssetIds
+		: Array.isArray(brief.referenceAssetIds) ? brief.referenceAssetIds : [];
 	const hasProductReference = referenceAssetIds.some((id) =>
 		brandAssets.some(
 			(asset) =>
@@ -1436,7 +1441,7 @@ export async function generateArticleMedia(
 	});
 	const prompt = options.useStoredPrompt === false
 		? built.prompt
-		: (options.prompt ?? brief.prompt ?? built.prompt).trim() || built.prompt;
+		: asText(options.prompt ?? brief.prompt, built.prompt).trim() || built.prompt;
 	const forceNew =
 		options.forceNew === true ||
 		Boolean(revisionInstructions?.trim()) ||
