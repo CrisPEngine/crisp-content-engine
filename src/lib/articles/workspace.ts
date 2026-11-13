@@ -2210,11 +2210,10 @@ export async function critiqueWorkspaceArticle(ownerUserId: string, articleId: s
 		sourceTitles: (workspace.research?.sources ?? []).filter((source) => !source.excluded).map((source) => source.title),
 		targetWords: article.targetWords,
 	});
-	const decisions = new Map(
-		(workspace.editorialDesk?.proposals ?? [])
-			.filter((item) => item.sourceFindingId && (item.status === 'rejected' || item.status === 'deferred'))
-			.map((item) => [item.sourceFindingId, item.status] as const),
-	);
+	const decisions = new Map<string, 'rejected' | 'deferred'>();
+	for (const item of workspace.editorialDesk?.proposals ?? []) {
+		if (item.sourceFindingId && (item.status === 'rejected' || item.status === 'deferred')) decisions.set(item.sourceFindingId, item.status);
+	}
 	const assessed = reconcileCritique(workspace.editorialDesk?.critique ?? null, {
 		...drafted,
 		findings: drafted.findings.map((item) => {
