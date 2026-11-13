@@ -340,6 +340,16 @@ export type ArticleWorkspace = {
 	};
 	editorialBrief?: import('./editorialBrief').EditorialBriefState;
 	editorialDesk?: import('./editorialDesk').EditorialDeskState;
+	intelligence?: {
+		retrievedAt: string;
+		brandId: string;
+		strategyId: string | null;
+		strategyStatus: string | null;
+		capabilityIds: string[];
+		claimIds: string[];
+		learningIds: string[];
+		verifiedNames: string[];
+	};
 	exampleConsistency?: string[];
 	approvedAt?: string | null;
 	approvedRevisionId?: string | null;

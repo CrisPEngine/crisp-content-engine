@@ -10,7 +10,7 @@ import { loadDestinationTaxonomy } from '@/lib/publishing/destinationRegistry';
 import { editorialStatusFromFindings, ensureWorkspace, isOpenFinding } from './meta';
 import { articleResearchFromApproved } from './researchPackage';
 import { generationContextFromBrief } from './editorialBrief';
-import { capabilitiesFromKnowledge, capabilityGuidance } from './productKnowledge';
+import { withIntelligenceLogScope } from '@/lib/ai/logging';
 import { reviewCurrentRevision } from './reviewRun';
 import type { ArticleRecord } from './types';
 
@@ -113,9 +113,11 @@ export async function runArticleGenerationJob(job: WorkflowJob): Promise<Article
 		}
 		research = articleResearchFromApproved(pkg);
 		const baseBrief = workspaceArticle.workspace.brief;
+		const { loadResolvedIntelligence } = await import('@/lib/intelligence/knowledge/load');
+		const intelligence = await loadResolvedIntelligence(job.userId, brain, `${payload.topic ?? ''} ${workspaceArticle.topic ?? ''}`, 'article');
 		const guidance = [
 			generationContextFromBrief(workspaceArticle.workspace.editorialBrief?.current),
-			capabilityGuidance(capabilitiesFromKnowledge(brain.knowledge)),
+			intelligence.prompt,
 		].filter(Boolean).join('\n\n');
 		brief = baseBrief ? { ...baseBrief, instructions: [baseBrief.instructions, guidance].filter(Boolean).join('\n\n') } : baseBrief;
 	} else {
@@ -142,7 +144,7 @@ export async function runArticleGenerationJob(job: WorkflowJob): Promise<Article
 			};
 		});
 	};
-	const article = await generateArticle({
+	const article = await withIntelligenceLogScope({ brandId: brain.id, contentId: priorId, correlationId: job.id }, () => generateArticle({
 		ownerUserId: job.userId,
 		brand: brain,
 		strategy,
@@ -162,7 +164,7 @@ export async function runArticleGenerationJob(job: WorkflowJob): Promise<Article
 		contentType: payload.contentType,
 		skipAutoRevision: payload.skipAutoRevision,
 		onStage,
-	});
+	}));
 	if (article.workspace) article.workspace.generation.jobId = job.id;
 	await getNativeContentStore().saveArticle(article);
 	return { articleId: article.id };
@@ -221,7 +223,9 @@ export async function runArticleRevisionJob(job: WorkflowJob): Promise<ArticleRe
 	if (fresh.workspace.revision?.id !== payload.baseRevisionId) {
 		throw new Error('The article changed while the revision was starting. Nothing was applied.');
 	}
-	const outcome = await applyArticleRevision({ ownerUserId: job.userId, article: fresh, brand: brain, findings });
+	const outcome = await withIntelligenceLogScope({ brandId: brain.id, contentId: article.id, correlationId: job.id }, () =>
+		applyArticleRevision({ ownerUserId: job.userId, article: fresh, brand: brain, findings }),
+	);
 	const revised = outcome.article;
 	const ws = ensureWorkspace(revised);
 	const newRevision = ws.revision!;

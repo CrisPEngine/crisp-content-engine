@@ -8,6 +8,7 @@ import { resolveWorkingBrandId, writeWorkingBrandId } from '@/lib/brands/working
 import type { StrategyCompletenessResult } from '@/lib/intelligence/strategy/strategyCompleteness';
 import { HumanBrandBrain } from '@/components/HumanBrandBrain';
 import { ProductCapabilityEditor } from '@/components/ProductCapabilityEditor';
+import { KnowledgeOverview } from '@/components/intelligence/KnowledgeOverview';
 
 type BrandProfile = { id: string; name: string };
 type Tab = 'brain' | 'strategy' | 'themes' | 'learnings' | 'diagnostics';
@@ -28,6 +29,9 @@ type DiagnosticInvocation = {
 	duration_ms: number | null;
 	ok: boolean;
 	created_at: string;
+	brand_id?: string | null;
+	feature?: string | null;
+	estimated_cost_usd?: number | null;
 };
 type StrategyGenerationMeta = {
 	phase?: string;
@@ -531,6 +535,8 @@ function IntelligencePageInner() {
 				</div>
 			) : null}
 
+			{brandId && payload?.brain ? <KnowledgeOverview brandId={brandId} onOpenTab={setTab} /> : null}
+
 			<div className="flex gap-2 border-b border-edge/60">
 				{(
 					[
@@ -842,7 +848,8 @@ function IntelligencePageInner() {
 										<th className="py-2 pr-4">Model</th>
 										<th className="py-2 pr-4">Fallback</th>
 										<th className="py-2 pr-4">Latency</th>
-										<th className="py-2">Result</th>
+										<th className="py-2 pr-4">Result</th>
+										<th className="py-2">Brand</th>
 									</tr>
 								</thead>
 								<tbody>
@@ -853,7 +860,8 @@ function IntelligencePageInner() {
 											<td className="py-2 pr-4 font-mono text-xs">{row.model}</td>
 											<td className="py-2 pr-4">{row.fallback_used ? row.error_code || 'yes' : 'no'}</td>
 											<td className="py-2 pr-4">{row.duration_ms ?? '—'} ms</td>
-											<td className="py-2">{row.ok ? 'success' : row.error_code || 'failed'}</td>
+											<td className="py-2 pr-4">{row.ok ? 'success' : row.error_code || 'failed'}</td>
+											<td className="py-2 font-mono text-xs">{row.brand_id ? row.brand_id.slice(0, 8) : 'Not recorded'}</td>
 										</tr>
 									))}
 								</tbody>

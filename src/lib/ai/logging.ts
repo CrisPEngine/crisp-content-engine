@@ -2,6 +2,8 @@
  * AI invocation logging. Never logs prompts, completions, or credentials.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 export type AiInvocationLog = {
 	requestId: string;
 	role: string;
@@ -19,9 +21,29 @@ export type AiInvocationLog = {
 	errorCode?: string;
 	userId?: string;
 	feature?: string;
+	brandId?: string;
+	contentId?: string;
+	correlationId?: string;
 };
 
+type LogScope = { brandId?: string; contentId?: string; correlationId?: string };
+
+const scopeStore = new AsyncLocalStorage<LogScope>();
+
+export function withIntelligenceLogScope<T>(scope: LogScope, run: () => Promise<T>): Promise<T> {
+	return scopeStore.run(scope, run);
+}
+
 export function logAiInvocation(entry: AiInvocationLog): void {
+	const scope = scopeStore.getStore();
+	if (scope) {
+		entry = {
+			...entry,
+			brandId: entry.brandId ?? scope.brandId,
+			contentId: entry.contentId ?? scope.contentId,
+			correlationId: entry.correlationId ?? scope.correlationId,
+		};
+	}
 	console.info('[ai]', {
 		request_id: entry.requestId,
 		role: entry.role,
@@ -39,6 +61,9 @@ export function logAiInvocation(entry: AiInvocationLog): void {
 		error_code: entry.errorCode,
 		feature: entry.feature,
 		user_id: entry.userId,
+		brand_id: entry.brandId,
+		content_id: entry.contentId,
+		correlation_id: entry.correlationId,
 	});
 
 	void persistUsage(entry).catch(() => {
@@ -70,12 +95,18 @@ async function persistUsage(entry: AiInvocationLog): Promise<void> {
 				? `fallback:${entry.fallbackReason}`
 				: entry.errorCode ?? null,
 			feature: entry.feature ?? null,
+			brand_id: entry.brandId ?? null,
+			content_id: entry.contentId ?? null,
+			correlation_id: entry.correlationId ?? null,
 		};
 		const inserted = await supabase.from('ai_usage_logs').insert(row);
-		if (inserted.error && /reasoning_tokens|estimated_cost_usd/.test(inserted.error.message)) {
+		if (inserted.error && /reasoning_tokens|estimated_cost_usd|brand_id|content_id|correlation_id/.test(inserted.error.message)) {
 			const legacy: Record<string, unknown> = { ...row };
 			delete legacy.reasoning_tokens;
 			delete legacy.estimated_cost_usd;
+			delete legacy.brand_id;
+			delete legacy.content_id;
+			delete legacy.correlation_id;
 			await supabase.from('ai_usage_logs').insert(legacy);
 		}
 	} catch {

@@ -222,6 +222,8 @@ export async function runContentIntelligencePipeline(
 		topic: topic || selected?.title,
 	});
 	let memory = retrieve(theme);
+	const { loadResolvedIntelligence } = await import('./knowledge/load');
+	const socialIntelligence = await loadResolvedIntelligence(intent.userId, brain, intent.userIntent, 'social');
 
 	const activeLearnings = applyDecay(learnings).filter(
 		(row) => row.validityStatus === 'active' || row.validityStatus === 'decaying',
@@ -263,6 +265,7 @@ export async function runContentIntelligencePipeline(
 						})),
 						recommended: fallbackPlan,
 						allowedSupportingConcepts: fallbackPlan.supportingConcepts,
+						productKnowledge: socialIntelligence.prompt,
 						recent: memory.recentSameChannel.slice(0, 5).map((row) => ({
 							hook: row.hook,
 							topic: row.topic,
