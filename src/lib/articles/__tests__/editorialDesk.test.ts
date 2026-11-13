@@ -45,6 +45,16 @@ describe('editorial desk', () => {
 		expect(rejected.filter((item) => item.status === 'accepted').every((item) => item.id !== rejected[0]?.id)).toBe(true);
 	});
 
+	it('treats an opening that says continuity errors are as the definition', () => {
+		const critique = critiqueDraft({
+			title: 'How to Prevent Continuity Errors',
+			topic: 'continuity errors',
+			body: `Continuity errors are contradictions between chapters. ${'detail '.repeat(40)}\n\n## Later\n\nThe method continues.`,
+			targetWords: 2000,
+		});
+		expect(critique.findings.some((item) => item.id === 'opening-guide' || item.id === 'definition-thin' || item.id === 'intro-weak')).toBe(false);
+	});
+
 	it('keeps a rejected finding rejected when the same issue is still present', () => {
 		const next = critiqueDraft({ title: 'How to Prevent Continuity Errors', topic: 'continuity', body: '## Later\n\nA short note.', targetWords: 2000 });
 		const previous = {
