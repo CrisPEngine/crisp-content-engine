@@ -84,8 +84,9 @@ export function EditorialReviewBoard({
 				</ol>
 				<p className="text-text-soft">
 					Current revision {currentRevision ?? '—'}
-					{reviewedRevision ? ` · last reviewed revision ${reviewedRevision}` : ' · not reviewed yet'}
-					{` · ${open} open · ${accepted.length} accepted, awaiting application · ${resolved} resolved · ${blocking} blocking`}
+					{critique && !reviewStale ? ' · Editorial pass complete for this revision' : reviewStale ? ' · Editorial pass outdated' : ' · Editorial pass not run'}
+					{reviewedRevision ? ` · earlier review was revision ${reviewedRevision}` : ''}
+					{` · ${open} open · ${accepted.length} approved, not yet applied · ${resolved} resolved · ${blocking} blocking`}
 				</p>
 			</div>
 			{reviewStale || unified.some((item) => item.stale) ? (
@@ -96,7 +97,7 @@ export function EditorialReviewBoard({
 			) : null}
 			{accepted.length ? (
 				<p className="rounded border border-primary/40 bg-primary/10 p-3">
-					{accepted.length} change{accepted.length === 1 ? '' : 's'} accepted. The article has not changed yet.
+					{accepted.length} edit{accepted.length === 1 ? '' : 's'} approved. Ready to apply to draft. The article has not changed yet.
 				</p>
 			) : null}
 			{critique ? (
