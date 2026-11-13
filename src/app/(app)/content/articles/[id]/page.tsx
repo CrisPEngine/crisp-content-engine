@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BriefPanel, type BriefValues } from '@/components/articles/BriefPanel';
+import { WorkspaceErrorBoundary } from '@/components/articles/WorkspaceErrorBoundary';
 import { WorkspaceFrame } from '@/components/articles/WorkspaceFrame';
 import { JobPanel } from '@/components/articles/JobPanel';
 import { LifecycleBadges, type Lifecycle } from '@/components/articles/LifecycleBadges';
@@ -405,6 +406,7 @@ export default function ArticleWorkspacePage() {
 	};
 
 	return (
+		<WorkspaceErrorBoundary>
 		<WorkspaceFrame
 			stage={stage}
 			onStage={chooseStage}
@@ -860,5 +862,6 @@ export default function ArticleWorkspacePage() {
 			</div>
 		</div>
 		</WorkspaceFrame>
+		</WorkspaceErrorBoundary>
 	);
 }

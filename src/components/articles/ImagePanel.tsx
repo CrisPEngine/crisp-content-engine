@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { conceptRelevanceWarning, conceptSimilarityWarning, suggestImageConcepts, type ImageConceptOption, type ImageCreativeBrief, type MediaCreativeState } from '@/lib/articles/imageBrief';
+import { conceptRelevanceWarning, conceptSimilarityWarning, normaliseImageBrief, suggestImageConcepts, type ImageConceptOption, type ImageCreativeBrief, type MediaCreativeState } from '@/lib/articles/imageBrief';
 
 type MediaState = {
 	heroAssetId: string | null;
@@ -62,7 +62,7 @@ const emptyBrief = (role: 'hero' | 'og'): ImageCreativeBrief => ({
 
 export function ImagePanel({ articleId, title, topic, imageRequirements, media, busy, pending, act, onMetaChange, meta }: Props) {
 	const [role, setRole] = useState<'hero' | 'og'>('hero');
-	const [brief, setBrief] = useState<ImageCreativeBrief>(media.creative?.[role] ?? emptyBrief(role));
+	const [brief, setBrief] = useState<ImageCreativeBrief>(() => normaliseImageBrief(media.creative?.[role], role));
 	const [proposals, setProposals] = useState<ReferenceProposal[]>([]);
 	const [showAdvanced, setShowAdvanced] = useState(false);
 	const [conceptDirty, setConceptDirty] = useState(false);
@@ -70,7 +70,7 @@ export function ImagePanel({ articleId, title, topic, imageRequirements, media, 
 	const [referenceRoles, setReferenceRoles] = useState<Record<string, string>>({});
 
 	useEffect(() => {
-		setBrief(media.creative?.[role] ?? emptyBrief(role));
+		setBrief(normaliseImageBrief(media.creative?.[role], role));
 		setConceptDirty(false);
 	}, [media.creative, role]);
 

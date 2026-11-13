@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	buildArticleImagePrompt,
 	conceptSimilarityWarning,
+	normaliseImageBrief,
 	isVisuallyActionableConcept,
 	suggestImageConcept,
 	summariseCoherently,
@@ -56,6 +57,14 @@ describe('imageBrief', () => {
 		expect(built.prompt).toMatch(/genuine product screenshot/i);
 		expect(built.prompt).not.toMatch(/You need enough of a choice/);
 		expect(built.dimensions).toBe('16:9');
+	});
+
+	it('renders a legacy hero brief that never stored revision instructions', () => {
+		const brief = normaliseImageBrief({ concept: 'A café writer', prompt: 'old prompt', history: [{ at: '', prompt: 'old', concept: 'A café writer', assetId: null, url: null, reused: false, estimatedCostUsd: null }] }, 'hero');
+		expect(brief.revisionInstructions.trim()).toBe('');
+		expect(brief.negativeConstraints.trim()).toBe('');
+		expect(brief.concept.trim()).toMatch(/café/);
+		expect(() => brief.history[0]?.concept.trim()).not.toThrow();
 	});
 
 	it('warns when concepts are substantially similar', () => {

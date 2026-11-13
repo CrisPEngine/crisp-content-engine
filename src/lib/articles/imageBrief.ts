@@ -306,12 +306,45 @@ function jaccard(a: Set<string>, b: Set<string>): number {
 	return union ? intersection / union : 0;
 }
 
+function textField(value: unknown, fallback = ''): string {
+	return typeof value === 'string' ? value : fallback;
+}
+
+/** Fills fields that older saved briefs never stored, so render and generation can treat them as strings. */
+export function normaliseImageBrief(value: Partial<ImageCreativeBrief> | null | undefined, role: ArticleImageRole): ImageCreativeBrief {
+	const empty = emptyImageBrief(role);
+	const source = value ?? {};
+	return {
+		...empty,
+		...source,
+		purpose: role,
+		concept: textField(source.concept),
+		suggestedConcept: textField(source.suggestedConcept),
+		prompt: textField(source.prompt),
+		negativeConstraints: textField(source.negativeConstraints),
+		brandStyleNotes: textField(source.brandStyleNotes),
+		revisionInstructions: textField(source.revisionInstructions),
+		effectivePrompt: textField(source.effectivePrompt),
+		similarityWarning: typeof source.similarityWarning === 'string' ? source.similarityWarning : null,
+		referenceAssetIds: Array.isArray(source.referenceAssetIds) ? source.referenceAssetIds.filter((id): id is string => typeof id === 'string') : [],
+		history: Array.isArray(source.history)
+			? source.history.filter((item): item is ImageGenerationHistoryEntry => Boolean(item)).map((item) => ({
+				...item,
+				concept: textField(item.concept),
+				prompt: textField(item.prompt),
+			}))
+			: [],
+		candidates: Array.isArray(source.candidates) ? source.candidates : [],
+		qualityFindings: Array.isArray(source.qualityFindings) ? source.qualityFindings : [],
+	};
+}
+
 export function mergeImageBrief(
 	current: ImageCreativeBrief | undefined,
 	patch: Partial<ImageCreativeBrief> | null | undefined,
 	role: ArticleImageRole,
 ): ImageCreativeBrief {
-	const base = current ?? emptyImageBrief(role);
+	const base = normaliseImageBrief(current, role);
 	if (!patch) return base;
 	return {
 		...base,
