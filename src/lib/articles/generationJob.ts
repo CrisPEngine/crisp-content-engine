@@ -103,9 +103,10 @@ export async function runArticleGenerationJob(job: WorkflowJob): Promise<Article
 	const strategy = await store.getStrategyForBrand(job.userId, brain.id);
 	const themes = await store.listThemes(job.userId, brain.id);
 	const workspaceArticle = priorId ? await getNativeContentStore().getArticle(job.userId, priorId) : null;
-	let research;
-	let brief;
-	let researchRecords;
+	const { loadResolvedIntelligence } = await import('@/lib/intelligence/knowledge/load');
+	let research: ReturnType<typeof articleResearchFromApproved> | undefined;
+	let brief: NonNullable<Parameters<typeof generateArticle>[0]['brief']> | undefined;
+	let researchRecords: Parameters<typeof generateArticle>[0]['researchRecords'];
 	if (workspaceArticle?.workspace) {
 		const pkg = workspaceArticle.workspace.research;
 		if (!pkg?.approved) {
@@ -113,7 +114,6 @@ export async function runArticleGenerationJob(job: WorkflowJob): Promise<Article
 		}
 		research = articleResearchFromApproved(pkg);
 		const baseBrief = workspaceArticle.workspace.brief;
-		const { loadResolvedIntelligence } = await import('@/lib/intelligence/knowledge/load');
 		const intelligence = await loadResolvedIntelligence(job.userId, brain, `${payload.topic ?? ''} ${workspaceArticle.topic ?? ''}`, 'article');
 		const guidance = [
 			generationContextFromBrief(workspaceArticle.workspace.editorialBrief?.current),

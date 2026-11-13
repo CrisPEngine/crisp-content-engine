@@ -232,6 +232,7 @@ export function suggestImageConcept(input: {
 	imageRequirements?: string;
 	brandName?: string;
 	hasProductScreenshot?: boolean;
+	verifiedCapabilityNames?: string[];
 }): string {
 	const options = suggestImageConcepts(input);
 	let scene = options[0]?.description ?? '';

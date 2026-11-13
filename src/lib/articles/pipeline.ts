@@ -329,6 +329,7 @@ export async function generateArticle(input: {
 		sourceLabel: 'Verified capability',
 		confidence: 'stored' as const,
 		kind: 'brand' as const,
+		sourceClass: undefined,
 	}));
 	const research = {
 		...baseResearch,
