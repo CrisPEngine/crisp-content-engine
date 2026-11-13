@@ -383,6 +383,7 @@ export async function setCapabilityVerification(
 	const today = new Date().toISOString().slice(0, 10);
 	let updated = 0;
 	for (const row of rows) {
+		if (row.verification_status === verificationStatus) continue;
 		const next = await db
 			.from('brand_capabilities')
 			.update({

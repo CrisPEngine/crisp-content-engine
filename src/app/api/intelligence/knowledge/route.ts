@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { jsonError, requireIntelligenceUser } from '@/lib/intelligence/http';
+import { getSupabaseService } from '@/lib/supabaseService';
 import { applyApprovedProposals, countsFromSnapshot, decideProposals, discoverKnowledge, loadKnowledgeSnapshot, reviseProposalDescription, setCapabilityVerification } from '@/lib/intelligence/knowledge/repository';
 
 export const runtime = 'nodejs';
@@ -42,6 +43,13 @@ export async function GET(request: Request) {
 			store.listEditLearnings(userId, brain.id).catch(() => []),
 		]);
 		const counts = countsFromSnapshot(snapshot);
+		const events = await getSupabaseService()
+			.from('brand_knowledge_events')
+			.select('id, action, record_type, note, created_at')
+			.eq('user_id', userId)
+			.eq('brand_brain_id', brain.id)
+			.order('created_at', { ascending: false })
+			.limit(8);
 		return NextResponse.json({
 			brandId: brain.id,
 			counts,
@@ -50,8 +58,15 @@ export async function GET(request: Request) {
 			approvedLearnings: edits.filter((item) => item.status === 'accepted').length,
 			proposedLearnings: edits.filter((item) => item.status === 'proposed').length,
 			gaps: counts.verifiedCapabilities === 0 ? ['No capability is verified.'] : [],
-			proposals: snapshot.proposals.slice(0, 60),
+			proposals: snapshot.proposals.slice(0, 80),
 			capabilities: snapshot.capabilities,
+			activity: (events.data ?? []).map((row) => ({
+				id: row.id,
+				action: row.action,
+				recordType: row.record_type,
+				note: row.note,
+				createdAt: row.created_at,
+			})),
 		});
 	} catch (error) {
 		const mapped = jsonError(error);

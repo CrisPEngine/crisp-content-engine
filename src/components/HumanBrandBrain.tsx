@@ -25,6 +25,7 @@ export function HumanBrandBrain({
 	onVoice,
 	onGuardrails,
 	onKnowledge,
+	focus = 'all',
 }: {
 	identityJson: string;
 	voiceJson: string;
@@ -34,6 +35,7 @@ export function HumanBrandBrain({
 	onVoice: (value: string) => void;
 	onGuardrails: (value: string) => void;
 	onKnowledge: (value: string) => void;
+	focus?: 'all' | 'identity' | 'products' | 'audiences' | 'voice' | 'guardrails' | 'claims';
 }) {
 	const identity = parse(identityJson);
 	const voice = parse(voiceJson);
@@ -44,43 +46,44 @@ export function HumanBrandBrain({
 		write(JSON.stringify({ ...current, [key]: value }, null, 2));
 	}
 
+	const show = (area: typeof focus) => focus === 'all' || focus === area;
 	return (
 		<div className="space-y-4">
-			<Card title="Overview">
+			{show('identity') ? <Card title="Identity">
 				<Field label="Brand name" value={text(identity.name)} onChange={(value) => update(identity, 'name', value, onIdentity)} />
 				<Field label="Website" value={text(identity.website)} onChange={(value) => update(identity, 'website', value, onIdentity)} />
 				<Field label="Description" value={text(identity.description)} onChange={(value) => update(identity, 'description', value, onIdentity)} />
 				<Field label="Mission" value={text(identity.mission)} onChange={(value) => update(identity, 'mission', value, onIdentity)} />
 				<Field label="Purpose" value={text(identity.purpose)} onChange={(value) => update(identity, 'purpose', value, onIdentity)} />
 				<Field label="Positioning" value={text(identity.positioning)} onChange={(value) => update(identity, 'positioning', value, onIdentity)} />
-			</Card>
-			<Card title="Audience">
+			</Card> : null}
+			{show('audiences') ? <Card title="Audiences">
 				<Area label="Audiences" value={lines(identity.audiences)} onChange={(value) => update(identity, 'audiences', fromLines(value), onIdentity)} />
-			</Card>
-			<Card title="Products and services">
+			</Card> : null}
+			{show('products') ? <Card title="Products and services">
 				<Area label="One per line" value={lines(identity.productsServices)} onChange={(value) => update(identity, 'productsServices', fromLines(value), onIdentity)} />
-			</Card>
-			<Card title="Voice">
+			</Card> : null}
+			{show('voice') ? <Card title="Voice">
 				<Field label="Tone" value={text(voice.tone)} onChange={(value) => update(voice, 'tone', value, onVoice)} />
 				<Field label="Personality" value={text(voice.personality)} onChange={(value) => update(voice, 'personality', value, onVoice)} />
 				<Field label="Formality" value={text(voice.formality)} onChange={(value) => update(voice, 'formality', value, onVoice)} />
 				<Field label="Point of view" value={text(voice.pointOfView)} onChange={(value) => update(voice, 'pointOfView', value, onVoice)} />
 				<Field label="Humour" value={text(voice.humour)} onChange={(value) => update(voice, 'humour', value, onVoice)} />
 				<Field label="Pacing" value={text(voice.pacing)} onChange={(value) => update(voice, 'pacing', value, onVoice)} />
-			</Card>
-			<Card title="Messaging">
+			</Card> : null}
+			{show('audiences') ? <Card title="Messaging">
 				<Area label="Differentiators" value={lines(identity.differentiators)} onChange={(value) => update(identity, 'differentiators', fromLines(value), onIdentity)} />
-			</Card>
-			<Card title="Proof and facts">
+			</Card> : null}
+			{show('claims') ? <Card title="Claims and facts">
 				<Area label="Confirmed facts" value={lines(knowledge.brandFacts)} onChange={(value) => update(knowledge, 'brandFacts', fromLines(value), onKnowledge)} />
 				<Area label="Proof points" value={lines(knowledge.proofPoints)} onChange={(value) => update(knowledge, 'proofPoints', fromLines(value), onKnowledge)} />
-			</Card>
-			<Card title="Guardrails">
+			</Card> : null}
+			{show('guardrails') ? <Card title="Guardrails">
 				<Area label="Required" value={lines(guardrails.requiredTerminology)} onChange={(value) => update(guardrails, 'requiredTerminology', fromLines(value), onGuardrails)} />
 				<Area label="Avoid" value={lines(guardrails.phrasesToAvoid)} onChange={(value) => update(guardrails, 'phrasesToAvoid', fromLines(value), onGuardrails)} />
 				<Area label="Prohibited" value={lines(guardrails.prohibitedClaims)} onChange={(value) => update(guardrails, 'prohibitedClaims', fromLines(value), onGuardrails)} />
-			</Card>
-			<details className="card p-4">
+			</Card> : null}
+			{focus === 'guardrails' ? <details className="card p-4">
 				<summary className="cursor-pointer text-sm font-medium">Advanced — raw JSON</summary>
 				<div className="mt-3 space-y-3">
 					<Area label="Identity" value={identityJson} onChange={onIdentity} />
@@ -88,7 +91,7 @@ export function HumanBrandBrain({
 					<Area label="Guardrails" value={guardrailsJson} onChange={onGuardrails} />
 					<Area label="Knowledge" value={knowledgeJson} onChange={onKnowledge} />
 				</div>
-			</details>
+			</details> : null}
 		</div>
 	);
 }

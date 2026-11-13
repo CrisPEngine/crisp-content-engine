@@ -430,6 +430,7 @@ export default function ArticleWorkspacePage() {
 			primaryLabel={primary[stage].label}
 			onPrimary={primary[stage].run}
 			primaryDisabled={primary[stage].disabled}
+			primaryBusy={busy}
 			contextOpen={contextOpen}
 			onToggleContext={() => setContextOpen((value) => !value)}
 			context={
