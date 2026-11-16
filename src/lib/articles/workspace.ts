@@ -137,11 +137,11 @@ async function requireArticle(ownerUserId: string, articleId: string) {
 	return article;
 }
 
-async function persist(article: ArticleRecord) {
+async function persist(article: ArticleRecord, options?: { expectedRevisionId?: string }) {
 	article.updatedAt = new Date().toISOString();
 	article.workspace = ensureWorkspace(article);
 	ensureRevision(article);
-	return getNativeContentStore().saveArticle(article);
+	return getNativeContentStore().saveArticle(article, options);
 }
 
 function mediaFilename(slug: string, role: 'hero' | 'og', mimeType: string): string {
@@ -2337,6 +2337,32 @@ export async function decideEditorialProposal(
 	return persist(article);
 }
 
+export async function discardEditorialPreview(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const workspace = ensureWorkspace(article);
+	if (!workspace.editorialDesk?.preview) return article;
+	workspace.editorialDesk = { ...workspace.editorialDesk, preview: null, updatedAt: new Date().toISOString() };
+	article.workspace = workspace;
+	return persist(article);
+}
+
+export async function removeEditorialProposal(ownerUserId: string, articleId: string, proposalId: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const workspace = ensureWorkspace(article);
+	const proposals = workspace.editorialDesk?.proposals ?? [];
+	const proposal = proposals.find((item) => item.id === proposalId);
+	if (!proposal) throw new ArticleWorkflowError('That instruction was not found.', 404, 'proposal_missing');
+	if (proposal.status === 'applied') throw new ArticleWorkflowError('An applied instruction cannot be removed.', 409, 'proposal_applied');
+	workspace.editorialDesk = {
+		...(workspace.editorialDesk ?? emptyEditorialDesk()),
+		proposals: proposals.filter((item) => item.id !== proposalId),
+		preview: null,
+		updatedAt: new Date().toISOString(),
+	};
+	article.workspace = workspace;
+	return persist(article);
+}
+
 export async function previewAcceptedEditorialProposals(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
 	assertNotApproved(article, 'Selective revision');
@@ -2352,7 +2378,6 @@ export async function previewAcceptedEditorialProposals(ownerUserId: string, art
 	const { intelligenceManifest } = await import('@/lib/intelligence/knowledge/resolver');
 	const intelligence = await loadResolvedIntelligence(ownerUserId, brand, `${article.title} ${article.topic}`, 'revision');
 	workspace.intelligence = intelligenceManifest(intelligence);
-	const guidance = intelligence.prompt;
 	const narrative = accepted.filter((item) => !item.localFix);
 	let proposedBody = article.body;
 	let summary = 'Deterministic fixes only.';
@@ -2366,12 +2391,10 @@ export async function previewAcceptedEditorialProposals(ownerUserId: string, art
 			findings: [],
 			extraInstructions: [
 				...narrative.map((item) => `${item.action} Reason: ${item.reason}`),
-				guidance,
-				`Stay near ${article.targetWords} words.`,
-				'Preserve paragraphs that no accepted proposal mentions.',
-				'Keep deliberate continuity mistakes that the article explains as teaching examples.',
-				'The editor’s instruction takes precedence over the original recommendation, within factual and safety limits.',
-				'Preserve story-bible templates, scene ledgers, software criteria and checklists unless an instruction edits a specific cell.',
+				'Apply only the approved instructions above.',
+				'Do not apply proposed, rejected, or deferred instructions.',
+				'Preserve paragraphs that no approved instruction mentions.',
+				'Do not invent sources, statistics, or product capabilities.',
 			],
 		});
 		proposedBody = preview.proposedBody;
@@ -2434,6 +2457,7 @@ async function applyAcceptedEditorialProposalsOnce(ownerUserId: string, articleI
 	}
 	const sameAccepted = preview.acceptedIds.length === accepted.length && preview.acceptedIds.every((id) => accepted.some((item) => item.id === id));
 	if (!sameAccepted) throw new ArticleWorkflowError('The accepted proposals changed after the preview. Preview again.', 409, 'preview_stale');
+	const baseRevisionId = preview.baseRevisionId;
 	article.workspace = workspace;
 	commitRevision(article, preview.proposedBody, 'improvement', `Accepted proposals ${accepted.map((item) => item.id).join(', ')}. ${preview.summary}`, { refreshMetadata: false });
 	const appliedRevision = article.workspace?.revision?.number ?? null;
@@ -2449,9 +2473,15 @@ async function applyAcceptedEditorialProposalsOnce(ownerUserId: string, articleI
 	workspace.approvedRevisionId = null;
 	if (article.status === 'approved') article.status = 'draft';
 	article.workspace = workspace;
-	await persist(article);
-	const reviewed = await critiqueWorkspaceArticle(ownerUserId, articleId);
-	return { article: reviewed, summary: preview.summary };
+	await persist(article, { expectedRevisionId: baseRevisionId });
+	try {
+		const reviewed = await critiqueWorkspaceArticle(ownerUserId, articleId);
+		return { article: reviewed, summary: preview.summary };
+	} catch (error) {
+		const saved = await requireArticle(ownerUserId, articleId);
+		const reason = error instanceof Error ? error.message : 'The follow-up editorial pass failed.';
+		return { article: saved, summary: `${preview.summary} The new revision was saved. ${reason}` };
+	}
 }
 
 export async function previewArticleEditorialImprovement(ownerUserId: string, articleId: string): Promise<ArticleImprovementPreview> {

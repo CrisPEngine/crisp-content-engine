@@ -20,7 +20,11 @@ export function EditorialReviewBoard({
 	currentRevision,
 	reviewStale,
 	busy,
+	pending,
 	act,
+	onPreview,
+	onConfirm,
+	onCancelPreview,
 	validationFindings,
 	currentRevisionId,
 	onResearch,
@@ -33,13 +37,18 @@ export function EditorialReviewBoard({
 	reviewedRevision: number | null;
 	reviewStale: boolean;
 	busy: boolean;
+	pending?: string;
 	act: Act;
+	onPreview?: () => void;
+	onConfirm?: () => void;
+	onCancelPreview?: () => void;
 	validationFindings: ArticleEditorialFinding[];
 	currentRevisionId: string | null;
 	onResearch: () => void;
 }) {
 	const [feedback, setFeedback] = useState('');
 	const [instructions, setInstructions] = useState<Record<string, string>>({});
+	const [extraEdits, setExtraEdits] = useState<Record<string, string>>({});
 	const critiqueStale = Boolean(critique?.revisionId && currentRevisionId && critique.revisionId !== currentRevisionId);
 	const proposalFor = (findingId: string) =>
 		proposals.find((item) => item.sourceFindingId === findingId && item.status !== 'applied')
@@ -116,7 +125,7 @@ export function EditorialReviewBoard({
 				<ol className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
 					<li>1. Run Editorial Pass — {critique ? (reviewStale || critiqueStale ? 'Outdated' : 'Complete') : 'Not run'}</li>
 					<li>2. Approve Edits — {approved.length ? `${approved.length} approved, not applied` : 'None approved'}</li>
-					<li>3. Apply Edits to Draft — {approved.length ? 'Not yet applied' : applied.length ? 'Saved on this revision' : 'Waiting for approval'}</li>
+					<li>3. Preview approved changes — {preview ? 'Preview ready. The article has not changed.' : approved.length ? 'Not yet previewed' : applied.length ? 'Saved on this revision' : 'Waiting for approval'}</li>
 				</ol>
 				<p className="text-text-soft">
 					Current revision {currentRevision ?? '—'}
@@ -126,13 +135,33 @@ export function EditorialReviewBoard({
 				<button className="btn" type="button" disabled={busy} onClick={() => void act('critique_article', {}, 'Editorial pass completed. The draft was not rewritten.')}>Run Editorial Pass of Draft</button>
 			</div>
 			{reviewStale || critiqueStale ? (
-				<p className="text-warning">This review belongs to an older draft. Run the editorial pass again before applying changes.</p>
+				<p className="text-warning">This editorial pass belongs to an older draft. Approved changes for the current revision can still be previewed.</p>
 			) : null}
 			{critique?.strengths.length ? <p className="text-text-soft">Preserve: {critique.strengths.join(' · ')}</p> : null}
-			{approved.length ? (
-				<p className="rounded border border-primary/40 bg-primary/10 p-3">
-					{approved.length} edit{approved.length === 1 ? '' : 's'} approved. Ready to apply to draft. The article has not changed yet.
-				</p>
+			{approved.length && !preview ? (
+				<div className="rounded border border-primary/40 bg-primary/10 p-3">
+					<p>
+						{approved.length} edit{approved.length === 1 ? '' : 's'} approved. Ready to preview. The article has not changed yet.
+					</p>
+					<button className="btn mt-3 border-primary bg-primary/15" type="button" disabled={busy} aria-busy={pending === 'preview_editorial_proposals' || undefined} onClick={() => (onPreview ? onPreview() : void act('preview_editorial_proposals', {}, 'Preview ready. The article was not changed.'))}>
+						{pending === 'preview_editorial_proposals' ? 'Preparing preview…' : `Preview ${approved.length} Approved Change${approved.length === 1 ? '' : 's'}`}
+					</button>
+				</div>
+			) : null}
+			{preview ? (
+				<div className="rounded border border-primary/40 bg-primary/10 p-3">
+					<p className="font-medium">Preview ready. Revision {currentRevision ?? '—'} has not changed.</p>
+					<p>{preview.summary}</p>
+					<p className="text-text-soft">Words {preview.wordCountBefore} → {preview.wordCountAfter}. Only approved instructions are included.</p>
+					<div className="mt-3 flex flex-wrap gap-2">
+						<button className="btn border-primary bg-primary/15" type="button" disabled={busy} aria-busy={pending === 'apply_editorial_proposals' || undefined} onClick={() => (onConfirm ? onConfirm() : void act('apply_editorial_proposals', {}, 'New revision saved.'))}>
+							{pending === 'apply_editorial_proposals' ? 'Saving revision…' : 'Confirm new revision'}
+						</button>
+						<button className="btn" type="button" disabled={busy} onClick={() => (onCancelPreview ? onCancelPreview() : void act('discard_editorial_preview', {}, 'Preview discarded. The article was not changed.'))}>
+							{pending === 'discard_editorial_preview' ? 'Cancelling preview…' : 'Cancel preview'}
+						</button>
+					</div>
+				</div>
 			) : null}
 
 			<FindingSection title="Current findings" cards={actionable} groups busy={busy} instructionFor={instructionFor} onInstruction={(id, value) => setInstructions((current) => ({ ...current, [id]: value }))} onDecide={decide} />
@@ -144,16 +173,29 @@ export function EditorialReviewBoard({
 				<summary className="font-medium">Add an instruction that is not listed</summary>
 				<div className="mt-2 space-y-2">
 					<textarea className="input w-full" rows={4} value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="Name the passage and what must be preserved." />
-					<button className="btn" type="button" disabled={busy || !feedback.trim()} onClick={() => void act('editorial_feedback', { feedback }, 'Instruction saved. The article was not changed.')}>Save extra instruction</button>
+					<button className="btn" type="button" disabled={busy || !feedback.trim()} onClick={() => void act('editorial_feedback', { feedback }, 'Instruction saved as pending review. It will not be included until you approve it.')}>Save extra instruction</button>
 				</div>
 			</details>
-			{proposals.filter((item) => !item.sourceFindingId && item.status !== 'applied').map((proposal) => (
-				<div key={proposal.id} className="border-t border-edge/50 pt-2">
-					<p className="text-xs uppercase text-text-dim">{lifecycleLabel(proposal.status === 'accepted' ? 'approved' : proposal.status === 'rejected' ? 'rejected' : proposal.status === 'deferred' ? 'deferred' : 'pending')}</p>
-					<p>{proposal.action}</p>
-					<p className="text-text-soft">{proposal.reason}</p>
-				</div>
-			))}
+			{proposals.filter((item) => !item.sourceFindingId && item.status !== 'applied').map((proposal) => {
+				const draft = extraEdits[proposal.id] ?? proposal.action;
+				const included = proposal.status === 'accepted';
+				return (
+					<div key={proposal.id} className="border-t border-edge/50 pt-2">
+						<p className="text-xs uppercase text-text-dim">{lifecycleLabel(proposal.status === 'accepted' ? 'approved' : proposal.status === 'rejected' ? 'rejected' : proposal.status === 'deferred' ? 'deferred' : 'pending')}</p>
+						<p className="text-text-soft">{included ? 'Included in the next revision.' : 'Not included in the next revision.'}</p>
+						<label className="mt-2 block text-text-soft">
+							Additional instruction
+							<textarea className="input mt-1 w-full" rows={3} value={draft} disabled={busy} onChange={(event) => setExtraEdits((current) => ({ ...current, [proposal.id]: event.target.value }))} />
+						</label>
+						<div className="mt-2 flex flex-wrap gap-2">
+							<button className="btn" type="button" disabled={busy || !draft.trim() || (draft === proposal.action && proposal.status === 'accepted')} onClick={() => void act('editorial_proposal', { proposalId: proposal.id, status: 'accepted', instruction: draft }, 'Instruction approved. It will be included in the next preview.')}>Approve</button>
+							<button className="btn" type="button" disabled={busy || !draft.trim() || draft === proposal.action} onClick={() => void act('editorial_proposal', { proposalId: proposal.id, status: proposal.status, instruction: draft }, 'Instruction updated. The article was not changed.')}>Save edit</button>
+							<button className="btn" type="button" disabled={busy || proposal.status === 'deferred'} onClick={() => void act('editorial_proposal', { proposalId: proposal.id, status: 'deferred', instruction: draft }, 'Instruction deferred. It will not be included.')}>Defer</button>
+							<button className="btn" type="button" disabled={busy} onClick={() => void act('remove_editorial_proposal', { proposalId: proposal.id }, 'Instruction removed. The article was not changed.')}>Remove</button>
+						</div>
+					</div>
+				);
+			})}
 			{preview ? (
 				<div className="space-y-2 border-t border-edge/50 pt-3">
 					<p className="font-medium">Preview only. Nothing has been applied.</p>

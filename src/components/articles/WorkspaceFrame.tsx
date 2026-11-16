@@ -19,6 +19,7 @@ export function WorkspaceFrame({
 	onPrimary,
 	primaryDisabled,
 	primaryBusy,
+	primaryBusyLabel,
 	contextOpen,
 	onToggleContext,
 	context,
@@ -33,6 +34,7 @@ export function WorkspaceFrame({
 	onPrimary: () => void;
 	primaryDisabled?: boolean;
 	primaryBusy?: boolean;
+	primaryBusyLabel?: string;
 	contextOpen: boolean;
 	onToggleContext: () => void;
 	context: ReactNode;
@@ -50,7 +52,7 @@ export function WorkspaceFrame({
 						{contextOpen ? 'Hide tools' : 'Show tools'}
 					</button>
 					<button className="btn border-primary bg-primary/15" type="button" disabled={primaryDisabled || primaryBusy} aria-busy={primaryBusy || undefined} onClick={onPrimary}>
-						{primaryBusy ? 'Working…' : primaryLabel}
+						{primaryBusy ? (primaryBusyLabel || 'Working…') : primaryLabel}
 					</button>
 				</div>
 			</header>

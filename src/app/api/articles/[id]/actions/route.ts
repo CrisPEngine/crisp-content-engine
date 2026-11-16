@@ -28,6 +28,8 @@ import {
 	approveWorkspaceEditorialBrief,
 	critiqueWorkspaceArticle,
 	decideEditorialProposal,
+	discardEditorialPreview,
+	removeEditorialProposal,
 	queueEditorialChange,
 	generateWorkspaceEditorialBrief,
 	previewAcceptedEditorialProposals,
@@ -264,6 +266,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 				});
 			case 'preview_editorial_proposals':
 				return NextResponse.json({ article: await previewAcceptedEditorialProposals(userId, id) });
+			case 'discard_editorial_preview':
+				return NextResponse.json({ article: await discardEditorialPreview(userId, id) });
+			case 'remove_editorial_proposal':
+				return NextResponse.json({ article: await removeEditorialProposal(userId, id, text(body.proposalId)) });
 			case 'apply_editorial_proposals':
 				return NextResponse.json(await applyAcceptedEditorialProposals(userId, id));
 			case 'restore_revision':
