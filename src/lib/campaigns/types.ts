@@ -1,0 +1,120 @@
+export type DemandClass = 'observed' | 'inferred' | 'strategic' | 'unvalidated';
+export type EvidenceConfidence = 'high' | 'medium' | 'low' | 'none';
+export type OpportunityAction = 'create' | 'update' | 'reject' | 'research';
+export type OpportunityStatus = 'discovered' | 'needs_research' | 'approved' | 'rejected' | 'deferred' | 'in_production';
+export type ApprovalMode = 'assisted' | 'auto_draft' | 'auto_publish';
+export type CampaignStatus = 'draft' | 'active' | 'paused';
+
+export type ScoreWeights = {
+	audienceDemand: number;
+	brandRelevance: number;
+	uniqueValue: number;
+	searchOpportunity: number;
+	businessRelevance: number;
+	researchFeasibility: number;
+};
+
+export const DEFAULT_SCORE_WEIGHTS: ScoreWeights = {
+	audienceDemand: 0.25,
+	brandRelevance: 0.2,
+	uniqueValue: 0.2,
+	searchOpportunity: 0.15,
+	businessRelevance: 0.1,
+	researchFeasibility: 0.1,
+};
+
+export type MeasuredSearch = {
+	impressions: number;
+	clicks: number;
+	ctr: number;
+	position: number;
+	startDate: string;
+	endDate: string;
+};
+
+export type ScoreComponent = {
+	key: keyof ScoreWeights;
+	weight: number;
+	value: number;
+	contribution: number;
+	rationale: string;
+};
+
+export type ScoreResult = {
+	score: number;
+	confidence: EvidenceConfidence;
+	components: ScoreComponent[];
+	promotionBlocked: boolean;
+	blockReason: string | null;
+};
+
+export type InventoryArticle = {
+	id: string;
+	title: string;
+	topic: string;
+	keyword: string | null;
+	intent: string | null;
+	status: string;
+	url: string | null;
+};
+
+export type OverlapAssessment = {
+	decision: OpportunityAction;
+	overlap: number;
+	matchedArticleId: string | null;
+	matchedTitle: string | null;
+	rationale: string;
+};
+
+export type OpportunityEvidence = {
+	id: string;
+	sourceKind: string;
+	url: string | null;
+	excerpt: string | null;
+	observedAt: string | null;
+	metrics: MeasuredSearch | null;
+};
+
+export type ContentOpportunity = {
+	id: string;
+	brandId: string;
+	campaignId: string | null;
+	title: string;
+	audienceProblem: string;
+	searchIntent: string | null;
+	demandClass: DemandClass;
+	evidenceConfidence: EvidenceConfidence;
+	score: number;
+	scoreDetail: ScoreResult;
+	overlap: OverlapAssessment;
+	recommendedAction: OpportunityAction;
+	status: OpportunityStatus;
+	discoverySource: string;
+	evidence: OpportunityEvidence[];
+	createdAt: string;
+	updatedAt: string;
+};
+
+export type ContentCampaign = {
+	id: string;
+	brandId: string;
+	name: string;
+	objective: string;
+	audience: string;
+	themes: string[];
+	weeklyCapacity: number;
+	selectionPolicy: string;
+	approvalMode: ApprovalMode;
+	autoPublishEnabled: false;
+	destinationId: string | null;
+	status: CampaignStatus;
+	createdAt: string;
+	updatedAt: string;
+};
+
+export type ProviderAvailability = {
+	id: 'inventory' | 'strategy' | 'search' | 'search_console' | 'community' | 'analytics';
+	label: string;
+	state: 'available' | 'unavailable';
+	detail: string;
+};

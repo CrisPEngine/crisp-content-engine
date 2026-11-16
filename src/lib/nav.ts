@@ -27,6 +27,7 @@ export const APP_NAV: NavItem[] = [
 		items: [
 			{ label: 'Create', href: '/content/generate' },
 			{ label: 'Articles', href: '/content/articles' },
+			{ label: 'Opportunities', href: '/campaigns' },
 			{ label: 'Approval', href: '/content/approval' },
 			{ label: 'Scheduled', href: '/content/schedule' },
 			{ label: 'Published', href: '/content/published' },
