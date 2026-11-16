@@ -16,6 +16,7 @@ import {
 	generateWorkspaceEditorialBrief,
 	getWorkspaceArticle,
 	previewAcceptedEditorialProposals,
+	discardEditorialPreview,
 	recordEditorialFeedback,
 	restoreWorkspaceRevision,
 	saveArticleDraft,
@@ -223,8 +224,18 @@ describe('article workspace', () => {
 		await decideEditorialProposal(FOLIAN_USER_ID, article.id, change!.id, 'accepted');
 		const extra = proposals.find((item) => item.id !== keep!.id && item.id !== change!.id);
 		if (extra) await decideEditorialProposal(FOLIAN_USER_ID, article.id, extra.id, 'deferred');
+		await recordEditorialFeedback(FOLIAN_USER_ID, article.id, 'QAONLY leave this pending instruction out of the revision.');
 		const preview = await previewAcceptedEditorialProposals(FOLIAN_USER_ID, article.id);
 		expect(preview.body).toBe(before);
+		expect(preview.workspace?.editorialDesk?.preview?.proposedBody).not.toContain('QAONLY');
+		const pendingInstruction = preview.workspace?.editorialDesk?.proposals.find((item) => item.sourceFeedback.includes('QAONLY'));
+		expect(pendingInstruction?.status).toBe('proposed');
+		expect(preview.workspace?.editorialDesk?.preview?.acceptedIds).not.toContain(pendingInstruction?.id);
+		const cancelled = await discardEditorialPreview(FOLIAN_USER_ID, article.id);
+		expect(cancelled.body).toBe(before);
+		expect(cancelled.workspace?.editorialDesk?.preview).toBeNull();
+		expect(cancelled.workspace?.revision?.number).toBe(revisionBefore);
+		await previewAcceptedEditorialProposals(FOLIAN_USER_ID, article.id);
 		expect(preview.workspace?.editorialDesk?.preview?.preservedIds).toContain(keep!.id);
 		const applied = await applyAcceptedEditorialProposals(FOLIAN_USER_ID, article.id);
 		expect(applied.article.body.startsWith(before.trim())).toBe(true);

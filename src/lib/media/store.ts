@@ -16,7 +16,7 @@ export type NativeContentStore = {
 	deleteCollection(ownerUserId: string, id: string): Promise<void>;
 	saveSelectionSignal(signal: AssetSelectionSignal): Promise<AssetSelectionSignal>;
 	listSelectionSignals(ownerUserId: string, brandId: string, limit?: number): Promise<AssetSelectionSignal[]>;
-	saveArticle(article: ArticleRecord): Promise<ArticleRecord>;
+	saveArticle(article: ArticleRecord, options?: { expectedRevisionId?: string }): Promise<ArticleRecord>;
 	getArticle(ownerUserId: string, id: string): Promise<ArticleRecord | null>;
 	listArticles(ownerUserId: string, brandId?: string): Promise<ArticleRecord[]>;
 };
@@ -25,6 +25,7 @@ export function createMemoryNativeContentStore(): NativeContentStore {
 	const assets = new Map<string, ContentAssetRecord>();
 	const links: AssetLink[] = [];
 	const articles = new Map<string, ArticleRecord>();
+	const savedRevisionIds = new Map<string, string | null>();
 	const collections = new Map<string, AssetCollectionRecord>();
 	const signals: AssetSelectionSignal[] = [];
 	return {
@@ -80,8 +81,13 @@ export function createMemoryNativeContentStore(): NativeContentStore {
 				.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 				.slice(0, limit);
 		},
-		async saveArticle(article) {
+		async saveArticle(article, options) {
+			const previousRevisionId = savedRevisionIds.get(article.id);
+			if (options?.expectedRevisionId && previousRevisionId && previousRevisionId !== options.expectedRevisionId) {
+				throw new Error('The article changed after the preview. Preview the accepted changes again.');
+			}
 			articles.set(article.id, article);
+			savedRevisionIds.set(article.id, article.workspace?.revision?.id ?? null);
 			return article;
 		},
 		async getArticle(ownerUserId, id) {

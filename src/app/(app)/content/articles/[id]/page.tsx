@@ -370,7 +370,7 @@ export default function ArticleWorkspacePage() {
 				if (reviewAction.action === 'stay') return;
 				if (reviewAction.action === 'draft') chooseStage('draft');
 				else if (reviewAction.action === 'images') chooseStage('images');
-				else if (reviewAction.action === 'preview') void actBool('preview_editorial_proposals', {}, 'Preview ready. Confirm to save these edits. The draft has not changed yet.');
+				else if (reviewAction.action === 'preview') void actBool('preview_editorial_proposals', {}, 'Preview ready. The article was not changed. Confirm the new revision when you are ready.');
 				else if (reviewAction.action === 'apply') {
 					const beforeBody = article.body;
 					const beforeNumber = workspace?.revision?.number ?? 0;
@@ -431,6 +431,7 @@ export default function ArticleWorkspacePage() {
 			onPrimary={primary[stage].run}
 			primaryDisabled={primary[stage].disabled}
 			primaryBusy={busy}
+			primaryBusyLabel={pending === 'preview_editorial_proposals' ? 'Preparing preview…' : pending === 'apply_editorial_proposals' ? 'Saving revision…' : 'Working…'}
 			contextOpen={contextOpen}
 			onToggleContext={() => setContextOpen((value) => !value)}
 			context={
@@ -669,7 +670,11 @@ export default function ArticleWorkspacePage() {
 					reviewedRevision={workspace.editorial.reviewedRevisionNumber ?? null}
 					reviewStale={reviewStale}
 					busy={busy}
+					pending={pending}
 					act={actBool}
+					onPreview={() => void actBool('preview_editorial_proposals', {}, 'Preview ready. The article was not changed. Confirm the new revision when you are ready.')}
+					onConfirm={() => primary.review.run()}
+					onCancelPreview={() => void actBool('discard_editorial_preview', {}, 'Preview discarded. Revision ' + (workspace.revision?.number ?? '') + ' is unchanged.')}
 					validationFindings={workspace.editorial.findings}
 					currentRevisionId={workspace.revision?.id ?? null}
 					onResearch={() => chooseStage('research')}

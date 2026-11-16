@@ -17,14 +17,14 @@ export function reviewPrimary(input: {
 	blockingOpen: number;
 }): ReviewPrimary {
 	if (input.justApplied) return { action: 'draft', label: 'Review changes' };
-	if (!input.hasCritique || input.reviewStale) return { action: input.hasCritique ? 'rereview' : 'critique', label: 'Run Editorial Pass of Draft' };
 	if (input.accepted > 0 && !input.hasPreview) {
 		const count = input.accepted;
-		return { action: 'preview', label: `Apply ${count} Approved Edit${count === 1 ? '' : 's'} to Draft` };
+		return { action: 'preview', label: `Preview ${count} Approved Change${count === 1 ? '' : 's'}` };
 	}
 	if (input.accepted > 0 && input.hasPreview) {
-		return { action: 'apply', label: 'Confirm and save these edits' };
+		return { action: 'apply', label: 'Confirm new revision' };
 	}
+	if (!input.hasCritique || input.reviewStale) return { action: input.hasCritique ? 'rereview' : 'critique', label: 'Run Editorial Pass of Draft' };
 	if (input.blockingOpen === 0) return { action: 'images', label: 'Continue to Images' };
 	return { action: 'stay', label: 'Approve edits' };
 }

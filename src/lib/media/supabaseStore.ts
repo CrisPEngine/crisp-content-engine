@@ -254,7 +254,7 @@ export function createSupabaseNativeContentStore(): NativeContentStore {
 			if (error) throw new Error(error.message);
 			return (data ?? []).map((row) => signalFromRow(row as Record<string, unknown>));
 		},
-		async saveArticle(article) {
+		async saveArticle(article, options) {
 			const row = {
 				id: article.id,
 				owner_user_id: article.ownerUserId,
@@ -269,6 +269,18 @@ export function createSupabaseNativeContentStore(): NativeContentStore {
 				destination_id: article.workspace?.destinationId ?? article.publishDestination ?? null,
 				external_id: article.workspace?.externalId ?? article.workspace?.cms.externalId ?? null,
 			};
+			if (options?.expectedRevisionId) {
+				const { data, error } = await db()
+					.from('articles')
+					.update(row)
+					.eq('id', article.id)
+					.eq('owner_user_id', article.ownerUserId)
+					.filter('document->workspace->revision->>id', 'eq', options.expectedRevisionId)
+					.select('id');
+				if (error) throw new Error(error.message);
+				if (!data?.length) throw new Error('The article changed after the preview. Preview the accepted changes again.');
+				return article;
+			}
 			const { error } = await db().from('articles').upsert(row);
 			if (error && /publish_at|destination_id|external_id/.test(error.message)) {
 				const base = {
