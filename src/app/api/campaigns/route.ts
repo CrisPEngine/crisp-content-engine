@@ -1,0 +1,88 @@
+import { NextResponse } from 'next/server';
+import { CampaignError, createContentCampaign, decideOpportunity, discoverOpportunities, listContentOpportunities, recordContentOpportunity } from '@/lib/campaigns/service';
+import type { ApprovalMode, CampaignStatus, DemandClass, OpportunityStatus } from '@/lib/campaigns/types';
+import { requireIntelligenceUser } from '@/lib/intelligence/http';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+function fail(error: unknown) {
+	if (error instanceof CampaignError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+	const message = error instanceof Error ? error.message : 'Request failed';
+	return NextResponse.json({ error: message }, { status: message === 'Unauthorized' ? 401 : 400 });
+}
+
+export async function GET(request: Request) {
+	try {
+		const { userId } = await requireIntelligenceUser();
+		const brandId = new URL(request.url).searchParams.get('brandId') ?? '';
+		if (!brandId) return NextResponse.json({ error: 'Choose a brand.' }, { status: 400 });
+		return NextResponse.json(await listContentOpportunities(userId, brandId));
+	} catch (error) {
+		return fail(error);
+	}
+}
+
+export async function POST(request: Request) {
+	try {
+		const { userId } = await requireIntelligenceUser();
+		const body = (await request.json()) as Record<string, unknown>;
+		const action = typeof body.action === 'string' ? body.action : '';
+		const brandId = typeof body.brandId === 'string' ? body.brandId : '';
+		if (action === 'record') {
+			if (!brandId || typeof body.title !== 'string' || typeof body.audienceProblem !== 'string') {
+				return NextResponse.json({ error: 'Brand, title, and audience problem are required.' }, { status: 400 });
+			}
+			const demandClass = body.demandClass === 'strategic' || body.demandClass === 'inferred' ? body.demandClass : 'unvalidated';
+			const opportunity = await recordContentOpportunity(userId, {
+				brandId,
+				title: body.title,
+				audienceProblem: body.audienceProblem,
+				searchIntent: typeof body.searchIntent === 'string' ? body.searchIntent : undefined,
+				demandClass: demandClass as DemandClass,
+				sourceUrl: typeof body.sourceUrl === 'string' ? body.sourceUrl : undefined,
+				excerpt: typeof body.excerpt === 'string' ? body.excerpt : undefined,
+			});
+			return NextResponse.json({ opportunity });
+		}
+		if (action === 'discover') {
+			const source = body.source === 'community' || body.source === 'search_console' || body.source === 'themes' ? body.source : 'search';
+			const opportunities = await discoverOpportunities(userId, {
+				brandId,
+				source,
+				topic: typeof body.topic === 'string' ? body.topic : undefined,
+				startDate: typeof body.startDate === 'string' ? body.startDate : undefined,
+				endDate: typeof body.endDate === 'string' ? body.endDate : undefined,
+			});
+			return NextResponse.json({ opportunities });
+		}
+		if (action === 'decide') {
+			const status = body.status as OpportunityStatus;
+			if (!['approved', 'rejected', 'deferred', 'needs_research'].includes(status) || typeof body.id !== 'string') {
+				return NextResponse.json({ error: 'Choose a valid decision.' }, { status: 400 });
+			}
+			return NextResponse.json({ opportunity: await decideOpportunity(userId, body.id, status) });
+		}
+		if (action === 'create_campaign') {
+			if (!brandId || typeof body.name !== 'string') return NextResponse.json({ error: 'Brand and campaign name are required.' }, { status: 400 });
+			const approvalMode: ApprovalMode = body.approvalMode === 'auto_draft' ? 'auto_draft' : 'assisted';
+			const status: CampaignStatus = body.status === 'active' || body.status === 'paused' ? body.status : 'draft';
+			const campaign = await createContentCampaign(userId, {
+				brandId,
+				name: body.name,
+				objective: typeof body.objective === 'string' ? body.objective : '',
+				audience: typeof body.audience === 'string' ? body.audience : '',
+				themes: Array.isArray(body.themes) ? body.themes.filter((item): item is string => typeof item === 'string') : [],
+				weeklyCapacity: typeof body.weeklyCapacity === 'number' ? body.weeklyCapacity : 0,
+				selectionPolicy: 'evidence_required',
+				approvalMode,
+				destinationId: typeof body.destinationId === 'string' ? body.destinationId : null,
+				status,
+			});
+			return NextResponse.json({ campaign });
+		}
+		return NextResponse.json({ error: 'Unknown campaign action.' }, { status: 400 });
+	} catch (error) {
+		return fail(error);
+	}
+}
