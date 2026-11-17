@@ -435,6 +435,28 @@ export type ArticleRecord = {
 	library?: {
 		archivedAt: string | null;
 		canonicalUrl: string | null;
+		canonicalArticleId?: string | null;
 		stageNote: string | null;
+		cms?: {
+			payloadId: string;
+			externalId: string;
+			slug: string;
+			title: string;
+			description: string;
+			status: string;
+			publishedAt: string | null;
+			updatedAt: string | null;
+			hero: string | null;
+			revision: number | null;
+			contentRef: string;
+			syncedAt: string;
+		};
+		proposal?: {
+			status: 'pending' | 'approved' | 'rejected';
+			proposedTitle: string;
+			proposedDescription: string;
+			baseUpdatedAt: string | null;
+			sourceArticleId: string;
+		};
 	};
 };

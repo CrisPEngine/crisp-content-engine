@@ -414,7 +414,7 @@ export default function ArticleWorkspacePage() {
 	return (
 		<WorkspaceErrorBoundary>
 		{article.body.startsWith('# Metadata proposal') ? (
-			<MetadataProposalPanel body={article.body} pending={busy} onAction={(action) => void act(action, {}, action === 'approve' ? 'Proposal approved. The live article was not changed.' : 'The proposal was updated. Nothing was published.')} />
+			<MetadataProposalPanel body={article.body} pending={busy} canonicalUrl={article.library?.canonicalUrl} onAction={(action) => void act(action, {}, action === 'approve' ? 'Proposal approved. The live article was not changed.' : 'The proposal was updated. Nothing was published.')} />
 		) : null}
 		<WorkspaceFrame
 			stage={stage}

@@ -16,6 +16,10 @@ export function classifyIntent(text: string): 'informational' | 'commercial' | '
 	return 'informational';
 }
 
+export function researchAreaQueries(areas: string[]): string[] {
+	return [...new Set(areas.map((area) => area.trim()).filter((area) => area.length > 8))].slice(0, 6).map((area) => `${area} problems fiction writers`);
+}
+
 export function researchQueries(input: { brandName: string; problems: string[]; questions: string[]; pillars: string[] }): string[] {
 	const brand = input.brandName.trim();
 	const seeds = [...input.problems, ...input.questions, ...input.pillars];

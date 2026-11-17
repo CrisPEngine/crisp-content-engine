@@ -2,9 +2,10 @@
 
 import { parseMetadataProposal } from '@/lib/campaigns/optimisation';
 
-export function MetadataProposalPanel({ body, pending, onAction }: {
+export function MetadataProposalPanel({ body, pending, canonicalUrl, onAction }: {
 	body: string;
 	pending: boolean;
+	canonicalUrl?: string | null;
 	onAction: (action: 'approve' | 'reject_proposal' | 'request_proposal_changes') => void;
 }) {
 	const proposal = parseMetadataProposal(body);
@@ -12,7 +13,7 @@ export function MetadataProposalPanel({ body, pending, onAction }: {
 	return (
 		<section className="card mb-4 space-y-3 p-4 text-sm">
 			<h2 className="font-medium">Metadata proposal</h2>
-			<p className="text-text-soft">Approving this proposal does not publish it and does not change the live article.</p>
+			<p className="text-text-soft">Approving this proposal does not publish it and does not change the live article.{canonicalUrl ? ` Linked to ${canonicalUrl}.` : ''}</p>
 			<div className="grid gap-3 md:grid-cols-2">
 				<div>
 					<p className="text-text-dim">Original title</p>

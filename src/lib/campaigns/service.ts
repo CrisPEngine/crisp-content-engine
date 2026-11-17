@@ -157,6 +157,7 @@ export async function discoverOpportunities(userId: string, input: {
 	topic?: string;
 	startDate?: string;
 	endDate?: string;
+	areas?: string[];
 }): Promise<ContentOpportunity[]> {
 	const inventory = await inventoryFor(userId, input.brandId);
 	const repository = getOpportunityRepository();
@@ -179,7 +180,7 @@ export async function discoverOpportunities(userId: string, input: {
 		return persistCandidates(userId, input.brandId, candidates, repository, inventory);
 	}
 	if (input.source === 'market') {
-		const { researchQueries, candidatesFromMarket } = await import('./market');
+		const { researchAreaQueries, researchQueries, candidatesFromMarket } = await import('./market');
 		const { sameOpportunity } = await import('./dedupe');
 		const { selectSearchProvider } = await import('@/lib/research/search');
 		const provider = selectSearchProvider();
@@ -188,7 +189,7 @@ export async function discoverOpportunities(userId: string, input: {
 		const strategy = brain ? await getIntelligenceStore().getStrategyForBrand(userId, brain.id) : null;
 		const themes = (await getIntelligenceStore().listThemes(userId, input.brandId)).filter((theme) => theme.status === 'active');
 		const approvedProblems = [...(strategy?.audienceProblems ?? []), ...themes.flatMap((theme) => theme.questionsToAnswer ?? [])];
-		const queries = researchQueries({
+		const queries = input.areas?.length ? researchAreaQueries(input.areas) : researchQueries({
 			brandName: brain?.identity.name ?? '',
 			problems: strategy?.audienceProblems ?? [],
 			pillars: strategy?.contentPillars ?? [],

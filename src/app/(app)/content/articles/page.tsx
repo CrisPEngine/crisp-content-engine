@@ -113,7 +113,7 @@ export default function ArticlesPage() {
 		setConfirm('');
 		setSelected([]);
 		setPage(1);
-		setMessage(action.includes('delete') ? `Deleted ${body.deleted?.length ?? 1} draft${(body.deleted?.length ?? 1) === 1 ? '' : 's'}. Shared media was kept.` : 'The library was updated. Published URLs were not changed.');
+		setMessage(action === 'sync_payload' ? `Payload sync: ${body.created ?? 0} imported, ${body.updated ?? 0} reconciled, ${body.unchanged ?? 0} unchanged, ${body.linkedProposals ?? 0} proposals linked. Live pages were not changed.` : action.includes('delete') ? `Deleted ${body.deleted?.length ?? 1} draft${(body.deleted?.length ?? 1) === 1 ? '' : 's'}. Shared media was kept.` : 'The library was updated. Published URLs were not changed.');
 		const params = new URLSearchParams({ view, sort, page: '1', pageSize: '20' });
 		if (brandId) params.set('brandId', brandId);
 		const reload = await fetch(`/api/articles?${params.toString()}`);
@@ -130,6 +130,7 @@ export default function ArticlesPage() {
 					<h1 className="text-2xl font-semibold">Articles</h1>
 					<p className="text-text-soft">Research, draft, review, and send a website article to the connected CMS.</p>
 				</div>
+				<button className="btn" type="button" disabled={!brandId} onClick={() => void libraryAction('sync_payload', { brandId })}>Sync Payload</button>
 				<Link className="btn" href="/content/articles/new">New article</Link>
 			</div>
 			<div className="flex flex-wrap gap-2">

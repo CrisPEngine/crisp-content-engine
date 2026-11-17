@@ -62,6 +62,10 @@ export async function advanceProductionJob(userId: string, jobId: string): Promi
 		job.stageLog = [...job.stageLog, { stage: job.stage, at: new Date().toISOString(), note: result.note }];
 		job.error = result.escalate ?? null;
 		job.note = result.note;
+		if (result.retry) {
+			job.status = 'queued';
+			return repository.saveJob(userId, job);
+		}
 		if (result.escalate) {
 			job.status = 'needs_attention';
 		} else if (job.stage === 'approval') {
@@ -79,7 +83,7 @@ export async function advanceProductionJob(userId: string, jobId: string): Promi
 	}
 }
 
-async function runStage(userId: string, job: ProductionJob, opportunity: { title: string; recommendedAction: string; evidence: Array<{ url: string | null; metrics: { position: number; ctr: number; impressions: number; clicks?: number; scope?: 'query' | 'page' } | null }> }): Promise<{ articleId?: string; note: string; costUsd?: number; escalate?: string; modelCall?: boolean }> {
+async function runStage(userId: string, job: ProductionJob, opportunity: { title: string; recommendedAction: string; evidence: Array<{ url: string | null; metrics: { position: number; ctr: number; impressions: number; clicks?: number; scope?: 'query' | 'page' } | null }> }): Promise<{ articleId?: string; note: string; costUsd?: number; escalate?: string; modelCall?: boolean; retry?: boolean }> {
 	const workspace = await import('@/lib/articles/workspace');
 	const evidenceUrls = opportunity.evidence.map((item) => item.url).filter((url): url is string => Boolean(url));
 	const evidenceNote = evidenceUrls.slice(0, 8).join('\n');
@@ -124,7 +128,7 @@ async function runStage(userId: string, job: ProductionJob, opportunity: { title
 		}
 		const started = await workspace.startArticleGeneration(userId, articleId);
 		const article = started.article;
-		if (!article.body.trim()) return { articleId, note: 'Generation was queued and has not finished.', escalate: 'The draft is not ready yet. Retry this stage when generation completes.' };
+		if (!article.body.trim()) return { articleId, note: 'Generation was queued and has not finished.', retry: true };
 		return { articleId, note: 'The draft was generated.', costUsd: article.workspace?.generation.estimatedCostUsd ?? 0 };
 	}
 	if (job.stage === 'editorial') {
@@ -296,6 +300,25 @@ async function proposalCost(userId: string, since: string): Promise<number | nul
 	} catch {
 		return null;
 	}
+}
+
+export async function runProductionToApproval(userId: string, jobId: string): Promise<ProductionJob> {
+	let job = await getOpportunityRepository().getJob(userId, jobId);
+	if (!job) throw new CampaignError('Production job not found.', 404, 'job_missing');
+	for (let step = 0; step < 12; step += 1) {
+		if (job.status === 'ready_for_approval' || job.status === 'needs_attention' || job.status === 'completed' || job.status === 'paused') return job;
+		job = await advanceProductionJob(userId, job.id);
+		if (job.note.includes('has not finished') && job.articleId) {
+			const workspace = await import('@/lib/articles/workspace');
+			const article = (await workspace.getWorkspaceArticle(userId, job.articleId)).article;
+			const generationId = article.workspace?.generation.jobId;
+			if (generationId) {
+				const { runArticleGenerationInline } = await import('@/lib/articles/generationJob');
+				await runArticleGenerationInline(generationId);
+			}
+		}
+	}
+	return job;
 }
 
 export async function finishProposalJob(userId: string, articleId: string, outcome: 'approved' | 'rejected' | 'changes'): Promise<ProductionJob | null> {
