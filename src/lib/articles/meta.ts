@@ -395,6 +395,8 @@ export type ArticleListItem = {
 	archivedAt: string | null;
 	contentStage: string;
 	canonicalUrl: string | null;
+	publicationPhase: string;
+	publicationError: string | null;
 };
 
 export function toListItem(article: ArticleRecord): ArticleListItem {
@@ -421,6 +423,8 @@ export function toListItem(article: ArticleRecord): ArticleListItem {
 		archivedAt: article.library?.archivedAt ?? null,
 		contentStage: article.library?.archivedAt ? 'archived' : article.body.startsWith('# Metadata proposal') ? 'optimisation' : article.status,
 		canonicalUrl: article.library?.canonicalUrl ?? article.publication?.url ?? null,
+		publicationPhase: article.library?.publication?.state ?? (workspace.schedule.status === 'scheduled' || workspace.schedule.status === 'due' ? 'scheduled' : article.approval.status === 'approved' ? 'approved' : 'ready_for_approval'),
+		publicationError: article.library?.publication?.error ?? null,
 	};
 }
 

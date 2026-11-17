@@ -60,6 +60,25 @@ export async function POST(request: Request) {
 			for (const id of body.ids.filter((item): item is string => typeof item === 'string')) articles.push(await restoreArticle(userId, id));
 			return NextResponse.json({ articles });
 		}
+		if (action === 'correct_quality' && text(body.id)) {
+			const { applyOpenQualityCorrections } = await import('@/lib/campaigns/workflow');
+			return NextResponse.json(await applyOpenQualityCorrections(userId, text(body.id)!));
+		}
+		if (action === 'publish_article' && text(body.id)) {
+			const { publishDecision, usefulnessBlockers } = await import('@/lib/publishing/payloadPublish');
+			const { getNativeContentStore } = await import('@/lib/media/store');
+			const { websitePublishingEnabled } = await import('@/lib/publishing/websiteDestinations');
+			const article = await getNativeContentStore().getArticle(userId, text(body.id)!);
+			if (!article || article.ownerUserId !== userId) return NextResponse.json({ error: 'Article not found.' }, { status: 404 });
+			const decision = publishDecision({
+				approved: article.approval.status === 'approved',
+				blockers: usefulnessBlockers(article.workspace?.editorialDesk?.critique?.findings ?? []),
+				liveEnabled: websitePublishingEnabled(),
+				explicit: body.confirmPublish === true,
+				autoPublish: false,
+			});
+			return NextResponse.json({ ...decision, sent: false });
+		}
 		if (action === 'sync_payload' && text(body.brandId)) {
 			const { fetchPayloadCatalogue, syncPayloadCatalogue } = await import('@/lib/publishing/cmsSync');
 			const docs = await fetchPayloadCatalogue(text(body.origin) ?? 'https://folian.app');

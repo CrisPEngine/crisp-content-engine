@@ -58,7 +58,7 @@ export type WebsiteDestinationView = Omit<WebsiteDestination, 'ownerUserId'> & {
 	providerAvailable: boolean;
 };
 
-export type DestinationCredentials = { apiKey?: string; bypassToken?: string };
+export type DestinationCredentials = { apiKey?: string; publishKey?: string; bypassToken?: string };
 
 export type ProviderCapabilities = {
 	testConnection: boolean;
@@ -100,6 +100,9 @@ export type DestinationAdapter = {
 		connection: DestinationConnection,
 		input: { bytes: Buffer; filename: string; mimeType: string; alt: string; credit: string; license: string },
 	): Promise<{ ok: true; mediaId: string } | { ok: false; error: string }>;
+	readPublication?(connection: DestinationConnection, externalId: string): Promise<{ status: number; body: Record<string, unknown> }>;
+	publishArticle?(connection: DestinationConnection, command: { externalId: string; baseRevision: number; baseUpdatedAt?: string | null; publishAt?: string | null; idempotencyKey: string }): Promise<{ status: number; body: Record<string, unknown> }>;
+	updatePublished?(connection: DestinationConnection, command: { externalId: string; baseRevision: number; baseUpdatedAt?: string | null; idempotencyKey: string; title?: string; dek?: string; seoTitle?: string; seoDescription?: string; heroMediaId?: string | null }): Promise<{ status: number; body: Record<string, unknown> }>;
 };
 
 /** What the destination's body format can hold. Anything outside it must be fixed before submission, never dropped. */

@@ -36,7 +36,11 @@ function environmentConnection(): { baseUrl: string; credentials: DestinationCre
 	if (!baseUrl || !apiKey) return null;
 	return {
 		baseUrl: baseUrl.replace(/\/+$/, ''),
-		credentials: { apiKey, bypassToken: process.env.FOLIAN_VERCEL_PROTECTION_BYPASS?.trim() || undefined },
+		credentials: {
+			apiKey,
+			publishKey: process.env.FOLIAN_CONTENT_PUBLISH_KEY?.trim() || undefined,
+			bypassToken: process.env.FOLIAN_VERCEL_PROTECTION_BYPASS?.trim() || undefined,
+		},
 	};
 }
 

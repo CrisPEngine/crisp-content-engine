@@ -137,50 +137,9 @@ async function runStage(userId: string, job: ProductionJob, opportunity: { title
 		return { articleId, note: 'Editorial review finished.', costUsd: reviewed.workspace?.generation.estimatedCostUsd ?? 0 };
 	}
 	if (job.stage === 'corrections') {
-		let article = await workspace.critiqueWorkspaceArticle(userId, articleId);
-		let applied = 0;
-		let revision: number | null = article.workspace?.revision?.number ?? null;
-		for (let pass = 0; pass < 2; pass += 1) {
-			const findings = article.workspace?.editorialDesk?.critique?.findings ?? [];
-			for (const finding of findings) {
-				if (finding.status !== 'open' || finding.category !== 'examples') continue;
-				const queued = (article.workspace?.editorialDesk?.proposals ?? []).some((item) => item.sourceFindingId === finding.id && item.status !== 'applied');
-				if (queued) continue;
-				const instruction = finding.category === 'examples'
-					? `Resolve only this fictional contradiction: ${finding.evidence.join('; ')}. ${finding.recommendation} Change only those passages. Do not rewrite unrelated sections, and do not add sources, statistics, or product capabilities.`
-					: `${finding.recommendation} Change only the section this finding names. Do not add sources, statistics, or product capabilities.`;
-				article = await workspace.queueEditorialChange(userId, articleId, {
-					findingId: finding.id,
-					instruction,
-					reason: finding.explanation,
-					section: finding.section,
-					status: 'proposed',
-				});
-			}
-			const desk = article.workspace?.editorialDesk;
-			const decision = classifyEditorialWork({
-				proposals: desk?.proposals ?? [],
-				findings: (desk?.critique?.findings ?? []).map((finding) => ({ id: finding.id, severity: finding.severity, category: finding.category, status: finding.status })),
-				correctionAttempts: pass,
-			});
-			if (decision.escalate) return { articleId, note: decision.escalate, escalate: decision.escalate };
-			if (!decision.acceptIds.length) break;
-			for (const id of decision.acceptIds) article = await workspace.decideEditorialProposal(userId, articleId, id, 'accepted');
-			await workspace.previewAcceptedEditorialProposals(userId, articleId);
-			const result = await workspace.applyAcceptedEditorialProposals(userId, articleId);
-			article = result.article;
-			revision = article.workspace?.revision?.number ?? revision;
-			applied += decision.acceptIds.length;
-		}
-		await workspace.revalidateEditorialFindings(userId, articleId);
-		const openExamples = (article.workspace?.editorialDesk?.critique?.findings ?? []).filter((finding) => finding.id === 'example-conflict' && finding.status === 'open');
-		const note = openExamples.length
-			? 'A fictional contradiction remains after two correction passes.'
-			: applied
-				? `Applied ${applied} targeted correction${applied === 1 ? '' : 's'} on revision ${revision ?? 'current'}. Editorial review ran again.`
-				: 'Editorial review ran again. The examples clash did not survive revalidation, so the draft was not rewritten.';
-		if (openExamples.length) return { articleId, note, escalate: note };
-		return { articleId, note };
+		const correction = await applyOpenQualityCorrections(userId, articleId);
+		if (correction.blockers.length) return { articleId, note: correction.note, escalate: correction.note };
+		return { articleId, note: correction.note };
 	}
 	if (job.stage === 'seo') {
 		if (opportunity.recommendedAction === 'update') {
@@ -210,10 +169,13 @@ async function runStage(userId: string, job: ProductionJob, opportunity: { title
 		}
 		const article = await workspace.revalidateEditorialFindings(userId, articleId);
 		const { articleApprovalGate, openCriticalFindings, ensureWorkspace } = await import('@/lib/articles/meta');
+		const { usefulnessBlockers } = await import('@/lib/publishing/payloadPublish');
 		const gate = articleApprovalGate(article);
 		const critical = openCriticalFindings(ensureWorkspace(article));
-		if (!gate.ok || critical.length) {
-			return { articleId, note: gate.ok ? 'Critical findings remain.' : gate.message, escalate: gate.ok ? 'Critical findings remain.' : gate.message };
+		const blockers = usefulnessBlockers(article.workspace?.editorialDesk?.critique?.findings ?? []);
+		if (!gate.ok || critical.length || blockers.length) {
+			const note = blockers.length ? `Publication is blocked by ${blockers.join(', ')}.` : gate.ok ? 'Critical findings remain.' : gate.message;
+			return { articleId, note, escalate: note };
 		}
 		return { articleId, note: 'Publication quality checks passed. The article was not published.' };
 	}
@@ -329,6 +291,55 @@ async function proposalCost(userId: string, since: string): Promise<number | nul
 	} catch {
 		return null;
 	}
+}
+
+export async function applyOpenQualityCorrections(userId: string, articleId: string): Promise<{ applied: number; blockers: string[]; revision: number | null; note: string; published: false }> {
+	const workspace = await import('@/lib/articles/workspace');
+	let article = await workspace.critiqueWorkspaceArticle(userId, articleId);
+	let applied = 0;
+	let revision: number | null = article.workspace?.revision?.number ?? null;
+	for (let pass = 0; pass < 2; pass += 1) {
+		const findings = article.workspace?.editorialDesk?.critique?.findings ?? [];
+		for (const finding of findings) {
+			const material = ['intro-weak', 'opening-guide', 'definition-thin', 'cta-weak', 'answers-indirect', 'example-conflict'].includes(finding.id) || finding.category === 'repetition' || finding.category === 'structure';
+			if (finding.status !== 'open' || !material) continue;
+			const queued = (article.workspace?.editorialDesk?.proposals ?? []).some((item) => item.sourceFindingId === finding.id && item.status !== 'applied');
+			if (queued) continue;
+			const instruction = finding.category === 'examples'
+				? `Resolve only this fictional contradiction: ${finding.evidence.join('; ')}. ${finding.recommendation} Change only those passages. Do not rewrite unrelated sections, and do not add sources, statistics, or product capabilities.`
+				: `${finding.recommendation} Change only the passage this finding names. Do not add sources, statistics, or unverified product capabilities.`;
+			article = await workspace.queueEditorialChange(userId, articleId, {
+				findingId: finding.id,
+				instruction,
+				reason: finding.explanation,
+				section: finding.section,
+				status: 'proposed',
+			});
+		}
+		const desk = article.workspace?.editorialDesk;
+		const decision = classifyEditorialWork({
+			proposals: desk?.proposals ?? [],
+			findings: (desk?.critique?.findings ?? []).map((finding) => ({ id: finding.id, severity: finding.severity, category: finding.category, status: finding.status })),
+			correctionAttempts: pass,
+		});
+		if (decision.escalate) return { applied, blockers: decision.escalate ? [decision.escalate] : [], revision, note: decision.escalate, published: false };
+		if (!decision.acceptIds.length) break;
+		for (const id of decision.acceptIds) article = await workspace.decideEditorialProposal(userId, articleId, id, 'accepted');
+		await workspace.previewAcceptedEditorialProposals(userId, articleId);
+		const result = await workspace.applyAcceptedEditorialProposals(userId, articleId);
+		article = result.article;
+		revision = article.workspace?.revision?.number ?? revision;
+		applied += decision.acceptIds.length;
+	}
+	await workspace.revalidateEditorialFindings(userId, articleId);
+	const { usefulnessBlockers } = await import('@/lib/publishing/payloadPublish');
+	const blockers = usefulnessBlockers(article.workspace?.editorialDesk?.critique?.findings ?? []);
+	const note = blockers.length
+		? `Significant findings remain after correction: ${blockers.join(', ')}.`
+		: applied
+			? `Applied ${applied} targeted correction${applied === 1 ? '' : 's'} on revision ${revision ?? 'current'}. Editorial review ran again. Nothing was published.`
+			: 'Editorial review ran again. No targeted rewrite was required. Nothing was published.';
+	return { applied, blockers, revision, note, published: false };
 }
 
 export async function runProductionToApproval(userId: string, jobId: string): Promise<ProductionJob> {
