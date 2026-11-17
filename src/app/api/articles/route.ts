@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
+import { archiveArticle, deleteDraftArticle, deleteDrafts, restoreArticle, unpublishReport } from '@/lib/articles/libraryActions';
 import { ArticleWorkflowError, createArticleBrief, listFailedArticleJobs, listWorkspaceArticles } from '@/lib/articles/workspace';
+import { paginate } from '@/lib/articles/library';
 import { requireIntelligenceUser } from '@/lib/intelligence/http';
 
 export const runtime = 'nodejs';
@@ -24,11 +26,16 @@ export async function GET(request: Request) {
 		const url = new URL(request.url);
 		const brandId = url.searchParams.get('brandId') || undefined;
 		const view = url.searchParams.get('view') || 'all';
-		const [articles, failedJobs] = await Promise.all([
+		const [listed, failedJobs] = await Promise.all([
 			listWorkspaceArticles(userId, { brandId, view }),
 			listFailedArticleJobs(userId, brandId),
 		]);
-		return NextResponse.json({ articles, failedJobs });
+		const q = (url.searchParams.get('q') ?? '').trim().toLowerCase();
+		const sort = url.searchParams.get('sort') ?? 'updated';
+		const filtered = listed.filter((article) => !q || `${article.title} ${article.status}`.toLowerCase().includes(q));
+		const sorted = [...filtered].sort((a, b) => sort === 'title' ? a.title.localeCompare(b.title) : sort === 'status' ? a.status.localeCompare(b.status) : b.updatedAt.localeCompare(a.updatedAt));
+		const page = paginate(sorted, Number(url.searchParams.get('page') ?? 1), Number(url.searchParams.get('pageSize') ?? 20));
+		return NextResponse.json({ articles: page.rows, page: page.page, pages: page.pages, total: page.total, failedJobs });
 	} catch (error) {
 		return fail(error);
 	}
@@ -38,6 +45,27 @@ export async function POST(request: Request) {
 	try {
 		const { userId } = await requireIntelligenceUser();
 		const body = (await request.json()) as Record<string, unknown>;
+		const action = text(body.action);
+		if (action === 'archive' && text(body.id)) return NextResponse.json({ article: await archiveArticle(userId, text(body.id)!) });
+		if (action === 'restore' && text(body.id)) return NextResponse.json({ article: await restoreArticle(userId, text(body.id)!) });
+		if (action === 'delete_draft' && text(body.id)) return NextResponse.json(await deleteDraftArticle(userId, text(body.id)!, text(body.confirmTitle) ?? ''));
+		if (action === 'delete_drafts' && Array.isArray(body.ids)) return NextResponse.json(await deleteDrafts(userId, body.ids.filter((id): id is string => typeof id === 'string')));
+		if (action === 'archive_many' && Array.isArray(body.ids)) {
+			const articles = [];
+			for (const id of body.ids.filter((item): item is string => typeof item === 'string')) articles.push(await archiveArticle(userId, id));
+			return NextResponse.json({ articles });
+		}
+		if (action === 'restore_many' && Array.isArray(body.ids)) {
+			const articles = [];
+			for (const id of body.ids.filter((item): item is string => typeof item === 'string')) articles.push(await restoreArticle(userId, id));
+			return NextResponse.json({ articles });
+		}
+		if (action === 'unpublish_check' && text(body.id)) {
+			const { getNativeContentStore } = await import('@/lib/media/store');
+			const article = await getNativeContentStore().getArticle(userId, text(body.id)!);
+			if (!article || article.ownerUserId !== userId) return NextResponse.json({ error: 'Article not found.' }, { status: 404 });
+			return NextResponse.json(unpublishReport(userId, article, { confirmTitle: text(body.confirmTitle), redirectTo: text(body.redirectTo) }));
+		}
 		const brandId = text(body.brandId);
 		const topic = text(body.topic);
 		if (!brandId || !topic?.trim()) {

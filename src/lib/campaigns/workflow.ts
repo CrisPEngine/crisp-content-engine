@@ -298,6 +298,24 @@ async function proposalCost(userId: string, since: string): Promise<number | nul
 	}
 }
 
+export async function finishProposalJob(userId: string, articleId: string, outcome: 'approved' | 'rejected' | 'changes'): Promise<ProductionJob | null> {
+	const repository = getOpportunityRepository();
+	const job = await repository.getJobByArticle(userId, articleId);
+	if (!job) return null;
+	if (outcome === 'approved') {
+		job.status = 'completed';
+		job.note = 'A person approved the proposal. Nothing was published and the live article was not changed.';
+	} else if (outcome === 'rejected') {
+		job.status = 'needs_attention';
+		job.note = 'A person rejected the proposal. Nothing was published.';
+	} else {
+		job.status = 'needs_attention';
+		job.note = 'A person asked for changes. Nothing was published.';
+	}
+	job.error = null;
+	return repository.saveJob(userId, job);
+}
+
 export async function scheduleCampaign(userId: string, brandId: string, campaignId: string): Promise<{ started: ProductionJob[]; remaining: number }> {
 	const repository = getOpportunityRepository();
 	const campaign = (await repository.listCampaigns(userId, brandId)).find((item) => item.id === campaignId);

@@ -19,6 +19,7 @@ export type OpportunityRepository = {
 	listJobs(userId: string, brandId: string): Promise<ProductionJob[]>;
 	getJob(userId: string, id: string): Promise<ProductionJob | null>;
 	getJobByOpportunity(userId: string, opportunityId: string): Promise<ProductionJob | null>;
+	getJobByArticle(userId: string, articleId: string): Promise<ProductionJob | null>;
 	saveJob(userId: string, job: ProductionJob): Promise<ProductionJob>;
 };
 
@@ -265,6 +266,11 @@ export function createSupabaseOpportunityRepository(): OpportunityRepository {
 			if (error) throw new Error(error.message);
 			return data ? jobFromRow(data) : null;
 		},
+		async getJobByArticle(userId, articleId) {
+			const { data, error } = await db().from('content_production_jobs').select('*').eq('user_id', userId).eq('article_id', articleId).maybeSingle();
+			if (error) throw new Error(error.message);
+			return data ? jobFromRow(data) : null;
+		},
 		async saveJob(userId, job) {
 			const { data, error } = await db().from('content_production_jobs').upsert({
 				id: job.id,
@@ -487,6 +493,12 @@ export function createMemoryOpportunityRepository(): OpportunityRepository {
 		},
 		async getJobByOpportunity(userId, opportunityId) {
 			const found = jobs.find((item) => item.userId === userId && item.opportunityId === opportunityId);
+			if (!found) return null;
+			const { userId: _user, ...item } = found;
+			return item;
+		},
+		async getJobByArticle(userId, articleId) {
+			const found = jobs.find((item) => item.userId === userId && item.articleId === articleId);
 			if (!found) return null;
 			const { userId: _user, ...item } = found;
 			return item;

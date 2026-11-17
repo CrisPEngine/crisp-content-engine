@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { CampaignError, createContentCampaign, decideOpportunity, discoverOpportunities, listContentOpportunities, recordContentOpportunity, rescoreStoredEvidence, testBrandAnalytics } from '@/lib/campaigns/service';
+import { archiveWeakOpportunities, CampaignError, createContentCampaign, decideOpportunity, discoverOpportunities, listContentOpportunities, recordContentOpportunity, rescoreStoredEvidence, testBrandAnalytics } from '@/lib/campaigns/service';
 import { advanceProductionJob, revalidateMetadataJob, scheduleCampaign, startProductionJob } from '@/lib/campaigns/workflow';
 import type { ApprovalMode, CampaignStatus, DemandClass, OpportunityStatus } from '@/lib/campaigns/types';
 import { requireIntelligenceUser } from '@/lib/intelligence/http';
@@ -66,6 +66,18 @@ export async function POST(request: Request) {
 			});
 			return NextResponse.json({ test });
 		}
+		if (action === 'archive_ids' && Array.isArray(body.ids)) {
+			const archived = [];
+			for (const id of body.ids) {
+				if (typeof id !== 'string') continue;
+				archived.push(await decideOpportunity(userId, id, 'archived'));
+			}
+			return NextResponse.json({ archived });
+		}
+		if (action === 'archive_weak') {
+			if (!brandId) return NextResponse.json({ error: 'Choose a brand.' }, { status: 400 });
+			return NextResponse.json({ archived: await archiveWeakOpportunities(userId, brandId) });
+		}
 		if (action === 'rescore') {
 			if (!brandId) return NextResponse.json({ error: 'Choose a brand.' }, { status: 400 });
 			return NextResponse.json({ changes: await rescoreStoredEvidence(userId, brandId) });
@@ -87,7 +99,7 @@ export async function POST(request: Request) {
 		}
 		if (action === 'decide') {
 			const status = body.status as OpportunityStatus;
-			if (!['approved', 'rejected', 'deferred', 'needs_research'].includes(status) || typeof body.id !== 'string') {
+			if (!['approved', 'rejected', 'deferred', 'needs_research', 'archived'].includes(status) || typeof body.id !== 'string') {
 				return NextResponse.json({ error: 'Choose a valid decision.' }, { status: 400 });
 			}
 			return NextResponse.json({ opportunity: await decideOpportunity(userId, body.id, status) });

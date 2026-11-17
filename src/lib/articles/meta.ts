@@ -355,6 +355,9 @@ export type ArticleListItem = {
 	revisionNumber: number | null;
 	submittedToCms: boolean;
 	approved: boolean;
+	archivedAt: string | null;
+	contentStage: string;
+	canonicalUrl: string | null;
 };
 
 export function toListItem(article: ArticleRecord): ArticleListItem {
@@ -378,6 +381,9 @@ export function toListItem(article: ArticleRecord): ArticleListItem {
 		revisionNumber: workspace.revision?.number ?? null,
 		submittedToCms: Boolean(workspace.cms.lastSyncAt && !workspace.cms.lastError),
 		approved: article.approval.status === 'approved',
+		archivedAt: article.library?.archivedAt ?? null,
+		contentStage: article.library?.archivedAt ? 'archived' : article.body.startsWith('# Metadata proposal') ? 'optimisation' : article.status,
+		canonicalUrl: article.library?.canonicalUrl ?? article.publication?.url ?? null,
 	};
 }
 
@@ -508,6 +514,8 @@ export function articleNextStep(article: ArticleRecord): { stage: string; action
 
 export function matchesArticleView(article: ArticleRecord, view: string): boolean {
 	const workspace = ensureWorkspace(article);
+	if (article.library?.archivedAt) return view === 'archived';
+	if (view === 'archived') return false;
 	if (view === 'drafts') return article.status === 'brief' || article.status === 'draft';
 	if (view === 'review') return article.status === 'review';
 	if (view === 'approved') return article.status === 'approved' && workspace.schedule.status !== 'scheduled';

@@ -20,6 +20,7 @@ import { reviewPrimary } from '@/lib/articles/reviewWorkflow';
 import { summariseRevisionChange } from '@/lib/articles/revisionSummary';
 import { findingGroup, findingTitle, passageAnchor, stageTone, workspaceStageFromLocation, type WorkspaceStageId } from '@/lib/articles/workspaceNavigation';
 import type { ArticleRecord, ArticleRevisionRef } from '@/lib/articles/types';
+import { MetadataProposalPanel } from '@/components/articles/MetadataProposalPanel';
 
 type ArticleDetail = {
 	article: ArticleRecord;
@@ -412,6 +413,9 @@ export default function ArticleWorkspacePage() {
 
 	return (
 		<WorkspaceErrorBoundary>
+		{article.body.startsWith('# Metadata proposal') ? (
+			<MetadataProposalPanel body={article.body} pending={busy} onAction={(action) => void act(action, {}, action === 'approve' ? 'Proposal approved. The live article was not changed.' : 'The proposal was updated. Nothing was published.')} />
+		) : null}
 		<WorkspaceFrame
 			stage={stage}
 			onStage={chooseStage}
