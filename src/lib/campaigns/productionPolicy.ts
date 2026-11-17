@@ -1,6 +1,7 @@
 import type { ContentOpportunity } from './types';
 
-const UNSAFE_CATEGORIES = new Set(['accuracy', 'research', 'product', 'citations']);
+const UNSAFE_CATEGORIES = new Set(['accuracy', 'research', 'product', 'citations', 'brand', 'conversion']);
+const TARGETED_CATEGORIES = new Set(['examples', 'structure']);
 
 export type EditorialWork = {
 	acceptIds: string[];
@@ -26,8 +27,9 @@ export function classifyEditorialWork(input: {
 		if (proposal.status !== 'proposed') return false;
 		if (proposal.needsResearch || proposal.needsBrandVerification) return false;
 		const finding = input.findings.find((item) => item.id === proposal.sourceFindingId);
-		if (!finding) return false;
-		return finding.severity === 'minor' && !UNSAFE_CATEGORIES.has(finding.category);
+		if (!finding || finding.status !== 'open' || UNSAFE_CATEGORIES.has(finding.category)) return false;
+		if (finding.severity === 'minor') return true;
+		return TARGETED_CATEGORIES.has(finding.category);
 	}).map((proposal) => proposal.id);
 	if (openCritical.length && acceptIds.length === 0) {
 		return { acceptIds: [], escalate: `${openCritical.length} critical finding${openCritical.length === 1 ? '' : 's'} remain. Automatic correction did not cover them.` };

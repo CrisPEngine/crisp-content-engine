@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { critiqueDraft } from '@/lib/articles/editorialDesk';
 import { classifyFictionalConsistency } from '@/lib/articles/fictionConsistency';
+import { retireSatisfiedFindings } from '@/lib/articles/meta';
+import type { ArticleRecord } from '@/lib/articles/types';
 import { conceptRelevanceWarning, suggestImageConcept, suggestImageConcepts } from '@/lib/articles/imageBrief';
 import { summariseRevisionChange } from '@/lib/articles/revisionSummary';
 import { consolidateFindings } from '@/lib/articles/unifiedFindings';
@@ -14,6 +16,27 @@ describe('editorial sprint', () => {
 		const mixed = classifyFictionalConsistency('The lunar crew meets at the island archive and boards the ferry. Sela Ortiz and Sena Ortiz share the scene.');
 		expect(mixed.some((item) => item.kind === 'accidental' && /Sela/.test(item.message))).toBe(true);
 		expect(mixed.some((item) => item.kind === 'accidental' && /island/.test(item.message))).toBe(true);
+		const approval = classifyFictionalConsistency('## Audit Continuity and Approve Changes\n\nRecord the approved change before the next chapter.');
+		expect(approval.some((item) => /Approve/.test(item.message))).toBe(false);
+	});
+
+	it('keeps a satisfied category finding in history instead of blocking', () => {
+		const article = {
+			categories: ['planning-continuity'],
+			workspace: {
+				revision: { id: 'rev-1', number: 1, contentHash: 'abc' },
+				editorial: {
+					status: 'blocked',
+					exhausted: false,
+					findings: [{ id: 'cat', code: 'category_missing', severity: 'critical', decision: 'pending', dimension: 'category_accuracy', instruction: 'Choose a category.', source: 'deterministic' }],
+					history: [],
+				},
+			},
+		} as unknown as ArticleRecord;
+		expect(retireSatisfiedFindings(article)).toBe(true);
+		expect(article.workspace?.editorial.findings).toEqual([]);
+		expect(article.workspace?.editorial.history?.[0]?.findings[0]?.decision).toBe('resolved_auto');
+		expect(article.workspace?.editorial.status).not.toBe('blocked');
 	});
 
 	it('does not ask a short definition article for a guide introduction', () => {
