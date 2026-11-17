@@ -1,7 +1,12 @@
 import { getNativeContentStore } from '@/lib/media/store';
 import { getIntelligenceStore } from '@/lib/intelligence/actions';
 import { actionFor, assessOverlap } from './overlap';
-import { providerAvailability } from './providers';
+import { analyticsSignals, searchConsoleSignals } from './analyticsSignals';
+import { fetchGa4Report, type Ga4Report } from './ga4';
+import { ANALYTICS_SCOPE, SEARCH_CONSOLE_SCOPE, GoogleProviderError, getGoogleAccessToken } from './googleAuth';
+import { resolveBrandProperties } from './googleConfig';
+import { providerStatus } from './providers';
+import { fetchSearchConsoleReport, type SearchConsoleReport } from './searchConsole';
 import { discoverSearchConsole, discoverSearchTopic, scoreCandidate, type DiscoveredCandidate } from './discovery';
 import { evidenceConfidence, scoreOpportunity } from './scoring';
 import { getOpportunityRepository, type NewCampaign, type OpportunityRepository } from './repository';
@@ -55,13 +60,14 @@ async function persistCandidates(userId: string, brandId: string, candidates: Di
 	return saved;
 }
 
-export async function listContentOpportunities(userId: string, brandId: string): Promise<{ opportunities: ContentOpportunity[]; campaigns: ContentCampaign[]; providers: ReturnType<typeof providerAvailability> }> {
+export async function listContentOpportunities(userId: string, brandId: string): Promise<{ opportunities: ContentOpportunity[]; campaigns: ContentCampaign[]; providers: ReturnType<typeof providerStatus> }> {
 	const repository = getOpportunityRepository();
-	const [opportunities, campaigns] = await Promise.all([
+	const [opportunities, campaigns, binding] = await Promise.all([
 		repository.list(userId, brandId),
 		repository.listCampaigns(userId, brandId),
+		repository.getBinding(userId, brandId),
 	]);
-	return { opportunities, campaigns, providers: providerAvailability() };
+	return { opportunities, campaigns, providers: providerStatus({ brandId, binding }) };
 }
 
 export async function recordContentOpportunity(userId: string, input: {
@@ -143,11 +149,14 @@ export async function discoverOpportunities(userId: string, input: {
 		const end = input.endDate ?? new Date().toISOString().slice(0, 10);
 		const start = input.startDate ?? new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 		try {
-			const candidates = await discoverSearchConsole({ startDate: start, endDate: end, inventory });
+			const binding = await repository.getBinding(userId, input.brandId);
+			const properties = resolveBrandProperties(input.brandId, process.env, binding);
+			if (!properties.searchConsoleSiteUrl) throw new GoogleProviderError('This brand has no Search Console property.', 'search_console_not_bound');
+			const accessToken = await getGoogleAccessToken({ env: process.env, scopes: [SEARCH_CONSOLE_SCOPE] });
+			const candidates = await discoverSearchConsole({ siteUrl: properties.searchConsoleSiteUrl, startDate: start, endDate: end, accessToken });
 			return persistCandidates(userId, input.brandId, candidates, repository, inventory);
 		} catch (error) {
-			const coded = error as Error & { code?: string };
-			throw new CampaignError(coded.message, coded.code === 'search_console_not_configured' ? 409 : 502, coded.code ?? 'search_console_failed');
+			throw campaignFromGoogle(error);
 		}
 	}
 	try {
@@ -178,6 +187,154 @@ export async function decideOpportunity(userId: string, id: string, status: Oppo
 		}
 	}
 	return repository.setStatus(userId, id, status);
+}
+
+export type ConnectionCheck = {
+	wroteOpportunities: false;
+	searchConsole: {
+		state: 'connected' | 'unavailable' | 'error';
+		property: string | null;
+		retrievedAt: string | null;
+		error: string | null;
+		queryCount: number;
+		pageCount: number;
+		signals: ReturnType<typeof searchConsoleSignals>;
+		queries: SearchConsoleReport['queries'];
+	};
+	analytics: {
+		state: 'connected' | 'unavailable' | 'error';
+		property: string | null;
+		retrievedAt: string | null;
+		error: string | null;
+		keyEvents: Ga4Report['keyEvents'] | null;
+		organic: Ga4Report['organic'] | null;
+		landingPages: Ga4Report['landingPages'];
+		sources: Ga4Report['sources'];
+		signals: ReturnType<typeof analyticsSignals>;
+	};
+};
+
+function dates(startDate?: string, endDate?: string): { startDate: string; endDate: string } {
+	const end = endDate ?? new Date().toISOString().slice(0, 10);
+	const start = startDate ?? new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+		throw new CampaignError('Use YYYY-MM-DD dates.', 400, 'invalid_date');
+	}
+	return { startDate: start, endDate: end };
+}
+
+function campaignFromGoogle(error: unknown): CampaignError {
+	if (error instanceof CampaignError) return error;
+	if (error instanceof GoogleProviderError) {
+		const status = error.status === 403 ? 403 : error.code.endsWith('not_bound') || error.code.includes('missing') || error.code.includes('invalid') ? 409 : 502;
+		return new CampaignError(error.message, status, error.code);
+	}
+	const coded = error as Error & { code?: string };
+	return new CampaignError(coded.message || 'Google request failed.', 502, coded.code ?? 'google_failed');
+}
+
+export async function testBrandAnalytics(userId: string, brandId: string, input: {
+	startDate?: string;
+	endDate?: string;
+	env?: Record<string, string | undefined>;
+	fetchImpl?: typeof fetch;
+	tokenClient?: { getAccessToken: () => Promise<{ token?: string | null }> };
+	record?: boolean;
+} = {}): Promise<ConnectionCheck> {
+	const repository = getOpportunityRepository();
+	const before = await repository.list(userId, brandId);
+	const env = input.env ?? process.env;
+	const binding = await repository.getBinding(userId, brandId);
+	const properties = resolveBrandProperties(brandId, env, binding);
+	const range = dates(input.startDate, input.endDate);
+	const result: ConnectionCheck = {
+		wroteOpportunities: false,
+		searchConsole: { state: properties.searchConsoleSiteUrl ? 'unavailable' : 'unavailable', property: properties.searchConsoleSiteUrl, retrievedAt: null, error: properties.bindingError, queryCount: 0, pageCount: 0, signals: [], queries: [] },
+		analytics: { state: 'unavailable', property: properties.ga4PropertyId, retrievedAt: null, error: properties.bindingError, keyEvents: null, organic: null, landingPages: [], sources: [], signals: [] },
+	};
+	if (!properties.searchConsoleSiteUrl && !properties.ga4PropertyId) {
+		result.searchConsole.error = properties.bindingError ?? 'This brand has no Search Console property.';
+		result.analytics.error = properties.bindingError ?? 'This brand has no GA4 property.';
+		return result;
+	}
+	let accessToken: string;
+	try {
+		accessToken = await getGoogleAccessToken({ env, scopes: [SEARCH_CONSOLE_SCOPE, ANALYTICS_SCOPE], fetchImpl: input.fetchImpl, tokenClient: input.tokenClient });
+	} catch (error) {
+		const wrapped = campaignFromGoogle(error);
+		if (properties.searchConsoleSiteUrl) {
+			result.searchConsole.state = 'error';
+			result.searchConsole.error = wrapped.message;
+		}
+		if (properties.ga4PropertyId) {
+			result.analytics.state = 'error';
+			result.analytics.error = wrapped.message;
+		}
+		if (input.record !== false) {
+			await repository.recordAnalyticsCheck(userId, brandId, {
+				...(properties.searchConsoleSiteUrl ? { searchConsoleSiteUrl: properties.searchConsoleSiteUrl, searchConsoleLastError: wrapped.message } : {}),
+				...(properties.ga4PropertyId ? { ga4PropertyId: properties.ga4PropertyId, ga4LastError: wrapped.message } : {}),
+			});
+		}
+		return result;
+	}
+	if (properties.searchConsoleSiteUrl) {
+		try {
+			const report = await fetchSearchConsoleReport({ ...range, siteUrl: properties.searchConsoleSiteUrl, accessToken, fetchImpl: input.fetchImpl, maxRows: 250 });
+			const inventory = await inventoryFor(userId, brandId);
+			result.searchConsole = {
+				state: 'connected',
+				property: report.siteUrl,
+				retrievedAt: report.retrievedAt,
+				error: null,
+				queryCount: report.queries.length,
+				pageCount: report.pages.length,
+				signals: searchConsoleSignals(report, inventory).slice(0, 25),
+				queries: report.queries.slice(0, 25),
+			};
+		} catch (error) {
+			const wrapped = campaignFromGoogle(error);
+			result.searchConsole.state = 'error';
+			result.searchConsole.error = wrapped.message;
+		}
+	}
+	if (properties.ga4PropertyId) {
+		try {
+			const report = await fetchGa4Report({ ...range, propertyId: properties.ga4PropertyId, accessToken, fetchImpl: input.fetchImpl, maxRows: 100 });
+			result.analytics = {
+				state: 'connected',
+				property: report.propertyId,
+				retrievedAt: report.retrievedAt,
+				error: null,
+				keyEvents: report.keyEvents,
+				organic: report.organic,
+				landingPages: report.landingPages.slice(0, 25),
+				sources: report.sources.slice(0, 25),
+				signals: analyticsSignals(report).slice(0, 25),
+			};
+		} catch (error) {
+			const wrapped = campaignFromGoogle(error);
+			result.analytics.state = 'error';
+			result.analytics.error = wrapped.message;
+		}
+	}
+	if (input.record !== false) {
+		await repository.recordAnalyticsCheck(userId, brandId, {
+			...(properties.searchConsoleSiteUrl ? {
+				searchConsoleSiteUrl: properties.searchConsoleSiteUrl,
+				searchConsoleLastError: result.searchConsole.error,
+				...(result.searchConsole.retrievedAt ? { searchConsoleLastSuccessAt: result.searchConsole.retrievedAt } : {}),
+			} : {}),
+			...(properties.ga4PropertyId ? {
+				ga4PropertyId: properties.ga4PropertyId,
+				ga4LastError: result.analytics.error,
+				...(result.analytics.retrievedAt ? { ga4LastSuccessAt: result.analytics.retrievedAt } : {}),
+			} : {}),
+		});
+	}
+	const after = await repository.list(userId, brandId);
+	if (after.length !== before.length) throw new CampaignError('The connection test changed the opportunity queue.', 500, 'connection_test_wrote');
+	return result;
 }
 
 export async function createContentCampaign(userId: string, input: NewCampaign): Promise<ContentCampaign> {

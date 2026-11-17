@@ -710,9 +710,8 @@ export async function dispatchAgentHandler(name: string, ctx: AgentContext, inpu
 		case 'cce_content_provider_status': {
 			const brain = await requireBrand(ctx, brandId);
 			const { listContentOpportunities } = await import('@/lib/campaigns/service');
-			const { providerAvailability } = await import('@/lib/campaigns/providers');
-			if (name === 'cce_content_provider_status') return { providers: providerAvailability() };
 			const queue = await listContentOpportunities(ctx.credential.ownerUserId, brain.id);
+			if (name === 'cce_content_provider_status') return { providers: queue.providers };
 			return { opportunities: queue.opportunities, campaigns: queue.campaigns, providers: queue.providers };
 		}
 		case 'cce_create_opportunity': {

@@ -26,6 +26,10 @@ export default function CampaignsPage() {
 	const [campaignName, setCampaignName] = useState('');
 	const [capacity, setCapacity] = useState(3);
 	const [openId, setOpenId] = useState<string | null>(null);
+	const [connection, setConnection] = useState<{
+		searchConsole?: { state?: string; property?: string | null; retrievedAt?: string | null; error?: string | null; queryCount?: number; pageCount?: number };
+		analytics?: { state?: string; property?: string | null; retrievedAt?: string | null; error?: string | null; keyEvents?: string | null; organic?: { sessions?: number | null } | null };
+	} | null>(null);
 
 	const load = useCallback(async (id: string) => {
 		if (!id) return;
@@ -73,7 +77,15 @@ export default function CampaignsPage() {
 			return;
 		}
 		setNotice(success);
+		if (action === 'test_analytics') setConnection(body.test ?? null);
 		await load(brandId);
+	}
+
+	function providerLabel(state: string): string {
+		if (state === 'connected') return 'Connected';
+		if (state === 'error') return 'Error';
+		if (state === 'available') return 'Available';
+		return 'Unavailable';
 	}
 
 	const busy = pending !== '';
@@ -98,10 +110,26 @@ export default function CampaignsPage() {
 				{(queue?.providers ?? []).map((provider) => (
 					<article key={provider.id} className="card p-3 text-sm">
 						<p className="font-medium">{provider.label}</p>
-						<p className={provider.state === 'available' ? 'text-accent' : 'text-warning'}>{provider.state === 'available' ? 'Available' : 'Unavailable'}</p>
+						<p className={provider.state === 'available' || provider.state === 'connected' ? 'text-accent' : 'text-warning'}>{providerLabel(provider.state)}</p>
+						{provider.property ? <p>Property {provider.property}</p> : null}
+						{provider.lastSuccessAt ? <p>Last successful retrieval {provider.lastSuccessAt}</p> : null}
+						{provider.error ? <p role="alert">{provider.error}</p> : null}
 						<p className="text-text-soft">{provider.detail}</p>
 					</article>
 				))}
+			</section>
+			<section className="card space-y-3 p-4 text-sm">
+				<h2 className="font-medium">Test Google connections</h2>
+				<p className="text-text-soft">This reads Search Console and GA4 for the selected brand only. It does not create opportunities or articles.</p>
+				<button className="btn" type="button" disabled={busy || !brandId} onClick={() => void post('test_analytics', {}, 'test', 'Connection test finished. No opportunities or articles were created.')}>{pending === 'test' ? 'Testing connection…' : 'Run read-only connection test'}</button>
+				{connection ? (
+					<div className="space-y-1">
+						<p>Search Console: {connection.searchConsole?.state} · {connection.searchConsole?.property ?? 'no property'} · {connection.searchConsole?.queryCount ?? 0} queries · {connection.searchConsole?.pageCount ?? 0} pages{connection.searchConsole?.retrievedAt ? ` · ${connection.searchConsole.retrievedAt}` : ''}</p>
+						{connection.searchConsole?.error ? <p role="alert">{connection.searchConsole.error}</p> : null}
+						<p>Google Analytics: {connection.analytics?.state} · {connection.analytics?.property ?? 'no property'} · key events {connection.analytics?.keyEvents ?? 'not requested'} · organic sessions {connection.analytics?.organic?.sessions ?? 'unavailable'}{connection.analytics?.retrievedAt ? ` · ${connection.analytics.retrievedAt}` : ''}</p>
+						{connection.analytics?.error ? <p role="alert">{connection.analytics.error}</p> : null}
+					</div>
+				) : null}
 			</section>
 			<section className="card space-y-3 p-4 text-sm">
 				<h2 className="font-medium">Find evidence</h2>

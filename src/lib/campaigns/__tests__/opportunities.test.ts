@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { candidatesFromSearch } from '@/lib/campaigns/discovery';
 import { assessOverlap } from '@/lib/campaigns/overlap';
-import { fetchSearchConsoleQueries, gscConfigured, providerAvailability } from '@/lib/campaigns/providers';
+import { gscConfigured, providerAvailability } from '@/lib/campaigns/providers';
 import { createMemoryOpportunityRepository, setOpportunityRepositoryForTests } from '@/lib/campaigns/repository';
 import { scoreOpportunity } from '@/lib/campaigns/scoring';
 import { createContentCampaign, decideOpportunity, recordContentOpportunity } from '@/lib/campaigns/service';
@@ -131,17 +131,6 @@ describe('content opportunities', () => {
 		const searchConsole = providerAvailability({}).find((item) => item.id === 'search_console');
 		expect(searchConsole?.state).toBe('unavailable');
 		expect(searchConsole?.detail).toContain('GOOGLE_SEARCH_CONSOLE_SITE_URL');
-	});
-
-	it('stores only the query rows Search Console returns', async () => {
-		const fetchImpl = (async () => new Response(JSON.stringify({ rows: [{ keys: ['plan a novel', 'https://folian.app/journal/plan'], clicks: 4, impressions: 80, ctr: 0.05, position: 12 }] }), { status: 200 })) as typeof fetch;
-		const rows = await fetchSearchConsoleQueries({
-			startDate: '2026-10-01',
-			endDate: '2026-10-28',
-			env: { GOOGLE_SEARCH_CONSOLE_SITE_URL: 'sc-domain:folian.app', GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN: 'token' },
-			fetchImpl,
-		});
-		expect(rows).toEqual([{ query: 'plan a novel', page: 'https://folian.app/journal/plan', clicks: 4, impressions: 80, ctr: 0.05, position: 12 }]);
-		await expect(fetchSearchConsoleQueries({ startDate: '2026-10-01', endDate: '2026-10-28', env: {} })).rejects.toMatchObject({ code: 'search_console_not_configured' });
+		expect(providerAvailability({}).find((item) => item.id === 'analytics')?.state).toBe('unavailable');
 	});
 });

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { CampaignError, createContentCampaign, decideOpportunity, discoverOpportunities, listContentOpportunities, recordContentOpportunity } from '@/lib/campaigns/service';
+import { CampaignError, createContentCampaign, decideOpportunity, discoverOpportunities, listContentOpportunities, recordContentOpportunity, testBrandAnalytics } from '@/lib/campaigns/service';
 import type { ApprovalMode, CampaignStatus, DemandClass, OpportunityStatus } from '@/lib/campaigns/types';
 import { requireIntelligenceUser } from '@/lib/intelligence/http';
 
@@ -44,6 +44,14 @@ export async function POST(request: Request) {
 				excerpt: typeof body.excerpt === 'string' ? body.excerpt : undefined,
 			});
 			return NextResponse.json({ opportunity });
+		}
+		if (action === 'test_analytics') {
+			if (!brandId) return NextResponse.json({ error: 'Choose a brand.' }, { status: 400 });
+			const test = await testBrandAnalytics(userId, brandId, {
+				startDate: typeof body.startDate === 'string' ? body.startDate : undefined,
+				endDate: typeof body.endDate === 'string' ? body.endDate : undefined,
+			});
+			return NextResponse.json({ test });
 		}
 		if (action === 'discover') {
 			const source = body.source === 'community' || body.source === 'search_console' || body.source === 'themes' ? body.source : 'search';

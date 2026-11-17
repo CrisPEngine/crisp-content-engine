@@ -1,17 +1,37 @@
-import type { MeasuredSearch, ProviderAvailability } from './types';
+import { googleAuthMode, serviceAccountEmail } from './googleAuth';
+import { resolveBrandProperties } from './googleConfig';
+import type { AnalyticsBinding, ProviderAvailability } from './types';
 
-export type SearchConsoleQueryRow = {
-	query: string;
-	page: string | null;
-	impressions: number;
-	clicks: number;
-	ctr: number;
-	position: number;
-};
+function googleState(input: { configured: boolean; bound: boolean; lastSuccessAt: string | null; lastError: string | null; bindingError: string | null }): 'connected' | 'unavailable' | 'error' {
+	if (input.bindingError || input.lastError) return 'error';
+	if (input.configured && input.bound && input.lastSuccessAt) return 'connected';
+	return 'unavailable';
+}
 
-export function providerAvailability(env: Record<string, string | undefined> = process.env): ProviderAvailability[] {
+export function providerStatus(input: {
+	env?: Record<string, string | undefined>;
+	brandId: string;
+	binding?: AnalyticsBinding | null;
+}): ProviderAvailability[] {
+	const env = input.env ?? process.env;
 	const searchConfigured = Boolean(env.TAVILY_API_KEY?.trim() || env.BRAVE_SEARCH_API_KEY?.trim());
-	const gsc = gscConfigured(env);
+	const auth = googleAuthMode(env);
+	const properties = resolveBrandProperties(input.brandId, env, input.binding ?? null);
+	const account = serviceAccountEmail(env);
+	const searchConsoleState = googleState({
+		configured: auth !== 'none',
+		bound: Boolean(properties.searchConsoleSiteUrl),
+		lastSuccessAt: input.binding?.searchConsoleLastSuccessAt ?? null,
+		lastError: input.binding?.searchConsoleLastError ?? null,
+		bindingError: properties.bindingError,
+	});
+	const analyticsState = googleState({
+		configured: auth !== 'none',
+		bound: Boolean(properties.ga4PropertyId),
+		lastSuccessAt: input.binding?.ga4LastSuccessAt ?? null,
+		lastError: input.binding?.ga4LastError ?? null,
+		bindingError: properties.bindingError,
+	});
 	return [
 		{ id: 'inventory', label: 'Existing articles', state: 'available', detail: 'Overlap uses articles already stored for the selected brand.' },
 		{ id: 'strategy', label: 'Approved strategy and themes', state: 'available', detail: 'Themes can be recorded as strategic suggestions. They are not treated as measured demand.' },
@@ -26,10 +46,11 @@ export function providerAvailability(env: Record<string, string | undefined> = p
 		{
 			id: 'search_console',
 			label: 'Google Search Console',
-			state: gsc ? 'available' : 'unavailable',
-			detail: gsc
-				? `Property ${env.GOOGLE_SEARCH_CONSOLE_SITE_URL?.trim()}.`
-				: 'Set GOOGLE_SEARCH_CONSOLE_SITE_URL plus either GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN or GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN. Use the Search Console read-only scope. No query data is available until this is configured.',
+			state: searchConsoleState,
+			property: properties.searchConsoleSiteUrl,
+			lastSuccessAt: input.binding?.searchConsoleLastSuccessAt ?? null,
+			error: input.binding?.searchConsoleLastError ?? properties.bindingError,
+			detail: searchConsoleDetail(auth, properties.searchConsoleSiteUrl, properties.bindingError, input.binding ?? null, account),
 		},
 		{
 			id: 'community',
@@ -39,81 +60,40 @@ export function providerAvailability(env: Record<string, string | undefined> = p
 				? 'Public discussions are retrieved through the configured search provider and stored with their URLs.'
 				: 'Community research uses the same search provider. Configure it before discussions can be retrieved.',
 		},
-		{ id: 'analytics', label: 'Website analytics', state: 'unavailable', detail: 'No analytics property is connected. Page behaviour will not be invented.' },
+		{
+			id: 'analytics',
+			label: 'Google Analytics',
+			state: analyticsState,
+			property: properties.ga4PropertyId,
+			lastSuccessAt: input.binding?.ga4LastSuccessAt ?? null,
+			error: input.binding?.ga4LastError ?? properties.bindingError,
+			detail: analyticsDetail(auth, properties.ga4PropertyId, properties.bindingError, input.binding ?? null, account),
+		},
 	];
 }
 
+function searchConsoleDetail(auth: ReturnType<typeof googleAuthMode>, property: string | null, bindingError: string | null, binding: AnalyticsBinding | null, account: string | null): string {
+	if (bindingError) return bindingError;
+	if (binding?.searchConsoleLastError) return binding.searchConsoleLastError;
+	if (auth === 'none') return 'Set GOOGLE_SERVICE_ACCOUNT_JSON, or the existing OAuth token variables, and bind GOOGLE_SEARCH_CONSOLE_SITE_URL to one brand with GOOGLE_SEARCH_CONSOLE_BRAND_ID. No query data is available until this is configured.';
+	if (!property) return 'Credentials are present, but this brand has no Search Console property. Set GOOGLE_SEARCH_CONSOLE_BRAND_ID to this brand id, or store a binding for this brand only.';
+	const checked = binding?.searchConsoleLastSuccessAt ? ` Last successful retrieval ${binding.searchConsoleLastSuccessAt}.` : ' Run the read-only connection test before treating it as connected.';
+	return `Property ${property}. Authentication ${auth === 'service_account' ? `service account${account ? ` ${account}` : ''}` : 'OAuth'}.${checked}`;
+}
+
+function analyticsDetail(auth: ReturnType<typeof googleAuthMode>, property: string | null, bindingError: string | null, binding: AnalyticsBinding | null, account: string | null): string {
+	if (bindingError) return bindingError;
+	if (binding?.ga4LastError) return binding.ga4LastError;
+	if (auth === 'none') return 'Set GOOGLE_SERVICE_ACCOUNT_JSON and bind GOOGLE_ANALYTICS_PROPERTY_ID to one brand with GOOGLE_ANALYTICS_BRAND_ID. Page behaviour will not be invented.';
+	if (!property) return 'Credentials are present, but this brand has no GA4 property. Set GOOGLE_ANALYTICS_BRAND_ID to this brand id, or store a binding for this brand only.';
+	const checked = binding?.ga4LastSuccessAt ? ` Last successful retrieval ${binding.ga4LastSuccessAt}.` : ' Run the read-only connection test before treating it as connected.';
+	return `Property ${property}. Authentication ${auth === 'service_account' ? `service account${account ? ` ${account}` : ''}` : 'OAuth'}.${checked}`;
+}
+
 export function gscConfigured(env: Record<string, string | undefined> = process.env): boolean {
-	const site = env.GOOGLE_SEARCH_CONSOLE_SITE_URL?.trim();
-	const access = env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN?.trim();
-	const refresh = env.GOOGLE_CLIENT_ID?.trim() && env.GOOGLE_CLIENT_SECRET?.trim() && env.GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN?.trim();
-	return Boolean(site && (access || refresh));
+	return googleAuthMode(env) !== 'none' && Boolean(env.GOOGLE_SEARCH_CONSOLE_SITE_URL?.trim() || env.GOOGLE_PROPERTY_BINDINGS?.trim());
 }
 
-async function gscAccessToken(env: Record<string, string | undefined>, fetchImpl: typeof fetch): Promise<string> {
-	const direct = env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN?.trim();
-	if (direct) return direct;
-	const response = await fetchImpl('https://oauth2.googleapis.com/token', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-		body: new URLSearchParams({
-			client_id: env.GOOGLE_CLIENT_ID!.trim(),
-			client_secret: env.GOOGLE_CLIENT_SECRET!.trim(),
-			refresh_token: env.GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN!.trim(),
-			grant_type: 'refresh_token',
-		}),
-	});
-	if (!response.ok) throw new Error(`Search Console token refresh failed (${response.status}).`);
-	const body = (await response.json()) as { access_token?: string };
-	if (!body.access_token) throw new Error('Search Console token refresh did not return an access token.');
-	return body.access_token;
-}
-
-export async function fetchSearchConsoleQueries(input: {
-	startDate: string;
-	endDate: string;
-	rowLimit?: number;
-	env?: Record<string, string | undefined>;
-	fetchImpl?: typeof fetch;
-}): Promise<SearchConsoleQueryRow[]> {
-	const env = input.env ?? process.env;
-	if (!gscConfigured(env)) {
-		const error = new Error('Google Search Console is not configured.');
-		(error as Error & { code: string }).code = 'search_console_not_configured';
-		throw error;
-	}
-	const fetchImpl = input.fetchImpl ?? fetch;
-	const token = await gscAccessToken(env, fetchImpl);
-	const site = encodeURIComponent(env.GOOGLE_SEARCH_CONSOLE_SITE_URL!.trim());
-	const response = await fetchImpl(`https://searchconsole.googleapis.com/webmasters/v3/sites/${site}/searchAnalytics/query`, {
-		method: 'POST',
-		headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			startDate: input.startDate,
-			endDate: input.endDate,
-			dimensions: ['query', 'page'],
-			rowLimit: Math.min(input.rowLimit ?? 25, 50),
-		}),
-	});
-	if (!response.ok) throw new Error(`Search Console query failed (${response.status}).`);
-	const body = (await response.json()) as { rows?: Array<{ keys?: string[]; clicks?: number; impressions?: number; ctr?: number; position?: number }> };
-	return (body.rows ?? []).map((row) => ({
-		query: row.keys?.[0] ?? '',
-		page: row.keys?.[1] ?? null,
-		clicks: row.clicks ?? 0,
-		impressions: row.impressions ?? 0,
-		ctr: row.ctr ?? 0,
-		position: row.position ?? 0,
-	})).filter((row) => row.query);
-}
-
-export function measuredFromRow(row: SearchConsoleQueryRow, startDate: string, endDate: string): MeasuredSearch {
-	return {
-		impressions: row.impressions,
-		clicks: row.clicks,
-		ctr: row.ctr,
-		position: row.position,
-		startDate,
-		endDate,
-	};
+export function providerAvailability(env: Record<string, string | undefined> = process.env): ProviderAvailability[] {
+	return providerStatus({ env, brandId: '', binding: null });
 }
