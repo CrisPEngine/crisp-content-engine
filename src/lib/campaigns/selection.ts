@@ -142,5 +142,44 @@ export function selectObservedOpportunities(input: {
 		});
 		if (candidates.length >= (input.limit ?? 20)) break;
 	}
+	const covered = new Set(candidates.map((candidate) => pathOf(candidate.evidence.find((item) => item.sourceKind === 'search_console')?.url)));
+	for (const page of input.pages.filter((row) => row.impressions != null && row.clicks != null && row.ctr != null && row.position != null && row.impressions >= MEANINGFUL_IMPRESSIONS)) {
+		if (candidates.length >= (input.limit ?? 20)) break;
+		const pagePath = pathOf(page.page);
+		if (!isArticlePath(pagePath) || covered.has(pagePath)) continue;
+		covered.add(pagePath);
+		const title = pagePath.split('/').filter(Boolean).pop()?.replace(/-/g, ' ') || page.page;
+		const inventoryMatch = input.inventory.find((article) => article.url && pathOf(article.url) === pagePath);
+		const ga4 = landingSupport(pagePath, landingPages);
+		candidates.push({
+			title,
+			audienceProblem: `The existing page ${page.page} is being shown in search.`,
+			searchIntent: 'informational',
+			demandClass: 'observed',
+			discoverySource: 'search_console',
+			naturalKey: `search_console:page:${pagePath}`,
+			forcedOverlap: {
+				decision: 'update',
+				overlap: 1,
+				matchedArticleId: inventoryMatch?.id ?? null,
+				matchedTitle: inventoryMatch?.title ?? page.page,
+				rationale: `This is the page total for ${page.page}: ${page.impressions} impressions, ${page.clicks} clicks, CTR ${((page.ctr ?? 0) * 100).toFixed(2)}%, position ${(page.position ?? 0).toFixed(1)}. Individual queries were too fragmented to represent it. Improve this page. Nothing was overwritten.`,
+			},
+			evidence: [
+				{
+					sourceKind: 'search_console',
+					url: page.page,
+					excerpt: `Page total, not a single query: ${page.impressions} impressions, ${page.clicks} clicks, CTR ${((page.ctr ?? 0) * 100).toFixed(2)}%, position ${(page.position ?? 0).toFixed(1)}. Property ${input.siteUrl}. Retrieved ${input.retrievedAt}.`,
+					observedAt: input.retrievedAt,
+					metrics: { impressions: page.impressions!, clicks: page.clicks!, ctr: page.ctr!, position: page.position!, startDate: input.startDate, endDate: input.endDate },
+				},
+				...(ga4 ? [{ sourceKind: 'ga4', url: page.page, excerpt: ga4, observedAt: input.retrievedAt, metrics: null }] : []),
+			],
+			brandRelevance: 0.6,
+			brandRationale: 'The page already exists. No new product capability was inferred from the URL.',
+			businessRelevance: 0.7,
+			businessRationale: 'Business relevance uses the Search Console page total. GA4, when present, is supporting behaviour only.',
+		});
+	}
 	return candidates;
 }

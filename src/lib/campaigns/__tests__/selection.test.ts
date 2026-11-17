@@ -67,6 +67,24 @@ describe('observed opportunity selection', () => {
 		expect(candidate).toBeUndefined();
 	});
 
+	it('adds a page total when queries are too fragmented to represent it', () => {
+		const candidates = selectObservedOpportunities({
+			siteUrl: 'sc-domain:folian.app',
+			startDate: '2026-10-20',
+			endDate: '2026-11-17',
+			retrievedAt: '2026-11-17T00:00:00.000Z',
+			queries: [{ query: 'chatgpt novel writing', impressions: 1, clicks: 1, ctr: 1, position: 4 }],
+			queryPages: [],
+			pages: [{ page: 'https://folian.app/articles/chatgpt-for-novel-writing', impressions: 770, clicks: 5, ctr: 0.0065, position: 8.8 }],
+			inventory: [],
+			brandTerms: ['Folian'],
+			verifiedCapabilities: [],
+		});
+		expect(candidates.map((item) => item.title)).toEqual(['chatgpt for novel writing']);
+		expect(candidates[0]?.evidence[0]?.excerpt).toContain('Page total');
+		expect(candidates[0]?.forcedOverlap?.decision).toBe('update');
+	});
+
 	it('asks for more research when a new query is below the production threshold', () => {
 		const [candidate] = selectObservedOpportunities({
 			siteUrl: 'sc-domain:folian.app',
