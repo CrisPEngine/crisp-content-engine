@@ -2,10 +2,7 @@ import type { Ga4LandingPage } from './ga4';
 import type { DiscoveredCandidate } from './discovery';
 import { assessOverlap } from './overlap';
 import type { SearchConsolePage, SearchConsoleQuery, SearchConsoleQueryPage } from './searchConsole';
-import type { InventoryArticle, OverlapAssessment } from './types';
-
-const MEANINGFUL_IMPRESSIONS = 50;
-const MINIMUM_IMPRESSIONS = 20;
+import { DEFAULT_SCORE_THRESHOLDS, type InventoryArticle, type OverlapAssessment, type ScoreThresholds } from './types';
 
 function pathOf(value: string | null | undefined): string {
 	if (!value) return '';
@@ -47,11 +44,13 @@ export function selectObservedOpportunities(input: {
 	verifiedCapabilities: string[];
 	themes?: string[];
 	landingPages?: Ga4LandingPage[];
+	thresholds?: ScoreThresholds;
 	limit?: number;
 }): DiscoveredCandidate[] {
+	const thresholds = input.thresholds ?? DEFAULT_SCORE_THRESHOLDS;
 	const landingPages = input.landingPages ?? [];
 	const candidates: DiscoveredCandidate[] = [];
-	const complete = input.queries.filter((row) => row.impressions != null && row.clicks != null && row.ctr != null && row.position != null && row.impressions >= MINIMUM_IMPRESSIONS);
+	const complete = input.queries.filter((row) => row.impressions != null && row.clicks != null && row.ctr != null && row.position != null && row.impressions >= thresholds.meaningfulImpressions);
 	for (const row of complete.sort((left, right) => (right.impressions ?? 0) - (left.impressions ?? 0))) {
 		const impressions = row.impressions!;
 		const clicks = row.clicks!;
@@ -97,7 +96,7 @@ export function selectObservedOpportunities(input: {
 				? textual
 				: { ...textual, rationale: `${textual.rationale} The query was not attributed to that article’s URL.` };
 		}
-		if (impressions < MEANINGFUL_IMPRESSIONS && overlap.decision === 'create') {
+		if (impressions < thresholds.highConfidenceImpressions && overlap.decision === 'create') {
 			overlap = {
 				decision: 'research',
 				overlap: overlap.overlap,
@@ -107,7 +106,7 @@ export function selectObservedOpportunities(input: {
 			};
 		}
 		const ga4 = landingSupport(pagePath, landingPages);
-		const measured = { impressions, clicks, ctr, position, startDate: input.startDate, endDate: input.endDate };
+		const measured = { impressions, clicks, ctr, position, startDate: input.startDate, endDate: input.endDate, scope: 'query' as const };
 		candidates.push({
 			title: row.query,
 			audienceProblem: primaryPage
@@ -135,7 +134,7 @@ export function selectObservedOpportunities(input: {
 					: 'No verified product capability is named by this query. The recommendation does not invent product behaviour.',
 				theme ? `Approved theme “${theme}” points the same way. The theme is not search demand.` : '',
 			].filter(Boolean).join(' '),
-			businessRelevance: impressions >= MEANINGFUL_IMPRESSIONS ? 0.7 : 0.4,
+			businessRelevance: impressions >= thresholds.highConfidenceImpressions ? 0.7 : 0.4,
 			businessRationale: ga4
 				? 'Business relevance uses Search Console impressions. GA4 is attached only as supporting on-page behaviour.'
 				: 'Business relevance uses Search Console impressions. No GA4 session was matched to this page, and none was invented.',
@@ -143,7 +142,7 @@ export function selectObservedOpportunities(input: {
 		if (candidates.length >= (input.limit ?? 20)) break;
 	}
 	const covered = new Set(candidates.map((candidate) => pathOf(candidate.evidence.find((item) => item.sourceKind === 'search_console')?.url)));
-	for (const page of input.pages.filter((row) => row.impressions != null && row.clicks != null && row.ctr != null && row.position != null && row.impressions >= MEANINGFUL_IMPRESSIONS)) {
+	for (const page of input.pages.filter((row) => row.impressions != null && row.clicks != null && row.ctr != null && row.position != null && row.impressions >= thresholds.highConfidenceImpressions)) {
 		if (candidates.length >= (input.limit ?? 20)) break;
 		const pagePath = pathOf(page.page);
 		if (!isArticlePath(pagePath) || covered.has(pagePath)) continue;
@@ -171,7 +170,7 @@ export function selectObservedOpportunities(input: {
 					url: page.page,
 					excerpt: `Page total, not a single query: ${page.impressions} impressions, ${page.clicks} clicks, CTR ${((page.ctr ?? 0) * 100).toFixed(2)}%, position ${(page.position ?? 0).toFixed(1)}. Property ${input.siteUrl}. Retrieved ${input.retrievedAt}.`,
 					observedAt: input.retrievedAt,
-					metrics: { impressions: page.impressions!, clicks: page.clicks!, ctr: page.ctr!, position: page.position!, startDate: input.startDate, endDate: input.endDate },
+					metrics: { impressions: page.impressions!, clicks: page.clicks!, ctr: page.ctr!, position: page.position!, startDate: input.startDate, endDate: input.endDate, scope: 'page' },
 				},
 				...(ga4 ? [{ sourceKind: 'ga4', url: page.page, excerpt: ga4, observedAt: input.retrievedAt, metrics: null }] : []),
 			],
@@ -179,6 +178,38 @@ export function selectObservedOpportunities(input: {
 			brandRationale: 'The page already exists. No new product capability was inferred from the URL.',
 			businessRelevance: 0.7,
 			businessRationale: 'Business relevance uses the Search Console page total. GA4, when present, is supporting behaviour only.',
+		});
+	}
+	const seen = new Set(candidates.map((candidate) => candidate.title.toLowerCase()));
+	for (const row of input.queries.filter((item) => item.impressions != null && item.clicks != null && item.ctr != null && item.position != null && item.impressions >= thresholds.recordImpressions && item.impressions < thresholds.meaningfulImpressions)) {
+		if (candidates.length >= (input.limit ?? 20) || seen.has(row.query.toLowerCase())) continue;
+		if (brandOnly(row.query, input.brandTerms)) continue;
+		seen.add(row.query.toLowerCase());
+		candidates.push({
+			title: row.query,
+			audienceProblem: `Search Console recorded a long-tail query with ${row.impressions} impressions. That is not enough to start production.`,
+			searchIntent: 'informational',
+			demandClass: 'observed',
+			discoverySource: 'search_console',
+			naturalKey: `search_console:${row.query.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()}`,
+			forcedOverlap: {
+				decision: 'research',
+				overlap: 0,
+				matchedArticleId: null,
+				matchedTitle: null,
+				rationale: `${row.impressions} impressions are real, but below ${thresholds.meaningfulImpressions}. Low volume does not make the query false, and it does not justify an article yet.`,
+			},
+			evidence: [{
+				sourceKind: 'search_console',
+				url: null,
+				excerpt: `Long-tail query total: ${row.impressions} impressions, ${row.clicks} clicks, position ${row.position}. This is not a page total.`,
+				observedAt: input.retrievedAt,
+				metrics: { impressions: row.impressions!, clicks: row.clicks!, ctr: row.ctr!, position: row.position!, startDate: input.startDate, endDate: input.endDate, scope: 'query' },
+			}],
+			brandRelevance: 0.4,
+			brandRationale: 'No verified capability was inferred from this long-tail query.',
+			businessRelevance: 0.3,
+			businessRationale: 'The query is kept because it was observed. It is not treated as enough demand to produce.',
 		});
 	}
 	return candidates;

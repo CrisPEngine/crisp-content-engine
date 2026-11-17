@@ -3,7 +3,8 @@ import { candidatesFromSearch } from '@/lib/campaigns/discovery';
 import { assessOverlap } from '@/lib/campaigns/overlap';
 import { gscConfigured, providerAvailability } from '@/lib/campaigns/providers';
 import { createMemoryOpportunityRepository, setOpportunityRepositoryForTests } from '@/lib/campaigns/repository';
-import { scoreOpportunity } from '@/lib/campaigns/scoring';
+import { candidatesFromMarket } from '@/lib/campaigns/market';
+import { optimisationScope, scoreOpportunity } from '@/lib/campaigns/scoring';
 import { createContentCampaign, decideOpportunity, recordContentOpportunity } from '@/lib/campaigns/service';
 import { setNativeContentStoreForTests, createMemoryNativeContentStore } from '@/lib/media/store';
 import type { InventoryArticle } from '@/lib/campaigns/types';
@@ -124,6 +125,40 @@ describe('content opportunities', () => {
 		});
 		expect(campaign.autoPublishEnabled).toBe(false);
 		expect(campaign.weeklyCapacity).toBe(3);
+	});
+
+	it('scores a page total below the same query total and keeps low CTR as metadata', () => {
+		const shared = {
+			evidenceCount: 1,
+			brandRelevance: 0.4,
+			brandRationale: 'Existing page.',
+			uniqueValue: 0.2,
+			uniqueRationale: 'Update.',
+			businessRelevance: 0.7,
+			businessRationale: 'Observed.',
+			researchFeasibility: 0.7,
+			researchRationale: 'Page exists.',
+		};
+		const measured = { impressions: 821, clicks: 5, ctr: 0.006, position: 8.7, startDate: '2026-10-20', endDate: '2026-11-17' };
+		const page = scoreOpportunity({ demandClass: 'observed', measured: { ...measured, scope: 'page' }, ...shared });
+		const query = scoreOpportunity({ demandClass: 'observed', measured: { ...measured, scope: 'query' }, ...shared });
+		expect(page.components[0]?.rationale).toContain('Page total, not exact-query demand');
+		expect(page.confidence).toBe('medium');
+		expect(page.score).toBeLessThan(query.score);
+		expect(optimisationScope({ ...measured, scope: 'page' })).toBe('metadata');
+	});
+
+	it('stores external pages as inferred demand and does not invent volume', () => {
+		const [candidate] = candidatesFromMarket({
+			queries: [{ query: 'how authors keep canon across a long novel', hits: [{ url: 'https://example.com/canon', title: 'Canon', snippet: 'Authors lose track of facts.', publishedAt: '2026-11-01' }] }],
+			inventory,
+			brandHost: 'folian.app',
+			retrievedAt: '2026-11-17T00:00:00.000Z',
+		});
+		expect(candidate?.demandClass).toBe('inferred');
+		expect(candidate?.evidence[0]?.url).toBe('https://example.com/canon');
+		expect(candidate?.evidence[0]?.metrics).toBeNull();
+		expect(candidate?.forcedOverlap?.rationale).toContain('No search volume was supplied');
 	});
 
 	it('reports Search Console as unavailable until credentials exist', () => {

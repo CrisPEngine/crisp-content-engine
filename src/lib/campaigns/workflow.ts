@@ -34,8 +34,8 @@ export async function startProductionJob(userId: string, opportunityId: string, 
 	const repository = getOpportunityRepository();
 	const opportunity = await repository.get(userId, opportunityId);
 	if (!opportunity) throw new CampaignError('Opportunity not found.', 404, 'opportunity_missing');
-	if (opportunity.status !== 'approved' || opportunity.recommendedAction !== 'create' || opportunity.scoreDetail.promotionBlocked) {
-		throw new CampaignError('Only an approved create opportunity can enter production. This did not create an article.', 409, 'opportunity_not_ready');
+	if (opportunity.status !== 'approved' || (opportunity.recommendedAction !== 'create' && opportunity.recommendedAction !== 'update') || opportunity.scoreDetail.promotionBlocked) {
+		throw new CampaignError('Only an approved create or update opportunity can enter production. Nothing was published.', 409, 'opportunity_not_ready');
 	}
 	const existing = await repository.getJobByOpportunity(userId, opportunityId);
 	if (existing) return existing;
@@ -55,7 +55,7 @@ export async function advanceProductionJob(userId: string, jobId: string): Promi
 	job.attempt += 1;
 	await repository.saveJob(userId, job);
 	try {
-		const result = await runStage(userId, job, opportunity.title, opportunity.evidence.map((item) => item.url).filter((url): url is string => Boolean(url)));
+		const result = await runStage(userId, job, opportunity);
 		job.articleId = result.articleId ?? job.articleId;
 		job.costUsd = Math.round((job.costUsd + (result.costUsd ?? 0)) * 10000) / 10000;
 		job.stageLog = [...job.stageLog, { stage: job.stage, at: new Date().toISOString(), note: result.note }];
@@ -78,9 +78,14 @@ export async function advanceProductionJob(userId: string, jobId: string): Promi
 	}
 }
 
-async function runStage(userId: string, job: ProductionJob, title: string, evidenceUrls: string[]): Promise<{ articleId?: string; note: string; costUsd?: number; escalate?: string }> {
+async function runStage(userId: string, job: ProductionJob, opportunity: { title: string; recommendedAction: string; evidence: Array<{ url: string | null; metrics: { position: number; ctr: number; impressions: number; clicks?: number; scope?: 'query' | 'page' } | null }> }): Promise<{ articleId?: string; note: string; costUsd?: number; escalate?: string }> {
 	const workspace = await import('@/lib/articles/workspace');
+	const evidenceUrls = opportunity.evidence.map((item) => item.url).filter((url): url is string => Boolean(url));
 	const evidenceNote = evidenceUrls.slice(0, 8).join('\n');
+	const measured = opportunity.evidence.find((item) => item.metrics)?.metrics ?? null;
+	const { optimisationScope } = await import('./scoring');
+	const scope = opportunity.recommendedAction === 'update' ? optimisationScope(measured ? { impressions: measured.impressions, clicks: measured.clicks ?? 0, ctr: measured.ctr, position: measured.position, startDate: '', endDate: '', scope: measured.scope } : null) : 'expansion';
+	const title = opportunity.recommendedAction === 'update' ? `Update proposal: ${opportunity.title}` : opportunity.title;
 	if (job.stage === 'research') {
 		const created = job.articleId
 			? { article: (await workspace.getWorkspaceArticle(userId, job.articleId)).article }
@@ -102,11 +107,20 @@ async function runStage(userId: string, job: ProductionJob, title: string, evide
 	if (!job.articleId) throw new Error('This stage needs the article created by research.');
 	const articleId = job.articleId;
 	if (job.stage === 'brief') {
+		if (opportunity.recommendedAction === 'update') {
+			const proposal = await writeUpdateProposal({ sourceUrl: evidenceUrls[0] ?? null, scope, measured, topic: opportunity.title, userId });
+			await workspace.saveArticleDraft(userId, articleId, { body: proposal });
+			const approved = await workspace.approveArticleBrief(userId, articleId);
+			return { articleId, note: `A ${scope} proposal was saved on a new draft. The published article was not changed.`, costUsd: approved.workspace?.generation.estimatedCostUsd ?? 0 };
+		}
 		await workspace.enhanceArticleBrief(userId, articleId);
 		const approved = await workspace.approveArticleBrief(userId, articleId);
 		return { articleId, note: 'The brief was approved.', costUsd: approved.workspace?.generation.estimatedCostUsd ?? 0 };
 	}
 	if (job.stage === 'draft') {
+		if (scope === 'metadata' || scope === 'none') {
+			return { articleId, note: `No full rewrite. The change scope is ${scope}. The published article was not changed.` };
+		}
 		const started = await workspace.startArticleGeneration(userId, articleId);
 		const article = started.article;
 		if (!article.body.trim()) return { articleId, note: 'Generation was queued and has not finished.', escalate: 'The draft is not ready yet. Retry this stage when generation completes.' };
@@ -134,10 +148,16 @@ async function runStage(userId: string, job: ProductionJob, title: string, evide
 		return { articleId, note: 'No safe automatic corrections were available.' };
 	}
 	if (job.stage === 'seo') {
+		if (opportunity.recommendedAction === 'update') {
+			return { articleId, note: 'SEO suggestions stay on the proposal draft. The live page metadata was not changed.' };
+		}
 		const article = await workspace.regenerateArticleSeo(userId, articleId, { useAi: true });
 		return { articleId, note: 'SEO metadata was generated.', costUsd: article.workspace?.generation.estimatedCostUsd ?? 0 };
 	}
 	if (job.stage === 'hero') {
+		if (opportunity.recommendedAction === 'update') {
+			return { articleId, note: 'The hero image on the published page was not changed.' };
+		}
 		await workspace.prepareArticleImageBrief(userId, articleId, 'hero', { applySuggestedConcept: true });
 		const article = await workspace.generateArticleMedia(userId, articleId, 'hero');
 		if (!article.workspace?.media.heroUrl) return { articleId, note: 'The hero image was not stored.', escalate: 'Hero image generation did not return an image.' };
@@ -155,6 +175,52 @@ async function runStage(userId: string, job: ProductionJob, title: string, evide
 	}
 	const queued = await workspace.requestArticleApproval(userId, articleId);
 	return { articleId, note: `Article ${queued.id} is waiting for a person. Nothing was published.`, costUsd: queued.workspace?.generation.estimatedCostUsd ?? 0 };
+}
+
+async function writeUpdateProposal(input: {
+	userId: string;
+	sourceUrl: string | null;
+	scope: string;
+	measured: { impressions: number; ctr: number; position: number } | null;
+	topic: string;
+}): Promise<string> {
+	let excerpt = '';
+	if (input.sourceUrl) {
+		const response = await fetch(input.sourceUrl).catch(() => null);
+		const html = response?.ok ? await response.text() : '';
+		excerpt = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1200);
+	}
+	const metrics = input.measured
+		? `${input.measured.impressions} impressions, CTR ${(input.measured.ctr * 100).toFixed(2)}%, average position ${input.measured.position.toFixed(1)}.`
+		: 'No Search Console metrics were stored.';
+	const { getIntelligenceAi } = await import('@/lib/intelligence/actions');
+	const completion = await getIntelligenceAi().completeJson<{ title?: string; description?: string; changes?: Array<{ change?: string; why?: string }> }>(
+		'STRATEGY',
+		[
+			{ role: 'system', content: 'Propose a narrow update to an existing article. Return JSON with title, description, and changes: array of change and why. If scope is metadata, only suggest a title and meta description. Do not rewrite the article. Do not invent product capabilities, statistics, or search volume. Tie every change to the supplied evidence.' },
+			{ role: 'user', content: JSON.stringify({ topic: input.topic, sourceUrl: input.sourceUrl, scope: input.scope, metrics, excerpt }) },
+		],
+		'article_update_proposal',
+		input.userId,
+	);
+	const changes = (completion.data.changes ?? []).filter((item) => item.change && item.why).slice(0, 5);
+	const lines = [
+		`# Update proposal`,
+		``,
+		`Source: ${input.sourceUrl ?? 'No source URL'}`,
+		`Scope: ${input.scope}. This draft does not replace the published article.`,
+		`Evidence: ${metrics}`,
+		``,
+		`## Suggested title`,
+		completion.data.title?.trim() || 'No title suggestion was returned.',
+		``,
+		`## Suggested description`,
+		completion.data.description?.trim() || 'No description suggestion was returned.',
+		``,
+		`## Why`,
+		...(changes.length ? changes.flatMap((item) => [`- ${item.change}`, `  Reason: ${item.why}`]) : ['- No specific change was returned.']),
+	];
+	return lines.join('\n');
 }
 
 export async function scheduleCampaign(userId: string, brandId: string, campaignId: string): Promise<{ started: ProductionJob[]; remaining: number }> {

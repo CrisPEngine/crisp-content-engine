@@ -47,7 +47,7 @@ export function selectProductionOpportunities(input: {
 	if (input.remaining <= 0) return [];
 	const used = new Set(input.opportunityIdsInProduction);
 	return input.opportunities
-		.filter((item) => item.status === 'approved' && item.recommendedAction === 'create' && !item.scoreDetail.promotionBlocked && item.demandClass !== 'unvalidated' && !used.has(item.id))
+		.filter((item) => item.status === 'approved' && (item.recommendedAction === 'create' || item.recommendedAction === 'update') && !item.scoreDetail.promotionBlocked && item.demandClass !== 'unvalidated' && !used.has(item.id))
 		.sort((left, right) => right.score - left.score)
 		.slice(0, input.remaining);
 }

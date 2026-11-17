@@ -30,7 +30,29 @@ export type MeasuredSearch = {
 	position: number;
 	startDate: string;
 	endDate: string;
+	/** Query totals are exact-query demand. Page totals are not. */
+	scope?: 'query' | 'page';
 };
+
+export type ScoreThresholds = {
+	highConfidenceImpressions: number;
+	meaningfulImpressions: number;
+	recordImpressions: number;
+	lowCtr: number;
+	leadingPosition: number;
+	pageDemandFactor: number;
+};
+
+export const DEFAULT_SCORE_THRESHOLDS: ScoreThresholds = {
+	highConfidenceImpressions: 50,
+	meaningfulImpressions: 20,
+	recordImpressions: 5,
+	lowCtr: 0.03,
+	leadingPosition: 10,
+	pageDemandFactor: 0.6,
+};
+
+export type OptimisationScope = 'metadata' | 'section' | 'expansion' | 'none';
 
 export type ScoreComponent = {
 	key: keyof ScoreWeights;

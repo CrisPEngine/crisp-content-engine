@@ -51,7 +51,7 @@ describe('observed opportunity selection', () => {
 		expect(candidate?.forcedOverlap?.decision).toBe('reject');
 	});
 
-	it('does not turn a thin query into a production candidate', () => {
+	it('keeps a long-tail query for research instead of discarding it', () => {
 		const [candidate] = selectObservedOpportunities({
 			siteUrl: 'sc-domain:folian.app',
 			startDate: '2026-10-20',
@@ -64,7 +64,8 @@ describe('observed opportunity selection', () => {
 			brandTerms: ['Folian'],
 			verifiedCapabilities: [],
 		});
-		expect(candidate).toBeUndefined();
+		expect(candidate?.forcedOverlap?.decision).toBe('research');
+		expect(candidate?.evidence[0]?.metrics?.scope).toBe('query');
 	});
 
 	it('adds a page total when queries are too fragmented to represent it', () => {

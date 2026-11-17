@@ -1,16 +1,19 @@
-import { DEFAULT_SCORE_WEIGHTS, type DemandClass, type EvidenceConfidence, type MeasuredSearch, type ScoreResult, type ScoreWeights } from './types';
+import { DEFAULT_SCORE_THRESHOLDS, DEFAULT_SCORE_WEIGHTS, type DemandClass, type EvidenceConfidence, type MeasuredSearch, type OptimisationScope, type ScoreResult, type ScoreThresholds, type ScoreWeights } from './types';
 
 function clamp(value: number): number {
 	if (!Number.isFinite(value)) return 0;
 	return Math.min(1, Math.max(0, value));
 }
 
-function demandValue(demandClass: DemandClass, measured: MeasuredSearch | null): { value: number; rationale: string } {
+function demandValue(demandClass: DemandClass, measured: MeasuredSearch | null, thresholds: ScoreThresholds): { value: number; rationale: string } {
 	if (demandClass === 'observed' && measured) {
-		const value = clamp(measured.impressions / 1000);
+		const page = measured.scope === 'page';
+		const value = clamp((measured.impressions / 1000) * (page ? thresholds.pageDemandFactor : 1));
 		return {
 			value,
-			rationale: `${measured.impressions} impressions, ${measured.clicks} clicks, CTR ${(measured.ctr * 100).toFixed(1)}%, average position ${measured.position.toFixed(1)} from ${measured.startDate} to ${measured.endDate}.`,
+			rationale: page
+				? `Page total, not exact-query demand: ${measured.impressions} impressions, ${measured.clicks} clicks, CTR ${(measured.ctr * 100).toFixed(1)}%, average position ${measured.position.toFixed(1)} from ${measured.startDate} to ${measured.endDate}.`
+				: `Query total: ${measured.impressions} impressions, ${measured.clicks} clicks, CTR ${(measured.ctr * 100).toFixed(1)}%, average position ${measured.position.toFixed(1)} from ${measured.startDate} to ${measured.endDate}.`,
 		};
 	}
 	if (demandClass === 'inferred') {
@@ -22,20 +25,32 @@ function demandValue(demandClass: DemandClass, measured: MeasuredSearch | null):
 	return { value: 0, rationale: 'No evidence of audience demand is stored. An idea alone does not count as demand.' };
 }
 
-function searchValue(measured: MeasuredSearch | null): { value: number; rationale: string } {
+function searchValue(measured: MeasuredSearch | null, thresholds: ScoreThresholds): { value: number; rationale: string } {
 	if (!measured) return { value: 0, rationale: 'No search-performance metrics are available for this opportunity.' };
-	const weakPosition = measured.position > 10 ? 0.7 : 0.3;
+	const weakPosition = measured.position > thresholds.leadingPosition ? 0.7 : 0.3;
 	const seen = measured.impressions > 0 ? 0.3 : 0;
+	const scope = measured.scope === 'page' ? 'page' : 'query';
 	return {
 		value: clamp(weakPosition + seen),
-		rationale: measured.position > 10
-			? `Average position ${measured.position.toFixed(1)} with ${measured.impressions} impressions leaves room to improve an existing query.`
-			: `Average position ${measured.position.toFixed(1)} is already strong. A new article needs a distinct query.`,
+		rationale: measured.position > thresholds.leadingPosition
+			? `${scope} average position ${measured.position.toFixed(1)} is outside the leading positions. The impression count is ${measured.impressions}.`
+			: `${scope} average position ${measured.position.toFixed(1)} is already inside the leading positions.`,
 	};
 }
 
-export function evidenceConfidence(demandClass: DemandClass, evidenceCount: number, measured: MeasuredSearch | null): EvidenceConfidence {
-	if (demandClass === 'observed' && measured && evidenceCount > 0) return measured.impressions >= 50 ? 'high' : 'medium';
+export function optimisationScope(measured: MeasuredSearch | null, thresholds: ScoreThresholds = DEFAULT_SCORE_THRESHOLDS): OptimisationScope {
+	if (!measured) return 'none';
+	if (measured.position <= thresholds.leadingPosition && measured.ctr < thresholds.lowCtr) return 'metadata';
+	if (measured.position > thresholds.leadingPosition && measured.impressions >= thresholds.meaningfulImpressions) return 'section';
+	if (measured.impressions < thresholds.meaningfulImpressions) return 'none';
+	return 'expansion';
+}
+
+export function evidenceConfidence(demandClass: DemandClass, evidenceCount: number, measured: MeasuredSearch | null, thresholds: ScoreThresholds = DEFAULT_SCORE_THRESHOLDS): EvidenceConfidence {
+	if (demandClass === 'observed' && measured && evidenceCount > 0) {
+		if (measured.scope === 'page') return 'medium';
+		return measured.impressions >= thresholds.highConfidenceImpressions ? 'high' : 'medium';
+	}
 	if (demandClass === 'inferred' && evidenceCount > 0) return 'medium';
 	if (demandClass === 'strategic') return 'low';
 	return 'none';
@@ -54,11 +69,13 @@ export function scoreOpportunity(input: {
 	researchFeasibility: number;
 	researchRationale: string;
 	weights?: ScoreWeights;
+	thresholds?: ScoreThresholds;
 }): ScoreResult {
 	const weights = input.weights ?? DEFAULT_SCORE_WEIGHTS;
+	const thresholds = input.thresholds ?? DEFAULT_SCORE_THRESHOLDS;
 	const measured = input.demandClass === 'observed' ? input.measured ?? null : null;
-	const demand = demandValue(input.demandClass, measured);
-	const search = searchValue(measured);
+	const demand = demandValue(input.demandClass, measured, thresholds);
+	const search = searchValue(measured, thresholds);
 	const rows = [
 		{ key: 'audienceDemand' as const, value: demand.value, rationale: demand.rationale },
 		{ key: 'brandRelevance' as const, value: clamp(input.brandRelevance), rationale: input.brandRationale },
@@ -73,7 +90,7 @@ export function scoreOpportunity(input: {
 		contribution: Math.round(weights[row.key] * row.value * 1000) / 1000,
 	}));
 	const score = Math.round(components.reduce((sum, row) => sum + row.contribution, 0) * 1000) / 1000;
-	const confidence = evidenceConfidence(input.demandClass, input.evidenceCount, measured);
+	const confidence = evidenceConfidence(input.demandClass, input.evidenceCount, measured, thresholds);
 	const promotionBlocked = input.demandClass === 'unvalidated' || confidence === 'none';
 	return {
 		score,
