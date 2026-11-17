@@ -431,4 +431,10 @@ export type ArticleRecord = {
 	createdAt: string;
 	updatedAt: string;
 	workspace?: ArticleWorkspace;
+	/** One canonical article. Archive and optimisation history stay on this record. */
+	library?: {
+		archivedAt: string | null;
+		canonicalUrl: string | null;
+		stageNote: string | null;
+	};
 };

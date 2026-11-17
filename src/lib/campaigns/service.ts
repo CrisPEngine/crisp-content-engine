@@ -307,6 +307,19 @@ export async function rescoreStoredEvidence(userId: string, brandId: string): Pr
 	return changes;
 }
 
+export async function archiveWeakOpportunities(userId: string, brandId: string): Promise<Array<{ id: string; title: string }>> {
+	const repository = getOpportunityRepository();
+	const { shouldArchiveOpportunity } = await import('./queue');
+	const rows = await repository.list(userId, brandId);
+	const archived = [];
+	for (const row of rows) {
+		if (row.brandId !== brandId || !shouldArchiveOpportunity(row)) continue;
+		await repository.setStatus(userId, row.id, 'archived');
+		archived.push({ id: row.id, title: row.title });
+	}
+	return archived;
+}
+
 export async function decideOpportunity(userId: string, id: string, status: OpportunityStatus): Promise<ContentOpportunity> {
 	const repository = getOpportunityRepository();
 	const all = await repository.get(userId, id);

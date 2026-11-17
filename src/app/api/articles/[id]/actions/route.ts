@@ -54,6 +54,8 @@ import {
 	updateArticleMediaMeta,
 	type ResearchEdit,
 } from '@/lib/articles/workspace';
+import { rejectMetadataProposal, requestProposalChanges } from '@/lib/articles/libraryActions';
+import { finishProposalJob } from '@/lib/campaigns/workflow';
 import { requireIntelligenceUser } from '@/lib/intelligence/http';
 
 export const runtime = 'nodejs';
@@ -276,8 +278,21 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 				return NextResponse.json({ article: await restoreWorkspaceRevision(userId, id, text(body.revisionId)) });
 			case 'request_approval':
 				return NextResponse.json({ article: await requestArticleApproval(userId, id) });
-			case 'approve':
-				return NextResponse.json({ article: await approveWorkspaceArticle(userId, id) });
+			case 'approve': {
+				const article = await approveWorkspaceArticle(userId, id);
+				if (article.body.startsWith('# Metadata proposal')) await finishProposalJob(userId, id, 'approved');
+				return NextResponse.json({ article, published: false });
+			}
+			case 'reject_proposal': {
+				const article = await rejectMetadataProposal(userId, id);
+				await finishProposalJob(userId, id, 'rejected');
+				return NextResponse.json({ article, published: false });
+			}
+			case 'request_proposal_changes': {
+				const article = await requestProposalChanges(userId, id, text(body.note) ?? '');
+				await finishProposalJob(userId, id, 'changes');
+				return NextResponse.json({ article, published: false });
+			}
 			case 'publish':
 				return NextResponse.json(await publishWorkspaceArticle(userId, id));
 			case 'record_publication':

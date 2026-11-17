@@ -1,7 +1,7 @@
 export type DemandClass = 'observed' | 'inferred' | 'strategic' | 'unvalidated';
 export type EvidenceConfidence = 'high' | 'medium' | 'low' | 'none';
 export type OpportunityAction = 'create' | 'update' | 'reject' | 'research';
-export type OpportunityStatus = 'discovered' | 'needs_research' | 'approved' | 'rejected' | 'deferred' | 'in_production';
+export type OpportunityStatus = 'discovered' | 'needs_research' | 'approved' | 'rejected' | 'deferred' | 'in_production' | 'archived';
 export type ApprovalMode = 'assisted' | 'auto_draft' | 'auto_publish';
 export type CampaignStatus = 'draft' | 'active' | 'paused';
 
@@ -153,7 +153,7 @@ export type ProviderAvailability = {
 };
 
 export type ProductionStage = 'research' | 'brief' | 'draft' | 'editorial' | 'corrections' | 'seo' | 'hero' | 'quality' | 'approval';
-export type ProductionJobStatus = 'queued' | 'running' | 'needs_attention' | 'ready_for_approval' | 'failed' | 'paused';
+export type ProductionJobStatus = 'queued' | 'running' | 'needs_attention' | 'ready_for_approval' | 'failed' | 'paused' | 'completed';
 
 export type ProductionStageLog = { stage: ProductionStage; at: string; note: string };
 

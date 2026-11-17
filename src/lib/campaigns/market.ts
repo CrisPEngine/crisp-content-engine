@@ -30,6 +30,12 @@ export function researchQueries(input: { brandName: string; problems: string[]; 
 	return unique.slice(0, 3).flatMap((seed, index) => index === 0 ? [`${seed} writers`, `${seed} site:reddit.com`] : [`${seed} writers`]);
 }
 
+export function contextOnly(hit: SearchHit): boolean {
+	const text = `${hit.title ?? ''} ${hit.snippet ?? ''}`;
+	return /\b(interview|talks with|in today'?s episode|opinion|annals of inquiry|views posted)\b/i.test(text)
+		|| (/youtube\.com\/watch/i.test(hit.url) && /\b(views|posted:)\b/i.test(text));
+}
+
 export function practicalProblem(hit: SearchHit): string | null {
 	const text = `${hit.title ?? ''} ${hit.snippet ?? ''}`.replace(/\s+/g, ' ').trim();
 	if (!PRACTICAL.test(text) || isAbstractPositioning(text)) return null;
@@ -64,12 +70,13 @@ export function candidatesFromMarket(input: {
 			}
 		});
 		const practical = external.map((hit) => ({ hit, problem: practicalProblem(hit) })).filter((item): item is { hit: SearchHit; problem: string } => Boolean(item.problem));
-		if (!practical.length) continue;
-		const problem = practical[0]!.problem;
-		const angle = (practical[0]!.hit.title || problem).replace(/\s+/g, ' ').trim().slice(0, 140);
-		const hosts = new Set(external.map((hit) => {
+		const demandHits = practical.filter((item) => !contextOnly(item.hit));
+		if (!demandHits.length) continue;
+		const problem = demandHits[0]!.problem;
+		const angle = (demandHits[0]!.hit.title || problem).replace(/\s+/g, ' ').trim().slice(0, 140);
+		const hosts = new Set(demandHits.map((item) => {
 			try {
-				return new URL(hit.url).host;
+				return new URL(item.hit.url).host;
 			} catch {
 				return '';
 			}
@@ -96,7 +103,7 @@ export function candidatesFromMarket(input: {
 			evidence: external.slice(0, 5).map((hit) => ({
 				sourceKind: entry.query.includes('site:reddit.com') ? 'community' as const : 'search' as const,
 				url: hit.url,
-				excerpt: `Retrieved ${input.retrievedAt}. ${hit.snippet?.slice(0, 400) ?? hit.title ?? ''}`.trim(),
+				excerpt: `${contextOnly(hit) ? 'Context, not demand. ' : ''}Retrieved ${input.retrievedAt}. ${hit.snippet?.slice(0, 400) ?? hit.title ?? ''}`.trim(),
 				observedAt: hit.publishedAt ?? input.retrievedAt,
 				metrics: null,
 			})),

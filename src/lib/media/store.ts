@@ -19,6 +19,7 @@ export type NativeContentStore = {
 	saveArticle(article: ArticleRecord, options?: { expectedRevisionId?: string }): Promise<ArticleRecord>;
 	getArticle(ownerUserId: string, id: string): Promise<ArticleRecord | null>;
 	listArticles(ownerUserId: string, brandId?: string): Promise<ArticleRecord[]>;
+	deleteArticle(ownerUserId: string, id: string): Promise<void>;
 };
 
 export function createMemoryNativeContentStore(): NativeContentStore {
@@ -98,6 +99,10 @@ export function createMemoryNativeContentStore(): NativeContentStore {
 			return [...articles.values()]
 				.filter((article) => article.ownerUserId === ownerUserId && (!brandId || article.brandId === brandId))
 				.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+		},
+		async deleteArticle(ownerUserId, id) {
+			const article = articles.get(id);
+			if (article && article.ownerUserId === ownerUserId) articles.delete(id);
 		},
 	};
 }

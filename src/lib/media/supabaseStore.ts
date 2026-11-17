@@ -268,6 +268,7 @@ export function createSupabaseNativeContentStore(): NativeContentStore {
 				publish_at: article.publishAt ?? article.workspace?.schedule.publishAt ?? null,
 				destination_id: article.workspace?.destinationId ?? article.publishDestination ?? null,
 				external_id: article.workspace?.externalId ?? article.workspace?.cms.externalId ?? null,
+				archived_at: article.library?.archivedAt ?? null,
 			};
 			if (options?.expectedRevisionId) {
 				const { data, error } = await db()
@@ -282,7 +283,7 @@ export function createSupabaseNativeContentStore(): NativeContentStore {
 				return article;
 			}
 			const { error } = await db().from('articles').upsert(row);
-			if (error && /publish_at|destination_id|external_id/.test(error.message)) {
+			if (error && /publish_at|destination_id|external_id|archived_at/.test(error.message)) {
 				const base = {
 					id: row.id,
 					owner_user_id: row.owner_user_id,
@@ -312,6 +313,10 @@ export function createSupabaseNativeContentStore(): NativeContentStore {
 			const { data, error } = await query;
 			if (error) throw new Error(error.message);
 			return (data ?? []).map((row) => row.document as ArticleRecord);
+		},
+		async deleteArticle(ownerUserId, id) {
+			const { error } = await db().from('articles').delete().eq('owner_user_id', ownerUserId).eq('id', id);
+			if (error) throw new Error(error.message);
 		},
 	};
 }
