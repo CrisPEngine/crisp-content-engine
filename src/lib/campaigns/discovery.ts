@@ -1,6 +1,6 @@
 import { selectSearchProvider, type SearchHit } from '@/lib/research/search';
 import { assessOverlap } from './overlap';
-import { fetchSearchConsoleQueries, measuredFromRow } from './providers';
+import { fetchSearchConsoleReport, type SearchConsoleQuery } from './searchConsole';
 import { evidenceConfidence, scoreOpportunity } from './scoring';
 import type { DemandClass, InventoryArticle, MeasuredSearch } from './types';
 
@@ -89,29 +89,47 @@ export async function discoverSearchTopic(input: {
 	return candidatesFromSearch({ ...input, hits });
 }
 
+function completeMetric(row: SearchConsoleQuery): row is SearchConsoleQuery & { impressions: number; clicks: number; ctr: number; position: number } {
+	return row.impressions != null && row.clicks != null && row.ctr != null && row.position != null;
+}
+
 export async function discoverSearchConsole(input: {
+	siteUrl: string;
 	startDate: string;
 	endDate: string;
-	inventory: InventoryArticle[];
-	env?: Record<string, string | undefined>;
+	accessToken: string;
 	fetchImpl?: typeof fetch;
 }): Promise<DiscoveredCandidate[]> {
-	const rows = await fetchSearchConsoleQueries({ startDate: input.startDate, endDate: input.endDate, env: input.env, fetchImpl: input.fetchImpl });
-	return rows.slice(0, 15).map((row) => {
-		const measured = measuredFromRow(row, input.startDate, input.endDate);
+	const report = await fetchSearchConsoleReport({
+		siteUrl: input.siteUrl,
+		startDate: input.startDate,
+		endDate: input.endDate,
+		accessToken: input.accessToken,
+		fetchImpl: input.fetchImpl,
+		maxRows: 50,
+	});
+	return report.queries.filter(completeMetric).slice(0, 15).map((row) => {
+		const page = report.queryPages.find((item) => item.query === row.query)?.page ?? null;
 		return {
 			title: row.query,
-			audienceProblem: row.page ? `People searching this query are reaching ${row.page}.` : 'Search Console recorded this query for the property.',
+			audienceProblem: page ? `People searching this query are reaching ${page}.` : 'Search Console recorded this query for the property.',
 			searchIntent: null,
 			demandClass: 'observed' as const,
 			discoverySource: 'search_console',
 			naturalKey: key('search_console', row.query),
 			evidence: [{
 				sourceKind: 'search_console',
-				url: row.page,
-				excerpt: `${row.impressions} impressions, ${row.clicks} clicks, position ${row.position.toFixed(1)}.`,
-				observedAt: input.endDate,
-				metrics: measured,
+				url: page,
+				excerpt: `${row.impressions} impressions, ${row.clicks} clicks, position ${row.position.toFixed(1)}. Property ${report.siteUrl}. Retrieved ${report.retrievedAt}.`,
+				observedAt: report.retrievedAt,
+				metrics: {
+					impressions: row.impressions,
+					clicks: row.clicks,
+					ctr: row.ctr,
+					position: row.position,
+					startDate: input.startDate,
+					endDate: input.endDate,
+				},
 			}],
 			brandRelevance: 0.7,
 			brandRationale: 'The query was returned for this brand’s Search Console property.',

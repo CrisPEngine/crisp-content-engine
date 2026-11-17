@@ -115,6 +115,19 @@ export type ContentCampaign = {
 export type ProviderAvailability = {
 	id: 'inventory' | 'strategy' | 'search' | 'search_console' | 'community' | 'analytics';
 	label: string;
-	state: 'available' | 'unavailable';
+	state: 'available' | 'unavailable' | 'connected' | 'error';
 	detail: string;
+	property?: string | null;
+	lastSuccessAt?: string | null;
+	error?: string | null;
+};
+
+export type AnalyticsBinding = {
+	brandId: string;
+	searchConsoleSiteUrl: string | null;
+	ga4PropertyId: string | null;
+	searchConsoleLastSuccessAt: string | null;
+	searchConsoleLastError: string | null;
+	ga4LastSuccessAt: string | null;
+	ga4LastError: string | null;
 };

@@ -1,5 +1,5 @@
 import { getSupabaseService } from '@/lib/supabaseService';
-import type { ApprovalMode, CampaignStatus, ContentCampaign, ContentOpportunity, DemandClass, EvidenceConfidence, OpportunityAction, OpportunityEvidence, OpportunityStatus, ScoreResult, OverlapAssessment } from './types';
+import type { AnalyticsBinding, ApprovalMode, CampaignStatus, ContentCampaign, ContentOpportunity, DemandClass, EvidenceConfidence, OpportunityAction, OpportunityEvidence, OpportunityStatus, ScoreResult, OverlapAssessment } from './types';
 
 export type NewOpportunity = Omit<ContentOpportunity, 'id' | 'createdAt' | 'updatedAt'> & { naturalKey: string };
 export type NewCampaign = Omit<ContentCampaign, 'id' | 'createdAt' | 'updatedAt' | 'autoPublishEnabled'>;
@@ -12,6 +12,8 @@ export type OpportunityRepository = {
 	setStatus(userId: string, id: string, status: OpportunityStatus): Promise<ContentOpportunity>;
 	listCampaigns(userId: string, brandId: string): Promise<ContentCampaign[]>;
 	saveCampaign(userId: string, campaign: NewCampaign): Promise<ContentCampaign>;
+	getBinding(userId: string, brandId: string): Promise<AnalyticsBinding | null>;
+	recordAnalyticsCheck(userId: string, brandId: string, patch: Partial<AnalyticsBinding>): Promise<AnalyticsBinding>;
 };
 
 type OpportunityRow = {
@@ -188,6 +190,48 @@ export function createSupabaseOpportunityRepository(): OpportunityRepository {
 			if (error) throw new Error(error.message);
 			return campaignFromRow(data);
 		},
+		async getBinding(userId, brandId) {
+			const { data, error } = await db().from('content_analytics_bindings').select('*').eq('user_id', userId).eq('brand_id', brandId).maybeSingle();
+			if (error) throw new Error(error.message);
+			return data ? bindingFromRow(data) : null;
+		},
+		async recordAnalyticsCheck(userId, brandId, patch) {
+			const current = await this.getBinding(userId, brandId);
+			const next = {
+				user_id: userId,
+				brand_id: brandId,
+				search_console_site_url: patch.searchConsoleSiteUrl === undefined ? current?.searchConsoleSiteUrl ?? null : patch.searchConsoleSiteUrl,
+				ga4_property_id: patch.ga4PropertyId === undefined ? current?.ga4PropertyId ?? null : patch.ga4PropertyId,
+				search_console_last_success_at: patch.searchConsoleLastSuccessAt === undefined ? current?.searchConsoleLastSuccessAt ?? null : patch.searchConsoleLastSuccessAt,
+				search_console_last_error: patch.searchConsoleLastError === undefined ? current?.searchConsoleLastError ?? null : patch.searchConsoleLastError,
+				ga4_last_success_at: patch.ga4LastSuccessAt === undefined ? current?.ga4LastSuccessAt ?? null : patch.ga4LastSuccessAt,
+				ga4_last_error: patch.ga4LastError === undefined ? current?.ga4LastError ?? null : patch.ga4LastError,
+				updated_at: new Date().toISOString(),
+			};
+			const { data, error } = await db().from('content_analytics_bindings').upsert(next, { onConflict: 'user_id,brand_id' }).select('*').single();
+			if (error) throw new Error(error.message);
+			return bindingFromRow(data);
+		},
+	};
+}
+
+function bindingFromRow(row: {
+	brand_id: string;
+	search_console_site_url: string | null;
+	ga4_property_id: string | null;
+	search_console_last_success_at: string | null;
+	search_console_last_error: string | null;
+	ga4_last_success_at: string | null;
+	ga4_last_error: string | null;
+}): AnalyticsBinding {
+	return {
+		brandId: row.brand_id,
+		searchConsoleSiteUrl: row.search_console_site_url,
+		ga4PropertyId: row.ga4_property_id,
+		searchConsoleLastSuccessAt: row.search_console_last_success_at,
+		searchConsoleLastError: row.search_console_last_error,
+		ga4LastSuccessAt: row.ga4_last_success_at,
+		ga4LastError: row.ga4_last_error,
 	};
 }
 
@@ -227,6 +271,7 @@ function campaignFromRow(row: {
 export function createMemoryOpportunityRepository(): OpportunityRepository {
 	const opportunities: Array<ContentOpportunity & { userId: string; naturalKey: string }> = [];
 	const campaigns: Array<ContentCampaign & { userId: string }> = [];
+	const bindings: Array<AnalyticsBinding & { userId: string }> = [];
 	return {
 		async list(userId, brandId) {
 			return opportunities.filter((item) => item.userId === userId && item.brandId === brandId).map(({ userId: _user, naturalKey: _key, ...item }) => item);
@@ -275,6 +320,29 @@ export function createMemoryOpportunityRepository(): OpportunityRepository {
 			const saved = { ...campaign, id: crypto.randomUUID(), userId, autoPublishEnabled: false as const, createdAt: now, updatedAt: now };
 			campaigns.push(saved);
 			const { userId: _user, ...item } = saved;
+			return item;
+		},
+		async getBinding(userId, brandId) {
+			const found = bindings.find((item) => item.userId === userId && item.brandId === brandId);
+			if (!found) return null;
+			const { userId: _user, ...item } = found;
+			return item;
+		},
+		async recordAnalyticsCheck(userId, brandId, patch) {
+			const current = bindings.find((item) => item.userId === userId && item.brandId === brandId);
+			const next: AnalyticsBinding & { userId: string } = {
+				userId,
+				brandId,
+				searchConsoleSiteUrl: patch.searchConsoleSiteUrl === undefined ? current?.searchConsoleSiteUrl ?? null : patch.searchConsoleSiteUrl,
+				ga4PropertyId: patch.ga4PropertyId === undefined ? current?.ga4PropertyId ?? null : patch.ga4PropertyId,
+				searchConsoleLastSuccessAt: patch.searchConsoleLastSuccessAt === undefined ? current?.searchConsoleLastSuccessAt ?? null : patch.searchConsoleLastSuccessAt,
+				searchConsoleLastError: patch.searchConsoleLastError === undefined ? current?.searchConsoleLastError ?? null : patch.searchConsoleLastError,
+				ga4LastSuccessAt: patch.ga4LastSuccessAt === undefined ? current?.ga4LastSuccessAt ?? null : patch.ga4LastSuccessAt,
+				ga4LastError: patch.ga4LastError === undefined ? current?.ga4LastError ?? null : patch.ga4LastError,
+			};
+			if (current) Object.assign(current, next);
+			else bindings.push(next);
+			const { userId: _user, ...item } = next;
 			return item;
 		},
 	};
