@@ -1,20 +1,48 @@
 import type { SearchHit } from '@/lib/research/search';
+import { dedupeCandidates, problemKey } from './dedupe';
 import type { DiscoveredCandidate } from './discovery';
-import { assessOverlap } from './overlap';
+import { assessOverlap, topicSimilarity } from './overlap';
 import type { InventoryArticle } from './types';
 
-export function marketQueries(input: {
-	brandName: string;
-	themes: string[];
-	problems: string[];
-	pillars: string[];
-	questions: string[];
-}): string[] {
-	const seeds = [...input.questions, ...input.problems, ...input.themes, ...input.pillars]
-		.map((item) => item.trim())
-		.filter((item) => item.length > 8 && item.toLowerCase() !== input.brandName.toLowerCase());
-	const unique = [...new Set(seeds.map((item) => item.toLowerCase()))].map((key) => seeds.find((item) => item.toLowerCase() === key)!);
-	return unique.slice(0, 4).flatMap((seed, index) => index === 0 ? [seed, `${seed} site:reddit.com`] : [seed]);
+const PRACTICAL = /\b(struggle|struggling|lose|losing|lost|forget|forgetting|inconsistent|continuity|canon|plot|track|hard to|can't|cannot|how do|how to|keep track|mix up|contradict|invent|hallucin)/i;
+
+export function isAbstractPositioning(text: string): boolean {
+	return /\b(what should|who decides|refuse to do|be able to trust|what is true in the book|between sessions)\b/i.test(text);
+}
+
+export function classifyIntent(text: string): 'informational' | 'commercial' | 'navigational' {
+	if (/\b(pricing|buy|alternative|versus|\bvs\b|best tool|software)\b/i.test(text)) return 'commercial';
+	if (/\b(login|download|official site)\b/i.test(text)) return 'navigational';
+	return 'informational';
+}
+
+export function researchQueries(input: { brandName: string; problems: string[]; questions: string[]; pillars: string[] }): string[] {
+	const brand = input.brandName.trim();
+	const seeds = [...input.problems, ...input.questions, ...input.pillars];
+	const practical: string[] = [];
+	for (const seed of seeds) {
+		if (isAbstractPositioning(seed)) continue;
+		const cleaned = seed.replace(brand ? new RegExp(brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig') : /$^/, '').replace(/[?]/g, '').replace(/\s+/g, ' ').trim();
+		if (cleaned.length < 12 || isAbstractPositioning(cleaned)) continue;
+		practical.push(cleaned);
+	}
+	const unique = [...new Set(practical.map((item) => item.toLowerCase()))].map((key) => practical.find((item) => item.toLowerCase() === key)!);
+	return unique.slice(0, 3).flatMap((seed, index) => index === 0 ? [`${seed} writers`, `${seed} site:reddit.com`] : [`${seed} writers`]);
+}
+
+export function practicalProblem(hit: SearchHit): string | null {
+	const text = `${hit.title ?? ''} ${hit.snippet ?? ''}`.replace(/\s+/g, ' ').trim();
+	if (!PRACTICAL.test(text) || isAbstractPositioning(text)) return null;
+	const problem = (hit.snippet || hit.title || '').replace(/\s+/g, ' ').trim();
+	return problem ? problem.slice(0, 220) : null;
+}
+
+export function brandFit(problem: string, capabilities: string[], approvedProblems: string[]): { value: number; rationale: string } {
+	const named = capabilities.find((name) => name.trim().length > 3 && problem.toLowerCase().includes(name.toLowerCase()));
+	if (named) return { value: 0.8, rationale: `The audience problem names the verified capability “${named}”.` };
+	const related = approvedProblems.find((item) => !isAbstractPositioning(item) && topicSimilarity(problem, item) >= 0.45);
+	if (related) return { value: 0.55, rationale: 'The problem matches an approved audience problem. Brand positioning was not used as the title.' };
+	return { value: 0.2, rationale: 'No approved audience problem or verified capability matches this problem, so it is not validated for production.' };
 }
 
 export function candidatesFromMarket(input: {
@@ -22,47 +50,61 @@ export function candidatesFromMarket(input: {
 	inventory: InventoryArticle[];
 	brandHost: string | null;
 	retrievedAt: string;
-}): DiscoveredCandidate[] {
-	const candidates: DiscoveredCandidate[] = [];
+	capabilities?: string[];
+	approvedProblems?: string[];
+}): { candidates: DiscoveredCandidate[]; merged: number } {
+	const built: DiscoveredCandidate[] = [];
 	for (const entry of input.queries) {
 		const hits = entry.hits.filter((hit) => hit.url?.startsWith('https://'));
-		if (!hits.length) continue;
-		const outside = hits.filter((hit) => {
+		const external = hits.filter((hit) => {
 			try {
 				return !input.brandHost || new URL(hit.url).host !== input.brandHost;
 			} catch {
 				return true;
 			}
 		});
-		const overlap = assessOverlap({ title: entry.query }, input.inventory);
-		const ownOnly = outside.length === 0;
-		const decision = ownOnly ? 'reject' : overlap.decision === 'reject' ? 'reject' : overlap.decision === 'update' ? 'update' : 'create';
-		candidates.push({
-			title: entry.query.replace(/ site:reddit.com$/i, '').trim(),
-			audienceProblem: hits[0]?.snippet?.slice(0, 280) || entry.query,
-			searchIntent: 'informational',
+		const practical = external.map((hit) => ({ hit, problem: practicalProblem(hit) })).filter((item): item is { hit: SearchHit; problem: string } => Boolean(item.problem));
+		if (!practical.length) continue;
+		const problem = practical[0]!.problem;
+		const angle = (practical[0]!.hit.title || problem).replace(/\s+/g, ' ').trim().slice(0, 140);
+		const hosts = new Set(external.map((hit) => {
+			try {
+				return new URL(hit.url).host;
+			} catch {
+				return '';
+			}
+		}).filter(Boolean));
+		const fit = brandFit(problem, input.capabilities ?? [], input.approvedProblems ?? []);
+		const grounded = hosts.size >= 2 && fit.value >= 0.45;
+		const overlap = assessOverlap({ title: angle, intent: classifyIntent(problem) }, input.inventory);
+		const decision = !grounded ? 'research' : overlap.decision;
+		built.push({
+			title: angle,
+			audienceProblem: problem,
+			searchIntent: classifyIntent(`${problem} ${angle}`),
 			demandClass: 'inferred',
 			discoverySource: entry.query.includes('site:reddit.com') ? 'community' : 'search',
-			naturalKey: `market:${entry.query.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()}`,
+			naturalKey: `problem:${problemKey(problem)}`,
+			grounded,
 			forcedOverlap: {
 				...overlap,
 				decision,
-				rationale: ownOnly
-					? 'The only retrieved pages are on the brand’s own site. That is not an external content gap.'
-					: `${overlap.rationale} Demand is inferred from public pages. No search volume was supplied.`,
+				rationale: grounded
+					? `${overlap.rationale} The audience problem is separate from the headline. No search volume was supplied.`
+					: 'Retrieved pages do not establish a practical, brand-relevant reader need. This stays unvalidated.',
 			},
-			evidence: hits.slice(0, 5).map((hit) => ({
-				sourceKind: entry.query.includes('site:reddit.com') ? 'community' : 'search',
+			evidence: external.slice(0, 5).map((hit) => ({
+				sourceKind: entry.query.includes('site:reddit.com') ? 'community' as const : 'search' as const,
 				url: hit.url,
-				excerpt: hit.snippet?.slice(0, 500) ?? hit.title ?? null,
+				excerpt: `Retrieved ${input.retrievedAt}. ${hit.snippet?.slice(0, 400) ?? hit.title ?? ''}`.trim(),
 				observedAt: hit.publishedAt ?? input.retrievedAt,
 				metrics: null,
 			})),
-			brandRelevance: 0.6,
-			brandRationale: 'The query came from approved strategy, themes, or audience problems. It was not taken from an existing article title.',
-			businessRelevance: decision === 'create' ? 0.55 : 0.35,
-			businessRationale: `${outside.length} external ${outside.length === 1 ? 'page was' : 'pages were'} retrieved. No keyword volume was supplied.`,
+			brandRelevance: fit.value,
+			brandRationale: fit.rationale,
+			businessRelevance: grounded ? 0.45 : 0.2,
+			businessRationale: `${hosts.size} external ${hosts.size === 1 ? 'site' : 'sites'} discussed this problem. No search volume was supplied.`,
 		});
 	}
-	return candidates;
+	return dedupeCandidates(built);
 }

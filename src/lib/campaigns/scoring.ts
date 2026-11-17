@@ -1,4 +1,4 @@
-import { DEFAULT_SCORE_THRESHOLDS, DEFAULT_SCORE_WEIGHTS, type DemandClass, type EvidenceConfidence, type MeasuredSearch, type OptimisationScope, type ScoreResult, type ScoreThresholds, type ScoreWeights } from './types';
+import { DEFAULT_SCORE_THRESHOLDS, DEFAULT_SCORE_WEIGHTS, type DemandClass, type EvidenceConfidence, type MeasuredSearch, type OpportunityEvidence, type OptimisationScope, type ScoreResult, type ScoreThresholds, type ScoreWeights } from './types';
 
 function clamp(value: number): number {
 	if (!Number.isFinite(value)) return 0;
@@ -70,6 +70,7 @@ export function scoreOpportunity(input: {
 	researchRationale: string;
 	weights?: ScoreWeights;
 	thresholds?: ScoreThresholds;
+	grounded?: boolean;
 }): ScoreResult {
 	const weights = input.weights ?? DEFAULT_SCORE_WEIGHTS;
 	const thresholds = input.thresholds ?? DEFAULT_SCORE_THRESHOLDS;
@@ -91,12 +92,36 @@ export function scoreOpportunity(input: {
 	}));
 	const score = Math.round(components.reduce((sum, row) => sum + row.contribution, 0) * 1000) / 1000;
 	const confidence = evidenceConfidence(input.demandClass, input.evidenceCount, measured, thresholds);
-	const promotionBlocked = input.demandClass === 'unvalidated' || confidence === 'none';
+	const ungrounded = input.grounded === false;
+	const promotionBlocked = input.demandClass === 'unvalidated' || confidence === 'none' || ungrounded;
 	return {
 		score,
 		confidence,
 		components,
 		promotionBlocked,
-		blockReason: promotionBlocked ? 'This opportunity has no demand evidence, so it cannot enter production.' : null,
+		blockReason: ungrounded
+			? 'External search results alone do not validate this opportunity.'
+			: promotionBlocked
+				? 'This opportunity has no demand evidence, so it cannot enter production.'
+				: null,
 	};
+}
+
+export function storedEvidenceScope(evidence: OpportunityEvidence[]): 'query' | 'page' | null {
+	const measured = evidence.find((item) => item.metrics);
+	if (!measured?.metrics) return null;
+	if (measured.metrics.scope === 'page' || measured.excerpt?.includes('Page total')) return 'page';
+	if (measured.metrics.scope === 'query' || measured.sourceKind === 'search_console') return 'query';
+	return null;
+}
+
+export function rescoredConfidence(input: {
+	demandClass: DemandClass;
+	evidence: OpportunityEvidence[];
+	thresholds?: ScoreThresholds;
+}): EvidenceConfidence {
+	const scope = storedEvidenceScope(input.evidence);
+	const measured = input.evidence.find((item) => item.metrics)?.metrics ?? null;
+	const adjusted = measured && scope ? { ...measured, scope } : measured;
+	return evidenceConfidence(input.demandClass, input.evidence.length, adjusted, input.thresholds);
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { CampaignError, createContentCampaign, decideOpportunity, discoverOpportunities, listContentOpportunities, recordContentOpportunity, testBrandAnalytics } from '@/lib/campaigns/service';
-import { advanceProductionJob, scheduleCampaign, startProductionJob } from '@/lib/campaigns/workflow';
+import { CampaignError, createContentCampaign, decideOpportunity, discoverOpportunities, listContentOpportunities, recordContentOpportunity, rescoreStoredEvidence, testBrandAnalytics } from '@/lib/campaigns/service';
+import { advanceProductionJob, revalidateMetadataJob, scheduleCampaign, startProductionJob } from '@/lib/campaigns/workflow';
 import type { ApprovalMode, CampaignStatus, DemandClass, OpportunityStatus } from '@/lib/campaigns/types';
 import { requireIntelligenceUser } from '@/lib/intelligence/http';
 
@@ -65,6 +65,14 @@ export async function POST(request: Request) {
 				endDate: typeof body.endDate === 'string' ? body.endDate : undefined,
 			});
 			return NextResponse.json({ test });
+		}
+		if (action === 'rescore') {
+			if (!brandId) return NextResponse.json({ error: 'Choose a brand.' }, { status: 400 });
+			return NextResponse.json({ changes: await rescoreStoredEvidence(userId, brandId) });
+		}
+		if (action === 'revalidate_proposal') {
+			if (typeof body.jobId !== 'string') return NextResponse.json({ error: 'Choose a production job.' }, { status: 400 });
+			return NextResponse.json({ job: await revalidateMetadataJob(userId, body.jobId) });
 		}
 		if (action === 'discover') {
 			const source = body.source === 'community' || body.source === 'search_console' || body.source === 'themes' || body.source === 'market' ? body.source : 'search';

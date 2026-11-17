@@ -148,17 +148,19 @@ describe('content opportunities', () => {
 		expect(optimisationScope({ ...measured, scope: 'page' })).toBe('metadata');
 	});
 
-	it('stores external pages as inferred demand and does not invent volume', () => {
-		const [candidate] = candidatesFromMarket({
-			queries: [{ query: 'how authors keep canon across a long novel', hits: [{ url: 'https://example.com/canon', title: 'Canon', snippet: 'Authors lose track of facts.', publishedAt: '2026-11-01' }] }],
+	it('stores a practical external problem without inventing volume', () => {
+		const { candidates: [candidate] } = candidatesFromMarket({
+			queries: [{ query: 'authors lose track of canon writers', hits: [{ url: 'https://example.com/canon', title: 'Writers lose track of canon', snippet: 'Authors lose track of facts across a long draft.', publishedAt: '2026-11-01' }] }],
 			inventory,
 			brandHost: 'folian.app',
 			retrievedAt: '2026-11-17T00:00:00.000Z',
+			approvedProblems: ['Authors lose track of facts across a long draft'],
 		});
 		expect(candidate?.demandClass).toBe('inferred');
+		expect(candidate?.title).not.toMatch(/what should|who decides/i);
 		expect(candidate?.evidence[0]?.url).toBe('https://example.com/canon');
 		expect(candidate?.evidence[0]?.metrics).toBeNull();
-		expect(candidate?.forcedOverlap?.rationale).toContain('No search volume was supplied');
+		expect(candidate?.forcedOverlap?.decision).toBe('research');
 	});
 
 	it('reports Search Console as unavailable until credentials exist', () => {
