@@ -179,21 +179,22 @@ export async function discoverOpportunities(userId: string, input: {
 		return persistCandidates(userId, input.brandId, candidates, repository, inventory);
 	}
 	if (input.source === 'market') {
-		const { marketQueries, candidatesFromMarket } = await import('./market');
+		const { researchQueries, candidatesFromMarket } = await import('./market');
+		const { sameOpportunity } = await import('./dedupe');
 		const { selectSearchProvider } = await import('@/lib/research/search');
 		const provider = selectSearchProvider();
 		if (!provider.configured) throw new CampaignError('Market research needs Tavily or Brave.', 409, 'search_provider_not_configured');
 		const brain = await getIntelligenceStore().getBrandBrainById(userId, input.brandId);
 		const strategy = brain ? await getIntelligenceStore().getStrategyForBrand(userId, brain.id) : null;
 		const themes = (await getIntelligenceStore().listThemes(userId, input.brandId)).filter((theme) => theme.status === 'active');
-		const queries = marketQueries({
+		const approvedProblems = [...(strategy?.audienceProblems ?? []), ...themes.flatMap((theme) => theme.questionsToAnswer ?? [])];
+		const queries = researchQueries({
 			brandName: brain?.identity.name ?? '',
-			themes: themes.map((theme) => theme.title),
 			problems: strategy?.audienceProblems ?? [],
 			pillars: strategy?.contentPillars ?? [],
 			questions: themes.flatMap((theme) => theme.questionsToAnswer ?? []),
 		});
-		if (!queries.length) throw new CampaignError('Approved themes or audience problems are required before market research. No topics were invented.', 409, 'market_seeds_missing');
+		if (!queries.length) throw new CampaignError('Practical audience problems are required. Positioning questions were not turned into article titles.', 409, 'market_problems_missing');
 		const retrievedAt = new Date().toISOString();
 		const researched = [];
 		for (const query of queries) {
@@ -206,8 +207,19 @@ export async function discoverOpportunities(userId: string, input: {
 		} catch {
 			host = null;
 		}
-		const candidates = candidatesFromMarket({ queries: researched, inventory, brandHost: host, retrievedAt });
-		return persistCandidates(userId, input.brandId, candidates, repository, inventory);
+		const capabilities = brain ? await verifiedCapabilityNames(userId, brain, approvedProblems.join(' ')) : [];
+		const discovered = candidatesFromMarket({ queries: researched, inventory, brandHost: host, retrievedAt, capabilities, approvedProblems });
+		const existing = await repository.list(userId, input.brandId);
+		const fresh = [];
+		for (const candidate of discovered.candidates) {
+			const match = existing.find((item) => sameOpportunity(item.audienceProblem, candidate.audienceProblem) || sameOpportunity(item.title, candidate.title));
+			if (!match) {
+				fresh.push(candidate);
+				continue;
+			}
+			await repository.appendEvidence(userId, match.id, candidate.evidence.map((item) => ({ ...item, id: '' })));
+		}
+		return persistCandidates(userId, input.brandId, fresh, repository, inventory);
 	}
 	if (!input.topic?.trim() && input.source !== 'search_console') throw new CampaignError('Enter a topic to research.', 400, 'topic_required');
 	if (input.source === 'search_console') {
@@ -264,6 +276,35 @@ export async function discoverOpportunities(userId: string, input: {
 		const coded = error as Error & { code?: string };
 		throw new CampaignError(coded.message, coded.code === 'search_provider_not_configured' ? 409 : 502, coded.code ?? 'search_failed');
 	}
+}
+
+export async function rescoreStoredEvidence(userId: string, brandId: string): Promise<Array<{ id: string; title: string; from: string; to: string; scope: 'query' | 'page' | null }>> {
+	const repository = getOpportunityRepository();
+	const rows = await repository.list(userId, brandId);
+	const changes = [];
+	for (const row of rows) {
+		if (row.brandId !== brandId || row.demandClass !== 'observed') continue;
+		const { rescoredConfidence, storedEvidenceScope } = await import('./scoring');
+		const scope = storedEvidenceScope(row.evidence);
+		const next = rescoredConfidence({ demandClass: row.demandClass, evidence: row.evidence });
+		const scoreDetail = {
+			...row.scoreDetail,
+			confidence: next,
+			rescore: {
+				at: new Date().toISOString(),
+				previousConfidence: row.evidenceConfidence,
+				confidence: next,
+				reason: scope === 'page'
+					? 'Page impressions are not exact-query demand, so confidence is medium. Measured impressions, clicks, CTR, and position were not changed.'
+					: 'Query evidence was rescored with the configured threshold. Measured impressions, clicks, CTR, and position were not changed.',
+				metricsUnchanged: true as const,
+				scope,
+			},
+		};
+		await repository.applyRescore(userId, row.id, { evidenceConfidence: next, scoreDetail });
+		changes.push({ id: row.id, title: row.title, from: row.evidenceConfidence, to: next, scope });
+	}
+	return changes;
 }
 
 export async function decideOpportunity(userId: string, id: string, status: OpportunityStatus): Promise<ContentOpportunity> {

@@ -12,6 +12,10 @@ export function tokens(value: string): Set<string> {
 	);
 }
 
+export function topicSimilarity(leftText: string, rightText: string): number {
+	return overlapRatio(tokens(leftText), tokens(rightText));
+}
+
 function overlapRatio(left: Set<string>, right: Set<string>): number {
 	if (!left.size || !right.size) return 0;
 	let shared = 0;

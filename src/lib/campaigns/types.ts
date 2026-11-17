@@ -68,6 +68,14 @@ export type ScoreResult = {
 	components: ScoreComponent[];
 	promotionBlocked: boolean;
 	blockReason: string | null;
+	rescore?: {
+		at: string;
+		previousConfidence: EvidenceConfidence;
+		confidence: EvidenceConfidence;
+		reason: string;
+		metricsUnchanged: true;
+		scope: 'query' | 'page' | null;
+	};
 };
 
 export type InventoryArticle = {

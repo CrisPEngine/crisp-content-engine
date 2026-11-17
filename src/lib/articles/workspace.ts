@@ -2541,6 +2541,17 @@ export async function applyArticleEditorialImprovement(ownerUserId: string, arti
 	return persist(article);
 }
 
+export async function queueProposalForApproval(ownerUserId: string, articleId: string, body: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	if (article.status === 'published' || article.workspace?.cms.lastSyncAt) {
+		throw new ArticleWorkflowError('A published article cannot be replaced by a proposal.', 409, 'published_locked');
+	}
+	article.body = body;
+	article.status = 'review';
+	article.approval = { required: true, approver: 'human', status: 'pending' };
+	return persist(article);
+}
+
 export async function requestArticleApproval(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
 	if (!article.body.trim()) throw new ArticleWorkflowError('Generate a draft before requesting approval.', 400, 'draft_missing');
@@ -2551,6 +2562,20 @@ export async function requestArticleApproval(ownerUserId: string, articleId: str
 
 export async function approveWorkspaceArticle(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
+	if (article.body.startsWith('# Metadata proposal')) {
+		const { parseMetadataProposal, validateMetadataProposal } = await import('@/lib/campaigns/optimisation');
+		const parsed = parseMetadataProposal(article.body);
+		if (!parsed || !validateMetadataProposal(parsed).pass) {
+			throw new ArticleWorkflowError('This metadata proposal has not passed its checks.', 409, 'metadata_not_valid');
+		}
+		article.status = 'approved';
+		article.approval = { required: true, approver: 'human', status: 'approved' };
+		const workspace = ensureWorkspace(article);
+		workspace.approvedAt = new Date().toISOString();
+		workspace.approvedRevisionId = workspace.revision?.id ?? null;
+		article.workspace = workspace;
+		return persist(article);
+	}
 	ensureRevision(article);
 	const gate = articleApprovalGate(article);
 	if (!gate.ok) throw new ArticleWorkflowError(gate.message, 409, gate.code);

@@ -17,6 +17,8 @@ export type DiscoveredCandidate = {
 	brandRationale: string;
 	businessRelevance: number;
 	businessRationale: string;
+	/** False when pages were found but the audience problem is not grounded enough to produce. */
+	grounded?: boolean;
 };
 
 function key(source: string, title: string): string {
@@ -155,6 +157,7 @@ export function scoreCandidate(candidate: DiscoveredCandidate, inventory: Invent
 		businessRationale: candidate.businessRationale,
 		researchFeasibility: candidate.evidence.length ? 0.7 : 0.2,
 		researchRationale: candidate.evidence.length ? 'Source URLs or measured rows are stored, so article research has a starting point.' : 'No sources are stored yet.',
+		grounded: candidate.grounded,
 	});
 	return { overlap, scored, confidence };
 }

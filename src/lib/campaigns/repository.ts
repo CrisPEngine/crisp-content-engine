@@ -10,6 +10,8 @@ export type OpportunityRepository = {
 	findByKey(userId: string, brandId: string, naturalKey: string): Promise<ContentOpportunity | null>;
 	save(userId: string, opportunity: NewOpportunity): Promise<ContentOpportunity>;
 	setStatus(userId: string, id: string, status: OpportunityStatus): Promise<ContentOpportunity>;
+	appendEvidence(userId: string, id: string, evidence: OpportunityEvidence[]): Promise<ContentOpportunity>;
+	applyRescore(userId: string, id: string, patch: { evidenceConfidence: EvidenceConfidence; scoreDetail: ScoreResult }): Promise<ContentOpportunity>;
 	listCampaigns(userId: string, brandId: string): Promise<ContentCampaign[]>;
 	saveCampaign(userId: string, campaign: NewCampaign): Promise<ContentCampaign>;
 	getBinding(userId: string, brandId: string): Promise<AnalyticsBinding | null>;
@@ -160,6 +162,38 @@ export function createSupabaseOpportunityRepository(): OpportunityRepository {
 			const { data, error } = await db()
 				.from('content_opportunities')
 				.update({ status, updated_at: new Date().toISOString() })
+				.eq('user_id', userId)
+				.eq('id', id)
+				.select('*, content_opportunity_evidence(*)')
+				.single();
+			if (error) throw new Error(error.message);
+			return fromRow(data as OpportunityRow);
+		},
+		async appendEvidence(userId, id, evidence) {
+			const current = await this.get(userId, id);
+			if (!current) throw new Error('Opportunity not found.');
+			const seen = new Set(current.evidence.map((item) => `${item.sourceKind}:${item.url ?? ''}`));
+			const fresh = evidence.filter((item) => !seen.has(`${item.sourceKind}:${item.url ?? ''}`));
+			if (fresh.length) {
+				const { error } = await db().from('content_opportunity_evidence').insert(fresh.map((item) => ({
+					user_id: userId,
+					opportunity_id: id,
+					source_kind: item.sourceKind,
+					url: item.url,
+					excerpt: item.excerpt,
+					observed_at: item.observedAt,
+					metrics: item.metrics,
+				})));
+				if (error) throw new Error(error.message);
+			}
+			const saved = await this.get(userId, id);
+			if (!saved) throw new Error('Opportunity not found.');
+			return saved;
+		},
+		async applyRescore(userId, id, patch) {
+			const { data, error } = await db()
+				.from('content_opportunities')
+				.update({ evidence_confidence: patch.evidenceConfidence, score_detail: patch.scoreDetail, updated_at: new Date().toISOString() })
 				.eq('user_id', userId)
 				.eq('id', id)
 				.select('*, content_opportunity_evidence(*)')
@@ -385,6 +419,29 @@ export function createMemoryOpportunityRepository(): OpportunityRepository {
 			found.updatedAt = new Date().toISOString();
 			const { userId: _user, naturalKey: _key, ...item } = found;
 			return item;
+		},
+		async appendEvidence(userId, id, evidence) {
+			const found = opportunities.find((item) => item.userId === userId && item.id === id);
+			if (!found) throw new Error('Opportunity not found.');
+			const seen = new Set(found.evidence.map((item) => `${item.sourceKind}:${item.url ?? ''}`));
+			for (const item of evidence) {
+				const key = `${item.sourceKind}:${item.url ?? ''}`;
+				if (seen.has(key)) continue;
+				seen.add(key);
+				found.evidence.push({ ...item, id: crypto.randomUUID() });
+			}
+			found.updatedAt = new Date().toISOString();
+			const { userId: _user, naturalKey: _key, ...saved } = found;
+			return saved;
+		},
+		async applyRescore(userId, id, patch) {
+			const found = opportunities.find((item) => item.userId === userId && item.id === id);
+			if (!found) throw new Error('Opportunity not found.');
+			found.evidenceConfidence = patch.evidenceConfidence;
+			found.scoreDetail = patch.scoreDetail;
+			found.updatedAt = new Date().toISOString();
+			const { userId: _user, naturalKey: _key, ...saved } = found;
+			return saved;
 		},
 		async listCampaigns(userId, brandId) {
 			return campaigns.filter((item) => item.userId === userId && item.brandId === brandId).map(({ userId: _user, ...item }) => item);
