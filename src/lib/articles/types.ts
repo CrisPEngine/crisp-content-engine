@@ -458,5 +458,15 @@ export type ArticleRecord = {
 			baseUpdatedAt: string | null;
 			sourceArticleId: string;
 		};
+		publication?: {
+			state: 'ready_for_approval' | 'approved' | 'scheduled' | 'publishing' | 'published' | 'verified_live' | 'failed';
+			externalId: string | null;
+			revision: number | null;
+			idempotencyKey: string | null;
+			canonicalUrl: string | null;
+			verifiedAt: string | null;
+			error: string | null;
+			updatedAt: string;
+		};
 	};
 };

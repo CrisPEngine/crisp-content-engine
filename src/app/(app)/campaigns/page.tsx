@@ -37,6 +37,7 @@ export default function CampaignsPage() {
 	const [selected, setSelected] = useState<string[]>([]);
 	const [from, setFrom] = useState('');
 	const [to, setTo] = useState('');
+	const [board, setBoard] = useState<Array<{ id: string; title: string; publicationPhase?: string; publicationError?: string | null; status: string }>>([]);
 	const [connection, setConnection] = useState<{
 		searchConsole?: { state?: string; property?: string | null; retrievedAt?: string | null; error?: string | null; queryCount?: number; pageCount?: number };
 		analytics?: { state?: string; property?: string | null; retrievedAt?: string | null; error?: string | null; keyEvents?: string | null; organic?: { sessions?: number | null } | null };
@@ -54,6 +55,9 @@ export default function CampaignsPage() {
 			return;
 		}
 		setQueue(body as Queue);
+		const articles = await fetch(`/api/articles?brandId=${encodeURIComponent(id)}&pageSize=50`);
+		const listed = await articles.json();
+		setBoard(Array.isArray(listed.articles) ? listed.articles : []);
 	}, []);
 
 	useEffect(() => {
@@ -172,6 +176,18 @@ export default function CampaignsPage() {
 					<input className="input min-w-0 flex-1" value={problem} onChange={(event) => setProblem(event.target.value)} placeholder="Audience problem" aria-label="Audience problem" />
 					<button className="btn" type="button" disabled={busy || !title.trim() || !problem.trim()} onClick={() => void post('record', { title, audienceProblem: problem, demandClass: 'unvalidated' }, 'record', 'Saved as an unvalidated idea. It cannot be approved until it has evidence.')}>{pending === 'record' ? 'Saving…' : 'Save unvalidated idea'}</button>
 				</div>
+			</section>
+			<section className="card space-y-2 p-4 text-sm">
+				<h2 className="font-medium">Publication</h2>
+				<p className="text-text-soft">Approval, scheduling, and live verification stay separate. Nothing here publishes a page.</p>
+				{board.filter((article) => article.publicationPhase && article.publicationPhase !== 'ready_for_approval' || article.status === 'review' || article.status === 'approved').slice(0, 12).map((article) => (
+					<p key={article.id}>
+						<a href={`/content/articles/${article.id}`}>{article.title}</a>
+						{' · '}{article.publicationPhase?.replaceAll('_', ' ') ?? article.status}
+						{article.publicationError ? ` · ${article.publicationError}` : ''}
+					</p>
+				))}
+				{board.length === 0 ? <p className="text-text-soft">No articles are waiting for publication.</p> : null}
 			</section>
 			<section className="card space-y-2 p-4 text-sm">
 				<h2 className="font-medium">Production</h2>

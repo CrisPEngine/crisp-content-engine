@@ -99,6 +99,48 @@ export const payloadContentApiAdapter: DestinationAdapter = {
 		};
 	},
 
+	async readPublication(connection, externalId: string) {
+		const response = await destinationFetch(endpoint(connection, `/drafts/${encodeURIComponent(externalId)}/publication`), { headers: headers(connection, true) });
+		const payload = await readJson(response);
+		return { status: response.status, body: payload };
+	},
+
+	async publishArticle(connection, command: { externalId: string; baseRevision: number; baseUpdatedAt?: string | null; publishAt?: string | null; idempotencyKey: string }) {
+		if (!connection.credentials.publishKey) return { status: 403, body: { ok: false, code: 'publish_key_missing', published: false } };
+		const response = await destinationFetch(endpoint(connection, `/drafts/${encodeURIComponent(command.externalId)}/publish`), {
+			method: 'POST',
+			headers: { ...headers(connection, true), Authorization: `Bearer ${connection.credentials.publishKey}` },
+			body: JSON.stringify({
+				baseRevision: command.baseRevision,
+				baseUpdatedAt: command.baseUpdatedAt ?? undefined,
+				publishAt: command.publishAt ?? undefined,
+				idempotencyKey: command.idempotencyKey,
+			}),
+			timeoutMs: 45_000,
+		});
+		return { status: response.status, body: await readJson(response) };
+	},
+
+	async updatePublished(connection, command: { externalId: string; baseRevision: number; baseUpdatedAt?: string | null; idempotencyKey: string; title?: string; dek?: string; seoTitle?: string; seoDescription?: string; heroMediaId?: string | null }) {
+		if (!connection.credentials.publishKey) return { status: 403, body: { ok: false, code: 'publish_key_missing', published: false } };
+		const response = await destinationFetch(endpoint(connection, `/articles/${encodeURIComponent(command.externalId)}`), {
+			method: 'PATCH',
+			headers: { ...headers(connection, true), Authorization: `Bearer ${connection.credentials.publishKey}` },
+			body: JSON.stringify({
+				baseRevision: command.baseRevision,
+				baseUpdatedAt: command.baseUpdatedAt ?? undefined,
+				idempotencyKey: command.idempotencyKey,
+				title: command.title,
+				dek: command.dek,
+				seoTitle: command.seoTitle,
+				seoDescription: command.seoDescription,
+				heroMediaId: command.heroMediaId,
+			}),
+			timeoutMs: 45_000,
+		});
+		return { status: response.status, body: await readJson(response) };
+	},
+
 	async uploadMedia(connection, input) {
 		const form = new FormData();
 		form.set('file', new Blob([new Uint8Array(input.bytes)], { type: input.mimeType }), input.filename);

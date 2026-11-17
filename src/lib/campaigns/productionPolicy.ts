@@ -1,7 +1,8 @@
 import type { ContentOpportunity } from './types';
 
-const UNSAFE_CATEGORIES = new Set(['accuracy', 'research', 'product', 'citations', 'brand', 'conversion']);
-const TARGETED_CATEGORIES = new Set(['examples', 'structure']);
+const UNSAFE_CATEGORIES = new Set(['accuracy', 'research', 'product', 'citations', 'brand']);
+const TARGETED_CATEGORIES = new Set(['examples', 'structure', 'repetition', 'writing', 'seo', 'usefulness']);
+const MATERIAL_FINDINGS = new Set(['intro-weak', 'opening-guide', 'definition-thin', 'cta-weak', 'answers-indirect', 'example-conflict']);
 
 export type EditorialWork = {
 	acceptIds: string[];
@@ -28,7 +29,7 @@ export function classifyEditorialWork(input: {
 		if (proposal.needsResearch || proposal.needsBrandVerification) return false;
 		const finding = input.findings.find((item) => item.id === proposal.sourceFindingId);
 		if (!finding || finding.status !== 'open' || UNSAFE_CATEGORIES.has(finding.category)) return false;
-		if (finding.severity === 'minor') return true;
+		if (MATERIAL_FINDINGS.has(finding.id) || finding.severity === 'minor') return true;
 		return TARGETED_CATEGORIES.has(finding.category);
 	}).map((proposal) => proposal.id);
 	if (openCritical.length && acceptIds.length === 0) {

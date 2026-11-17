@@ -47,6 +47,12 @@ describe('production policy', () => {
 		});
 		expect(examples.acceptIds).toEqual(['p3']);
 		expect(examples.escalate).toBeNull();
+		const introduction = classifyEditorialWork({
+			correctionAttempts: 0,
+			findings: [{ id: 'intro-weak', severity: 'major', category: 'structure', status: 'open' }],
+			proposals: [{ id: 'p4', status: 'proposed', sourceFindingId: 'intro-weak' }],
+		});
+		expect(introduction.acceptIds).toEqual(['p4']);
 	});
 
 	it('stops at the weekly maximum and does not fill an empty queue', () => {
