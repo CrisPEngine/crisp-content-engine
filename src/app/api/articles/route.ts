@@ -60,6 +60,24 @@ export async function POST(request: Request) {
 			for (const id of body.ids.filter((item): item is string => typeof item === 'string')) articles.push(await restoreArticle(userId, id));
 			return NextResponse.json({ articles });
 		}
+		if (action === 'sync_payload' && text(body.brandId)) {
+			const { fetchPayloadCatalogue, syncPayloadCatalogue } = await import('@/lib/publishing/cmsSync');
+			const docs = await fetchPayloadCatalogue(text(body.origin) ?? 'https://folian.app');
+			return NextResponse.json(await syncPayloadCatalogue(userId, text(body.brandId)!, docs, text(body.origin) ?? 'https://folian.app'));
+		}
+		if (action === 'prepare_publish' && text(body.id)) {
+			const { getNativeContentStore } = await import('@/lib/media/store');
+			const { metadataApplyDecision } = await import('@/lib/publishing/payloadCatalogue');
+			const article = await getNativeContentStore().getArticle(userId, text(body.id)!);
+			if (!article || article.ownerUserId !== userId) return NextResponse.json({ error: 'Article not found.' }, { status: 404 });
+			const decision = metadataApplyDecision({
+				approved: article.approval.status === 'approved',
+				baseUpdatedAt: article.library?.proposal?.baseUpdatedAt ?? article.library?.cms?.updatedAt ?? null,
+				currentUpdatedAt: article.library?.cms?.updatedAt ?? null,
+				live: false,
+			});
+			return NextResponse.json({ ...decision, sent: false });
+		}
 		if (action === 'unpublish_check' && text(body.id)) {
 			const { getNativeContentStore } = await import('@/lib/media/store');
 			const article = await getNativeContentStore().getArticle(userId, text(body.id)!);

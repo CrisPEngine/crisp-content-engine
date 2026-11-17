@@ -6,6 +6,7 @@ import { requireIntelligenceUser } from '@/lib/intelligence/http';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 function fail(error: unknown) {
 	if (error instanceof CampaignError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
@@ -86,6 +87,11 @@ export async function POST(request: Request) {
 			if (typeof body.jobId !== 'string') return NextResponse.json({ error: 'Choose a production job.' }, { status: 400 });
 			return NextResponse.json({ job: await revalidateMetadataJob(userId, body.jobId) });
 		}
+		if (action === 'run_production') {
+			if (typeof body.jobId !== 'string') return NextResponse.json({ error: 'Choose a production job.' }, { status: 400 });
+			const { runProductionToApproval } = await import('@/lib/campaigns/workflow');
+			return NextResponse.json({ job: await runProductionToApproval(userId, body.jobId) });
+		}
 		if (action === 'discover') {
 			const source = body.source === 'community' || body.source === 'search_console' || body.source === 'themes' || body.source === 'market' ? body.source : 'search';
 			const opportunities = await discoverOpportunities(userId, {
@@ -94,6 +100,7 @@ export async function POST(request: Request) {
 				topic: typeof body.topic === 'string' ? body.topic : undefined,
 				startDate: typeof body.startDate === 'string' ? body.startDate : undefined,
 				endDate: typeof body.endDate === 'string' ? body.endDate : undefined,
+				areas: Array.isArray(body.areas) ? body.areas.filter((item): item is string => typeof item === 'string') : undefined,
 			});
 			return NextResponse.json({ opportunities });
 		}
