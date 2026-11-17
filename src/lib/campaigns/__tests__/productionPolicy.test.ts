@@ -45,10 +45,15 @@ describe('production policy', () => {
 	it('stops at the weekly maximum and does not fill an empty queue', () => {
 		expect(remainingCapacity(3, 3)).toBe(0);
 		expect(selectProductionOpportunities({
-			opportunities: [opportunity({ recommendedAction: 'update' }), opportunity({ id: 'opp-2', status: 'discovered' })],
+			opportunities: [opportunity({ recommendedAction: 'reject' }), opportunity({ id: 'opp-2', status: 'discovered' })],
 			opportunityIdsInProduction: [],
 			remaining: 3,
 		})).toEqual([]);
+		expect(selectProductionOpportunities({
+			opportunities: [opportunity({ id: 'update', recommendedAction: 'update' })],
+			opportunityIdsInProduction: [],
+			remaining: 1,
+		}).map((item) => item.id)).toEqual(['update']);
 		const chosen = selectProductionOpportunities({
 			opportunities: [opportunity({ id: 'low', score: 0.2 }), opportunity({ id: 'high', score: 0.9 }), opportunity({ id: 'used', score: 1 })],
 			opportunityIdsInProduction: ['used'],

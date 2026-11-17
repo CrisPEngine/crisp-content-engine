@@ -67,7 +67,7 @@ export async function POST(request: Request) {
 			return NextResponse.json({ test });
 		}
 		if (action === 'discover') {
-			const source = body.source === 'community' || body.source === 'search_console' || body.source === 'themes' ? body.source : 'search';
+			const source = body.source === 'community' || body.source === 'search_console' || body.source === 'themes' || body.source === 'market' ? body.source : 'search';
 			const opportunities = await discoverOpportunities(userId, {
 				brandId,
 				source,

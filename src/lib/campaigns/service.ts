@@ -153,7 +153,7 @@ export async function recordContentOpportunity(userId: string, input: {
 
 export async function discoverOpportunities(userId: string, input: {
 	brandId: string;
-	source: 'search' | 'community' | 'search_console' | 'themes';
+	source: 'search' | 'community' | 'search_console' | 'themes' | 'market';
 	topic?: string;
 	startDate?: string;
 	endDate?: string;
@@ -176,6 +176,37 @@ export async function discoverOpportunities(userId: string, input: {
 			businessRelevance: 0.4,
 			businessRationale: 'No performance metric is attached to this theme.',
 		}));
+		return persistCandidates(userId, input.brandId, candidates, repository, inventory);
+	}
+	if (input.source === 'market') {
+		const { marketQueries, candidatesFromMarket } = await import('./market');
+		const { selectSearchProvider } = await import('@/lib/research/search');
+		const provider = selectSearchProvider();
+		if (!provider.configured) throw new CampaignError('Market research needs Tavily or Brave.', 409, 'search_provider_not_configured');
+		const brain = await getIntelligenceStore().getBrandBrainById(userId, input.brandId);
+		const strategy = brain ? await getIntelligenceStore().getStrategyForBrand(userId, brain.id) : null;
+		const themes = (await getIntelligenceStore().listThemes(userId, input.brandId)).filter((theme) => theme.status === 'active');
+		const queries = marketQueries({
+			brandName: brain?.identity.name ?? '',
+			themes: themes.map((theme) => theme.title),
+			problems: strategy?.audienceProblems ?? [],
+			pillars: strategy?.contentPillars ?? [],
+			questions: themes.flatMap((theme) => theme.questionsToAnswer ?? []),
+		});
+		if (!queries.length) throw new CampaignError('Approved themes or audience problems are required before market research. No topics were invented.', 409, 'market_seeds_missing');
+		const retrievedAt = new Date().toISOString();
+		const researched = [];
+		for (const query of queries) {
+			const hits = await provider.search(query, 5, { depth: 'basic' }).catch(() => []);
+			researched.push({ query, hits });
+		}
+		let host: string | null = null;
+		try {
+			host = brain?.identity.website ? new URL(brain.identity.website.startsWith('http') ? brain.identity.website : `https://${brain.identity.website}`).host : null;
+		} catch {
+			host = null;
+		}
+		const candidates = candidatesFromMarket({ queries: researched, inventory, brandHost: host, retrievedAt });
 		return persistCandidates(userId, input.brandId, candidates, repository, inventory);
 	}
 	if (!input.topic?.trim() && input.source !== 'search_console') throw new CampaignError('Enter a topic to research.', 400, 'topic_required');

@@ -139,6 +139,7 @@ export default function CampaignsPage() {
 					<button className="btn" type="button" disabled={busy || !topic.trim()} onClick={() => void post('discover', { source: 'community', topic }, 'community', 'Public discussion links were saved. No demand volume was added.')}>{pending === 'community' ? 'Searching discussions…' : 'Search public discussions'}</button>
 					<button className="btn" type="button" disabled={busy} onClick={() => void post('discover', { source: 'search_console' }, 'gsc', 'Search Console queries were saved as observed demand.')}>{pending === 'gsc' ? 'Reading Search Console…' : 'Read Search Console'}</button>
 					<button className="btn" type="button" disabled={busy} onClick={() => void post('discover', { source: 'themes' }, 'themes', 'Approved themes were saved as strategic suggestions, not as measured demand.')}>{pending === 'themes' ? 'Reading themes…' : 'Use approved themes'}</button>
+					<button className="btn" type="button" disabled={busy} onClick={() => void post('discover', { source: 'market' }, 'market', 'External research was saved as inferred demand. No keyword volume was added.')}>{pending === 'market' ? 'Researching the market…' : 'Research beyond Search Console'}</button>
 				</div>
 			</section>
 			<section className="card space-y-3 p-4 text-sm">
