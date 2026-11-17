@@ -1,10 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { ContentCampaign, ContentOpportunity, ProviderAvailability } from '@/lib/campaigns/types';
+import type { ContentCampaign, ContentOpportunity, ProductionJob, ProviderAvailability } from '@/lib/campaigns/types';
 
 type Brand = { id: string; name: string };
-type Queue = { opportunities: ContentOpportunity[]; campaigns: ContentCampaign[]; providers: ProviderAvailability[] };
+type Queue = { opportunities: ContentOpportunity[]; campaigns: ContentCampaign[]; jobs: ProductionJob[]; providers: ProviderAvailability[] };
 
 const DEMAND_LABEL = {
 	observed: 'Observed demand',
@@ -160,6 +160,20 @@ export default function CampaignsPage() {
 					<input className="input min-w-0 flex-1" value={problem} onChange={(event) => setProblem(event.target.value)} placeholder="Audience problem" aria-label="Audience problem" />
 					<button className="btn" type="button" disabled={busy || !title.trim() || !problem.trim()} onClick={() => void post('record', { title, audienceProblem: problem, demandClass: 'unvalidated' }, 'record', 'Saved as an unvalidated idea. It cannot be approved until it has evidence.')}>{pending === 'record' ? 'Saving…' : 'Save unvalidated idea'}</button>
 				</div>
+			</section>
+			<section className="card space-y-2 p-4 text-sm">
+				<h2 className="font-medium">Production</h2>
+				<p className="text-text-soft">Auto-draft can prepare an article. It cannot publish the site.</p>
+				{(queue?.jobs ?? []).map((job) => (
+					<article key={job.id} className="border-t border-edge/50 pt-2">
+						<p>{job.stage} · {job.status.replaceAll('_', ' ')} · attempt {job.attempt} · cost ${job.costUsd.toFixed(4)}</p>
+						<p>{job.note}</p>
+						{job.error ? <p role="alert">{job.error}</p> : null}
+						{job.articleId ? <p>Article {job.articleId}</p> : null}
+						<button className="btn" type="button" disabled={busy || job.status === 'ready_for_approval' || job.status === 'paused'} onClick={() => void post('advance_production', { jobId: job.id }, job.id, 'The next production stage ran. Nothing was published.')}>{pending === job.id ? 'Running stage…' : 'Run next stage'}</button>
+					</article>
+				))}
+				{queue && queue.jobs.length === 0 ? <p className="text-text-soft">No production jobs.</p> : null}
 			</section>
 			{pending === 'load' ? <p className="text-sm">Loading opportunities…</p> : null}
 			<section className="space-y-3">
