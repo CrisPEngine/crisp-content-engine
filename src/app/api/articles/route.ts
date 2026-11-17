@@ -67,16 +67,14 @@ export async function POST(request: Request) {
 		}
 		if (action === 'prepare_publish' && text(body.id)) {
 			const { getNativeContentStore } = await import('@/lib/media/store');
-			const { metadataApplyDecision } = await import('@/lib/publishing/payloadCatalogue');
+			const { prepareMetadataPublish } = await import('@/lib/publishing/payloadCatalogue');
 			const article = await getNativeContentStore().getArticle(userId, text(body.id)!);
 			if (!article || article.ownerUserId !== userId) return NextResponse.json({ error: 'Article not found.' }, { status: 404 });
-			const decision = metadataApplyDecision({
-				approved: article.approval.status === 'approved',
-				baseUpdatedAt: article.library?.proposal?.baseUpdatedAt ?? article.library?.cms?.updatedAt ?? null,
+			return NextResponse.json(prepareMetadataPublish({
+				proposalStatus: article.library?.proposal?.status ?? null,
+				baseUpdatedAt: article.library?.proposal?.baseUpdatedAt ?? null,
 				currentUpdatedAt: article.library?.cms?.updatedAt ?? null,
-				live: false,
-			});
-			return NextResponse.json({ ...decision, sent: false });
+			}));
 		}
 		if (action === 'unpublish_check' && text(body.id)) {
 			const { getNativeContentStore } = await import('@/lib/media/store');

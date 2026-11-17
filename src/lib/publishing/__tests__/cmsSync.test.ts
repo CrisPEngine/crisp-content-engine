@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { setNativeContentStoreForTests, createMemoryNativeContentStore } from '@/lib/media/store';
 import type { ArticleRecord } from '@/lib/articles/types';
 import { syncPayloadCatalogue } from '@/lib/publishing/cmsSync';
-import { metadataApplyDecision } from '@/lib/publishing/payloadCatalogue';
+import { metadataApplyDecision, prepareMetadataPublish } from '@/lib/publishing/payloadCatalogue';
 import { researchAreaQueries } from '@/lib/campaigns/market';
 
 const doc = {
@@ -67,6 +67,8 @@ describe('payload catalogue sync', () => {
 		expect(metadataApplyDecision({ approved: false, baseUpdatedAt: 'a', currentUpdatedAt: 'a', live: true }).apply).toBe(false);
 		expect(metadataApplyDecision({ approved: true, baseUpdatedAt: 'a', currentUpdatedAt: 'b', live: true }).apply).toBe(false);
 		expect(metadataApplyDecision({ approved: true, baseUpdatedAt: 'a', currentUpdatedAt: 'a', live: false })).toMatchObject({ apply: false });
+		expect(prepareMetadataPublish({ proposalStatus: null, baseUpdatedAt: null, currentUpdatedAt: '2026-10-28T19:01:04.346Z' })).toMatchObject({ apply: false, sent: false });
+		expect(prepareMetadataPublish({ proposalStatus: 'pending', baseUpdatedAt: '2026-10-28T19:01:04.346Z', currentUpdatedAt: '2026-10-28T19:01:04.346Z' }).apply).toBe(false);
 	});
 
 	it('turns research areas into questions rather than article titles', () => {
