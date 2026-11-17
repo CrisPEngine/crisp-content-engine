@@ -137,21 +137,50 @@ async function runStage(userId: string, job: ProductionJob, opportunity: { title
 		return { articleId, note: 'Editorial review finished.', costUsd: reviewed.workspace?.generation.estimatedCostUsd ?? 0 };
 	}
 	if (job.stage === 'corrections') {
-		const current = (await workspace.getWorkspaceArticle(userId, articleId)).article;
-		const desk = current.workspace?.editorialDesk;
-		const decision = classifyEditorialWork({
-			proposals: desk?.proposals ?? [],
-			findings: (desk?.critique?.findings ?? []).map((finding) => ({ id: finding.id, severity: finding.severity, category: finding.category, status: finding.status })),
-			correctionAttempts: job.stageLog.filter((entry) => entry.stage === 'corrections').length,
-		});
-		if (decision.escalate) return { articleId, note: decision.escalate, escalate: decision.escalate };
-		for (const id of decision.acceptIds) await workspace.decideEditorialProposal(userId, articleId, id, 'accepted');
-		if (decision.acceptIds.length) {
+		let article = await workspace.critiqueWorkspaceArticle(userId, articleId);
+		let applied = 0;
+		let revision: number | null = article.workspace?.revision?.number ?? null;
+		for (let pass = 0; pass < 2; pass += 1) {
+			const findings = article.workspace?.editorialDesk?.critique?.findings ?? [];
+			for (const finding of findings) {
+				if (finding.status !== 'open' || finding.category !== 'examples') continue;
+				const queued = (article.workspace?.editorialDesk?.proposals ?? []).some((item) => item.sourceFindingId === finding.id && item.status !== 'applied');
+				if (queued) continue;
+				const instruction = finding.category === 'examples'
+					? `Resolve only this fictional contradiction: ${finding.evidence.join('; ')}. ${finding.recommendation} Change only those passages. Do not rewrite unrelated sections, and do not add sources, statistics, or product capabilities.`
+					: `${finding.recommendation} Change only the section this finding names. Do not add sources, statistics, or product capabilities.`;
+				article = await workspace.queueEditorialChange(userId, articleId, {
+					findingId: finding.id,
+					instruction,
+					reason: finding.explanation,
+					section: finding.section,
+					status: 'proposed',
+				});
+			}
+			const desk = article.workspace?.editorialDesk;
+			const decision = classifyEditorialWork({
+				proposals: desk?.proposals ?? [],
+				findings: (desk?.critique?.findings ?? []).map((finding) => ({ id: finding.id, severity: finding.severity, category: finding.category, status: finding.status })),
+				correctionAttempts: pass,
+			});
+			if (decision.escalate) return { articleId, note: decision.escalate, escalate: decision.escalate };
+			if (!decision.acceptIds.length) break;
+			for (const id of decision.acceptIds) article = await workspace.decideEditorialProposal(userId, articleId, id, 'accepted');
 			await workspace.previewAcceptedEditorialProposals(userId, articleId);
-			await workspace.applyAcceptedEditorialProposals(userId, articleId);
-			return { articleId, note: `Applied ${decision.acceptIds.length} minor correction${decision.acceptIds.length === 1 ? '' : 's'}.` };
+			const result = await workspace.applyAcceptedEditorialProposals(userId, articleId);
+			article = result.article;
+			revision = article.workspace?.revision?.number ?? revision;
+			applied += decision.acceptIds.length;
 		}
-		return { articleId, note: 'No safe automatic corrections were available.' };
+		await workspace.revalidateEditorialFindings(userId, articleId);
+		const openExamples = (article.workspace?.editorialDesk?.critique?.findings ?? []).filter((finding) => finding.id === 'example-conflict' && finding.status === 'open');
+		const note = openExamples.length
+			? 'A fictional contradiction remains after two correction passes.'
+			: applied
+				? `Applied ${applied} targeted correction${applied === 1 ? '' : 's'} on revision ${revision ?? 'current'}. Editorial review ran again.`
+				: 'Editorial review ran again. The examples clash did not survive revalidation, so the draft was not rewritten.';
+		if (openExamples.length) return { articleId, note, escalate: note };
+		return { articleId, note };
 	}
 	if (job.stage === 'seo') {
 		if (opportunity.recommendedAction === 'update') {
@@ -179,7 +208,7 @@ async function runStage(userId: string, job: ProductionJob, opportunity: { title
 			if (!validation.pass) return { articleId, note: validation.checks.filter((check) => !check.pass).map((check) => check.detail).join(' '), escalate: 'The metadata proposal failed validation.' };
 			return { articleId, note: 'Metadata checks passed. The published article was not changed.' };
 		}
-		const article = (await workspace.getWorkspaceArticle(userId, articleId)).article;
+		const article = await workspace.revalidateEditorialFindings(userId, articleId);
 		const { articleApprovalGate, openCriticalFindings, ensureWorkspace } = await import('@/lib/articles/meta');
 		const gate = articleApprovalGate(article);
 		const critical = openCriticalFindings(ensureWorkspace(article));
@@ -303,8 +332,15 @@ async function proposalCost(userId: string, since: string): Promise<number | nul
 }
 
 export async function runProductionToApproval(userId: string, jobId: string): Promise<ProductionJob> {
-	let job = await getOpportunityRepository().getJob(userId, jobId);
+	const repository = getOpportunityRepository();
+	let job = await repository.getJob(userId, jobId);
 	if (!job) throw new CampaignError('Production job not found.', 404, 'job_missing');
+	if (job.status === 'needs_attention') {
+		job.status = 'queued';
+		job.error = null;
+		job.note = 'Resumed the same production job. No new article was created.';
+		job = await repository.saveJob(userId, job);
+	}
 	for (let step = 0; step < 12; step += 1) {
 		if (job.status === 'ready_for_approval' || job.status === 'needs_attention' || job.status === 'completed' || job.status === 'paused') return job;
 		job = await advanceProductionJob(userId, job.id);

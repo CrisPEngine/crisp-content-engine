@@ -21,6 +21,8 @@ function names(body: string): string[] {
 
 function nearDuplicate(a: string, b: string): boolean {
 	if (Math.abs(a.length - b.length) > 1) return false;
+	const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+	if (longer === `${shorter}d` || longer === `${shorter}ed` || longer === `${shorter}s` || longer === `${shorter}es` || longer === `${shorter}ing`) return false;
 	let edits = 0;
 	for (let index = 0; index < Math.max(a.length, b.length); index += 1) if (a[index] !== b[index]) edits += 1;
 	return edits === 1;

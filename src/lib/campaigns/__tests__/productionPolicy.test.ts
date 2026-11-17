@@ -40,6 +40,13 @@ describe('production policy', () => {
 		});
 		expect(blocked.acceptIds).toEqual([]);
 		expect(blocked.escalate).toContain('accuracy');
+		const examples = classifyEditorialWork({
+			correctionAttempts: 0,
+			findings: [{ id: 'example-conflict', severity: 'critical', category: 'examples', status: 'open' }],
+			proposals: [{ id: 'p3', status: 'proposed', sourceFindingId: 'example-conflict' }],
+		});
+		expect(examples.acceptIds).toEqual(['p3']);
+		expect(examples.escalate).toBeNull();
 	});
 
 	it('stops at the weekly maximum and does not fill an empty queue', () => {

@@ -1190,6 +1190,8 @@ export async function classifyWorkspaceArticle(ownerUserId: string, articleId: s
 		if (workspace.categorySuggestion?.categoryId === categoryId && !article.tags.length) article.tags = workspace.categorySuggestion.tags;
 		workspace.categorySuggestion = null;
 		article.workspace = workspace;
+		const { retireSatisfiedFindings } = await import('@/lib/articles/meta');
+		retireSatisfiedFindings(article);
 		return persist(article);
 	}
 	const destination = await destinationForBrand(ownerUserId, article.brandId, workspace.destinationId).catch(asWorkflowError);
@@ -2203,6 +2205,13 @@ export async function restoreWorkspaceRevision(ownerUserId: string, articleId: s
 	workspace.approvedAt = null;
 	workspace.approvedRevisionId = null;
 	article.workspace = workspace;
+	return persist(article);
+}
+
+export async function revalidateEditorialFindings(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const { retireSatisfiedFindings } = await import('@/lib/articles/meta');
+	if (!retireSatisfiedFindings(article)) return article;
 	return persist(article);
 }
 

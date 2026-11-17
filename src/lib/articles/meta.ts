@@ -221,6 +221,43 @@ export function openCriticalFindings(workspace: ArticleWorkspace): ArticleEditor
 	return workspace.editorial.findings.filter((finding) => finding.severity === 'critical' && isOpenFinding(finding));
 }
 
+/** Moves findings that the current article data no longer supports into review history. */
+export function retireSatisfiedFindings(article: ArticleRecord): boolean {
+	const workspace = article.workspace;
+	if (!workspace) return false;
+	const categoryId = article.categories?.find((category) => category.trim());
+	const now = new Date().toISOString();
+	const retired: ArticleEditorialFinding[] = [];
+	const active: ArticleEditorialFinding[] = [];
+	for (const finding of workspace.editorial.findings) {
+		const categoryAssigned = finding.code === 'category_missing' && Boolean(categoryId);
+		if (categoryAssigned && isOpenFinding(finding)) {
+			retired.push({
+				...finding,
+				decision: 'resolved_auto',
+				decidedAt: now,
+				note: 'A destination category is assigned. This finding stays in the review history and no longer blocks production.',
+			});
+		} else {
+			active.push(finding);
+		}
+	}
+	if (!retired.length) return false;
+	workspace.editorial.findings = active;
+	workspace.editorial.history = [
+		...(workspace.editorial.history ?? []),
+		{
+			revisionId: workspace.revision?.id ?? 'legacy',
+			revisionNumber: workspace.revision?.number ?? 0,
+			contentHash: workspace.revision?.contentHash ?? '',
+			ranAt: now,
+			findings: retired,
+		},
+	].slice(-12);
+	workspace.editorial.status = editorialStatusFromFindings(active, workspace.editorial.exhausted);
+	return true;
+}
+
 export function editorialStatusFromFindings(findings: ArticleEditorialFinding[], exhausted: boolean): ArticleWorkspace['editorial']['status'] {
 	const open = findings.filter(isOpenFinding);
 	if (open.length === 0) return 'ready';
