@@ -70,6 +70,20 @@ export function matchCatalogueRecord(record: CatalogueRecord, existing: Array<{ 
 	};
 }
 
+export function prepareMetadataPublish(input: {
+	proposalStatus: string | null;
+	baseUpdatedAt: string | null;
+	currentUpdatedAt: string | null;
+}) {
+	const decision = metadataApplyDecision({
+		approved: input.proposalStatus === 'approved',
+		baseUpdatedAt: input.baseUpdatedAt,
+		currentUpdatedAt: input.currentUpdatedAt,
+		live: false,
+	});
+	return { ...decision, sent: false as const };
+}
+
 export function metadataApplyDecision(input: {
 	approved: boolean;
 	baseUpdatedAt: string | null;
