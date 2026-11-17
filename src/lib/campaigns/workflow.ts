@@ -112,7 +112,7 @@ async function runStage(userId: string, job: ProductionJob, opportunity: { title
 			const proposal = await writeUpdateProposal({ sourceUrl: evidenceUrls[0] ?? null, scope, measured, topic: opportunity.title, userId });
 			await workspace.saveArticleDraft(userId, articleId, { body: proposal.body });
 			await workspace.approveArticleBrief(userId, articleId);
-			return { articleId, note: `A ${scope} proposal was saved on a new draft. The published article was not changed.`, costUsd: proposal.costUsd, modelCall: true };
+			return { articleId, note: `A ${scope} proposal was saved on a new draft. The published article was not changed.`, costUsd: proposal.costUsd ?? undefined, modelCall: true };
 		}
 		await workspace.enhanceArticleBrief(userId, articleId);
 		const approved = await workspace.approveArticleBrief(userId, articleId);
