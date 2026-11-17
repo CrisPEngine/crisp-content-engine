@@ -122,6 +122,28 @@ export type ProviderAvailability = {
 	error?: string | null;
 };
 
+export type ProductionStage = 'research' | 'brief' | 'draft' | 'editorial' | 'corrections' | 'seo' | 'hero' | 'quality' | 'approval';
+export type ProductionJobStatus = 'queued' | 'running' | 'needs_attention' | 'ready_for_approval' | 'failed' | 'paused';
+
+export type ProductionStageLog = { stage: ProductionStage; at: string; note: string };
+
+export type ProductionJob = {
+	id: string;
+	brandId: string;
+	campaignId: string | null;
+	opportunityId: string;
+	articleId: string | null;
+	stage: ProductionStage;
+	status: ProductionJobStatus;
+	attempt: number;
+	note: string;
+	error: string | null;
+	costUsd: number;
+	stageLog: ProductionStageLog[];
+	createdAt: string;
+	updatedAt: string;
+};
+
 export type AnalyticsBinding = {
 	brandId: string;
 	searchConsoleSiteUrl: string | null;

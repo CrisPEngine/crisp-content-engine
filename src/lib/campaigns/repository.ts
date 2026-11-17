@@ -1,5 +1,5 @@
 import { getSupabaseService } from '@/lib/supabaseService';
-import type { AnalyticsBinding, ApprovalMode, CampaignStatus, ContentCampaign, ContentOpportunity, DemandClass, EvidenceConfidence, OpportunityAction, OpportunityEvidence, OpportunityStatus, ScoreResult, OverlapAssessment } from './types';
+import type { AnalyticsBinding, ApprovalMode, CampaignStatus, ContentCampaign, ContentOpportunity, DemandClass, EvidenceConfidence, OpportunityAction, OpportunityEvidence, OpportunityStatus, ProductionJob, ScoreResult, OverlapAssessment } from './types';
 
 export type NewOpportunity = Omit<ContentOpportunity, 'id' | 'createdAt' | 'updatedAt'> & { naturalKey: string };
 export type NewCampaign = Omit<ContentCampaign, 'id' | 'createdAt' | 'updatedAt' | 'autoPublishEnabled'>;
@@ -14,6 +14,10 @@ export type OpportunityRepository = {
 	saveCampaign(userId: string, campaign: NewCampaign): Promise<ContentCampaign>;
 	getBinding(userId: string, brandId: string): Promise<AnalyticsBinding | null>;
 	recordAnalyticsCheck(userId: string, brandId: string, patch: Partial<AnalyticsBinding>): Promise<AnalyticsBinding>;
+	listJobs(userId: string, brandId: string): Promise<ProductionJob[]>;
+	getJob(userId: string, id: string): Promise<ProductionJob | null>;
+	getJobByOpportunity(userId: string, opportunityId: string): Promise<ProductionJob | null>;
+	saveJob(userId: string, job: ProductionJob): Promise<ProductionJob>;
 };
 
 type OpportunityRow = {
@@ -212,6 +216,75 @@ export function createSupabaseOpportunityRepository(): OpportunityRepository {
 			if (error) throw new Error(error.message);
 			return bindingFromRow(data);
 		},
+		async listJobs(userId, brandId) {
+			const { data, error } = await db().from('content_production_jobs').select('*').eq('user_id', userId).eq('brand_id', brandId).order('updated_at', { ascending: false });
+			if (error) throw new Error(error.message);
+			return (data ?? []).map(jobFromRow);
+		},
+		async getJob(userId, id) {
+			const { data, error } = await db().from('content_production_jobs').select('*').eq('user_id', userId).eq('id', id).maybeSingle();
+			if (error) throw new Error(error.message);
+			return data ? jobFromRow(data) : null;
+		},
+		async getJobByOpportunity(userId, opportunityId) {
+			const { data, error } = await db().from('content_production_jobs').select('*').eq('user_id', userId).eq('opportunity_id', opportunityId).maybeSingle();
+			if (error) throw new Error(error.message);
+			return data ? jobFromRow(data) : null;
+		},
+		async saveJob(userId, job) {
+			const { data, error } = await db().from('content_production_jobs').upsert({
+				id: job.id,
+				user_id: userId,
+				brand_id: job.brandId,
+				campaign_id: job.campaignId,
+				opportunity_id: job.opportunityId,
+				article_id: job.articleId,
+				stage: job.stage,
+				status: job.status,
+				attempt: job.attempt,
+				note: job.note,
+				last_error: job.error,
+				cost_usd: job.costUsd,
+				stage_log: job.stageLog,
+				updated_at: new Date().toISOString(),
+			}, { onConflict: 'id' }).select('*').single();
+			if (error) throw new Error(error.message);
+			return jobFromRow(data);
+		},
+	};
+}
+
+function jobFromRow(row: {
+	id: string;
+	brand_id: string;
+	campaign_id: string | null;
+	opportunity_id: string;
+	article_id: string | null;
+	stage: ProductionJob['stage'];
+	status: ProductionJob['status'];
+	attempt: number;
+	note: string;
+	last_error: string | null;
+	cost_usd: number;
+	stage_log: ProductionJob['stageLog'];
+	created_at: string;
+	updated_at: string;
+}): ProductionJob {
+	return {
+		id: row.id,
+		brandId: row.brand_id,
+		campaignId: row.campaign_id,
+		opportunityId: row.opportunity_id,
+		articleId: row.article_id,
+		stage: row.stage,
+		status: row.status,
+		attempt: row.attempt,
+		note: row.note,
+		error: row.last_error,
+		costUsd: Number(row.cost_usd ?? 0),
+		stageLog: row.stage_log ?? [],
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
 	};
 }
 
@@ -272,6 +345,7 @@ export function createMemoryOpportunityRepository(): OpportunityRepository {
 	const opportunities: Array<ContentOpportunity & { userId: string; naturalKey: string }> = [];
 	const campaigns: Array<ContentCampaign & { userId: string }> = [];
 	const bindings: Array<AnalyticsBinding & { userId: string }> = [];
+	const jobs: Array<ProductionJob & { userId: string }> = [];
 	return {
 		async list(userId, brandId) {
 			return opportunities.filter((item) => item.userId === userId && item.brandId === brandId).map(({ userId: _user, naturalKey: _key, ...item }) => item);
@@ -342,6 +416,29 @@ export function createMemoryOpportunityRepository(): OpportunityRepository {
 			};
 			if (current) Object.assign(current, next);
 			else bindings.push(next);
+			const { userId: _user, ...item } = next;
+			return item;
+		},
+		async listJobs(userId, brandId) {
+			return jobs.filter((item) => item.userId === userId && item.brandId === brandId).map(({ userId: _user, ...item }) => item);
+		},
+		async getJob(userId, id) {
+			const found = jobs.find((item) => item.userId === userId && item.id === id);
+			if (!found) return null;
+			const { userId: _user, ...item } = found;
+			return item;
+		},
+		async getJobByOpportunity(userId, opportunityId) {
+			const found = jobs.find((item) => item.userId === userId && item.opportunityId === opportunityId);
+			if (!found) return null;
+			const { userId: _user, ...item } = found;
+			return item;
+		},
+		async saveJob(userId, job) {
+			const current = jobs.find((item) => item.userId === userId && item.id === job.id);
+			const next = { ...job, userId, updatedAt: new Date().toISOString() };
+			if (current) Object.assign(current, next);
+			else jobs.push(next);
 			const { userId: _user, ...item } = next;
 			return item;
 		},

@@ -11,6 +11,7 @@ export type DiscoveredCandidate = {
 	demandClass: DemandClass;
 	discoverySource: string;
 	naturalKey: string;
+	forcedOverlap?: import('./types').OverlapAssessment;
 	evidence: Array<{ sourceKind: string; url: string | null; excerpt: string | null; observedAt: string | null; metrics: MeasuredSearch | null }>;
 	brandRelevance: number;
 	brandRationale: string;
@@ -140,7 +141,7 @@ export async function discoverSearchConsole(input: {
 }
 
 export function scoreCandidate(candidate: DiscoveredCandidate, inventory: InventoryArticle[]) {
-	const overlap = assessOverlap({ title: candidate.title, intent: candidate.searchIntent }, inventory);
+	const overlap = candidate.forcedOverlap ?? assessOverlap({ title: candidate.title, intent: candidate.searchIntent }, inventory);
 	const confidence = evidenceConfidence(candidate.demandClass, candidate.evidence.length, candidate.evidence.find((item) => item.metrics)?.metrics ?? null);
 	const scored = scoreOpportunity({
 		demandClass: candidate.demandClass,

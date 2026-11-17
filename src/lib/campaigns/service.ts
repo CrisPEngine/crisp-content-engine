@@ -7,9 +7,11 @@ import { ANALYTICS_SCOPE, SEARCH_CONSOLE_SCOPE, GoogleProviderError, getGoogleAc
 import { resolveBrandProperties } from './googleConfig';
 import { providerStatus } from './providers';
 import { fetchSearchConsoleReport, type SearchConsoleReport } from './searchConsole';
-import { discoverSearchConsole, discoverSearchTopic, scoreCandidate, type DiscoveredCandidate } from './discovery';
+import { discoverSearchTopic, scoreCandidate, type DiscoveredCandidate } from './discovery';
+import { selectObservedOpportunities } from './selection';
 import { evidenceConfidence, scoreOpportunity } from './scoring';
 import { getOpportunityRepository, type NewCampaign, type OpportunityRepository } from './repository';
+import type { BrandBrain } from '@/lib/intelligence/types';
 import type { ContentCampaign, ContentOpportunity, DemandClass, InventoryArticle, OpportunityStatus } from './types';
 
 export class CampaignError extends Error {
@@ -20,6 +22,37 @@ export class CampaignError extends Error {
 		this.status = status;
 		this.code = code;
 	}
+}
+
+async function verifiedCapabilityNames(userId: string, brain: BrandBrain, topic: string): Promise<string[]> {
+	const { loadResolvedIntelligence } = await import('@/lib/intelligence/knowledge/load');
+	const resolved = await loadResolvedIntelligence(userId, brain, topic || brain.identity.name, 'article');
+	return resolved.verified.map((item) => item.name).filter(Boolean);
+}
+
+async function attachSearchCoverage(candidates: DiscoveredCandidate[]): Promise<DiscoveredCandidate[]> {
+	const targets = candidates.filter((candidate) => candidate.forcedOverlap?.decision === 'create').slice(0, 4);
+	if (!targets.length) return candidates;
+	const { selectSearchProvider } = await import('@/lib/research/search');
+	const provider = selectSearchProvider();
+	if (!provider.configured) return candidates;
+	for (const candidate of targets) {
+		const hits = await provider.search(candidate.title, 4, { depth: 'basic' }).catch(() => []);
+		const observedAt = new Date().toISOString();
+		for (const hit of hits) {
+			candidate.evidence.push({
+				sourceKind: 'search',
+				url: hit.url,
+				excerpt: hit.snippet?.slice(0, 500) ?? hit.title ?? null,
+				observedAt: hit.publishedAt ?? observedAt,
+				metrics: null,
+			});
+		}
+		if (hits.length) {
+			candidate.businessRationale = `${candidate.businessRationale} ${hits.length} public pages were retrieved for coverage. No search volume was supplied.`;
+		}
+	}
+	return candidates;
 }
 
 async function inventoryFor(userId: string, brandId: string): Promise<InventoryArticle[]> {
@@ -60,14 +93,15 @@ async function persistCandidates(userId: string, brandId: string, candidates: Di
 	return saved;
 }
 
-export async function listContentOpportunities(userId: string, brandId: string): Promise<{ opportunities: ContentOpportunity[]; campaigns: ContentCampaign[]; providers: ReturnType<typeof providerStatus> }> {
+export async function listContentOpportunities(userId: string, brandId: string): Promise<{ opportunities: ContentOpportunity[]; campaigns: ContentCampaign[]; jobs: import('./types').ProductionJob[]; providers: ReturnType<typeof providerStatus> }> {
 	const repository = getOpportunityRepository();
-	const [opportunities, campaigns, binding] = await Promise.all([
+	const [opportunities, campaigns, binding, jobs] = await Promise.all([
 		repository.list(userId, brandId),
 		repository.listCampaigns(userId, brandId),
 		repository.getBinding(userId, brandId),
+		repository.listJobs(userId, brandId),
 	]);
-	return { opportunities, campaigns, providers: providerStatus({ brandId, binding }) };
+	return { opportunities, campaigns, jobs, providers: providerStatus({ brandId, binding }) };
 }
 
 export async function recordContentOpportunity(userId: string, input: {
@@ -152,8 +186,35 @@ export async function discoverOpportunities(userId: string, input: {
 			const binding = await repository.getBinding(userId, input.brandId);
 			const properties = resolveBrandProperties(input.brandId, process.env, binding);
 			if (!properties.searchConsoleSiteUrl) throw new GoogleProviderError('This brand has no Search Console property.', 'search_console_not_bound');
-			const accessToken = await getGoogleAccessToken({ env: process.env, scopes: [SEARCH_CONSOLE_SCOPE] });
-			const candidates = await discoverSearchConsole({ siteUrl: properties.searchConsoleSiteUrl, startDate: start, endDate: end, accessToken });
+			const accessToken = await getGoogleAccessToken({ env: process.env, scopes: [SEARCH_CONSOLE_SCOPE, ANALYTICS_SCOPE] });
+			const report = await fetchSearchConsoleReport({
+				siteUrl: properties.searchConsoleSiteUrl,
+				startDate: start,
+				endDate: end,
+				accessToken,
+				maxRows: 250,
+			});
+			const analytics = properties.ga4PropertyId
+				? await fetchGa4Report({ propertyId: properties.ga4PropertyId, startDate: start, endDate: end, accessToken, maxRows: 100 }).catch(() => null)
+				: null;
+			const brain = await getIntelligenceStore().getBrandBrainById(userId, input.brandId);
+			const verified = brain ? await verifiedCapabilityNames(userId, brain, input.topic ?? '') : [];
+			const themes = (await getIntelligenceStore().listThemes(userId, input.brandId)).filter((theme) => theme.status === 'active').map((theme) => theme.title);
+			let candidates = selectObservedOpportunities({
+				siteUrl: report.siteUrl,
+				startDate: start,
+				endDate: end,
+				retrievedAt: report.retrievedAt,
+				queries: report.queries,
+				queryPages: report.queryPages,
+				pages: report.pages,
+				inventory,
+				brandTerms: [brain?.identity.name ?? ''].filter(Boolean),
+				verifiedCapabilities: verified,
+				themes,
+				landingPages: analytics?.landingPages ?? [],
+			});
+			candidates = await attachSearchCoverage(candidates);
 			return persistCandidates(userId, input.brandId, candidates, repository, inventory);
 		} catch (error) {
 			throw campaignFromGoogle(error);

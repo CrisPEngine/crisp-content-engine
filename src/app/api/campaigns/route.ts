@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { CampaignError, createContentCampaign, decideOpportunity, discoverOpportunities, listContentOpportunities, recordContentOpportunity, testBrandAnalytics } from '@/lib/campaigns/service';
+import { advanceProductionJob, scheduleCampaign, startProductionJob } from '@/lib/campaigns/workflow';
 import type { ApprovalMode, CampaignStatus, DemandClass, OpportunityStatus } from '@/lib/campaigns/types';
 import { requireIntelligenceUser } from '@/lib/intelligence/http';
 
@@ -44,6 +45,18 @@ export async function POST(request: Request) {
 				excerpt: typeof body.excerpt === 'string' ? body.excerpt : undefined,
 			});
 			return NextResponse.json({ opportunity });
+		}
+		if (action === 'start_production') {
+			if (typeof body.opportunityId !== 'string') return NextResponse.json({ error: 'Choose an opportunity.' }, { status: 400 });
+			return NextResponse.json({ job: await startProductionJob(userId, body.opportunityId, typeof body.campaignId === 'string' ? body.campaignId : null) });
+		}
+		if (action === 'advance_production') {
+			if (typeof body.jobId !== 'string') return NextResponse.json({ error: 'Choose a production job.' }, { status: 400 });
+			return NextResponse.json({ job: await advanceProductionJob(userId, body.jobId) });
+		}
+		if (action === 'schedule_campaign') {
+			if (!brandId || typeof body.campaignId !== 'string') return NextResponse.json({ error: 'Choose a campaign.' }, { status: 400 });
+			return NextResponse.json(await scheduleCampaign(userId, brandId, body.campaignId));
 		}
 		if (action === 'test_analytics') {
 			if (!brandId) return NextResponse.json({ error: 'Choose a brand.' }, { status: 400 });
