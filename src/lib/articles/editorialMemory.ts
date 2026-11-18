@@ -160,7 +160,7 @@ export function selectEditorialContext(article: ArticleRecord, kind: EditorialCo
 		sectionHeading: heading,
 		passage,
 		adjacent: kind === 'introduction' ? headings(article.body)[0] ?? null : null,
-		finding: finding ? { code: finding.code, instruction: finding.instruction, evidence: finding.evidence[0] ?? null } : null,
+		finding: finding ? { code: finding.code, instruction: finding.instruction, evidence: finding.evidence?.[0] ?? null } : null,
 		sources: kind === 'introduction' || kind === 'link' || kind === 'repetition' ? [] : sources,
 		claims,
 		verifiedNames: kind === 'product_mention' || kind === 'full_review' ? workspace?.intelligence?.verifiedNames ?? [] : [],

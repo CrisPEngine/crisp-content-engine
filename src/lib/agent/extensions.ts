@@ -481,16 +481,18 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 			const articleId = text(input, 'articleId');
 			const original = text(input, 'original');
 			const replacement = text(input, 'replacement');
-			if (!articleId || !original || !replacement || !text(input, 'revisionId') || !text(input, 'findingCode')) {
+			const revisionId = text(input, 'revisionId');
+			const findingCode = text(input, 'findingCode');
+			if (!articleId || !original || !replacement || !revisionId || !findingCode) {
 				throw new AgentError('invalid_input', 'articleId, revisionId, findingCode, original, and replacement are required.', 400);
 			}
 			const { applyWorkspaceEditorialPatch } = await import('@/lib/articles/workspace');
 			const result = await applyWorkspaceEditorialPatch(ctx.credential.ownerUserId, articleId, {
-				revisionId: text(input, 'revisionId'),
+				revisionId,
 				section: text(input, 'section') || null,
 				original,
 				replacement,
-				findingCode: text(input, 'findingCode'),
+				findingCode,
 				expectedImprovement: text(input, 'expectedImprovement') || 'Targeted correction.',
 				verifiedClaims: Array.isArray(input.verifiedClaims) ? input.verifiedClaims.filter((item): item is string => typeof item === 'string') : [],
 				verifiedFacts: Array.isArray(input.verifiedFacts) ? input.verifiedFacts.filter((item): item is string => typeof item === 'string') : [],
