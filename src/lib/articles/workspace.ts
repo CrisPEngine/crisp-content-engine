@@ -67,6 +67,8 @@ import {
 	updateNotes,
 	type RelevanceVerdict,
 } from '@/lib/articles/researchPackage';
+import { instructionRequests, buildEditorialSnapshot, recordEditorialOperation, selectEditorialContext, editorialLimitReason, costComparison } from '@/lib/articles/editorialMemory';
+import { validateEditorialPatch, type EditorialPatch } from '@/lib/articles/editorialPatch';
 import { commitRevision, ensureRevision, listRevisions, revisionBody } from '@/lib/articles/revisions';
 import { reviewCurrentRevision } from '@/lib/articles/reviewRun';
 import { articleWordCount, stripCmsTitleHeading, validateArticleStructure } from '@/lib/articles/structure';
@@ -2215,6 +2217,43 @@ export async function revalidateEditorialFindings(ownerUserId: string, articleId
 	return persist(article);
 }
 
+export async function applyWorkspaceEditorialPatch(ownerUserId: string, articleId: string, patch: EditorialPatch): Promise<{ article: ArticleRecord; published: false; contextCharacters: number; cost: ReturnType<typeof costComparison> }> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const workspace = ensureWorkspace(article);
+	const limit = editorialLimitReason(workspace.editorialOperations ?? []);
+	if (limit) throw new ArticleWorkflowError(limit, 409, 'editorial_limit');
+	const revision = ensureRevision(article);
+	if (!revision) throw new ArticleWorkflowError('There is no revision to patch.', 400, 'draft_missing');
+	const decision = validateEditorialPatch(article.body, revision.id, patch);
+	const context = selectEditorialContext(article, patch.findingCode.includes('PRODUCT') || patch.findingCode.includes('product') ? 'product_mention' : patch.findingCode.includes('HISTORICAL') ? 'historical_example' : 'repetition', patch.findingCode);
+	if (!decision.ok) {
+		recordEditorialOperation(article, { operation: 'targeted_patch', model: null, inputTokens: null, outputTokens: null, cachedInputTokens: null, estimatedCostUsd: 0, contextCharacters: context.contextCharacters, revisionId: revision.id, result: 'rejected' });
+		await persist(article);
+		throw new ArticleWorkflowError(decision.reason, 409, 'patch_rejected');
+	}
+	commitRevision(article, decision.body, 'revision', `Targeted patch for ${patch.findingCode}. ${patch.expectedImprovement}`, { refreshMetadata: false });
+	for (const finding of workspace.editorial.findings) {
+		if (finding.code !== patch.findingCode || finding.decision !== 'pending') continue;
+		const quote = finding.evidence?.[0]?.slice(0, 80) ?? '';
+		if (!quote || !article.body.includes(quote)) {
+			finding.decision = 'resolved_auto';
+			finding.decidedAt = new Date().toISOString();
+			finding.note = patch.expectedImprovement;
+		}
+	}
+	workspace.editorialContext = buildEditorialSnapshot(article);
+	recordEditorialOperation(article, { operation: 'targeted_patch', model: null, inputTokens: null, outputTokens: null, cachedInputTokens: null, estimatedCostUsd: 0, contextCharacters: context.contextCharacters, revisionId: article.workspace?.revision?.id ?? revision.id, result: 'accepted' });
+	article.approval = { required: true, approver: 'human', status: 'pending' };
+	workspace.approvedAt = null;
+	workspace.approvedRevisionId = null;
+	if (article.status === 'approved') article.status = 'draft';
+	article.workspace = workspace;
+	await persist(article);
+	await critiqueWorkspaceArticle(ownerUserId, articleId);
+	const reviewed = await requireArticle(ownerUserId, articleId);
+	return { article: reviewed, published: false, contextCharacters: context.contextCharacters, cost: costComparison(0) };
+}
+
 export async function critiqueWorkspaceArticle(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
 	if (!article.body.trim()) throw new ArticleWorkflowError('There is no draft to critique.', 400, 'draft_missing');
@@ -2307,8 +2346,8 @@ export async function queueEditorialChange(
 			reason: input.reason.slice(0, 400),
 			action: instruction.slice(0, 500),
 			benefit: 'The change stays in the revision plan until it is previewed.',
-			needsResearch: /research|source|evidence/i.test(instruction),
-			needsBrandVerification: /product|capabilit|verified/i.test(instruction),
+			needsResearch: instructionRequests(instruction, /research|sources?|evidence/i),
+			needsBrandVerification: instructionRequests(instruction, /product|capabilit|verified/i),
 			status,
 			sourceFeedback: input.reason.slice(0, 400),
 			sourceFindingId: input.findingId,
