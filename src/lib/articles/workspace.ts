@@ -2662,13 +2662,36 @@ export async function scheduleWorkspaceArticle(ownerUserId: string, articleId: s
 	const destinationId = input.destinationId?.trim() || workspace.destinationId || '';
 	const gate = articleScheduleGate(article, { destinationId, publishAt: input.publishAt });
 	if (!gate.ok) throw new ArticleWorkflowError(gate.message, 409, gate.code);
+	const publishAt = new Date(input.publishAt).toISOString();
 	workspace.destinationId = destinationId;
 	workspace.schedule = {
-		publishAt: new Date(input.publishAt).toISOString(),
+		publishAt,
 		destinationId,
 		approvalRequired: true,
 		status: 'scheduled',
 		blockedReason: null,
+	};
+	article.library = {
+		archivedAt: article.library?.archivedAt ?? null,
+		canonicalUrl: article.library?.canonicalUrl ?? null,
+		canonicalArticleId: article.library?.canonicalArticleId ?? null,
+		stageNote: article.library?.stageNote ?? null,
+		cms: article.library?.cms,
+		proposal: article.library?.proposal,
+		publication: {
+			state: 'scheduled',
+			externalId: workspace.cms.externalId,
+			revision: workspace.cms.revision,
+			idempotencyKey: `cce-schedule:${article.id}:${workspace.revision?.id ?? 'draft'}`,
+			canonicalUrl: article.library?.canonicalUrl ?? null,
+			verifiedAt: null,
+			error: null,
+			updatedAt: new Date().toISOString(),
+			scheduledFor: publishAt,
+			destinationId,
+			approvedRevisionId: workspace.approvedRevisionId,
+			attempts: article.library?.publication?.attempts ?? 0,
+		},
 	};
 	article.publishAt = workspace.schedule.publishAt ?? undefined;
 	article.publishDestination = destinationId;

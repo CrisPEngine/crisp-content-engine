@@ -467,6 +467,10 @@ export type ArticleRecord = {
 			verifiedAt: string | null;
 			error: string | null;
 			updatedAt: string;
+			scheduledFor?: string | null;
+			destinationId?: string | null;
+			approvedRevisionId?: string | null;
+			attempts?: number;
 		};
 	};
 };

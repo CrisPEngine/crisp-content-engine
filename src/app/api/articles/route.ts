@@ -65,19 +65,8 @@ export async function POST(request: Request) {
 			return NextResponse.json(await applyOpenQualityCorrections(userId, text(body.id)!));
 		}
 		if (action === 'publish_article' && text(body.id)) {
-			const { publishDecision, usefulnessBlockers } = await import('@/lib/publishing/payloadPublish');
-			const { getNativeContentStore } = await import('@/lib/media/store');
-			const { websitePublishingEnabled } = await import('@/lib/publishing/websiteDestinations');
-			const article = await getNativeContentStore().getArticle(userId, text(body.id)!);
-			if (!article || article.ownerUserId !== userId) return NextResponse.json({ error: 'Article not found.' }, { status: 404 });
-			const decision = publishDecision({
-				approved: article.approval.status === 'approved',
-				blockers: usefulnessBlockers(article.workspace?.editorialDesk?.critique?.findings ?? []),
-				liveEnabled: websitePublishingEnabled(),
-				explicit: body.confirmPublish === true,
-				autoPublish: false,
-			});
-			return NextResponse.json({ ...decision, sent: false });
+			const { guardedArticlePublish } = await import('@/lib/publishing/publishArticle');
+			return NextResponse.json(await guardedArticlePublish(userId, text(body.id)!, body.confirmPublish === true));
 		}
 		if (action === 'sync_payload' && text(body.brandId)) {
 			const { fetchPayloadCatalogue, syncPayloadCatalogue } = await import('@/lib/publishing/cmsSync');
