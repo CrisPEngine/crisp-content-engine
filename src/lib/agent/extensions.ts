@@ -97,6 +97,10 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 			'cce_get_article_generation_job',
 			'cce_get_article',
 			'cce_get_article_status',
+			'cce_get_editorial_findings',
+			'cce_get_article_revisions',
+			'cce_get_editorial_context',
+			'cce_apply_editorial_patch',
 			'cce_request_article_revision',
 			'cce_submit_article_for_approval',
 			'cce_get_article_media_plan',
@@ -406,6 +410,9 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 		}
 		case 'cce_get_article':
 		case 'cce_get_article_status':
+		case 'cce_get_editorial_findings':
+		case 'cce_get_article_revisions':
+		case 'cce_get_editorial_context':
 		case 'cce_get_article_media_plan': {
 			const articleId = text(input, 'articleId');
 			if (!articleId) throw new AgentError('invalid_input', 'articleId is required.', 400);
@@ -413,7 +420,35 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 			if (!article || !ctx.credential.allowedBrandIds.includes(article.brandId)) {
 				throw new AgentError('brand_not_accessible', 'This agent cannot access that article.', 403);
 			}
-			if (name === 'cce_get_article_status') return { id: article.id, status: article.status, approval: article.approval, publication: article.publication, wordCount: article.wordCount };
+			if (name === 'cce_get_article_status') return { id: article.id, status: article.status, approval: article.approval, publication: article.publication ?? null, cms: article.workspace?.cms.remoteStatus ?? null, wordCount: article.wordCount };
+			if (name === 'cce_get_editorial_findings') {
+				return {
+					id: article.id,
+					revisionId: article.workspace?.revision?.id ?? null,
+					active: (article.workspace?.editorial.findings ?? []).filter((finding) => finding.decision === 'pending').map((finding) => ({ code: finding.code, severity: finding.severity, section: finding.section, instruction: finding.instruction })),
+					resolved: (article.workspace?.editorial.findings ?? []).filter((finding) => finding.decision !== 'pending').map((finding) => ({ code: finding.code, decision: finding.decision })),
+					published: false,
+				};
+			}
+			if (name === 'cce_get_article_revisions') {
+				return {
+					id: article.id,
+					current: article.workspace?.revision ?? null,
+					history: (article.versions ?? []).map((version) => ({ number: version.number ?? null, revisionId: version.revisionId ?? null, source: version.source ?? null, wordCount: version.wordCount ?? null })),
+					published: false,
+				};
+			}
+			if (name === 'cce_get_editorial_context') {
+				const { selectEditorialContext, buildEditorialSnapshot, snapshotMatchesRevision } = await import('@/lib/articles/editorialMemory');
+				const kind = text(input, 'kind') || 'repetition';
+				const allowed = ['introduction', 'historical_example', 'product_mention', 'repetition', 'link', 'full_review'] as const;
+				const selectedKind = allowed.find((item) => item === kind) ?? 'repetition';
+				if (!snapshotMatchesRevision(article.workspace?.editorialContext, article) && article.workspace) {
+					article.workspace.editorialContext = buildEditorialSnapshot(article);
+					await store.saveArticle(article);
+				}
+				return { context: selectEditorialContext(article, selectedKind, text(input, 'findingCode') || undefined), published: false };
+			}
 			if (name === 'cce_get_article_media_plan') return { id: article.id, mediaPlan: article.mediaPlan, featuredAssetId: article.featuredAssetId ?? null };
 			return { article: publicArticle(article) };
 		}
@@ -441,6 +476,28 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 			article.updatedAt = new Date().toISOString();
 			await store.saveArticle(article);
 			return { articleId, status: 'awaiting_approval', approver: 'human', published: false };
+		}
+		case 'cce_apply_editorial_patch': {
+			const articleId = text(input, 'articleId');
+			const original = text(input, 'original');
+			const replacement = text(input, 'replacement');
+			const revisionId = text(input, 'revisionId');
+			const findingCode = text(input, 'findingCode');
+			if (!articleId || !original || !replacement || !revisionId || !findingCode) {
+				throw new AgentError('invalid_input', 'articleId, revisionId, findingCode, original, and replacement are required.', 400);
+			}
+			const { applyWorkspaceEditorialPatch } = await import('@/lib/articles/workspace');
+			const result = await applyWorkspaceEditorialPatch(ctx.credential.ownerUserId, articleId, {
+				revisionId,
+				section: text(input, 'section') || null,
+				original,
+				replacement,
+				findingCode,
+				expectedImprovement: text(input, 'expectedImprovement') || 'Targeted correction.',
+				verifiedClaims: Array.isArray(input.verifiedClaims) ? input.verifiedClaims.filter((item): item is string => typeof item === 'string') : [],
+				verifiedFacts: Array.isArray(input.verifiedFacts) ? input.verifiedFacts.filter((item): item is string => typeof item === 'string') : [],
+			});
+			return { revision: result.article.workspace?.revision ?? null, published: false, contextCharacters: result.contextCharacters, cost: result.cost };
 		}
 		case 'cce_publish_article':
 			throw new AgentError('approval_required', 'Article publishing requires a human approval and a connected destination. This call did not publish.', 403, {

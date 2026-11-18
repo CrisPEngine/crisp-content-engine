@@ -26,6 +26,7 @@ import {
 	applyAcceptedEditorialProposals,
 	approveWorkspaceEditorialBrief,
 	critiqueWorkspaceArticle,
+	applyWorkspaceEditorialPatch,
 	decideEditorialProposal,
 	discardEditorialPreview,
 	removeEditorialProposal,
@@ -242,6 +243,23 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 				return NextResponse.json({ article: await approveWorkspaceEditorialBrief(userId, id) });
 			case 'critique_article':
 				return NextResponse.json({ article: await critiqueWorkspaceArticle(userId, id) });
+			case 'apply_editorial_patch': {
+				const original = text(body.original);
+				const replacement = text(body.replacement);
+				if (!original || !replacement || !text(body.revisionId) || !text(body.findingCode)) {
+					return NextResponse.json({ error: 'A patch needs the revision, finding, original text, and replacement.' }, { status: 400 });
+				}
+				return NextResponse.json(await applyWorkspaceEditorialPatch(userId, id, {
+					revisionId: text(body.revisionId),
+					section: text(body.section) || null,
+					original,
+					replacement,
+					findingCode: text(body.findingCode),
+					expectedImprovement: text(body.expectedImprovement) || 'Targeted correction.',
+					verifiedClaims: Array.isArray(body.verifiedClaims) ? body.verifiedClaims.filter((item): item is string => typeof item === 'string') : [],
+					verifiedFacts: Array.isArray(body.verifiedFacts) ? body.verifiedFacts.filter((item): item is string => typeof item === 'string') : [],
+				}));
+			}
 			case 'editorial_feedback':
 				return NextResponse.json({ article: await recordEditorialFeedback(userId, id, text(body.feedback)) });
 			case 'queue_editorial_change':
