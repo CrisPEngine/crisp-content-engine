@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { interpretPublishResponse, livePageMatches, publishDecision, usefulnessBlockers } from '@/lib/publishing/payloadPublish';
+import { duePublicationAction, interpretPublishResponse, livePageMatches, publicationQualityGate, publishDecision, runGuardedPublish, usefulnessBlockers } from '@/lib/publishing/payloadPublish';
 
 describe('payload publication', () => {
 	it('does not publish an approved article unless publication is explicit and enabled', () => {
@@ -37,6 +37,7 @@ describe('payload publication', () => {
 			seoReady: true,
 			heroRequired: true,
 			heroReady: true,
+			editorialChecked: true,
 			externalId: 'catalog:timeline',
 			expectedRevision: 2,
 			explicit: true,
@@ -69,6 +70,7 @@ describe('payload publication', () => {
 			seoReady: true,
 			heroRequired: false,
 			heroReady: false,
+			editorialChecked: true,
 			externalId: 'catalog:timeline',
 			expectedRevision: 2,
 			explicit: true,
@@ -88,6 +90,95 @@ describe('payload publication', () => {
 		expect(calls).toBe(1);
 		expect(result.phase).toBe('published');
 		expect(result.retryPublication).toBe(false);
+	});
+
+	it('stops on an idempotency conflict, an authentication failure, and a dropped request', async () => {
+		const ready = {
+			approved: true,
+			researchApproved: true,
+			criticalOpen: 0,
+			materialOpen: [],
+			seoReady: true,
+			heroRequired: false,
+			heroReady: false,
+			editorialChecked: true,
+			externalId: 'catalog:timeline',
+			expectedRevision: 2,
+			explicit: true,
+			liveEnabled: true,
+			autoPublish: false,
+			title: 'How to Organize Timelines in Fiction',
+			description: 'A practical timeline.',
+		};
+		let calls = 0;
+		const conflict = await runGuardedPublish({
+			...ready,
+			client: {
+				read: async () => ({ status: 200, body: { publication: { revision: 2 } } }),
+				publish: async () => {
+					calls += 1;
+					return { status: 409, body: { ok: false, code: 'idempotency_conflict' } };
+				},
+			},
+		});
+		expect(conflict.sent).toBe(false);
+		expect(calls).toBe(1);
+		const unauthorised = await runGuardedPublish({
+			...ready,
+			client: {
+				read: async () => ({ status: 401, body: { code: 'unauthorized' } }),
+				publish: async () => {
+					calls += 1;
+					return { status: 200, body: { ok: true, published: true } };
+				},
+			},
+		});
+		expect(unauthorised.sent).toBe(false);
+		expect(calls).toBe(1);
+		const dropped = await runGuardedPublish({
+			...ready,
+			client: {
+				read: async () => ({ status: 200, body: { publication: { revision: 2 } } }),
+				publish: async () => {
+					throw new Error('network');
+				},
+			},
+		});
+		expect(dropped.sent).toBe(false);
+		expect(dropped.retryPublication).toBe(false);
+	});
+
+	it('refuses publication when research, editorial, SEO, hero, or revision checks fail', () => {
+		const ready = {
+			approved: true,
+			researchApproved: true,
+			criticalOpen: 0,
+			materialOpen: [],
+			seoReady: true,
+			heroRequired: true,
+			heroReady: true,
+			editorialChecked: true,
+			externalId: 'catalog:timeline',
+			expectedRevision: 2,
+			currentRevision: 2,
+		};
+		expect(publicationQualityGate({ ...ready, researchApproved: false }).ok).toBe(false);
+		expect(publicationQualityGate({ ...ready, editorialChecked: false }).ok).toBe(false);
+		expect(publicationQualityGate({ ...ready, criticalOpen: 1 }).ok).toBe(false);
+		expect(publicationQualityGate({ ...ready, materialOpen: ['cta-weak'] }).ok).toBe(false);
+		expect(publicationQualityGate({ ...ready, seoReady: false }).ok).toBe(false);
+		expect(publicationQualityGate({ ...ready, heroReady: false }).ok).toBe(false);
+		expect(publicationQualityGate({ ...ready, currentRevision: 3 }).ok).toBe(false);
+		expect(publicationQualityGate(ready).ok).toBe(true);
+	});
+
+	it('publishes only an armed schedule while live publishing is enabled', () => {
+		expect(duePublicationAction({ scheduleStatus: 'scheduled', approval: 'approved', publicationState: 'scheduled', liveEnabled: false, error: null })).toBe('hold');
+		expect(duePublicationAction({ scheduleStatus: 'scheduled', approval: 'pending', publicationState: 'scheduled', liveEnabled: true, error: null })).toBe('hold');
+		expect(duePublicationAction({ scheduleStatus: 'scheduled', approval: 'approved', publicationState: 'scheduled', liveEnabled: true, error: null })).toBe('publish');
+		expect(duePublicationAction({ scheduleStatus: 'due', approval: 'approved', publicationState: 'published', liveEnabled: true, error: null })).toBe('ignore');
+		expect(duePublicationAction({ scheduleStatus: 'due', approval: 'approved', publicationState: 'failed', liveEnabled: true, error: 'Payload has a newer revision.' })).toBe('hold');
+		expect(duePublicationAction({ scheduleStatus: 'due', approval: 'approved', publicationState: 'failed', liveEnabled: true, error: 'The publish request failed before Payload responded. It was not retried.' })).toBe('publish');
 	});
 
 	it('checks the live title without treating a different description as a match', () => {

@@ -856,6 +856,7 @@ export default function ArticleWorkspacePage() {
 				</p>
 				{!gate.ok ? <p className="text-sm text-warning">{gate.message}</p> : null}
 				{workspace?.schedule.blockedReason ? <p className="text-sm">{workspace.schedule.blockedReason}</p> : null}
+				<p className="text-sm text-text-dim">Approval does not publish. Publish stays off until the article is approved and someone uses the button below.</p>
 				<div className="flex flex-wrap gap-2">
 					<button className="btn" type="button" disabled={busy || article.approval.status === 'approved'} onClick={() => actBool('request_approval', {}, 'Approval requested.')}>Request approval</button>
 					<button className="btn" type="button" disabled={busy || !gate.ok || article.approval.status === 'approved'} onClick={() => actBool('approve', {}, `Revision ${workspace?.revision?.number ?? ''} approved.`)}>Approve article</button>

@@ -129,12 +129,14 @@ export function publicationQualityGate(input: {
 	seoReady: boolean;
 	heroRequired: boolean;
 	heroReady: boolean;
+	editorialChecked: boolean;
 	externalId: string | null;
 	expectedRevision: number | null;
 	currentRevision: number | null;
 }): { ok: true } | { ok: false; message: string } {
 	if (!input.approved) return { ok: false, message: 'A person has to approve the article before it can be published.' };
 	if (!input.researchApproved) return { ok: false, message: 'Approved research is required before publication.' };
+	if (!input.editorialChecked) return { ok: false, message: 'Editorial checks have to pass before publication.' };
 	if (input.criticalOpen > 0) return { ok: false, message: 'Unresolved critical findings remain.' };
 	if (input.materialOpen.length) return { ok: false, message: `Significant findings are still open: ${input.materialOpen.join(', ')}.` };
 	if (!input.seoReady) return { ok: false, message: 'SEO title and description are required before publication.' };
@@ -154,8 +156,11 @@ export async function runGuardedPublish(input: {
 	seoReady: boolean;
 	heroRequired: boolean;
 	heroReady: boolean;
+	editorialChecked: boolean;
 	externalId: string | null;
 	expectedRevision: number | null;
+	heroUrl?: string | null;
+	bodyExcerpt?: string | null;
 	explicit: boolean;
 	liveEnabled: boolean;
 	autoPublish: boolean;
@@ -204,7 +209,7 @@ export async function runGuardedPublish(input: {
 	if (outcome.canonicalUrl && input.client.page) {
 		try {
 			const html = await input.client.page(outcome.canonicalUrl);
-			const verified = livePageMatches(html, { title: input.title, description: input.description, canonicalUrl: outcome.canonicalUrl });
+			const verified = livePageMatches(html, { title: input.title, description: input.description, canonicalUrl: outcome.canonicalUrl, heroUrl: input.heroUrl, bodyExcerpt: input.bodyExcerpt });
 			if (!verified.ok) {
 				return { sent: true, phase: 'published', message: `Payload published revision ${outcome.revision ?? revision}. The public page is not showing ${verified.problems.join(', ')} yet, so publication was not retried.`, retryPublication: false };
 			}
@@ -214,6 +219,24 @@ export async function runGuardedPublish(input: {
 		return { sent: true, phase: 'verified_live', message: outcome.message, retryPublication: false };
 	}
 	return { sent: outcome.published, phase: outcome.phase, message: outcome.message, retryPublication: false };
+}
+
+export function duePublicationAction(input: {
+	scheduleStatus: string;
+	approval: string;
+	publicationState: PublicationPhase | null;
+	liveEnabled: boolean;
+	error: string | null;
+}): 'ignore' | 'publish' | 'hold' {
+	if (input.scheduleStatus !== 'scheduled' && input.scheduleStatus !== 'due') return 'ignore';
+	if (input.publicationState === 'published' || input.publicationState === 'verified_live') return 'ignore';
+	if (input.approval !== 'approved') return 'hold';
+	if (!input.liveEnabled || input.publicationState !== 'scheduled') {
+		const retryable = input.publicationState === 'failed' && /could not be read|failed before Payload responded/.test(input.error ?? '');
+		if (input.liveEnabled && retryable) return 'publish';
+		return 'hold';
+	}
+	return 'publish';
 }
 
 export function staleRevisionDecision(input: { expectedRevision: number; currentRevision: number; sameTitle: boolean; sameDescription: boolean }): { overwrite: false; revalidationRequired: boolean; message: string } {
