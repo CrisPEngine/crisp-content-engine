@@ -2617,17 +2617,12 @@ export async function publishWorkspaceArticle(ownerUserId: string, articleId: st
 			message: `Automated publication is blocked because the draft contains a prohibited claim: ${blocked[0]}`,
 		};
 	}
-	if (websitePublishingEnabled()) {
-		return {
-			article,
-			published: false,
-			message: 'Privileged website publication is flagged on, and the CMS adapter has no live publish call. Publish the approved draft in the CMS, then record the URL here.',
-		};
-	}
 	return {
 		article,
 		published: false,
-		message: 'Automated publication is off. Publish the approved draft in the CMS, then record the public URL.',
+		message: websitePublishingEnabled()
+			? 'Use Publish approved article. That action checks the revision and does not publish unless every gate passes.'
+			: 'Live publishing is disabled. Approval does not publish, and Payload was not called.',
 	};
 }
 
