@@ -85,6 +85,19 @@ describe('editorial memory and patches', () => {
 		expect(result.body).not.toContain('Reason:');
 	});
 
+	it('allows a destination link without treating the host as a product claim', () => {
+		const original = 'For your next session, audit one chapter.';
+		const result = validateEditorialPatch(`${body}\n${original}\n`, 'rev-6', {
+			revisionId: 'rev-6',
+			section: null,
+			original,
+			replacement: 'For your next session, audit one chapter. For the draft’s length, see the [Novel Word Count Planner](https://folian.app/tools/word-count-planner).',
+			findingCode: 'missing_destination_resource',
+			expectedImprovement: 'Link the planner.',
+		});
+		expect(result.ok).toBe(true);
+	});
+
 	it('does not treat a prohibition as a request for new research', () => {
 		expect(instructionRequests('Do not add sources, statistics, or unverified product capabilities.', /sources?|product|capabilit/i)).toBe(false);
 		expect(instructionRequests('Add a source for the public event.', /sources?/i)).toBe(true);
