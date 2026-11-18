@@ -2232,6 +2232,7 @@ export async function applyWorkspaceEditorialPatch(ownerUserId: string, articleI
 		throw new ArticleWorkflowError(decision.reason, 409, 'patch_rejected');
 	}
 	commitRevision(article, decision.body, 'revision', `Targeted patch for ${patch.findingCode}. ${patch.expectedImprovement}`, { refreshMetadata: false });
+	workspace.revision = article.workspace?.revision ?? workspace.revision;
 	for (const finding of workspace.editorial.findings) {
 		if (finding.code !== patch.findingCode || finding.decision !== 'pending') continue;
 		const quote = finding.evidence?.[0]?.slice(0, 80) ?? '';
@@ -2241,13 +2242,13 @@ export async function applyWorkspaceEditorialPatch(ownerUserId: string, articleI
 			finding.note = patch.expectedImprovement;
 		}
 	}
+	article.workspace = workspace;
 	workspace.editorialContext = buildEditorialSnapshot(article);
 	recordEditorialOperation(article, { operation: 'targeted_patch', model: null, inputTokens: null, outputTokens: null, cachedInputTokens: null, estimatedCostUsd: 0, contextCharacters: context.contextCharacters, revisionId: article.workspace?.revision?.id ?? revision.id, findingCode: patch.findingCode, result: 'accepted' });
 	article.approval = { required: true, approver: 'human', status: 'pending' };
 	workspace.approvedAt = null;
 	workspace.approvedRevisionId = null;
 	if (article.status === 'approved') article.status = 'draft';
-	article.workspace = workspace;
 	await persist(article);
 	await critiqueWorkspaceArticle(ownerUserId, articleId);
 	const reviewed = await requireArticle(ownerUserId, articleId);
