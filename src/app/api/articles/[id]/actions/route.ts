@@ -22,7 +22,6 @@ import {
 	acceptArticleImageCandidate,
 	prepareArticleImageBrief,
 	proposeArticleImageReferences,
-	publishWorkspaceArticle,
 	refreshArticleImageAlt,
 	applyAcceptedEditorialProposals,
 	approveWorkspaceEditorialBrief,
@@ -294,7 +293,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 				return NextResponse.json({ article, published: false });
 			}
 			case 'publish':
-				return NextResponse.json(await publishWorkspaceArticle(userId, id));
+				return NextResponse.json(await (await import('@/lib/publishing/publishArticle')).guardedArticlePublish(userId, id, body.confirmPublish === true));
 			case 'record_publication':
 				return NextResponse.json({ article: await recordArticlePublication(userId, id, text(body.url)) });
 			case 'schedule':

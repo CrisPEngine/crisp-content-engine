@@ -33,7 +33,8 @@ export async function POST(request: Request) {
 			workspace.schedule.blockedReason = 'Approval is required. The schedule was not published.';
 		} else {
 			workspace.schedule.status = 'due';
-			workspace.schedule.blockedReason = 'Due for manual publication in the CMS. CCE did not publish it.';
+			workspace.schedule.blockedReason = 'Due for publication. Automatic campaign publishing is off, so Payload was not called.';
+			if (article.library?.publication) article.library.publication.attempts = (article.library.publication.attempts ?? 0) + 1;
 		}
 		article.workspace = workspace;
 		await supabase.from('articles').update({ document: article, updated_at: new Date().toISOString() }).eq('id', article.id);

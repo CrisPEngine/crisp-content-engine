@@ -859,6 +859,7 @@ export default function ArticleWorkspacePage() {
 				<div className="flex flex-wrap gap-2">
 					<button className="btn" type="button" disabled={busy || article.approval.status === 'approved'} onClick={() => actBool('request_approval', {}, 'Approval requested.')}>Request approval</button>
 					<button className="btn" type="button" disabled={busy || !gate.ok || article.approval.status === 'approved'} onClick={() => actBool('approve', {}, `Revision ${workspace?.revision?.number ?? ''} approved.`)}>Approve article</button>
+					<button className="btn" type="button" disabled={busy || article.approval.status !== 'approved'} onClick={() => actBool('publish', { confirmPublish: true }, 'Publish checked. Nothing is sent unless live publishing is enabled and every gate passes.')}>Publish approved article</button>
 				</div>
 				<details className="text-sm space-y-2">
 					<summary>Schedule and record publication</summary>
