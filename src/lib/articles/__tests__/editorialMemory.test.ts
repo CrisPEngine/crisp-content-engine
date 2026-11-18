@@ -93,6 +93,11 @@ describe('editorial memory and patches', () => {
 	it('stops after the model-call limit and records the rewrite comparison', () => {
 		const reason = editorialLimitReason(Array.from({ length: 4 }, () => ({ operation: 'full_review' as const, model: 'gpt', inputTokens: 1, outputTokens: 1, cachedInputTokens: null, estimatedCostUsd: 0.02, contextCharacters: 100, revisionId: 'rev-6', result: 'accepted' as const, at: '' })));
 		expect(reason).toMatch(/model-call limit/);
+		const repeated = editorialLimitReason([
+			{ operation: 'targeted_patch', model: null, inputTokens: null, outputTokens: null, cachedInputTokens: null, estimatedCostUsd: 0, contextCharacters: 10, revisionId: 'rev-6', findingCode: 'HISTORICAL_ALIGNMENT_NOT_DEMONSTRATED', result: 'rejected', at: '' },
+			{ operation: 'targeted_patch', model: null, inputTokens: null, outputTokens: null, cachedInputTokens: null, estimatedCostUsd: 0, contextCharacters: 10, revisionId: 'rev-6', findingCode: 'HISTORICAL_ALIGNMENT_NOT_DEMONSTRATED', result: 'rejected', at: '' },
+		], 'HISTORICAL_ALIGNMENT_NOT_DEMONSTRATED');
+		expect(repeated).toMatch(/attempted too many times/);
 		expect(costComparison(0).savedUsd).toBeGreaterThan(0);
 	});
 });

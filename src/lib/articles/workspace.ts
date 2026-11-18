@@ -2220,14 +2220,14 @@ export async function revalidateEditorialFindings(ownerUserId: string, articleId
 export async function applyWorkspaceEditorialPatch(ownerUserId: string, articleId: string, patch: EditorialPatch): Promise<{ article: ArticleRecord; published: false; contextCharacters: number; cost: ReturnType<typeof costComparison> }> {
 	const article = await requireArticle(ownerUserId, articleId);
 	const workspace = ensureWorkspace(article);
-	const limit = editorialLimitReason(workspace.editorialOperations ?? []);
+	const limit = editorialLimitReason(workspace.editorialOperations ?? [], patch.findingCode);
 	if (limit) throw new ArticleWorkflowError(limit, 409, 'editorial_limit');
 	const revision = ensureRevision(article);
 	if (!revision) throw new ArticleWorkflowError('There is no revision to patch.', 400, 'draft_missing');
 	const decision = validateEditorialPatch(article.body, revision.id, patch);
 	const context = selectEditorialContext(article, patch.findingCode.includes('PRODUCT') || patch.findingCode.includes('product') ? 'product_mention' : patch.findingCode.includes('HISTORICAL') ? 'historical_example' : 'repetition', patch.findingCode);
 	if (!decision.ok) {
-		recordEditorialOperation(article, { operation: 'targeted_patch', model: null, inputTokens: null, outputTokens: null, cachedInputTokens: null, estimatedCostUsd: 0, contextCharacters: context.contextCharacters, revisionId: revision.id, result: 'rejected' });
+		recordEditorialOperation(article, { operation: 'targeted_patch', model: null, inputTokens: null, outputTokens: null, cachedInputTokens: null, estimatedCostUsd: 0, contextCharacters: context.contextCharacters, revisionId: revision.id, findingCode: patch.findingCode, result: 'rejected' });
 		await persist(article);
 		throw new ArticleWorkflowError(decision.reason, 409, 'patch_rejected');
 	}
@@ -2242,7 +2242,7 @@ export async function applyWorkspaceEditorialPatch(ownerUserId: string, articleI
 		}
 	}
 	workspace.editorialContext = buildEditorialSnapshot(article);
-	recordEditorialOperation(article, { operation: 'targeted_patch', model: null, inputTokens: null, outputTokens: null, cachedInputTokens: null, estimatedCostUsd: 0, contextCharacters: context.contextCharacters, revisionId: article.workspace?.revision?.id ?? revision.id, result: 'accepted' });
+	recordEditorialOperation(article, { operation: 'targeted_patch', model: null, inputTokens: null, outputTokens: null, cachedInputTokens: null, estimatedCostUsd: 0, contextCharacters: context.contextCharacters, revisionId: article.workspace?.revision?.id ?? revision.id, findingCode: patch.findingCode, result: 'accepted' });
 	article.approval = { required: true, approver: 'human', status: 'pending' };
 	workspace.approvedAt = null;
 	workspace.approvedRevisionId = null;
