@@ -113,6 +113,8 @@ export function emptyWorkspace(partial?: Partial<ArticleWorkspace>): ArticleWork
 		},
 		editorialBrief: partial?.editorialBrief,
 		editorialDesk: partial?.editorialDesk,
+		editorialContext: partial?.editorialContext ?? null,
+		editorialOperations: partial?.editorialOperations ?? [],
 		intelligence: partial?.intelligence,
 		exampleConsistency: partial?.exampleConsistency,
 		approvedAt: partial?.approvedAt ?? null,

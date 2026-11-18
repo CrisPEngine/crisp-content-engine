@@ -58,6 +58,7 @@ export type EditorialOperationRecord = {
 	estimatedCostUsd: number | null;
 	contextCharacters: number;
 	revisionId: string | null;
+	findingCode?: string | null;
 	result: 'accepted' | 'rejected';
 	at: string;
 };
@@ -174,11 +175,16 @@ export function instructionRequests(instruction: string, pattern: RegExp): boole
 	return instruction.split(/(?<=[.!?])\s+/).some((sentence) => pattern.test(sentence) && !/\b(do not|don't|never|without)\b/i.test(sentence));
 }
 
-export function editorialLimitReason(operations: EditorialOperationRecord[]): string | null {
+export function editorialLimitReason(operations: EditorialOperationRecord[], findingCode?: string): string | null {
 	const calls = operations.filter((item) => item.operation !== 'targeted_patch').length;
 	const cost = operations.reduce((sum, item) => sum + (item.estimatedCostUsd ?? 0), 0);
 	if (calls >= EDITORIAL_LIMITS.maxModelCalls) return 'The model-call limit for this article is reached. A person needs to review it.';
 	if (cost >= EDITORIAL_LIMITS.maxCostUsd) return 'The editorial cost limit for this article is reached. A person needs to review it.';
+	if (findingCode) {
+		const attempts = operations.filter((item) => item.operation === 'targeted_patch' && item.findingCode === findingCode);
+		if (attempts.some((item) => item.result === 'accepted')) return 'This finding already has an accepted correction. A person needs to review a further change.';
+		if (attempts.filter((item) => item.result === 'rejected').length >= EDITORIAL_LIMITS.maxCorrectionAttempts) return 'This correction has been attempted too many times. A person needs to review it.';
+	}
 	return null;
 }
 

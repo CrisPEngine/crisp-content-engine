@@ -85,6 +85,19 @@ describe('editorial memory and patches', () => {
 		expect(result.body).not.toContain('Reason:');
 	});
 
+	it('allows a destination link without treating the host as a product claim', () => {
+		const original = 'For your next session, audit one chapter.';
+		const result = validateEditorialPatch(`${body}\n${original}\n`, 'rev-6', {
+			revisionId: 'rev-6',
+			section: null,
+			original,
+			replacement: 'For your next session, audit one chapter. For the draft’s length, see the [Novel Word Count Planner](https://folian.app/tools/word-count-planner).',
+			findingCode: 'missing_destination_resource',
+			expectedImprovement: 'Link the planner.',
+		});
+		expect(result.ok).toBe(true);
+	});
+
 	it('does not treat a prohibition as a request for new research', () => {
 		expect(instructionRequests('Do not add sources, statistics, or unverified product capabilities.', /sources?|product|capabilit/i)).toBe(false);
 		expect(instructionRequests('Add a source for the public event.', /sources?/i)).toBe(true);
@@ -93,6 +106,11 @@ describe('editorial memory and patches', () => {
 	it('stops after the model-call limit and records the rewrite comparison', () => {
 		const reason = editorialLimitReason(Array.from({ length: 4 }, () => ({ operation: 'full_review' as const, model: 'gpt', inputTokens: 1, outputTokens: 1, cachedInputTokens: null, estimatedCostUsd: 0.02, contextCharacters: 100, revisionId: 'rev-6', result: 'accepted' as const, at: '' })));
 		expect(reason).toMatch(/model-call limit/);
+		const repeated = editorialLimitReason([
+			{ operation: 'targeted_patch', model: null, inputTokens: null, outputTokens: null, cachedInputTokens: null, estimatedCostUsd: 0, contextCharacters: 10, revisionId: 'rev-6', findingCode: 'HISTORICAL_ALIGNMENT_NOT_DEMONSTRATED', result: 'rejected', at: '' },
+			{ operation: 'targeted_patch', model: null, inputTokens: null, outputTokens: null, cachedInputTokens: null, estimatedCostUsd: 0, contextCharacters: 10, revisionId: 'rev-6', findingCode: 'HISTORICAL_ALIGNMENT_NOT_DEMONSTRATED', result: 'rejected', at: '' },
+		], 'HISTORICAL_ALIGNMENT_NOT_DEMONSTRATED');
+		expect(repeated).toMatch(/attempted too many times/);
 		expect(costComparison(0).savedUsd).toBeGreaterThan(0);
 	});
 });

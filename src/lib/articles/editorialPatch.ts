@@ -48,7 +48,8 @@ export function validateEditorialPatch(body: string, currentRevisionId: string, 
 	if (replacement.length > Math.max(2000, original.length * 4 + 500)) return { ok: false, reason: 'The replacement rewrites more than the targeted passage.' };
 	const claims = patch.verifiedClaims ?? [];
 	for (const sentence of replacement.split(/(?<=[.!?])\s+/)) {
-		if (!/Folian|Story Bible|AI-assisted/i.test(sentence) || original.includes(sentence)) continue;
+		const visible = sentence.replace(/\[[^\]]+\]\([^)]+\)/g, ' ').replace(/https?:\/\/\S+/g, ' ');
+		if (!/Folian|Story Bible|AI-assisted/i.test(visible) || original.includes(sentence)) continue;
 		if (UNSUPPORTED_PRODUCT.test(sentence) || !claims.some((claim) => claim.length >= 30 && sentence.includes(claim))) {
 			return { ok: false, reason: 'The replacement adds a product claim that is not in the approved research.' };
 		}
