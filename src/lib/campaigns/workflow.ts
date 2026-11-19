@@ -49,6 +49,18 @@ export async function advanceProductionJob(userId: string, jobId: string): Promi
 	const job = await repository.getJob(userId, jobId);
 	if (!job) throw new CampaignError('Production job not found.', 404, 'job_missing');
 	if (job.status === 'paused' || job.status === 'ready_for_approval' || job.status === 'needs_attention') return job;
+	if (job.articleId) {
+		const workspace = await import('@/lib/articles/workspace');
+		const current = await workspace.getWorkspaceArticle(userId, job.articleId);
+		const state = current.article.library?.publication?.state;
+		const remoteStatus = current.article.workspace?.cms.remoteStatus;
+		if (state === 'verified_live' || state === 'published' || remoteStatus === 'published' || current.article.publication?.url) {
+			job.status = 'needs_attention';
+			job.error = 'This article is already live. The worker did not regenerate or publish it.';
+			job.note = job.error;
+			return repository.saveJob(userId, job);
+		}
+	}
 	const opportunity = await repository.get(userId, job.opportunityId);
 	if (!opportunity) throw new CampaignError('The opportunity for this job is missing.', 404, 'opportunity_missing');
 	job.status = 'running';

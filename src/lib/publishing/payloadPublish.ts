@@ -190,6 +190,9 @@ export async function runGuardedPublish(input: {
 	if (current.status === 401 || current.status === 403 || current.body.code === 'unauthorized') {
 		return { sent: false, phase: 'failed', message: 'Payload rejected the publishing credentials. Nothing was published.', retryPublication: false };
 	}
+	if (publicationAlreadyLive(publication)) {
+		return { sent: false, phase: 'verified_live', message: 'Payload already reports this article as live. It was not published or overwritten.', retryPublication: false };
+	}
 	if (input.expectedRevision != null && currentRevision != null && input.expectedRevision !== currentRevision) {
 		return { sent: false, phase: 'failed', message: staleRevisionDecision({ expectedRevision: input.expectedRevision, currentRevision, sameTitle: currentTitle === input.title, sameDescription: currentDescription === input.description }).message, retryPublication: false };
 	}
@@ -219,6 +222,10 @@ export async function runGuardedPublish(input: {
 		return { sent: true, phase: 'verified_live', message: outcome.message, retryPublication: false };
 	}
 	return { sent: outcome.published, phase: outcome.phase, message: outcome.message, retryPublication: false };
+}
+
+export function publicationAlreadyLive(publication: Record<string, unknown>): boolean {
+	return publication.live === true || publication.status === 'published';
 }
 
 export function duePublicationAction(input: {
