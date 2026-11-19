@@ -137,7 +137,8 @@ async function runStage(userId: string, job: ProductionJob, opportunity: { title
 		return { articleId, note: 'Editorial review finished.', costUsd: reviewed.workspace?.generation.estimatedCostUsd ?? 0 };
 	}
 	if (job.stage === 'corrections') {
-		const correction = await applyOpenQualityCorrections(userId, articleId);
+		const campaign = job.campaignId ? (await getOpportunityRepository().listCampaigns(userId, job.brandId)).find((item) => item.id === job.campaignId) : null;
+		const correction = await applyOpenQualityCorrections(userId, articleId, campaign?.operation?.maxCorrectionAttempts ?? 2);
 		if (correction.blockers.length) return { articleId, note: correction.note, escalate: correction.note };
 		return { articleId, note: correction.note };
 	}
@@ -293,12 +294,12 @@ async function proposalCost(userId: string, since: string): Promise<number | nul
 	}
 }
 
-export async function applyOpenQualityCorrections(userId: string, articleId: string): Promise<{ applied: number; blockers: string[]; revision: number | null; note: string; published: false }> {
+export async function applyOpenQualityCorrections(userId: string, articleId: string, maxCorrections = 2): Promise<{ applied: number; blockers: string[]; revision: number | null; note: string; published: false }> {
 	const workspace = await import('@/lib/articles/workspace');
 	let article = await workspace.critiqueWorkspaceArticle(userId, articleId);
 	let applied = 0;
 	let revision: number | null = article.workspace?.revision?.number ?? null;
-	for (let pass = 0; pass < 2; pass += 1) {
+	for (let pass = 0; pass < maxCorrections; pass += 1) {
 		const findings = article.workspace?.editorialDesk?.critique?.findings ?? [];
 		for (const finding of findings) {
 			const material = ['intro-weak', 'opening-guide', 'definition-thin', 'cta-weak', 'answers-indirect', 'example-conflict'].includes(finding.id) || finding.category === 'repetition' || finding.category === 'structure';
@@ -321,6 +322,7 @@ export async function applyOpenQualityCorrections(userId: string, articleId: str
 			proposals: desk?.proposals ?? [],
 			findings: (desk?.critique?.findings ?? []).map((finding) => ({ id: finding.id, severity: finding.severity, category: finding.category, status: finding.status })),
 			correctionAttempts: pass,
+			maxCorrections,
 		});
 		if (decision.escalate) return { applied, blockers: decision.escalate ? [decision.escalate] : [], revision, note: decision.escalate, published: false };
 		if (!decision.acceptIds.length) break;

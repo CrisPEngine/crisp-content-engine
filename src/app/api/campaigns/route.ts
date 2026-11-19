@@ -19,7 +19,9 @@ export async function GET(request: Request) {
 		const { userId } = await requireIntelligenceUser();
 		const brandId = new URL(request.url).searchParams.get('brandId') ?? '';
 		if (!brandId) return NextResponse.json({ error: 'Choose a brand.' }, { status: 400 });
-		return NextResponse.json(await listContentOpportunities(userId, brandId));
+		const listed = await listContentOpportunities(userId, brandId);
+		const { operationSummary } = await import('@/lib/operations/tick');
+		return NextResponse.json({ ...listed, operations: operationSummary(listed) });
 	} catch (error) {
 		return fail(error);
 	}
@@ -110,6 +112,33 @@ export async function POST(request: Request) {
 				return NextResponse.json({ error: 'Choose a valid decision.' }, { status: 400 });
 			}
 			return NextResponse.json({ opportunity: await decideOpportunity(userId, body.id, status) });
+		}
+		if (action === 'apply_pilot' || action === 'pause_operation' || action === 'resume_operation' || action === 'update_operation') {
+			if (!brandId || typeof body.campaignId !== 'string') return NextResponse.json({ error: 'Choose a campaign.' }, { status: 400 });
+			const { getOpportunityRepository } = await import('@/lib/campaigns/repository');
+			const { FOLIAN_PILOT_POLICY } = await import('@/lib/operations/policy');
+			const repository = getOpportunityRepository();
+			const current = (await repository.listCampaigns(userId, brandId)).find((item) => item.id === body.campaignId);
+			if (!current?.operation) return NextResponse.json({ error: 'Campaign not found.' }, { status: 404 });
+			if (body.autonomousPublishingEnabled === true) {
+				return NextResponse.json({ error: 'Autonomous publishing is not turned on from this action. Nothing was published.' }, { status: 403 });
+			}
+			if (action === 'apply_pilot') {
+				const campaign = await repository.updateCampaign(userId, current.id, { status: 'paused', weeklyCapacity: FOLIAN_PILOT_POLICY.weeklyMaximum, approvalMode: 'auto_draft', themes: FOLIAN_PILOT_POLICY.themes, operation: FOLIAN_PILOT_POLICY });
+				return NextResponse.json({ campaign, published: false });
+			}
+			if (action === 'pause_operation') {
+				const campaign = await repository.updateCampaign(userId, current.id, { status: 'paused', operation: { ...current.operation, paused: true, autonomousPublishingEnabled: false } });
+				return NextResponse.json({ campaign, published: false });
+			}
+			if (action === 'resume_operation') {
+				const campaign = await repository.updateCampaign(userId, current.id, { status: 'active', approvalMode: 'auto_draft', operation: { ...current.operation, paused: false, mode: 'autonomous_approval', autonomousPublishingEnabled: false } });
+				return NextResponse.json({ campaign, published: false });
+			}
+			const weekly = typeof body.weeklyMaximum === 'number' ? Math.max(0, Math.min(14, body.weeklyMaximum)) : current.operation.weeklyMaximum;
+			const budget = typeof body.maxCostUsdPerArticle === 'number' ? Math.max(0.1, Math.min(5, body.maxCostUsdPerArticle)) : current.operation.maxCostUsdPerArticle;
+			const campaign = await repository.updateCampaign(userId, current.id, { weeklyCapacity: weekly, operation: { ...current.operation, weeklyMaximum: weekly, maxCostUsdPerArticle: budget, autonomousPublishingEnabled: false } });
+			return NextResponse.json({ campaign, published: false });
 		}
 		if (action === 'create_campaign') {
 			if (!brandId || typeof body.name !== 'string') return NextResponse.json({ error: 'Brand and campaign name are required.' }, { status: 400 });
