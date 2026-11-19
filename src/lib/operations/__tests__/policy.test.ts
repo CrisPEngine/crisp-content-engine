@@ -94,6 +94,14 @@ describe('autonomous content policy', () => {
 		});
 		expect(actions.some((action) => action.type === 'start')).toBe(false);
 		expect(actions).toContainEqual({ type: 'skip', reason: 'concurrency' });
+		const updateJob = planOperationTick({
+			policy,
+			leaseHeld: false,
+			opportunities: [opportunity({ id: 'update-1', recommendedAction: 'update' })],
+			jobs: [job({ id: 'update-job', opportunityId: 'update-1', status: 'queued' })],
+		});
+		expect(updateJob.some((action) => action.type === 'advance')).toBe(false);
+		expect(updateJob).toContainEqual({ type: 'hold_update', jobId: 'update-job' });
 	});
 
 	it('resumes an interrupted job instead of starting another article', () => {
@@ -123,6 +131,15 @@ describe('autonomous content policy', () => {
 		expect(actions).toContainEqual({ type: 'skip', reason: 'budget' });
 		expect(actions.some((action) => action.type === 'publish')).toBe(false);
 		expect(actions.some((action) => action.type === 'hold_publish')).toBe(true);
+		const live = planOperationTick({
+			policy: { ...policy, autonomousPublishingEnabled: true },
+			leaseHeld: false,
+			opportunities: [],
+			jobs: [],
+			publishable: [{ articleId: 'article-1', jobId: 'job-1', policyAllows: true, approved: true, alreadyLive: true }],
+		});
+		expect(live.some((action) => action.type === 'publish')).toBe(false);
+		expect(live.find((action) => action.type === 'hold_publish')).toMatchObject({ reason: 'Payload already has this article live. It was not published or overwritten.' });
 	});
 
 	it('rejects publication from a quality score when a required check fails', () => {

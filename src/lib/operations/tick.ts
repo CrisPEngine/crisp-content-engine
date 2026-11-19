@@ -56,7 +56,15 @@ async function publishableArticles(campaign: ActiveCampaign, policy: NonNullable
 		if (!job.articleId || job.status !== 'ready_for_approval') continue;
 		const article = await store.getArticle(campaign.ownerUserId, job.articleId);
 		if (!article) continue;
-		rows.push({ articleId: article.id, jobId: job.id, policyAllows: publicationPolicyDecision(articlePolicyInput(article)).allow, approved: article.approval.status === 'approved' });
+		const publicationState = article.library?.publication?.state;
+		const remoteStatus = article.workspace?.cms?.remoteStatus;
+		rows.push({
+			articleId: article.id,
+			jobId: job.id,
+			policyAllows: publicationPolicyDecision(articlePolicyInput(article)).allow,
+			approved: article.approval.status === 'approved',
+			alreadyLive: publicationState === 'verified_live' || publicationState === 'published' || remoteStatus === 'published',
+		});
 	}
 	return rows;
 }
@@ -93,6 +101,18 @@ async function executeAction(campaign: ActiveCampaign, action: TickAction): Prom
 				job.note = job.error;
 				await repository.saveJob(campaign.ownerUserId, job);
 			}
+		}
+		return;
+	}
+	if (action.type === 'hold_update') {
+		const repository = getOpportunityRepository();
+		const jobs = await repository.listJobs(campaign.ownerUserId, campaign.brandId);
+		const job = jobs.find((item) => item.id === action.jobId);
+		if (job && (job.status === 'queued' || job.status === 'running')) {
+			job.status = 'needs_attention';
+			job.error = 'This article is already published. The worker did not update it.';
+			job.note = job.error;
+			await repository.saveJob(campaign.ownerUserId, job);
 		}
 		return;
 	}

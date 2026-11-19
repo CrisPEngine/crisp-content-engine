@@ -59,6 +59,38 @@ describe('payload publication', () => {
 		expect(result.retryPublication).toBe(false);
 	});
 
+	it('does not publish or overwrite an article Payload already reports as live', async () => {
+		let published = false;
+		const result = await runGuardedPublish({
+			approved: true,
+			researchApproved: true,
+			criticalOpen: 0,
+			materialOpen: [],
+			seoReady: true,
+			heroRequired: false,
+			heroReady: false,
+			editorialChecked: true,
+			externalId: 'cce_how-to-organize-timelines-in-fiction',
+			expectedRevision: 3,
+			explicit: true,
+			liveEnabled: true,
+			autoPublish: false,
+			title: 'How To Organize Timelines In Fiction - Focus on Fiction',
+			description: 'A practical timeline.',
+			client: {
+				read: async () => ({ status: 200, body: { ok: true, status: 'published', live: true, revision: 3, hasUnpublishedChanges: false } }),
+				publish: async () => {
+					published = true;
+					return { status: 200, body: { ok: true, published: true } };
+				},
+			},
+		});
+		expect(published).toBe(false);
+		expect(result.sent).toBe(false);
+		expect(result.phase).toBe('verified_live');
+		expect(result.retryPublication).toBe(false);
+	});
+
 	it('does not publish again when the public page is still stale', async () => {
 		const { runGuardedPublish } = await import('@/lib/publishing/payloadPublish');
 		let calls = 0;

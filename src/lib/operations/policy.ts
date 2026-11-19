@@ -161,6 +161,7 @@ export type TickAction =
 	| { type: 'resume'; jobId: string }
 	| { type: 'advance'; jobId: string }
 	| { type: 'hold_publish'; jobId: string; reason: string }
+	| { type: 'hold_update'; jobId: string }
 	| { type: 'publish'; articleId: string };
 
 export function planOperationTick(input: {
@@ -170,7 +171,7 @@ export function planOperationTick(input: {
 	jobs: ProductionJob[];
 	now?: number;
 	staleAfterMs?: number;
-	publishable?: Array<{ articleId: string; jobId: string; policyAllows: boolean; approved: boolean }>;
+	publishable?: Array<{ articleId: string; jobId: string; policyAllows: boolean; approved: boolean; alreadyLive?: boolean }>;
 }): TickAction[] {
 	if (input.leaseHeld) return [{ type: 'skip', reason: 'lease_held' }];
 	if (input.policy.paused) return [{ type: 'skip', reason: 'paused' }];
@@ -178,8 +179,15 @@ export function planOperationTick(input: {
 	const now = input.now ?? Date.now();
 	const staleAfter = input.staleAfterMs ?? 20 * 60 * 1000;
 	const actions: TickAction[] = [{ type: 'discover' }];
-	const active = input.jobs.filter((job) => job.status === 'queued' || job.status === 'running');
+	const publishedUpdate = (job: ProductionJob) => !input.policy.allowPublishedUpdates && input.opportunities.some((item) => item.id === job.opportunityId && item.recommendedAction === 'update');
 	for (const job of input.jobs) {
+		if ((job.status === 'queued' || job.status === 'running') && publishedUpdate(job)) {
+			actions.push({ type: 'hold_update', jobId: job.id });
+		}
+	}
+	const active = input.jobs.filter((job) => (job.status === 'queued' || job.status === 'running') && !publishedUpdate(job));
+	for (const job of input.jobs) {
+		if (publishedUpdate(job)) continue;
 		if (job.status === 'running' && now - new Date(job.updatedAt).getTime() > staleAfter) {
 			actions.push({ type: 'resume', jobId: job.id });
 		}
@@ -187,7 +195,7 @@ export function planOperationTick(input: {
 			actions.push({ type: 'skip', reason: 'budget' });
 		}
 	}
-	const resumable = input.jobs.find((job) => job.status === 'queued' || (job.status === 'running' && now - new Date(job.updatedAt).getTime() > staleAfter));
+	const resumable = input.jobs.find((job) => !publishedUpdate(job) && (job.status === 'queued' || (job.status === 'running' && now - new Date(job.updatedAt).getTime() > staleAfter)));
 	const withinBudget = resumable && resumable.costUsd < input.policy.maxCostUsdPerArticle;
 	if (withinBudget && resumable) actions.push({ type: 'advance', jobId: resumable.id });
 	const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
@@ -206,6 +214,10 @@ export function planOperationTick(input: {
 		actions.push({ type: 'skip', reason: 'concurrency' });
 	}
 	for (const item of input.publishable ?? []) {
+		if (item.alreadyLive) {
+			actions.push({ type: 'hold_publish', jobId: item.jobId, reason: 'Payload already has this article live. It was not published or overwritten.' });
+			continue;
+		}
 		if (input.policy.mode !== 'autonomous_publishing' || !input.policy.autonomousPublishingEnabled || !item.approved || !item.policyAllows) {
 			actions.push({ type: 'hold_publish', jobId: item.jobId, reason: 'Autonomous publishing is not enabled for this brand. The article was not published.' });
 			continue;
