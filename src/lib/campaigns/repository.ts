@@ -1,4 +1,6 @@
 import { getSupabaseService } from '@/lib/supabaseService';
+import { normaliseOperationPolicy } from '@/lib/operations/policy';
+import type { BrandOperationPolicy } from '@/lib/operations/policy';
 import type { AnalyticsBinding, ApprovalMode, CampaignStatus, ContentCampaign, ContentOpportunity, DemandClass, EvidenceConfidence, OpportunityAction, OpportunityEvidence, OpportunityStatus, ProductionJob, ScoreResult, OverlapAssessment } from './types';
 
 export type NewOpportunity = Omit<ContentOpportunity, 'id' | 'createdAt' | 'updatedAt'> & { naturalKey: string };
@@ -14,6 +16,7 @@ export type OpportunityRepository = {
 	applyRescore(userId: string, id: string, patch: { evidenceConfidence: EvidenceConfidence; scoreDetail: ScoreResult }): Promise<ContentOpportunity>;
 	listCampaigns(userId: string, brandId: string): Promise<ContentCampaign[]>;
 	saveCampaign(userId: string, campaign: NewCampaign): Promise<ContentCampaign>;
+	updateCampaign(userId: string, id: string, patch: { status?: CampaignStatus; weeklyCapacity?: number; approvalMode?: ApprovalMode; themes?: string[]; operation?: BrandOperationPolicy }): Promise<ContentCampaign>;
 	getBinding(userId: string, brandId: string): Promise<AnalyticsBinding | null>;
 	recordAnalyticsCheck(userId: string, brandId: string, patch: Partial<AnalyticsBinding>): Promise<AnalyticsBinding>;
 	listJobs(userId: string, brandId: string): Promise<ProductionJob[]>;
@@ -223,7 +226,32 @@ export function createSupabaseOpportunityRepository(): OpportunityRepository {
 					auto_publish_enabled: false,
 					destination_id: campaign.destinationId,
 					status: campaign.status,
+					quality_policy: campaign.operation ?? {},
 				})
+				.select('*')
+				.single();
+			if (error) throw new Error(error.message);
+			return campaignFromRow(data);
+		},
+		async updateCampaign(userId, id, patch) {
+			const { data: row, error: readError } = await db().from('content_campaigns').select('*').eq('user_id', userId).eq('id', id).maybeSingle();
+			if (readError) throw new Error(readError.message);
+			if (!row) throw new Error('Campaign not found.');
+			const existing = campaignFromRow(row);
+			const operation = patch.operation ?? existing.operation;
+			const { data, error } = await db()
+				.from('content_campaigns')
+				.update({
+					status: patch.status ?? existing.status,
+					weekly_capacity: patch.weeklyCapacity ?? existing.weeklyCapacity,
+					approval_mode: patch.approvalMode ?? existing.approvalMode,
+					themes: patch.themes ?? existing.themes,
+					quality_policy: operation ?? {},
+					auto_publish_enabled: false,
+					updated_at: new Date().toISOString(),
+				})
+				.eq('user_id', userId)
+				.eq('id', id)
 				.select('*')
 				.single();
 			if (error) throw new Error(error.message);
@@ -360,6 +388,7 @@ function campaignFromRow(row: {
 	approval_mode: ApprovalMode;
 	destination_id: string | null;
 	status: CampaignStatus;
+	quality_policy?: Partial<import('@/lib/operations/policy').BrandOperationPolicy> | null;
 	created_at: string;
 	updated_at: string;
 }): ContentCampaign {
@@ -376,6 +405,13 @@ function campaignFromRow(row: {
 		autoPublishEnabled: false,
 		destinationId: row.destination_id,
 		status: row.status,
+		operation: normaliseOperationPolicy({
+			approvalMode: row.approval_mode,
+			weeklyCapacity: row.weekly_capacity,
+			status: row.status,
+			themes: row.themes ?? [],
+			stored: row.quality_policy ?? null,
+		}),
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -457,6 +493,19 @@ export function createMemoryOpportunityRepository(): OpportunityRepository {
 			const saved = { ...campaign, id: crypto.randomUUID(), userId, autoPublishEnabled: false as const, createdAt: now, updatedAt: now };
 			campaigns.push(saved);
 			const { userId: _user, ...item } = saved;
+			return item;
+		},
+		async updateCampaign(userId, id, patch) {
+			const found = campaigns.find((item) => item.userId === userId && item.id === id);
+			if (!found) throw new Error('Campaign not found.');
+			if (patch.status) found.status = patch.status;
+			if (typeof patch.weeklyCapacity === 'number') found.weeklyCapacity = patch.weeklyCapacity;
+			if (patch.approvalMode) found.approvalMode = patch.approvalMode;
+			if (patch.themes) found.themes = patch.themes;
+			if (patch.operation) found.operation = patch.operation;
+			found.autoPublishEnabled = false;
+			found.updatedAt = new Date().toISOString();
+			const { userId: _user, ...item } = found;
 			return item;
 		},
 		async getBinding(userId, brandId) {

@@ -138,6 +138,8 @@ export type ContentCampaign = {
 	autoPublishEnabled: false;
 	destinationId: string | null;
 	status: CampaignStatus;
+	/** Persisted in content_campaigns.quality_policy. Publishing stays off unless this policy says otherwise. */
+	operation?: import('@/lib/operations/policy').BrandOperationPolicy;
 	createdAt: string;
 	updatedAt: string;
 };

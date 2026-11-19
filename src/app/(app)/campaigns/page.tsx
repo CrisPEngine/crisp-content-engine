@@ -5,7 +5,26 @@ import type { ContentCampaign, ContentOpportunity, DemandClass, EvidenceConfiden
 import { queuePage } from '@/lib/campaigns/queue';
 
 type Brand = { id: string; name: string };
-type Queue = { opportunities: ContentOpportunity[]; campaigns: ContentCampaign[]; jobs: ProductionJob[]; providers: ProviderAvailability[] };
+type Queue = {
+	opportunities: ContentOpportunity[];
+	campaigns: ContentCampaign[];
+	jobs: ProductionJob[];
+	providers: ProviderAvailability[];
+	operations?: {
+		mode: string;
+		paused: boolean;
+		autonomousPublishingEnabled: boolean;
+		weeklyMaximum: number;
+		maxCostUsdPerArticle: number;
+		discovered: number;
+		inProduction: number;
+		awaitingApproval: number;
+		attention: number;
+		costUsd: number;
+		themes: string[];
+		signals: Array<{ title: string; kind: string; reason: string }>;
+	};
+};
 
 const DEMAND_LABEL = {
 	observed: 'Observed demand',
@@ -26,6 +45,7 @@ export default function CampaignsPage() {
 	const [problem, setProblem] = useState('');
 	const [campaignName, setCampaignName] = useState('');
 	const [capacity, setCapacity] = useState(3);
+	const [budget, setBudget] = useState(1);
 	const [openId, setOpenId] = useState<string | null>(null);
 	const [q, setQ] = useState('');
 	const [demand, setDemand] = useState<DemandClass | ''>('');
@@ -167,6 +187,36 @@ export default function CampaignsPage() {
 				</div>
 				{(queue?.campaigns ?? []).map((campaign) => (
 					<p key={campaign.id}>{campaign.name} · {campaign.approvalMode.replace('_', ' ')} · up to {campaign.weeklyCapacity} a week · auto-publish {campaign.autoPublishEnabled ? 'on' : 'off'}</p>
+				))}
+			</section>
+			<section className="card space-y-3 p-4 text-sm">
+				<h2 className="font-medium">Autonomous operations</h2>
+				<p className="text-text-soft">The daily worker discovers and drafts only while a campaign is active. It cannot publish, and it does not change published articles.</p>
+				{queue?.operations ? (
+					<div className="grid gap-2 md:grid-cols-4">
+						<p>Mode {queue.operations.mode.replaceAll('_', ' ')} · {queue.operations.paused ? 'paused' : 'running'}</p>
+						<p>Discovered {queue.operations.discovered}</p>
+						<p>In production {queue.operations.inProduction}</p>
+						<p>Awaiting approval {queue.operations.awaitingApproval}</p>
+						<p>Needs attention {queue.operations.attention}</p>
+						<p>Model cost ${queue.operations.costUsd.toFixed(2)}</p>
+						<p>Publishing {queue.operations.autonomousPublishingEnabled ? 'on' : 'off'}</p>
+						<p>Next publication: the worker does not publish on a schedule.</p>
+					</div>
+				) : null}
+				{queue?.operations?.themes?.length ? <p>Themes: {queue.operations.themes.join(', ')}</p> : null}
+				{(queue?.operations?.signals ?? []).map((signal) => <p key={signal.title}>{signal.kind}: {signal.title}. {signal.reason}</p>)}
+				<div className="flex flex-wrap gap-2">
+					<label>Up to <input className="input w-20" type="number" min={0} max={14} value={capacity} onChange={(event) => setCapacity(Number(event.target.value))} aria-label="Weekly production maximum" /> per week</label>
+					<label>Budget $<input className="input w-24" type="number" min={0.1} max={5} step={0.1} value={budget} onChange={(event) => setBudget(Number(event.target.value))} aria-label="Maximum model budget per article" /></label>
+				</div>
+				{(queue?.campaigns ?? []).map((campaign) => (
+					<div key={campaign.id} className="flex flex-wrap gap-2">
+						<button className="btn" type="button" disabled={busy} onClick={() => void post('apply_pilot', { campaignId: campaign.id }, campaign.id, 'Folian pilot saved and paused. Nothing was published.')}>Apply Folian pilot</button>
+						<button className="btn" type="button" disabled={busy} onClick={() => void post('pause_operation', { campaignId: campaign.id }, campaign.id, 'Automation paused. Nothing was published.')}>Pause</button>
+						<button className="btn" type="button" disabled={busy} onClick={() => void post('resume_operation', { campaignId: campaign.id }, campaign.id, 'Automation resumed with approval required. Nothing was published.')}>Resume</button>
+						<button className="btn" type="button" disabled={busy} onClick={() => void post('update_operation', { campaignId: campaign.id, weeklyMaximum: capacity, maxCostUsdPerArticle: budget }, campaign.id, 'Limits saved. Publishing stays off.')}>Save limits</button>
+					</div>
 				))}
 			</section>
 			<section className="space-y-3">
