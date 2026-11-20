@@ -377,10 +377,16 @@ export async function applyOpenQualityCorrections(userId: string, articleId: str
 	return { applied, blockers, revision, note, published: false };
 }
 
-export async function progressProductionJob(userId: string, jobId: string, input?: { deadlineMs?: number; maxStages?: number; maxCostUsd?: number }): Promise<ProductionJob> {
+export async function progressProductionJob(userId: string, jobId: string, input?: { deadlineMs?: number; maxStages?: number; maxCostUsd?: number; resumeAttention?: boolean }): Promise<ProductionJob> {
 	const repository = getOpportunityRepository();
 	let job = await repository.getJob(userId, jobId);
 	if (!job) throw new CampaignError('Production job not found.', 404, 'job_missing');
+	if (input?.resumeAttention && job.status === 'needs_attention') {
+		job.status = 'queued';
+		job.error = null;
+		job.note = 'The same job was run again. Completed stages were not repeated.';
+		job = await repository.saveJob(userId, job);
+	}
 	const deadline = input?.deadlineMs ?? Date.now() + 210_000;
 	const maxStages = input?.maxStages ?? 9;
 	for (let step = 0; step < maxStages && Date.now() < deadline; step += 1) {

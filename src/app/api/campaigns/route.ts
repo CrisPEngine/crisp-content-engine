@@ -92,7 +92,7 @@ export async function POST(request: Request) {
 		if (action === 'run_production') {
 			if (typeof body.jobId !== 'string') return NextResponse.json({ error: 'Choose a production job.' }, { status: 400 });
 			const { progressProductionJob } = await import('@/lib/campaigns/workflow');
-			const job = await progressProductionJob(userId, body.jobId, { maxCostUsd: 1 });
+			const job = await progressProductionJob(userId, body.jobId, { maxCostUsd: 1, resumeAttention: true });
 			if (job.status === 'queued' || job.status === 'running') {
 				const { after } = await import('next/server');
 				after(async () => {
