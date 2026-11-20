@@ -514,13 +514,20 @@ export default function ArticleWorkspacePage() {
 				) : null}
 			</div>
 
+			{detail?.article.workspace?.revision && detail.article.approval.status !== 'approved' ? (
+				<div className="card p-4 text-sm">
+					<p className="font-medium">{detail.nextStep?.action ?? 'The draft is saved'}</p>
+					<p>{detail.nextStep?.detail}</p>
+					<p className="text-text-soft">CCE revision {detail.article.workspace.revision.number} · {detail.article.workspace.revision.wordCount.toLocaleString()} words{detail.article.workspace.cms.remoteStatus ? ` · Payload ${detail.article.workspace.cms.remoteStatus}, revision ${detail.article.workspace.cms.revision ?? 'unknown'}` : ''}. Nothing is published from this page.</p>
+				</div>
+			) : null}
 			{running(generation?.status) || running(detail.job?.status) ? (
 				<JobPanel title="Writing the draft" stage={generation?.stage ?? null} startedAt={generation?.startedAt ?? null} updatedAt={generation?.updatedAt ?? null} status={generation?.status ?? 'queued'} />
 			) : null}
 			{running(revisionJob?.status) ? (
 				<JobPanel title="Applying accepted recommendations" stage={revisionJob?.stage ?? null} startedAt={revisionJob?.startedAt ?? null} updatedAt={revisionJob?.updatedAt ?? null} status={revisionJob?.status ?? 'queued'} />
 			) : null}
-			{generation?.status === 'failed' && generation.error ? (
+			{generation?.status === 'failed' && generation.error && !detail?.article.workspace?.revision ? (
 				<div className="card p-4 text-sm border-danger/60" role="alert">
 					<p className="font-medium">Generation failed</p>
 					<p>{generation.error}</p>
@@ -660,6 +667,9 @@ export default function ArticleWorkspacePage() {
 						</p>
 					) : null}
 					{workspace.generation.researchVersion ? <p>Written from research version {workspace.generation.researchVersion}</p> : null}
+					{(workspace.generationAttempts ?? []).map((attempt) => (
+						<p key={`${attempt.jobId}-${attempt.at}`}>Earlier attempt, {new Date(attempt.at).toLocaleString()}: {attempt.message} The saved draft was kept.</p>
+					))}
 				</details>
 			) : null}
 

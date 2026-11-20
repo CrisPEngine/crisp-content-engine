@@ -276,6 +276,10 @@ async function releaseStaleJobs(ownerUserId: string, articleId: string) {
 export async function getWorkspaceArticle(ownerUserId: string, articleId: string) {
 	await releaseStaleJobs(ownerUserId, articleId);
 	const article = await requireArticle(ownerUserId, articleId);
+	if (article.workspace?.generation.status === 'failed' && article.workspace.generation.error && article.workspace.revision && article.body.trim()) {
+		const { recordHistoricalGeneration } = await import('@/lib/articles/generationJob');
+		if (recordHistoricalGeneration(article, article.workspace.generation.jobId, article.workspace.generation.error)) await persist(article);
+	}
 	const jobs = await getIntelligenceStore().listJobs(ownerUserId, article.brandId);
 	const job = jobs.find((item) => {
 		const payload = item.payload as ArticleGenerationJobPayload & { result?: { articleId?: string } };

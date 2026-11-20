@@ -54,6 +54,6 @@ export function selectProductionOpportunities(input: {
 	return input.opportunities
 		.filter((item) => item.status === 'approved' && (item.recommendedAction === 'create' || item.recommendedAction === 'update') && !item.scoreDetail.promotionBlocked && item.demandClass !== 'unvalidated' && !used.has(item.id))
 		.filter((item) => !active.some((existing) => sameSearchIntent(existing.title, item.title)))
-		.sort((left, right) => right.score - left.score)
+		.sort((left, right) => right.score - left.score || left.updatedAt.localeCompare(right.updatedAt))
 		.slice(0, input.remaining);
 }

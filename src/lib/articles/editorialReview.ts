@@ -54,6 +54,8 @@ export type DeterministicReviewInput = {
 	linkedToolSlugs?: string[];
 	brandName?: string;
 	title?: string;
+	topic?: string;
+	primaryKeyword?: string;
 	seoTitle?: string;
 	metaDescription?: string;
 	requiredLinks?: string[];
@@ -241,9 +243,10 @@ export function runDeterministicArticleReview(input: DeterministicReviewInput): 
 			instruction: `Link these required pages where they are relevant: ${missingLinks.join(', ')}.`,
 		});
 	}
+	const topicText = `${input.title ?? ''} ${input.topic ?? ''} ${input.primaryKeyword ?? ''}`;
 	for (const tool of input.taxonomy?.tools ?? []) {
-		if (!tool.linkWhenTopicMatches) continue;
-		if (!new RegExp(tool.linkWhenTopicMatches, 'i').test(input.body)) continue;
+		if (!tool.linkWhenTopicMatches || !topicText.trim()) continue;
+		if (!new RegExp(tool.linkWhenTopicMatches, 'i').test(topicText)) continue;
 		// Satisfaction is body-link based. researchSummary.relatedTools must not clear this finding.
 		if (input.linkedToolSlugs?.includes(tool.slug)) continue;
 		findings.push({
