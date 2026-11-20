@@ -16,14 +16,15 @@ function jaccard(left: string[], right: string[]): number {
 }
 
 export function retrieveOverlapCandidates(title: string, inventory: InventoryArticle[]): OverlapCandidate[] {
-	const needle = contentTokens(title);
+	const needle = title.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((word) => word.length > 2);
 	return inventory
-		.map((item) => ({
-			articleId: item.id,
-			title: item.title,
-			similarity: Math.round(jaccard(needle, contentTokens(`${item.title} ${item.keyword ?? ''}`)) * 100) / 100,
-		}))
-		.filter((item) => item.similarity >= 0.15)
+		.map((item) => {
+			const haystack = `${item.title} ${item.keyword ?? ''}`.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((word) => word.length > 2);
+			const shared = needle.filter((word) => haystack.includes(word));
+			const similarity = needle.length && haystack.length ? shared.length / Math.min(new Set(needle).size, new Set(haystack).size) : 0;
+			return { articleId: item.id, title: item.title, similarity: Math.round(similarity * 100) / 100 };
+		})
+		.filter((item) => item.similarity >= 0.2)
 		.sort((left, right) => right.similarity - left.similarity)
 		.slice(0, 3);
 }
@@ -47,5 +48,5 @@ export function compareSearchIntent(input: {
 	if (overlap > 0 || shared.length) {
 		return { relation: 'related_but_distinct', overlap, rationale: `“${input.article.title}” is in the same writing cluster, but the reader question is different. Shared words: ${shared.join(', ') || 'domain terms only'}. This can sit beside that article.` };
 	}
-	return { relation: 'distinct', overlap, rationale: `“${input.article.title}” was retrieved as a neighbour, but it does not answer this reader question.` };
+	return { relation: 'related_but_distinct', overlap, rationale: `“${input.article.title}” is in the same writing cluster, but it answers a different reader question. This can sit beside that article.` };
 }

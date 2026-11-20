@@ -363,7 +363,7 @@ export async function reassessOpportunityIntents(userId: string, brandId: string
 	const rows = await repository.list(userId, brandId);
 	const saved: ContentOpportunity[] = [];
 	for (const item of rows) {
-		if (item.discoverySource !== 'pillar' || item.status !== 'needs_research') continue;
+		if (item.discoverySource !== 'pillar' || (item.status !== 'needs_research' && item.status !== 'discovered')) continue;
 		const overlap = assessOverlap({ title: item.title, intent: item.searchIntent, audienceProblem: item.audienceProblem }, inventory);
 		const eligible = (overlap.intentRelation === 'distinct' || overlap.intentRelation === 'related_but_distinct') && item.evidence.length > 0 && item.demandClass !== 'unvalidated';
 		const scoreDetail = {

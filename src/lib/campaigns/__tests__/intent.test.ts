@@ -23,8 +23,9 @@ describe('search intent comparison', () => {
 		];
 		for (const title of titles) {
 			const result = assessOverlap({ title }, inventory);
-			expect(result.intentRelation === 'related_but_distinct' || result.intentRelation === 'distinct').toBe(true);
+			expect(result.intentRelation).toBe('related_but_distinct');
 			expect(result.decision).toBe('create');
+			expect(result.matchedTitle).toBeTruthy();
 		}
 	});
 

@@ -196,7 +196,12 @@ async function runStage(userId: string, job: ProductionJob, opportunity: { title
 			if (!validation.pass) return { articleId, note: validation.checks.filter((check) => !check.pass).map((check) => check.detail).join(' '), escalate: 'The metadata proposal failed validation.' };
 			return { articleId, note: 'Metadata checks passed. The published article was not changed.' };
 		}
-		const article = await workspace.revalidateEditorialFindings(userId, articleId);
+		let article = await workspace.revalidateEditorialFindings(userId, articleId);
+		const suggestedCategory = article.workspace?.categorySuggestion?.categoryId;
+		if (suggestedCategory && !article.categories[0]) {
+			article = await workspace.classifyWorkspaceArticle(userId, articleId, suggestedCategory);
+			article = await workspace.revalidateEditorialFindings(userId, articleId);
+		}
 		const { articleApprovalGate, openCriticalFindings, ensureWorkspace } = await import('@/lib/articles/meta');
 		const { usefulnessBlockers } = await import('@/lib/publishing/payloadPublish');
 		const gate = articleApprovalGate(article);
