@@ -71,9 +71,9 @@ export function planSections(
 		picked.forEach((index) => usedEvidence.add(index));
 		return {
 			heading: item.heading,
-			readerQuestion: raw.readerQuestion?.trim() || '',
-			contribution: raw.contribution?.trim() || item.purpose,
-			practicalElement: raw.practicalElement?.trim() || '',
+			readerQuestion: typeof raw.readerQuestion === 'string' ? raw.readerQuestion.trim() : '',
+			contribution: typeof raw.contribution === 'string' && raw.contribution.trim() ? raw.contribution.trim() : item.purpose,
+			practicalElement: typeof raw.practicalElement === 'string' ? raw.practicalElement.trim() : '',
 			targetWords: Number(raw.words) > 0 ? Number(raw.words) : 0,
 			evidence: picked,
 			links: [],
