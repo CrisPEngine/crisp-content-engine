@@ -1,3 +1,4 @@
+import { compareSearchIntent, retrieveOverlapCandidates } from './intent';
 import type { InventoryArticle, OpportunityAction, OverlapAssessment } from './types';
 
 const STOP = new Set(['a', 'an', 'the', 'and', 'or', 'to', 'of', 'for', 'in', 'on', 'with', 'how', 'your', 'without', 'from']);
@@ -23,40 +24,45 @@ function overlapRatio(left: Set<string>, right: Set<string>): number {
 	return shared / Math.min(left.size, right.size);
 }
 
-export function assessOverlap(candidate: { title: string; intent?: string | null; keyword?: string | null }, inventory: InventoryArticle[]): OverlapAssessment {
-	const needle = tokens(`${candidate.title} ${candidate.intent ?? ''} ${candidate.keyword ?? ''}`);
-	let best: { item: InventoryArticle; ratio: number } | null = null;
-	for (const item of inventory) {
-		const ratio = overlapRatio(needle, tokens(`${item.title} ${item.topic} ${item.keyword ?? ''} ${item.intent ?? ''}`));
-		if (!best || ratio > best.ratio) best = { item, ratio };
-	}
-	if (!best || best.ratio < 0.45) {
+export function assessOverlap(candidate: { title: string; intent?: string | null; keyword?: string | null; audienceProblem?: string | null }, inventory: InventoryArticle[]): OverlapAssessment {
+	const candidates = retrieveOverlapCandidates(`${candidate.title} ${candidate.keyword ?? ''}`, inventory);
+	if (!candidates.length) {
 		return {
 			decision: 'create',
-			overlap: best?.ratio ?? 0,
+			overlap: 0,
 			matchedArticleId: null,
 			matchedTitle: null,
+			intentRelation: 'distinct',
+			candidates: [],
 			rationale: 'No existing article shares enough of this topic and intent to treat it as a duplicate.',
 		};
 	}
-	const published = best.item.status === 'published';
-	if (best.ratio >= 0.8) {
+	const compared = candidates.map((item) => {
+		const article = inventory.find((entry) => entry.id === item.articleId);
+		return article ? { item, article, comparison: compareSearchIntent({ title: candidate.title, audienceProblem: candidate.audienceProblem ?? candidate.intent, article }) } : null;
+	}).filter((item): item is NonNullable<typeof item> => Boolean(item));
+	const rank = { duplicate_intent: 3, substantially_overlapping: 2, related_but_distinct: 1, distinct: 0 };
+	compared.sort((left, right) => rank[right.comparison.relation] - rank[left.comparison.relation] || right.comparison.overlap - left.comparison.overlap);
+	const best = compared[0];
+	if (!best || best.comparison.relation === 'distinct' || best.comparison.relation === 'related_but_distinct') {
 		return {
-			decision: 'reject',
-			overlap: Math.round(best.ratio * 100) / 100,
-			matchedArticleId: best.item.id,
-			matchedTitle: best.item.title,
-			rationale: `This is substantially the same query as “${best.item.title}”. A new article would compete with it. The existing article was not changed.`,
+			decision: 'create',
+			overlap: best?.comparison.overlap ?? 0,
+			matchedArticleId: best?.article.id ?? null,
+			matchedTitle: best?.article.title ?? null,
+			intentRelation: best?.comparison.relation ?? 'distinct',
+			candidates,
+			rationale: best?.comparison.rationale ?? 'No existing article answers this reader question.',
 		};
 	}
 	return {
-		decision: 'update',
-		overlap: Math.round(best.ratio * 100) / 100,
-		matchedArticleId: best.item.id,
-		matchedTitle: best.item.title,
-		rationale: published
-			? `“${best.item.title}” already covers part of this intent. Update that article instead of publishing a second one. Nothing was overwritten.`
-			: `“${best.item.title}” overlaps this intent. Extend that draft instead of starting a duplicate. Nothing was overwritten.`,
+		decision: best.comparison.relation === 'duplicate_intent' ? 'reject' : 'update',
+		overlap: best.comparison.overlap,
+		matchedArticleId: best.article.id,
+		matchedTitle: best.article.title,
+		intentRelation: best.comparison.relation,
+		candidates,
+		rationale: best.comparison.rationale,
 	};
 }
 

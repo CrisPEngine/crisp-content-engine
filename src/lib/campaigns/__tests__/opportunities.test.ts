@@ -72,11 +72,11 @@ describe('content opportunities', () => {
 		expect(inferred[0]?.evidence[0]?.metrics).toBeNull();
 	});
 
-	it('recommends an update instead of a duplicate and does not change the article', () => {
+	it('treats a chapter-structure question as related to a planning article, not a duplicate', () => {
 		const overlap = assessOverlap({ title: 'Plan a novel chapter structure', intent: 'informational' }, inventory);
-		expect(overlap.decision).toBe('update');
+		expect(overlap.intentRelation).toBe('related_but_distinct');
+		expect(overlap.decision).toBe('create');
 		expect(overlap.matchedArticleId).toBe('article-1');
-		expect(overlap.rationale).toContain('Nothing was overwritten');
 		expect(inventory[0]?.status).toBe('published');
 	});
 

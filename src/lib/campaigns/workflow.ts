@@ -326,29 +326,40 @@ async function proposalCost(userId: string, since: string): Promise<number | nul
 	}
 }
 
-export async function applyOpenQualityCorrections(userId: string, articleId: string, maxCorrections = 2): Promise<{ applied: number; blockers: string[]; revision: number | null; note: string; published: false }> {
+export async function applyOpenQualityCorrections(userId: string, articleId: string, maxCorrections = 3): Promise<{ applied: number; blockers: string[]; revision: number | null; note: string; published: false }> {
 	const workspace = await import('@/lib/articles/workspace');
-	let article = (await workspace.getWorkspaceArticle(userId, articleId)).article;
-	if (!article.workspace?.editorialDesk?.critique) article = await workspace.critiqueWorkspaceArticle(userId, articleId);
+	const { usefulnessBlockers } = await import('@/lib/publishing/payloadPublish');
+	const { correctionDecision, correctionStrategy } = await import('@/lib/articles/correctionStrategy');
+	let article = await workspace.critiqueWorkspaceArticle(userId, articleId);
 	let applied = 0;
 	let revision: number | null = article.workspace?.revision?.number ?? null;
+	const attempts: Record<string, number> = {};
+	for (const proposal of article.workspace?.editorialDesk?.proposals ?? []) {
+		if (!proposal.sourceFindingId || proposal.status === 'proposed') continue;
+		attempts[proposal.sourceFindingId] = (attempts[proposal.sourceFindingId] ?? 0) + 1;
+	}
 	for (let pass = 0; pass < maxCorrections; pass += 1) {
+		const blockers = usefulnessBlockers(article.workspace?.editorialDesk?.critique?.findings ?? []);
+		const outcome = correctionDecision({ openBlockers: blockers, attemptsByFinding: attempts, maxAttempts: maxCorrections, costUsd: article.workspace?.generation.estimatedCostUsd ?? 0, maxCostUsd: 1, introducedCritical: false, unverifiable: false });
+		if (outcome.decision === 'continue') {
+			return { applied, blockers: [], revision, note: `${outcome.reason} Revision ${revision ?? 'current'}.`, published: false };
+		}
+		if (outcome.decision === 'stop') return { applied, blockers, revision, note: outcome.reason, published: false };
 		const findings = article.workspace?.editorialDesk?.critique?.findings ?? [];
 		for (const finding of findings) {
-			const material = ['intro-weak', 'opening-guide', 'definition-thin', 'cta-weak', 'answers-indirect', 'example-conflict'].includes(finding.id) || finding.category === 'repetition' || finding.category === 'structure';
-			if (finding.status !== 'open' || !material) continue;
-			const queued = (article.workspace?.editorialDesk?.proposals ?? []).some((item) => item.sourceFindingId === finding.id && item.status !== 'applied');
+			if (finding.status !== 'open' || !blockers.includes(finding.id)) continue;
+			if ((attempts[finding.id] ?? 0) >= maxCorrections) continue;
+			const strategy = correctionStrategy(finding.id);
+			const queued = (article.workspace?.editorialDesk?.proposals ?? []).some((item) => item.sourceFindingId === finding.id && item.status === 'proposed');
 			if (queued) continue;
-			const instruction = finding.category === 'examples'
-				? `Resolve only this fictional contradiction: ${finding.evidence.join('; ')}. ${finding.recommendation} Change only those passages. Do not rewrite unrelated sections, and do not add sources, statistics, or product capabilities.`
-				: `${finding.recommendation} Change only the passage this finding names. Do not add sources, statistics, or unverified product capabilities.`;
 			article = await workspace.queueEditorialChange(userId, articleId, {
 				findingId: finding.id,
-				instruction,
+				instruction: `${strategy?.instruction ?? finding.recommendation} Change only the passage this finding names. Do not add sources, statistics, or unverified product capabilities.`,
 				reason: finding.explanation,
 				section: finding.section,
 				status: 'proposed',
 			});
+			attempts[finding.id] = (attempts[finding.id] ?? 0) + 1;
 		}
 		const desk = article.workspace?.editorialDesk;
 		const decision = classifyEditorialWork({
@@ -362,19 +373,13 @@ export async function applyOpenQualityCorrections(userId: string, articleId: str
 		for (const id of decision.acceptIds) article = await workspace.decideEditorialProposal(userId, articleId, id, 'accepted');
 		await workspace.previewAcceptedEditorialProposals(userId, articleId);
 		const result = await workspace.applyAcceptedEditorialProposals(userId, articleId);
-		article = result.article;
+		article = await workspace.critiqueWorkspaceArticle(userId, result.article.id);
 		revision = article.workspace?.revision?.number ?? revision;
 		applied += decision.acceptIds.length;
 	}
-	await workspace.revalidateEditorialFindings(userId, articleId);
-	const { usefulnessBlockers } = await import('@/lib/publishing/payloadPublish');
 	const blockers = usefulnessBlockers(article.workspace?.editorialDesk?.critique?.findings ?? []);
-	const note = blockers.length
-		? `Significant findings remain after correction: ${blockers.join(', ')}.`
-		: applied
-			? `Applied ${applied} targeted correction${applied === 1 ? '' : 's'} on revision ${revision ?? 'current'}. Editorial review ran again. Nothing was published.`
-			: 'Editorial review ran again. No targeted rewrite was required. Nothing was published.';
-	return { applied, blockers, revision, note, published: false };
+	const outcome = correctionDecision({ openBlockers: blockers, attemptsByFinding: attempts, maxAttempts: maxCorrections, costUsd: article.workspace?.generation.estimatedCostUsd ?? 0, maxCostUsd: 1, introducedCritical: false, unverifiable: false });
+	return { applied, blockers: outcome.decision === 'continue' ? [] : blockers, revision, note: outcome.reason, published: false };
 }
 
 export async function progressProductionJob(userId: string, jobId: string, input?: { deadlineMs?: number; maxStages?: number; maxCostUsd?: number; resumeAttention?: boolean }): Promise<ProductionJob> {

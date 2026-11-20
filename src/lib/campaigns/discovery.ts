@@ -168,7 +168,7 @@ export function candidatesFromPillarHits(input: {
 	if (hosts.size < 2) return [];
 	const problem = (hits.find((hit) => hit.snippet)?.snippet || hits[0]?.title || '').replace(/\s+/g, ' ').trim().slice(0, 280);
 	if (!problem) return [];
-	const overlap = assessOverlap({ title: input.query, intent: 'informational' }, input.inventory);
+	const overlap = assessOverlap({ title: input.query, intent: 'informational', audienceProblem: problem }, input.inventory);
 	const grounded = overlap.decision === 'create';
 	return [{
 		title: input.query,
