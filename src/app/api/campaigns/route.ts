@@ -91,11 +91,21 @@ export async function POST(request: Request) {
 		}
 		if (action === 'run_production') {
 			if (typeof body.jobId !== 'string') return NextResponse.json({ error: 'Choose a production job.' }, { status: 400 });
-			const { runProductionToApproval } = await import('@/lib/campaigns/workflow');
-			return NextResponse.json({ job: await runProductionToApproval(userId, body.jobId) });
+			const { progressProductionJob } = await import('@/lib/campaigns/workflow');
+			const job = await progressProductionJob(userId, body.jobId, { maxCostUsd: 1 });
+			if (job.status === 'queued' || job.status === 'running') {
+				const { after } = await import('next/server');
+				after(async () => {
+					let current = job;
+					for (let step = 0; step < 3 && (current.status === 'queued' || current.status === 'running'); step += 1) {
+						current = await progressProductionJob(userId, current.id, { maxCostUsd: 1 });
+					}
+				});
+			}
+			return NextResponse.json({ job });
 		}
 		if (action === 'discover') {
-			const source = body.source === 'community' || body.source === 'search_console' || body.source === 'themes' || body.source === 'market' ? body.source : 'search';
+			const source = body.source === 'community' || body.source === 'search_console' || body.source === 'themes' || body.source === 'market' || body.source === 'pillars' ? body.source : 'search';
 			const opportunities = await discoverOpportunities(userId, {
 				brandId,
 				source,
@@ -105,6 +115,11 @@ export async function POST(request: Request) {
 				areas: Array.isArray(body.areas) ? body.areas.filter((item): item is string => typeof item === 'string') : undefined,
 			});
 			return NextResponse.json({ opportunities });
+		}
+		if (action === 'select_shortlist') {
+			if (!brandId) return NextResponse.json({ error: 'Choose a brand.' }, { status: 400 });
+			const { approveDistinctShortlist } = await import('@/lib/campaigns/service');
+			return NextResponse.json({ opportunities: await approveDistinctShortlist(userId, brandId) });
 		}
 		if (action === 'decide') {
 			const status = body.status as OpportunityStatus;

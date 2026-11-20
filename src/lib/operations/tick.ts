@@ -1,6 +1,6 @@
 import { discoverOpportunities } from '@/lib/campaigns/service';
 import { getOpportunityRepository } from '@/lib/campaigns/repository';
-import { advanceProductionJob, startProductionJob } from '@/lib/campaigns/workflow';
+import { progressProductionJob, startProductionJob } from '@/lib/campaigns/workflow';
 import type { ContentCampaign } from '@/lib/campaigns/types';
 import { getSupabaseService } from '@/lib/supabaseService';
 import { articlePolicyInput, normaliseOperationPolicy, performanceSignals, planOperationTick, publicationPolicyDecision, type TickAction } from '@/lib/operations/policy';
@@ -13,14 +13,17 @@ export type OperationTickResult = {
 	lease: 'acquired' | 'held' | 'unavailable';
 	actions: TickAction[];
 	errors: string[];
+	continueWork: boolean;
 };
 
 export async function runOperationsTick(now = Date.now()): Promise<OperationTickResult> {
 	const lease = await acquireLease(now);
-	if (lease === 'held') return { ok: true, published: false, lease, actions: [{ type: 'skip', reason: 'lease_held' }], errors: [] };
-	if (lease === 'unavailable') return { ok: false, published: false, lease, actions: [], errors: ['The operation lease table is not available, so no campaign was started.'] };
+	if (lease === 'held') return { ok: true, published: false, lease, actions: [{ type: 'skip', reason: 'lease_held' }], errors: [], continueWork: false };
+	if (lease === 'unavailable') return { ok: false, published: false, lease, actions: [], errors: ['The operation lease table is not available, so no campaign was started.'], continueWork: false };
 	const errors: string[] = [];
 	const actions: TickAction[] = [];
+	let continueWork = false;
+	const deadline = now + 210_000;
 	try {
 		const campaigns = await listActiveCampaigns();
 		for (const campaign of campaigns) {
@@ -34,14 +37,15 @@ export async function runOperationsTick(now = Date.now()): Promise<OperationTick
 			actions.push(...planned);
 			for (const action of planned) {
 				try {
-					await executeAction(campaign, action);
+					const outcome = await executeAction(campaign, action, deadline);
+					if (outcome.continueWork) continueWork = true;
 				} catch (error) {
 					errors.push(error instanceof Error ? error.message : 'An operation action failed.');
 				}
 			}
 		}
 		await rememberRun(actions, errors);
-		return { ok: errors.length === 0, published: false, lease, actions, errors };
+		return { ok: errors.length === 0, published: false, lease, actions, errors, continueWork };
 	} finally {
 		await releaseLease();
 	}
@@ -69,21 +73,25 @@ async function publishableArticles(campaign: ActiveCampaign, policy: NonNullable
 	return rows;
 }
 
-async function executeAction(campaign: ActiveCampaign, action: TickAction): Promise<void> {
+async function executeAction(campaign: ActiveCampaign, action: TickAction, deadline: number): Promise<{ continueWork: boolean }> {
 	if (action.type === 'discover') {
 		const failures: string[] = [];
 		await discoverOpportunities(campaign.ownerUserId, { brandId: campaign.brandId, source: 'search_console' }).catch((error: unknown) => {
 			failures.push(error instanceof Error ? error.message : 'Search Console discovery failed.');
 		});
-		await discoverOpportunities(campaign.ownerUserId, { brandId: campaign.brandId, source: 'themes' }).catch((error: unknown) => {
-			failures.push(error instanceof Error ? error.message : 'Theme discovery failed.');
+		await discoverOpportunities(campaign.ownerUserId, { brandId: campaign.brandId, source: 'pillars' }).catch((error: unknown) => {
+			failures.push(error instanceof Error ? error.message : 'Pillar discovery failed.');
+		});
+		const { approveDistinctShortlist } = await import('@/lib/campaigns/service');
+		await approveDistinctShortlist(campaign.ownerUserId, campaign.brandId).catch((error: unknown) => {
+			failures.push(error instanceof Error ? error.message : 'Opportunity selection failed.');
 		});
 		if (failures.length) throw new Error(failures.join(' '));
-		return;
+		return { continueWork: false };
 	}
 	if (action.type === 'start') {
 		await startProductionJob(campaign.ownerUserId, action.opportunityId, campaign.id);
-		return;
+		return { continueWork: false };
 	}
 	if (action.type === 'resume' || (action.type === 'skip' && action.reason === 'budget')) {
 		const repository = getOpportunityRepository();
@@ -102,7 +110,7 @@ async function executeAction(campaign: ActiveCampaign, action: TickAction): Prom
 				await repository.saveJob(campaign.ownerUserId, job);
 			}
 		}
-		return;
+		return { continueWork: false };
 	}
 	if (action.type === 'hold_update') {
 		const repository = getOpportunityRepository();
@@ -114,16 +122,17 @@ async function executeAction(campaign: ActiveCampaign, action: TickAction): Prom
 			job.note = job.error;
 			await repository.saveJob(campaign.ownerUserId, job);
 		}
-		return;
+		return { continueWork: false };
 	}
 	if (action.type === 'advance') {
-		await advanceProductionJob(campaign.ownerUserId, action.jobId);
-		return;
+		const job = await progressProductionJob(campaign.ownerUserId, action.jobId, { deadlineMs: deadline, maxCostUsd: campaign.operation?.maxCostUsdPerArticle });
+		return { continueWork: job.status === 'queued' || job.status === 'running' };
 	}
 	if (action.type === 'publish') {
 		const { guardedArticlePublish } = await import('@/lib/publishing/publishArticle');
 		await guardedArticlePublish(campaign.ownerUserId, action.articleId, true);
 	}
+	return { continueWork: false };
 }
 
 type ActiveCampaign = ContentCampaign & { ownerUserId: string };

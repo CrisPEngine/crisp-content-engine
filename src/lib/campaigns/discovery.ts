@@ -142,6 +142,63 @@ export async function discoverSearchConsole(input: {
 	});
 }
 
+export const PILLAR_SEARCHES: Array<{ pillar: string; query: string }> = [
+	{ pillar: 'Novel planning', query: 'how to decide what happens in the next chapter of a novel' },
+	{ pillar: 'Story continuity', query: 'how to track clues and reveals across a mystery novel' },
+	{ pillar: 'Writing workflows', query: 'how to revise one chapter without rewriting the whole novel' },
+	{ pillar: 'AI-assisted writing', query: 'how to continue a fiction scene with AI without contradicting earlier chapters' },
+	{ pillar: 'Writing software comparisons', query: 'how to choose novel writing software for story notes versus drafting' },
+];
+
+export function candidatesFromPillarHits(input: {
+	pillar: string;
+	query: string;
+	hits: SearchHit[];
+	inventory: InventoryArticle[];
+	retrievedAt: string;
+}): DiscoveredCandidate[] {
+	const hits = input.hits.filter((hit) => hit.url?.startsWith('https://'));
+	const hosts = new Set(hits.flatMap((hit) => {
+		try {
+			return [new URL(hit.url).host];
+		} catch {
+			return [];
+		}
+	}));
+	if (hosts.size < 2) return [];
+	const problem = (hits.find((hit) => hit.snippet)?.snippet || hits[0]?.title || '').replace(/\s+/g, ' ').trim().slice(0, 280);
+	if (!problem) return [];
+	const overlap = assessOverlap({ title: input.query, intent: 'informational' }, input.inventory);
+	const grounded = overlap.decision === 'create';
+	return [{
+		title: input.query,
+		audienceProblem: problem,
+		searchIntent: 'informational',
+		demandClass: 'inferred',
+		discoverySource: 'pillar',
+		naturalKey: key('pillar', input.query),
+		grounded,
+		forcedOverlap: {
+			...overlap,
+			decision: grounded ? overlap.decision : 'research',
+			rationale: grounded
+				? `${overlap.rationale} Approved pillar “${input.pillar}”. ${hosts.size} external sites discussed the question. No search volume was supplied.`
+				: `${overlap.rationale} The question overlaps existing Folian coverage, so it stays out of new production.`,
+		},
+		evidence: hits.slice(0, 5).map((hit) => ({
+			sourceKind: 'search',
+			url: hit.url,
+			excerpt: `Pillar “${input.pillar}”. Retrieved ${input.retrievedAt}. ${hit.snippet?.slice(0, 400) ?? hit.title ?? ''}`.trim(),
+			observedAt: hit.publishedAt ?? input.retrievedAt,
+			metrics: null,
+		})),
+		brandRelevance: grounded ? 0.7 : 0.35,
+		brandRationale: `The search question comes from the approved pillar “${input.pillar}”. The pillar is editorial direction, not measured demand.`,
+		businessRelevance: grounded ? 0.45 : 0.2,
+		businessRationale: `${hosts.size} external sites returned pages. No search volume was supplied.`,
+	}];
+}
+
 export function scoreCandidate(candidate: DiscoveredCandidate, inventory: InventoryArticle[]) {
 	const overlap = candidate.forcedOverlap ?? assessOverlap({ title: candidate.title, intent: candidate.searchIntent }, inventory);
 	const confidence = evidenceConfidence(candidate.demandClass, candidate.evidence.length, candidate.evidence.find((item) => item.metrics)?.metrics ?? null);
@@ -159,5 +216,13 @@ export function scoreCandidate(candidate: DiscoveredCandidate, inventory: Invent
 		researchRationale: candidate.evidence.length ? 'Source URLs or measured rows are stored, so article research has a starting point.' : 'No sources are stored yet.',
 		grounded: candidate.grounded,
 	});
+	const measured = candidate.evidence.some((item) => item.metrics && item.metrics.scope !== 'page');
+	const lane = overlap.decision === 'update' ? 'refresh' as const : measured && candidate.demandClass === 'observed' ? 'existing_query' as const : 'new_topic' as const;
+	scored.lane = lane;
+	scored.laneRationale = lane === 'refresh'
+		? 'This is a refresh of a page that already exists. It is not a new article.'
+		: lane === 'existing_query'
+			? 'This score uses measured Search Console evidence. Low impressions change confidence, not eligibility.'
+			: 'This is a new topic. Relevance is inferred from sources and brand fit. Search volume was not measured and was not invented.';
 	return { overlap, scored, confidence };
 }
