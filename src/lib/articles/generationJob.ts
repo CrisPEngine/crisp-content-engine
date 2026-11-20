@@ -189,15 +189,14 @@ export async function noteGenerationFailure(job: WorkflowJob, message: string): 
 	});
 }
 
-export function recordHistoricalGeneration(article: { workspace?: { generation: { jobId: string | null; status: string; error: string | null; stage?: string | null; updatedAt?: string | null }; generationAttempts?: Array<{ jobId: string | null; at: string; message: string; outcome: 'historical' }>; revision?: { id: string } | null } | null; body: string }, jobId: string | null, message: string): boolean {
+export function recordHistoricalGeneration(article: { workspace?: { generation: { jobId: string | null; status: string; error: string | null; stage?: string | null; updatedAt?: string | null; history?: Array<{ jobId: string | null; at: string; message: string }> }; revision?: { id: string } | null } | null; body: string }, jobId: string | null, message: string): boolean {
 	const workspace = article.workspace;
 	if (!workspace?.revision || !article.body.trim() || !message.trim()) return false;
-	const attempts = workspace.generationAttempts ?? [];
-	if (!attempts.some((item) => item.jobId === jobId && item.message === message)) {
-		const next: Array<{ jobId: string | null; at: string; message: string; outcome: 'historical' }> = [...attempts, { jobId, at: new Date().toISOString(), message, outcome: 'historical' }];
-		workspace.generationAttempts = next.slice(-8);
-	}
-	workspace.generation = { ...workspace.generation, status: 'completed', error: null, stage: 'Draft saved', updatedAt: new Date().toISOString() };
+	const history = workspace.generation.history ?? [];
+	const next = history.some((item) => item.jobId === jobId && item.message === message)
+		? history
+		: [...history, { jobId, at: new Date().toISOString(), message }].slice(-8);
+	workspace.generation = { ...workspace.generation, status: 'completed', error: null, stage: 'Draft saved', updatedAt: new Date().toISOString(), history: next };
 	return true;
 }
 

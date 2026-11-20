@@ -667,7 +667,7 @@ export default function ArticleWorkspacePage() {
 						</p>
 					) : null}
 					{workspace.generation.researchVersion ? <p>Written from research version {workspace.generation.researchVersion}</p> : null}
-					{(workspace.generationAttempts ?? []).map((attempt) => (
+					{(workspace.generation.history ?? []).map((attempt) => (
 						<p key={`${attempt.jobId}-${attempt.at}`}>Earlier attempt, {new Date(attempt.at).toLocaleString()}: {attempt.message} The saved draft was kept.</p>
 					))}
 				</details>

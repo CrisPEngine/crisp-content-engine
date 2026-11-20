@@ -95,11 +95,11 @@ describe('opportunity production visibility', () => {
 
 describe('historical generation and payload readiness', () => {
 	it('moves a timeout off a saved draft and keeps an empty draft failed', () => {
-		const saved = { body: 'A saved draft.', workspace: { revision: { id: 'rev' }, generation: { jobId: 'job', status: 'failed', error: 'The job exceeded the execution limit. Nothing partial was saved. Retry keeps this article.', stage: 'Failed' }, generationAttempts: [] } };
+		const saved = { body: 'A saved draft.', workspace: { revision: { id: 'rev' }, generation: { jobId: 'job', status: 'failed' as const, error: 'The job exceeded the execution limit. Nothing partial was saved. Retry keeps this article.', stage: 'Failed', history: [] as Array<{ jobId: string | null; at: string; message: string }> } } };
 		expect(recordHistoricalGeneration(saved, 'job', saved.workspace.generation.error)).toBe(true);
 		expect(saved.workspace.generation.status).toBe('completed');
 		expect(saved.workspace.generation.error).toBeNull();
-		expect(saved.workspace.generationAttempts[0]?.message).toContain('execution limit');
+		expect(saved.workspace.generation.history?.[0]?.message).toContain('execution limit');
 		const empty = { body: ' ', workspace: { revision: null, generation: { jobId: null, status: 'failed', error: 'timeout', stage: 'Failed' } } };
 		expect(recordHistoricalGeneration(empty, 'job', 'timeout')).toBe(false);
 	});

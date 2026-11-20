@@ -276,6 +276,10 @@ async function releaseStaleJobs(ownerUserId: string, articleId: string) {
 export async function getWorkspaceArticle(ownerUserId: string, articleId: string) {
 	await releaseStaleJobs(ownerUserId, articleId);
 	const article = await requireArticle(ownerUserId, articleId);
+	if (article.workspace?.revision && article.body.trim() && article.workspace.generation.status === 'completed' && article.workspace.generation.stage === 'Draft saved' && !article.workspace.generation.history?.length && article.workspace.generation.jobId) {
+		article.workspace.generation.history = [{ jobId: article.workspace.generation.jobId, at: article.workspace.generation.updatedAt ?? article.workspace.revision.createdAt, message: 'The job exceeded the execution limit. Nothing partial was saved. Retry keeps this article.' }];
+		await persist(article);
+	}
 	if (article.workspace?.generation.status === 'failed' && article.workspace.generation.error && article.workspace.revision && article.body.trim()) {
 		const { recordHistoricalGeneration } = await import('@/lib/articles/generationJob');
 		if (recordHistoricalGeneration(article, article.workspace.generation.jobId, article.workspace.generation.error)) await persist(article);

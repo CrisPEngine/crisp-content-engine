@@ -271,8 +271,8 @@ export type ArticleWorkspace = {
 		startedAt?: string | null;
 		updatedAt?: string | null;
 		researchVersion?: number | null;
+		history?: Array<{ jobId: string | null; at: string; message: string }>;
 	};
-	generationAttempts?: Array<{ jobId: string | null; at: string; message: string; outcome: 'historical' }>;
 	revisionJob?: JobState & { baseRevisionId: string | null; resultRevisionId: string | null };
 	editorial: {
 		status: 'not_run' | 'findings' | 'ready' | 'blocked';
