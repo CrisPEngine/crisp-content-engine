@@ -363,18 +363,21 @@ export async function reassessOpportunityIntents(userId: string, brandId: string
 	const rows = await repository.list(userId, brandId);
 	const saved: ContentOpportunity[] = [];
 	for (const item of rows) {
-		if (item.status === 'approved' || item.status === 'in_production' || item.status === 'rejected' || item.status === 'archived') continue;
+		if (item.discoverySource !== 'pillar' || item.status !== 'needs_research') continue;
 		const overlap = assessOverlap({ title: item.title, intent: item.searchIntent, audienceProblem: item.audienceProblem }, inventory);
-		const eligible = overlap.intentRelation === 'distinct' || overlap.intentRelation === 'related_but_distinct';
+		const eligible = (overlap.intentRelation === 'distinct' || overlap.intentRelation === 'related_but_distinct') && item.evidence.length > 0 && item.demandClass !== 'unvalidated';
 		const scoreDetail = {
 			...item.scoreDetail,
-			promotionBlocked: eligible ? false : item.scoreDetail.promotionBlocked,
-			blockReason: eligible ? null : item.scoreDetail.blockReason,
+			promotionBlocked: eligible ? false : true,
+			blockReason: eligible ? null : overlap.rationale,
 			selectionRationale: overlap.rationale,
 		};
-		const status = eligible && item.status === 'needs_research' ? 'discovered' : item.status;
-		const recommendedAction = eligible && overlap.decision === 'create' ? 'create' : item.recommendedAction;
-		saved.push(await repository.updateAssessment(userId, item.id, { overlap, recommendedAction, status, scoreDetail }));
+		saved.push(await repository.updateAssessment(userId, item.id, {
+			overlap,
+			recommendedAction: eligible ? 'create' : 'research',
+			status: eligible ? 'discovered' : 'needs_research',
+			scoreDetail,
+		}));
 	}
 	return saved;
 }
