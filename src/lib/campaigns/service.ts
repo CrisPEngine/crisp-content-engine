@@ -166,15 +166,22 @@ export async function discoverOpportunities(userId: string, input: {
 		const { PILLAR_SEARCHES, candidatesFromPillarHits } = await import('./discovery');
 		const provider = selectSearchProvider();
 		if (!provider.configured) throw new CampaignError('Pillar research needs Tavily or Brave.', 409, 'search_provider_not_configured');
-		const themes = (await getIntelligenceStore().listThemes(userId, input.brandId)).filter((theme) => theme.status === 'active').map((theme) => theme.title);
-		const pillars = themes.length ? themes : ['Novel planning', 'Story continuity', 'Writing workflows', 'AI-assisted writing', 'Writing software comparisons'];
+		const brain = await getIntelligenceStore().getBrandBrainById(userId, input.brandId);
+		const themes = brain ? (await getIntelligenceStore().listThemes(userId, brain.id)).filter((theme) => theme.status === 'active').map((theme) => theme.title) : [];
+		const pillars = [...new Set([...themes, 'Novel planning', 'Story continuity', 'Writing workflows', 'AI-assisted writing', 'Writing software comparisons'])];
 		const selected = PILLAR_SEARCHES.filter((item) => pillars.some((pillar) => pillar.toLowerCase() === item.pillar.toLowerCase()));
 		const retrievedAt = new Date().toISOString();
 		const candidates: DiscoveredCandidate[] = [];
+		let firstError: unknown = null;
 		for (const item of selected) {
-			const hits = await provider.search(item.query, 5, { depth: 'basic' }).catch(() => []);
-			candidates.push(...candidatesFromPillarHits({ pillar: item.pillar, query: item.query, hits, inventory, retrievedAt }));
+			try {
+				const hits = await provider.search(item.query, 5, { depth: 'basic' });
+				candidates.push(...candidatesFromPillarHits({ pillar: item.pillar, query: item.query, hits, inventory, retrievedAt }));
+			} catch (error) {
+				firstError ??= error;
+			}
 		}
+		if (!candidates.length && firstError) throw firstError;
 		return persistCandidates(userId, input.brandId, candidates, repository, inventory);
 	}
 	if (input.source === 'themes') {
