@@ -47,6 +47,8 @@ export async function reviewCurrentRevision(input: {
 		linkedToolSlugs: linkedToolSlugsFromBody(article.body, input.taxonomy?.tools ?? []),
 		brandName: input.brain.identity.name,
 		title: article.title,
+		topic: article.topic,
+		primaryKeyword: article.primaryKeyword,
 		seoTitle: article.seo.seoTitle,
 		metaDescription: article.seo.metaDescription,
 		requiredLinks: splitLines(brief?.requiredLinks),

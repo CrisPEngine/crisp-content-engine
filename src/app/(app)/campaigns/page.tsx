@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ContentCampaign, ContentOpportunity, DemandClass, EvidenceConfidence, OpportunityAction, OpportunityStatus, ProductionJob, ProviderAvailability } from '@/lib/campaigns/types';
 import { queuePage } from '@/lib/campaigns/queue';
+import { opportunityKind, presentOpportunity } from '@/lib/campaigns/presentation';
 
 type Brand = { id: string; name: string };
 type Queue = {
@@ -51,6 +52,7 @@ export default function CampaignsPage() {
 	const [demand, setDemand] = useState<DemandClass | ''>('');
 	const [actionFilter, setActionFilter] = useState<OpportunityAction | ''>('');
 	const [statusFilter, setStatusFilter] = useState<OpportunityStatus | 'active' | ''>('active');
+	const [lane, setLane] = useState<'all' | 'new' | 'refresh'>('all');
 	const [confidence, setConfidence] = useState<EvidenceConfidence | ''>('');
 	const [sort, setSort] = useState<'score' | 'updated' | 'title'>('score');
 	const [page, setPage] = useState(1);
@@ -130,6 +132,12 @@ export default function CampaignsPage() {
 				<p className="text-xs text-text-dim">CCE / Campaigns / Opportunities</p>
 				<h1 className="text-2xl font-semibold">Opportunity queue</h1>
 				<p className="text-sm text-text-soft">Discover and validate a topic before an article is produced. A weekly number is a maximum, not a quota.</p>
+				<nav className="mt-3 flex flex-wrap gap-3 text-sm" aria-label="Content operations">
+					<a className="underline" href="#approved">Approved opportunities</a>
+					<a className="underline" href="#production">Production jobs</a>
+					<a className="underline" href="#awaiting">Articles awaiting approval</a>
+					<a className="underline" href="/content/articles?view=published">Published articles</a>
+				</nav>
 			</header>
 			<label className="block text-sm">
 				Brand
@@ -227,8 +235,8 @@ export default function CampaignsPage() {
 					<button className="btn" type="button" disabled={busy || !title.trim() || !problem.trim()} onClick={() => void post('record', { title, audienceProblem: problem, demandClass: 'unvalidated' }, 'record', 'Saved as an unvalidated idea. It cannot be approved until it has evidence.')}>{pending === 'record' ? 'Saving…' : 'Save unvalidated idea'}</button>
 				</div>
 			</section>
-			<section className="card space-y-2 p-4 text-sm">
-				<h2 className="font-medium">Publication</h2>
+			<section id="awaiting" className="card space-y-2 p-4 text-sm">
+				<h2 className="font-medium">Articles awaiting approval</h2>
 				<p className="text-text-soft">Approval, scheduling, and live verification stay separate. Nothing here publishes a page.</p>
 				{board.filter((article) => article.publicationPhase && article.publicationPhase !== 'ready_for_approval' || article.status === 'review' || article.status === 'approved').slice(0, 12).map((article) => (
 					<p key={article.id}>
@@ -239,15 +247,15 @@ export default function CampaignsPage() {
 				))}
 				{board.length === 0 ? <p className="text-text-soft">No articles are waiting for publication.</p> : null}
 			</section>
-			<section className="card space-y-2 p-4 text-sm">
-				<h2 className="font-medium">Production</h2>
+			<section id="production" className="card space-y-2 p-4 text-sm">
+				<h2 className="font-medium">Production jobs</h2>
 				<p className="text-text-soft">Auto-draft can prepare an article. It cannot publish the site.</p>
 				{(queue?.jobs ?? []).map((job) => (
 					<article key={job.id} className="border-t border-edge/50 pt-2">
 						<p>{job.stage} · {job.status.replaceAll('_', ' ')} · attempt {job.attempt} · cost ${job.costUsd.toFixed(4)}</p>
 						<p>{job.note}</p>
 						{job.error ? <p role="alert">{job.error}</p> : null}
-						{job.articleId ? <p>Article {job.articleId}</p> : null}
+						{job.articleId ? <p><a className="underline" href={`/content/articles/${job.articleId}`}>Open the article</a> · {job.stage.replaceAll('_', ' ')}</p> : null}
 						<button className="btn" type="button" disabled={busy || job.status === 'ready_for_approval' || job.status === 'paused'} onClick={() => void post('advance_production', { jobId: job.id }, job.id, 'The next production stage ran. Nothing was published.')}>{pending === job.id ? 'Running stage…' : 'Run next stage'}</button>
 					</article>
 				))}
@@ -255,8 +263,11 @@ export default function CampaignsPage() {
 			</section>
 			{pending === 'load' ? <p className="text-sm">Loading opportunities…</p> : null}
 			<OpportunityTable
-				rows={queue?.opportunities ?? []}
+				rows={(queue?.opportunities ?? []).filter((row) => lane === 'all' || opportunityKind(row, board.filter((article) => article.publicationPhase === 'verified_live' || article.publicationPhase === 'published' || article.status === 'published').map((article) => article.title)) === lane)}
 				jobs={queue?.jobs ?? []}
+				paused={queue?.operations?.paused ?? queue?.campaigns?.[0]?.status === 'paused'}
+				lane={lane}
+				onLane={setLane}
 				q={q}
 				demand={demand}
 				actionFilter={actionFilter}
@@ -290,6 +301,9 @@ export default function CampaignsPage() {
 function OpportunityTable(props: {
 	rows: ContentOpportunity[];
 	jobs: ProductionJob[];
+	paused: boolean;
+	lane: 'all' | 'new' | 'refresh';
+	onLane: (value: 'all' | 'new' | 'refresh') => void;
 	q: string;
 	demand: DemandClass | '';
 	actionFilter: OpportunityAction | '';
@@ -337,7 +351,12 @@ function OpportunityTable(props: {
 		props.onSelected(props.selected.includes(id) ? props.selected.filter((item) => item !== id) : [...props.selected, id]);
 	}
 	return (
-		<section className="space-y-3">
+		<section id="approved" className="space-y-3">
+			<div className="flex flex-wrap gap-2 text-sm">
+				<button className="btn" type="button" aria-pressed={props.lane === 'all'} onClick={() => props.onLane('all')}>All opportunities</button>
+				<button className="btn" type="button" aria-pressed={props.lane === 'new'} onClick={() => props.onLane('new')}>New article opportunities</button>
+				<button className="btn" type="button" aria-pressed={props.lane === 'refresh'} onClick={() => props.onLane('refresh')}>Existing article improvements</button>
+			</div>
 			<div className="grid grid-cols-2 gap-2 md:grid-cols-4">
 				{['discovered', 'needs_research', 'approved', 'archived'].map((status) => (
 					<article key={status} className="card p-3 text-sm">
@@ -402,24 +421,28 @@ function OpportunityTable(props: {
 							<th className="p-2">Score</th>
 							<th className="p-2">Confidence</th>
 							<th className="p-2">Action</th>
-							<th className="p-2">Status</th>
+							<th className="p-2">What happens next</th>
 							<th className="p-2">Updated</th>
 						</tr>
 					</thead>
 					<tbody>
-						{result.rows.map((row) => (
+						{result.rows.map((row) => {
+							const job = props.jobs.find((item) => item.opportunityId === row.id) ?? null;
+							const view = presentOpportunity({ opportunity: row, job, campaignPaused: props.paused });
+							return (
 							<tr key={row.id} className="border-t border-edge/40">
 								<td className="p-2"><input type="checkbox" checked={props.selected.includes(row.id)} onChange={() => toggle(row.id)} aria-label={`Select ${row.title}`} /></td>
-								<td className="p-2"><button className="text-left underline" type="button" onClick={() => props.onOpen(props.openId === row.id ? null : row.id)}>{row.title}</button></td>
+								<td className="p-2">{job?.articleId ? <a className="underline" href={`/content/articles/${job.articleId}`}>{row.title}</a> : <button className="text-left font-medium text-accent underline" type="button" onClick={() => props.onOpen(props.openId === row.id ? null : row.id)}>{row.title}</button>}</td>
 								<td className="p-2">{row.discoverySource}</td>
 								<td className="p-2">{DEMAND_LABEL[row.demandClass]}</td>
 								<td className="p-2">{row.score}</td>
 								<td className="p-2">{row.evidenceConfidence}</td>
-								<td className="p-2">{row.recommendedAction}</td>
-								<td className="p-2">{row.status.replaceAll('_', ' ')}</td>
+								<td className="p-2">{row.recommendedAction === 'update' ? 'Improve existing article' : row.recommendedAction}</td>
+								<td className="p-2"><span className="font-medium">{view.label}</span>{view.stage ? ` · ${view.stage}` : ''}<span className="block text-text-soft">{view.next}</span></td>
 								<td className="p-2 whitespace-nowrap">{new Date(row.updatedAt).toLocaleDateString()}</td>
 							</tr>
-						))}
+							);
+						})}
 					</tbody>
 				</table>
 				{result.total === 0 ? <p className="p-3 text-sm text-text-soft">No opportunities match these filters.</p> : null}
@@ -444,7 +467,7 @@ function OpportunityTable(props: {
 							<span className="block text-text-soft">{evidence.excerpt}</span>
 						</p>
 					))}
-					{history.length ? history.map((job) => <p key={job.id}>Production {job.stage} · {job.status.replaceAll('_', ' ')} · ${job.costUsd.toFixed(4)} · {job.note}</p>) : <p className="text-text-soft">No production history.</p>}
+					{history.length ? history.map((job) => <p key={job.id}>Production {job.stage} · {job.status.replaceAll('_', ' ')} · ${job.costUsd.toFixed(4)} · {job.note}{job.articleId ? <> · <a className="underline" href={`/content/articles/${job.articleId}`}>Open the article</a></> : null}</p>) : <p className="text-text-soft">No production job yet. {presentOpportunity({ opportunity: open, campaignPaused: props.paused }).next}</p>}
 					<div className="flex flex-wrap gap-2">
 						<button className="btn" type="button" disabled={props.busy} onClick={() => props.onDecide(open.id, 'approved')}>Approve</button>
 						<button className="btn" type="button" disabled={props.busy} onClick={() => props.onDecide(open.id, 'rejected')}>Reject</button>

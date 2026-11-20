@@ -28,7 +28,8 @@ type ArticleRow = {
 function rowBadges(row: ArticleRow): string[] {
 	const badges: string[] = [];
 	if (row.generationStatus === 'queued' || row.generationStatus === 'processing') badges.push('Generating');
-	if (row.generationStatus === 'failed') badges.push('Generation failed');
+	if (row.generationStatus === 'failed' && !row.revisionNumber) badges.push('Generation failed');
+	if (row.generationStatus === 'failed' && row.revisionNumber) badges.push('Earlier attempt timed out');
 	if (row.revisionNumber) badges.push(`Saved in CCE · rev ${row.revisionNumber}`);
 	if (row.submittedToCms) badges.push('Submitted to CMS');
 	if (row.approved) badges.push('Approved');
@@ -57,6 +58,10 @@ export default function ArticlesPage() {
 	const [brands, setBrands] = useState<Brand[]>([]);
 	const [brandId, setBrandId] = useState('');
 	const [view, setView] = useState<(typeof VIEWS)[number][0]>('all');
+	useEffect(() => {
+		const requested = new URLSearchParams(window.location.search).get('view');
+		if (VIEWS.some(([id]) => id === requested)) setView(requested as (typeof VIEWS)[number][0]);
+	}, []);
 	const [rows, setRows] = useState<ArticleRow[]>([]);
 	const [failed, setFailed] = useState<FailedJob[]>([]);
 	const [message, setMessage] = useState('');

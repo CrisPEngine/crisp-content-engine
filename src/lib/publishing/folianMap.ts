@@ -7,11 +7,16 @@ import { folianTaxonomyFallback } from './folian/taxonomyFallback';
 
 type FolianDraftPayload = Record<string, unknown>;
 
+/** Payload rich text rejects GFM task-list checkboxes, so a checklist is sent as an ordinary list. */
+export function cmsMarkdown(markdown: string): string {
+	return markdown.replace(/^(\s*(?:[-*+]|\d+\.)\s+)\[(?: |x|X)\]\s+/gm, '$1');
+}
+
 /** Blocks come from the saved body so manual edits and applied revisions reach the CMS. */
 function sectionBlocks(article: ArticleRecord) {
 	return parseSections(article.body).map((section) => ({
 		type: 'richText',
-		markdown: section.heading ? `## ${section.heading}\n\n${section.body}` : section.body,
+		markdown: cmsMarkdown(section.heading ? `## ${section.heading}\n\n${section.body}` : section.body),
 	}));
 }
 

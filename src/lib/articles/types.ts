@@ -272,6 +272,7 @@ export type ArticleWorkspace = {
 		updatedAt?: string | null;
 		researchVersion?: number | null;
 	};
+	generationAttempts?: Array<{ jobId: string | null; at: string; message: string; outcome: 'historical' }>;
 	revisionJob?: JobState & { baseRevisionId: string | null; resultRevisionId: string | null };
 	editorial: {
 		status: 'not_run' | 'findings' | 'ready' | 'blocked';
