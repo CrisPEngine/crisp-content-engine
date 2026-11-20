@@ -194,7 +194,8 @@ export function recordHistoricalGeneration(article: { workspace?: { generation: 
 	if (!workspace?.revision || !article.body.trim() || !message.trim()) return false;
 	const attempts = workspace.generationAttempts ?? [];
 	if (!attempts.some((item) => item.jobId === jobId && item.message === message)) {
-		workspace.generationAttempts = [...attempts, { jobId, at: new Date().toISOString(), message, outcome: 'historical' }].slice(-8);
+		const next: Array<{ jobId: string | null; at: string; message: string; outcome: 'historical' }> = [...attempts, { jobId, at: new Date().toISOString(), message, outcome: 'historical' }];
+		workspace.generationAttempts = next.slice(-8);
 	}
 	workspace.generation = { ...workspace.generation, status: 'completed', error: null, stage: 'Draft saved', updatedAt: new Date().toISOString() };
 	return true;
