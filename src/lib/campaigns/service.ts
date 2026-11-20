@@ -153,7 +153,7 @@ export async function recordContentOpportunity(userId: string, input: {
 
 export async function discoverOpportunities(userId: string, input: {
 	brandId: string;
-	source: 'search' | 'community' | 'search_console' | 'themes' | 'market';
+	source: 'search' | 'community' | 'search_console' | 'themes' | 'market' | 'pillars';
 	topic?: string;
 	startDate?: string;
 	endDate?: string;
@@ -161,6 +161,22 @@ export async function discoverOpportunities(userId: string, input: {
 }): Promise<ContentOpportunity[]> {
 	const inventory = await inventoryFor(userId, input.brandId);
 	const repository = getOpportunityRepository();
+	if (input.source === 'pillars') {
+		const { selectSearchProvider } = await import('@/lib/research/search');
+		const { PILLAR_SEARCHES, candidatesFromPillarHits } = await import('./discovery');
+		const provider = selectSearchProvider();
+		if (!provider.configured) throw new CampaignError('Pillar research needs Tavily or Brave.', 409, 'search_provider_not_configured');
+		const themes = (await getIntelligenceStore().listThemes(userId, input.brandId)).filter((theme) => theme.status === 'active').map((theme) => theme.title);
+		const pillars = themes.length ? themes : ['Novel planning', 'Story continuity', 'Writing workflows', 'AI-assisted writing', 'Writing software comparisons'];
+		const selected = PILLAR_SEARCHES.filter((item) => pillars.some((pillar) => pillar.toLowerCase() === item.pillar.toLowerCase()));
+		const retrievedAt = new Date().toISOString();
+		const candidates: DiscoveredCandidate[] = [];
+		for (const item of selected) {
+			const hits = await provider.search(item.query, 5, { depth: 'basic' }).catch(() => []);
+			candidates.push(...candidatesFromPillarHits({ pillar: item.pillar, query: item.query, hits, inventory, retrievedAt }));
+		}
+		return persistCandidates(userId, input.brandId, candidates, repository, inventory);
+	}
 	if (input.source === 'themes') {
 		const themes = await getIntelligenceStore().listThemes(userId, input.brandId);
 		const active = themes.filter((theme) => theme.status === 'active');
@@ -319,6 +335,19 @@ export async function archiveWeakOpportunities(userId: string, brandId: string):
 		archived.push({ id: row.id, title: row.title });
 	}
 	return archived;
+}
+
+export async function approveDistinctShortlist(userId: string, brandId: string): Promise<ContentOpportunity[]> {
+	const { selectDistinctOpportunities, selectionRationale } = await import('./lanes');
+	const repository = getOpportunityRepository();
+	const chosen = selectDistinctOpportunities(await repository.list(userId, brandId), 5);
+	const saved: ContentOpportunity[] = [];
+	for (const item of chosen) {
+		const scoreDetail = { ...item.scoreDetail, selectionRationale: selectionRationale(item) };
+		await repository.applyRescore(userId, item.id, { evidenceConfidence: item.evidenceConfidence, scoreDetail });
+		saved.push(item.status === 'approved' ? { ...item, scoreDetail } : await decideOpportunity(userId, item.id, 'approved'));
+	}
+	return saved;
 }
 
 export async function decideOpportunity(userId: string, id: string, status: OpportunityStatus): Promise<ContentOpportunity> {

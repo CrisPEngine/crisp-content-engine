@@ -86,7 +86,7 @@ describe('observed opportunity selection', () => {
 		expect(candidates[0]?.forcedOverlap?.decision).toBe('update');
 	});
 
-	it('asks for more research when a new query is below the production threshold', () => {
+	it('keeps a distinct low-impression query eligible instead of treating 50 impressions as a veto', () => {
 		const [candidate] = selectObservedOpportunities({
 			siteUrl: 'sc-domain:folian.app',
 			startDate: '2026-10-20',
@@ -99,7 +99,8 @@ describe('observed opportunity selection', () => {
 			brandTerms: ['Folian'],
 			verifiedCapabilities: ['Story Bible'],
 		});
-		expect(candidate?.forcedOverlap?.decision).toBe('research');
+		expect(candidate?.forcedOverlap?.decision).toBe('create');
+		expect(candidate?.forcedOverlap?.rationale).toMatch(/below 50/);
 		expect(JSON.stringify(candidate)).not.toMatch(/volume/i);
 	});
 });

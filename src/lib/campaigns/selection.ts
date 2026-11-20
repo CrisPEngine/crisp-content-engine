@@ -98,11 +98,8 @@ export function selectObservedOpportunities(input: {
 		}
 		if (impressions < thresholds.highConfidenceImpressions && overlap.decision === 'create') {
 			overlap = {
-				decision: 'research',
-				overlap: overlap.overlap,
-				matchedArticleId: overlap.matchedArticleId,
-				matchedTitle: overlap.matchedTitle,
-				rationale: `${impressions} impressions are recorded, which is below the 50-impression line used for a production decision. This needs more evidence before an article is started.`,
+				...overlap,
+				rationale: `${overlap.rationale} ${impressions} measured impressions are below 50. That count lowers confidence. It does not by itself block a distinct topic, and no impression count was estimated.`,
 			};
 		}
 		const ga4 = landingSupport(pagePath, landingPages);

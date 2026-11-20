@@ -68,6 +68,9 @@ export type ScoreResult = {
 	components: ScoreComponent[];
 	promotionBlocked: boolean;
 	blockReason: string | null;
+	lane?: 'existing_query' | 'new_topic' | 'refresh';
+	laneRationale?: string;
+	selectionRationale?: string;
 	rescore?: {
 		at: string;
 		previousConfidence: EvidenceConfidence;

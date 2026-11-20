@@ -1,3 +1,4 @@
+import { sameSearchIntent } from './lanes';
 import type { ContentOpportunity } from './types';
 
 const UNSAFE_CATEGORIES = new Set(['accuracy', 'research', 'product', 'citations', 'brand']);
@@ -49,8 +50,10 @@ export function selectProductionOpportunities(input: {
 }): ContentOpportunity[] {
 	if (input.remaining <= 0) return [];
 	const used = new Set(input.opportunityIdsInProduction);
+	const active = input.opportunities.filter((item) => used.has(item.id));
 	return input.opportunities
 		.filter((item) => item.status === 'approved' && (item.recommendedAction === 'create' || item.recommendedAction === 'update') && !item.scoreDetail.promotionBlocked && item.demandClass !== 'unvalidated' && !used.has(item.id))
+		.filter((item) => !active.some((existing) => sameSearchIntent(existing.title, item.title)))
 		.sort((left, right) => right.score - left.score)
 		.slice(0, input.remaining);
 }

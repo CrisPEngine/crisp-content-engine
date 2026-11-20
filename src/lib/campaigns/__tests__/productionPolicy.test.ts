@@ -68,7 +68,7 @@ describe('production policy', () => {
 			remaining: 1,
 		}).map((item) => item.id)).toEqual(['update']);
 		const chosen = selectProductionOpportunities({
-			opportunities: [opportunity({ id: 'low', score: 0.2 }), opportunity({ id: 'high', score: 0.9 }), opportunity({ id: 'used', score: 1 })],
+			opportunities: [opportunity({ id: 'low', title: 'How to revise one chapter', score: 0.2 }), opportunity({ id: 'high', title: 'How to track clues and reveals', score: 0.9 }), opportunity({ id: 'used', title: 'How to plan the next chapter', score: 1 })],
 			opportunityIdsInProduction: ['used'],
 			remaining: 1,
 		});

@@ -2,6 +2,7 @@ import { classifyEditorialWork, remainingCapacity, selectProductionOpportunities
 import { getOpportunityRepository } from './repository';
 import type { ProductionJob, ProductionStage } from './types';
 import { CampaignError } from './service';
+import { classifyProductionFailure, nextRetryAt, readRecovery, recoveryNote } from '@/lib/operations/recovery';
 
 const STAGES: ProductionStage[] = ['research', 'brief', 'draft', 'editorial', 'corrections', 'seo', 'hero', 'quality', 'approval'];
 
@@ -50,6 +51,8 @@ export async function advanceProductionJob(userId: string, jobId: string): Promi
 	if (!job) throw new CampaignError('Production job not found.', 404, 'job_missing');
 	if (job.status === 'paused' || job.status === 'ready_for_approval' || job.status === 'needs_attention') return job;
 	if (job.articleId) {
+		const { rememberRemotePublication } = await import('@/lib/publishing/reconcile');
+		await rememberRemotePublication(userId, job.articleId).catch(() => null);
 		const workspace = await import('@/lib/articles/workspace');
 		const current = await workspace.getWorkspaceArticle(userId, job.articleId);
 		const state = current.article.library?.publication?.state;
@@ -88,9 +91,22 @@ export async function advanceProductionJob(userId: string, jobId: string): Promi
 		}
 		return repository.saveJob(userId, job);
 	} catch (error) {
-		job.status = job.attempt >= 2 ? 'needs_attention' : 'failed';
-		job.error = error instanceof Error ? error.message : 'The production stage failed.';
-		job.note = job.error;
+		const message = error instanceof Error ? error.message : 'The production stage failed.';
+		const failure = classifyProductionFailure(message);
+		const previous = readRecovery(job.stageLog);
+		const count = previous.count + 1;
+		const after = failure.recoverable ? nextRetryAt(count, Date.now()) : null;
+		job.error = message;
+		job.stageLog = [...job.stageLog, { stage: job.stage, at: new Date().toISOString(), note: recoveryNote({ count, after, failureClass: failure.failureClass, reason: message }) }];
+		if (failure.recoverable && after) {
+			job.status = 'queued';
+			job.note = `Transient failure ${count} of 3. The same stage will retry after ${after}. ${message}`;
+		} else {
+			job.status = 'needs_attention';
+			job.note = failure.recoverable
+				? `Transient failure was not resolved after ${count} attempts. ${message}`
+				: `This failure needs a person. It was not retried. ${message}`;
+		}
 		return repository.saveJob(userId, job);
 	}
 }
@@ -197,8 +213,12 @@ async function runStage(userId: string, job: ProductionJob, opportunity: { title
 		const queued = await workspace.queueProposalForApproval(userId, articleId, article.body);
 		return { articleId, note: `Metadata proposal ${queued.id} is waiting for a person. Nothing was published.` };
 	}
+	const current = (await workspace.getWorkspaceArticle(userId, articleId)).article;
+	const live = current.library?.publication?.state === 'verified_live' || current.library?.publication?.state === 'published' || current.workspace?.cms.remoteStatus === 'published' || Boolean(current.publication?.url);
+	if (live) return { articleId, note: 'This article is already live. The draft was not submitted and nothing was published.', escalate: 'This article is already live. The draft was not submitted and nothing was published.' };
+	await workspace.submitArticleDraft(userId, articleId);
 	const queued = await workspace.requestArticleApproval(userId, articleId);
-	return { articleId, note: `Article ${queued.id} is waiting for a person. Nothing was published.`, costUsd: queued.workspace?.generation.estimatedCostUsd ?? 0 };
+	return { articleId, note: `An unpublished Payload draft was submitted. Article ${queued.id} is waiting for a person. Nothing was published.`, costUsd: queued.workspace?.generation.estimatedCostUsd ?? 0 };
 }
 
 async function writeUpdateProposal(input: {
@@ -308,7 +328,8 @@ async function proposalCost(userId: string, since: string): Promise<number | nul
 
 export async function applyOpenQualityCorrections(userId: string, articleId: string, maxCorrections = 2): Promise<{ applied: number; blockers: string[]; revision: number | null; note: string; published: false }> {
 	const workspace = await import('@/lib/articles/workspace');
-	let article = await workspace.critiqueWorkspaceArticle(userId, articleId);
+	let article = (await workspace.getWorkspaceArticle(userId, articleId)).article;
+	if (!article.workspace?.editorialDesk?.critique) article = await workspace.critiqueWorkspaceArticle(userId, articleId);
 	let applied = 0;
 	let revision: number | null = article.workspace?.revision?.number ?? null;
 	for (let pass = 0; pass < maxCorrections; pass += 1) {
@@ -356,18 +377,28 @@ export async function applyOpenQualityCorrections(userId: string, articleId: str
 	return { applied, blockers, revision, note, published: false };
 }
 
-export async function runProductionToApproval(userId: string, jobId: string): Promise<ProductionJob> {
+export async function progressProductionJob(userId: string, jobId: string, input?: { deadlineMs?: number; maxStages?: number; maxCostUsd?: number }): Promise<ProductionJob> {
 	const repository = getOpportunityRepository();
 	let job = await repository.getJob(userId, jobId);
 	if (!job) throw new CampaignError('Production job not found.', 404, 'job_missing');
-	if (job.status === 'needs_attention') {
-		job.status = 'queued';
-		job.error = null;
-		job.note = 'Resumed the same production job. No new article was created.';
-		job = await repository.saveJob(userId, job);
-	}
-	for (let step = 0; step < 12; step += 1) {
+	const deadline = input?.deadlineMs ?? Date.now() + 210_000;
+	const maxStages = input?.maxStages ?? 9;
+	for (let step = 0; step < maxStages && Date.now() < deadline; step += 1) {
+		if (input?.maxCostUsd != null && job.costUsd >= input.maxCostUsd && (job.status === 'queued' || job.status === 'running')) {
+			job.status = 'needs_attention';
+			job.error = 'The article budget is used. A person needs to review it.';
+			job.note = job.error;
+			return repository.saveJob(userId, job);
+		}
 		if (job.status === 'ready_for_approval' || job.status === 'needs_attention' || job.status === 'completed' || job.status === 'paused') return job;
+		const recovery = readRecovery(job.stageLog);
+		if (job.status === 'queued' && recovery.after && Date.parse(recovery.after) > Date.now()) return job;
+		if (job.status === 'failed' && recovery.failureClass === 'transient' && (!recovery.after || Date.parse(recovery.after) <= Date.now())) {
+			job.status = 'queued';
+			job.note = 'Retrying the interrupted stage. Completed stages were not repeated.';
+			job = await repository.saveJob(userId, job);
+		}
+		if (job.status !== 'queued' && job.status !== 'running') return job;
 		job = await advanceProductionJob(userId, job.id);
 		if (job.note.includes('has not finished') && job.articleId) {
 			const workspace = await import('@/lib/articles/workspace');
@@ -380,6 +411,10 @@ export async function runProductionToApproval(userId: string, jobId: string): Pr
 		}
 	}
 	return job;
+}
+
+export async function runProductionToApproval(userId: string, jobId: string): Promise<ProductionJob> {
+	return progressProductionJob(userId, jobId);
 }
 
 export async function finishProposalJob(userId: string, articleId: string, outcome: 'approved' | 'rejected' | 'changes'): Promise<ProductionJob | null> {
