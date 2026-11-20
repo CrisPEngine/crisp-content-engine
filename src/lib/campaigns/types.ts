@@ -91,12 +91,22 @@ export type InventoryArticle = {
 	url: string | null;
 };
 
+export type IntentRelation = 'duplicate_intent' | 'substantially_overlapping' | 'related_but_distinct' | 'distinct';
+
+export type OverlapCandidate = {
+	articleId: string;
+	title: string;
+	similarity: number;
+};
+
 export type OverlapAssessment = {
 	decision: OpportunityAction;
 	overlap: number;
 	matchedArticleId: string | null;
 	matchedTitle: string | null;
 	rationale: string;
+	intentRelation?: IntentRelation;
+	candidates?: OverlapCandidate[];
 };
 
 export type OpportunityEvidence = {

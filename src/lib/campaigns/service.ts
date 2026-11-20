@@ -357,6 +357,28 @@ export async function approveDistinctShortlist(userId: string, brandId: string):
 	return saved;
 }
 
+export async function reassessOpportunityIntents(userId: string, brandId: string): Promise<ContentOpportunity[]> {
+	const repository = getOpportunityRepository();
+	const inventory = await inventoryFor(userId, brandId);
+	const rows = await repository.list(userId, brandId);
+	const saved: ContentOpportunity[] = [];
+	for (const item of rows) {
+		if (item.status === 'approved' || item.status === 'in_production' || item.status === 'rejected' || item.status === 'archived') continue;
+		const overlap = assessOverlap({ title: item.title, intent: item.searchIntent, audienceProblem: item.audienceProblem }, inventory);
+		const eligible = overlap.intentRelation === 'distinct' || overlap.intentRelation === 'related_but_distinct';
+		const scoreDetail = {
+			...item.scoreDetail,
+			promotionBlocked: eligible ? false : item.scoreDetail.promotionBlocked,
+			blockReason: eligible ? null : item.scoreDetail.blockReason,
+			selectionRationale: overlap.rationale,
+		};
+		const status = eligible && item.status === 'needs_research' ? 'discovered' : item.status;
+		const recommendedAction = eligible && overlap.decision === 'create' ? 'create' : item.recommendedAction;
+		saved.push(await repository.updateAssessment(userId, item.id, { overlap, recommendedAction, status, scoreDetail }));
+	}
+	return saved;
+}
+
 export async function decideOpportunity(userId: string, id: string, status: OpportunityStatus): Promise<ContentOpportunity> {
 	const repository = getOpportunityRepository();
 	const all = await repository.get(userId, id);

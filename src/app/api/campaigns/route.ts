@@ -116,6 +116,11 @@ export async function POST(request: Request) {
 			});
 			return NextResponse.json({ opportunities });
 		}
+		if (action === 'reassess_overlap') {
+			if (!brandId) return NextResponse.json({ error: 'Choose a brand.' }, { status: 400 });
+			const { reassessOpportunityIntents } = await import('@/lib/campaigns/service');
+			return NextResponse.json({ opportunities: await reassessOpportunityIntents(userId, brandId) });
+		}
 		if (action === 'select_shortlist') {
 			if (!brandId) return NextResponse.json({ error: 'Choose a brand.' }, { status: 400 });
 			const { approveDistinctShortlist } = await import('@/lib/campaigns/service');

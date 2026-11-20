@@ -331,9 +331,13 @@ export function critiqueDraft(input: CritiqueInput): Omit<EditorialCritique, 're
 		);
 	}
 
-	const answerCues = [/what is a continuity error/i, /how do writers track/i, /contradict/i, /can software|software help/i];
+	const continuityGuide = /continuity error/i.test(`${input.title} ${input.topic}`);
+	const titleTerms = input.title.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((word) => word.length > 4 && !['novel', 'writing', 'fiction', 'story', 'without', 'across', 'chapter', 'chapters'].includes(word));
+	const answerCues = continuityGuide
+		? [/what is a continuity error/i, /how do writers track/i, /contradict/i, /can software|software help/i]
+		: titleTerms.map((token) => new RegExp(`\\b${token}\\b`, 'i'));
 	const missingAnswers = answerCues.filter((pattern) => !pattern.test(body)).length;
-	if (missingAnswers >= 2) {
+	if (answerCues.length > 0 && missingAnswers >= Math.ceil(answerCues.length / 2)) {
 		findings.push(
 			finding({
 				id: 'answers-indirect',
@@ -350,7 +354,8 @@ export function critiqueDraft(input: CritiqueInput): Omit<EditorialCritique, 're
 
 	const lastHeading = body.lastIndexOf('\n##');
 	const ending = lastHeading === -1 ? body.slice(-400) : body.slice(lastHeading);
-	const explainsProduct = brand ? new RegExp(`${brand}.{0,80}(memory|canon|review|continuity|manuscript)`, 'i').test(ending) : /\b(next|checklist|reread)\b/i.test(ending);
+	const practicalClose = /\[[ x]\]|next drafting cycle|before the next scene|checklist/i.test(ending);
+	const explainsProduct = practicalClose || (brand ? new RegExp(`${brand}.{0,80}(memory|canon|review|continuity|manuscript)`, 'i').test(ending) : /\b(next|checklist|reread)\b/i.test(ending));
 	if (!explainsProduct) {
 		findings.push(
 			finding({

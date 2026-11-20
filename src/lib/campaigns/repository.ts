@@ -14,6 +14,7 @@ export type OpportunityRepository = {
 	setStatus(userId: string, id: string, status: OpportunityStatus): Promise<ContentOpportunity>;
 	appendEvidence(userId: string, id: string, evidence: OpportunityEvidence[]): Promise<ContentOpportunity>;
 	applyRescore(userId: string, id: string, patch: { evidenceConfidence: EvidenceConfidence; scoreDetail: ScoreResult }): Promise<ContentOpportunity>;
+	updateAssessment(userId: string, id: string, patch: { overlap: OverlapAssessment; recommendedAction: OpportunityAction; status: OpportunityStatus; scoreDetail: ScoreResult }): Promise<ContentOpportunity>;
 	listCampaigns(userId: string, brandId: string): Promise<ContentCampaign[]>;
 	saveCampaign(userId: string, campaign: NewCampaign): Promise<ContentCampaign>;
 	updateCampaign(userId: string, id: string, patch: { status?: CampaignStatus; weeklyCapacity?: number; approvalMode?: ApprovalMode; themes?: string[]; operation?: BrandOperationPolicy }): Promise<ContentCampaign>;
@@ -198,6 +199,23 @@ export function createSupabaseOpportunityRepository(): OpportunityRepository {
 			const { data, error } = await db()
 				.from('content_opportunities')
 				.update({ evidence_confidence: patch.evidenceConfidence, score_detail: patch.scoreDetail, updated_at: new Date().toISOString() })
+				.eq('user_id', userId)
+				.eq('id', id)
+				.select('*, content_opportunity_evidence(*)')
+				.single();
+			if (error) throw new Error(error.message);
+			return fromRow(data as OpportunityRow);
+		},
+		async updateAssessment(userId, id, patch) {
+			const { data, error } = await db()
+				.from('content_opportunities')
+				.update({
+					overlap: patch.overlap,
+					recommended_action: patch.recommendedAction,
+					status: patch.status,
+					score_detail: patch.scoreDetail,
+					updated_at: new Date().toISOString(),
+				})
 				.eq('user_id', userId)
 				.eq('id', id)
 				.select('*, content_opportunity_evidence(*)')
@@ -480,6 +498,17 @@ export function createMemoryOpportunityRepository(): OpportunityRepository {
 			const found = opportunities.find((item) => item.userId === userId && item.id === id);
 			if (!found) throw new Error('Opportunity not found.');
 			found.evidenceConfidence = patch.evidenceConfidence;
+			found.scoreDetail = patch.scoreDetail;
+			found.updatedAt = new Date().toISOString();
+			const { userId: _user, naturalKey: _key, ...saved } = found;
+			return saved;
+		},
+		async updateAssessment(userId, id, patch) {
+			const found = opportunities.find((item) => item.userId === userId && item.id === id);
+			if (!found) throw new Error('Opportunity not found.');
+			found.overlap = patch.overlap;
+			found.recommendedAction = patch.recommendedAction;
+			found.status = patch.status;
 			found.scoreDetail = patch.scoreDetail;
 			found.updatedAt = new Date().toISOString();
 			const { userId: _user, naturalKey: _key, ...saved } = found;

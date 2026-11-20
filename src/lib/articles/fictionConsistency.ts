@@ -7,7 +7,7 @@ export type FictionIssue = {
 };
 
 const TEACHING = /conflicts are visible|these are separate problems|continuity error|deliberate|illustrative|for this example|suppose|teaching|example of|to illustrate|find the (error|mistake)|check whether/i;
-const COMMON = new Set(['The', 'This', 'That', 'Chapter', 'When', 'After', 'Before', 'Suppose', 'Ask', 'Start', 'Place', 'Your', 'For', 'Here', 'Now', 'These', 'Those', 'Table', 'Entity', 'Story', 'Bible', 'Island', 'Mainland', 'Lunar', 'Crew', 'Mark', 'Record', 'Records', 'Character', 'Characters', 'Noon', 'Moon', 'Put', 'But', 'Take', 'Make', 'Change', 'Changes', 'Changed', 'Name', 'Names', 'What', 'Where', 'Which', 'While', 'With', 'From', 'Into', 'Each', 'Every', 'Some', 'Many', 'Most', 'Only', 'Also', 'Then', 'Than', 'There', 'Their', 'Once', 'Keep', 'Leave', 'Open', 'Close', 'Using', 'Used', 'Note', 'Notes', 'And', 'Not', 'You', 'Can', 'May', 'One', 'Two', 'New', 'Old', 'Add', 'Use', 'See', 'Let', 'Did', 'Was', 'Are', 'Has', 'Had', 'Its', 'Our', 'Who', 'How', 'Why', 'All', 'Any', 'Out', 'Too', 'Very', 'During', 'Between', 'Within', 'Without', 'About', 'Above', 'Below', 'Under', 'Over', 'Such', 'Same', 'Other', 'Another', 'First', 'Last', 'Next', 'Later', 'Earlier']);
+const COMMON = new Set(['The', 'This', 'That', 'Chapter', 'When', 'After', 'Before', 'Suppose', 'Ask', 'Start', 'Place', 'Your', 'For', 'Here', 'Now', 'These', 'Those', 'Table', 'Entity', 'Story', 'Bible', 'Island', 'Mainland', 'Lunar', 'Crew', 'Mark', 'Record', 'Records', 'Character', 'Characters', 'Noon', 'Moon', 'Put', 'But', 'Take', 'Make', 'Change', 'Changes', 'Changed', 'Name', 'Names', 'What', 'Where', 'Which', 'While', 'With', 'From', 'Into', 'Each', 'Every', 'Some', 'Many', 'Most', 'Only', 'Also', 'Then', 'Than', 'There', 'Their', 'Once', 'Keep', 'Leave', 'Open', 'Close', 'Using', 'Used', 'Note', 'Notes', 'And', 'Not', 'You', 'Can', 'May', 'One', 'Two', 'New', 'Old', 'Add', 'Use', 'See', 'Let', 'Did', 'Was', 'Are', 'Has', 'Had', 'Its', 'Our', 'Who', 'How', 'Why', 'All', 'Any', 'Out', 'Too', 'Very', 'During', 'Between', 'Within', 'Without', 'About', 'Above', 'Below', 'Under', 'Over', 'Such', 'Same', 'Other', 'Another', 'First', 'Last', 'Next', 'Later', 'Earlier', 'Lead', 'Read', 'Include', 'Select', 'Paste', 'Current', 'Established', 'Tense', 'Replace', 'Request', 'Approve', 'Update', 'Summary', 'Tracker', 'Draft', 'Scene', 'Check', 'Write']);
 
 function names(body: string): string[] {
 	const found = new Set<string>();
@@ -38,6 +38,8 @@ export function classifyFictionalConsistency(body: string): FictionIssue[] {
 			const a = list[i] ?? '';
 			const b = list[j] ?? '';
 			if (!nearDuplicate(a, b)) continue;
+			const count = (name: string) => body.match(new RegExp(`\\b${name}\\b`, 'g'))?.length ?? 0;
+			if (count(a) < 2 || count(b) < 2) continue;
 			issues.push({
 				kind: 'accidental',
 				message: `${a} and ${b} look like the same name spelled two ways.`,
