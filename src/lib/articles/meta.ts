@@ -498,7 +498,14 @@ export function articleNextStep(article: ArticleRecord): { stage: string; action
 			currentRevisionId: workspace.revision?.id ?? null,
 			body: article.body,
 			critiqueRevisionId: workspace.editorialDesk?.critique?.revisionId ?? null,
-			openCritical: openCriticalFindings(workspace).filter((finding) => !(finding.code === 'content_overlap' && isSelfOverlap(article.title, finding.evidence ?? []))),
+			openCritical: openCriticalFindings(workspace)
+				.filter((finding) => !(finding.code === 'content_overlap' && isSelfOverlap(article.title, finding.evidence ?? [])))
+				.map((finding) => ({
+					code: finding.code,
+					evidence: finding.evidence ?? undefined,
+					explanation: finding.explanation ?? undefined,
+					revisionId: finding.revisionId ?? null,
+				})),
 			title: article.title,
 			structureOk: validateArticleStructure(article.body).ok,
 		});
