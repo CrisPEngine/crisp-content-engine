@@ -514,6 +514,16 @@ export default function ArticleWorkspacePage() {
 				) : null}
 			</div>
 
+			{detail?.article.workspace?.cms.sync?.state === 'published' ? (
+				<div className="card p-4 text-sm">
+					<p className="font-medium">Published in Folian</p>
+					<p>Payload revision {detail.article.workspace.cms.sync.remoteRevision ?? 'unknown'} is live. CCE revision {detail.article.workspace.cms.sync.localRevision ?? detail.article.workspace.revision?.number ?? 'unknown'} {detail.article.workspace.cms.sync.localChangesPending ? 'has local changes pending.' : 'matches the last check.'}</p>
+					<p className="text-text-soft">{detail.article.workspace.cms.sync.flag || 'Updating the published article needs an explicit approval. This page does not publish it.'}</p>
+					{detail.revisions?.filter((revision) => detail.article.workspace?.cms.submittedRevisionId && revision.id !== detail.article.workspace.cms.submittedRevisionId && revision.number > (detail.article.workspace.cms.sync?.remoteRevision ?? 0)).slice(0, 4).map((revision) => (
+						<p key={revision.id}>Local revision {revision.number}: {revision.note || 'Saved change'}</p>
+					))}
+				</div>
+			) : null}
 			{detail?.article.workspace?.revision && detail.article.approval.status !== 'approved' ? (
 				<div className="card p-4 text-sm">
 					<p className="font-medium">{detail.nextStep?.action ?? 'The draft is saved'}</p>

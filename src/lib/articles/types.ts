@@ -317,6 +317,15 @@ export type ArticleWorkspace = {
 		mode: DestinationDraftMode | null;
 		submittedRevisionId?: string | null;
 		remoteStatus?: string | null;
+		sync?: {
+			state: 'published' | 'draft' | 'scheduled' | 'unpublished' | 'deleted' | 'unknown';
+			remoteRevision: number | null;
+			localRevision: number | null;
+			localChangesPending: boolean;
+			remoteChanged: boolean;
+			checkedAt: string;
+			flag: string | null;
+		} | null;
 		heroMediaId?: string | null;
 		heroSourceUrl?: string | null;
 		ogMediaId?: string | null;

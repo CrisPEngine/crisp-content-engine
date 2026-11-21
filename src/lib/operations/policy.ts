@@ -1,4 +1,4 @@
-import { remainingCapacity, selectProductionOpportunities } from '@/lib/campaigns/productionPolicy';
+import { productionCapacity, selectProductionOpportunities } from '@/lib/campaigns/productionPolicy';
 import type { ApprovalMode, ContentOpportunity, ProductionJob, ProductionStage } from '@/lib/campaigns/types';
 
 export type OperatingMode = 'assisted' | 'autonomous_approval' | 'autonomous_publishing';
@@ -198,9 +198,8 @@ export function planOperationTick(input: {
 	const resumable = input.jobs.find((job) => !publishedUpdate(job) && (job.status === 'queued' || (job.status === 'running' && now - new Date(job.updatedAt).getTime() > staleAfter)));
 	const withinBudget = resumable && resumable.costUsd < input.policy.maxCostUsdPerArticle;
 	if (withinBudget && resumable) actions.push({ type: 'advance', jobId: resumable.id });
-	const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
-	const startedThisWeek = input.jobs.filter((job) => new Date(job.createdAt).getTime() >= weekAgo).length;
-	const remaining = remainingCapacity(input.policy.weeklyMaximum, startedThisWeek);
+	const capacity = productionCapacity(input.jobs, now, input.policy.weeklyMaximum);
+	const remaining = capacity.remaining;
 	const concurrent = active.length;
 	if (concurrent < input.policy.maxConcurrentJobs && remaining > 0 && !withinBudget) {
 		const chosen = selectProductionOpportunities({

@@ -25,12 +25,14 @@ export const APP_NAV: NavItem[] = [
 	{
 		label: 'Content',
 		items: [
-			{ label: 'Create', href: '/content/generate' },
-			{ label: 'Articles', href: '/content/articles' },
+			{ label: 'Overview', href: '/content' },
 			{ label: 'Opportunities', href: '/campaigns' },
-			{ label: 'Approval', href: '/content/approval' },
+			{ label: 'Articles', href: '/content/articles' },
+			{ label: 'Campaigns', href: '/campaigns#operations' },
+			{ label: 'Publishing', href: '/content/published' },
+			{ label: 'Diagnostics', href: '/intelligence?tab=diagnostics' },
+			{ label: 'Create', href: '/content/generate' },
 			{ label: 'Scheduled', href: '/content/schedule' },
-			{ label: 'Published', href: '/content/published' },
 			{ label: 'Idea Engine', href: '/content/idea-engine' },
 			{ label: 'Brand Assets', href: '/content/brand-assets' },
 		],

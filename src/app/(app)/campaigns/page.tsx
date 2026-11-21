@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ContentCampaign, ContentOpportunity, DemandClass, EvidenceConfidence, OpportunityAction, OpportunityStatus, ProductionJob, ProviderAvailability } from '@/lib/campaigns/types';
 import { queuePage } from '@/lib/campaigns/queue';
 import { opportunityKind, presentOpportunity } from '@/lib/campaigns/presentation';
+import { productionCapacity, productionHoldReason } from '@/lib/campaigns/productionPolicy';
 
 type Brand = { id: string; name: string };
 type Queue = {
@@ -197,8 +198,8 @@ export default function CampaignsPage() {
 					<p key={campaign.id}>{campaign.name} · {campaign.approvalMode.replace('_', ' ')} · up to {campaign.weeklyCapacity} a week · auto-publish {campaign.autoPublishEnabled ? 'on' : 'off'}</p>
 				))}
 			</section>
-			<section className="card space-y-3 p-4 text-sm">
-				<h2 className="font-medium">Autonomous operations</h2>
+			<section id="operations" className="card space-y-3 p-4 text-sm">
+				<h2 className="font-medium">Campaign</h2>
 				<p className="text-text-soft">The daily worker discovers and drafts only while a campaign is active. It cannot publish, and it does not change published articles.</p>
 				{queue?.operations ? (
 					<div className="grid gap-2 md:grid-cols-4">
@@ -212,6 +213,11 @@ export default function CampaignsPage() {
 						<p>Next publication: the worker does not publish on a schedule.</p>
 					</div>
 				) : null}
+				{queue?.operations ? (() => {
+					const capacity = productionCapacity(queue.jobs ?? [], Date.now(), queue.operations.weeklyMaximum);
+					const concurrent = (queue.jobs ?? []).filter((job) => job.status === 'queued' || job.status === 'running').length;
+					return <p>{productionHoldReason({ paused: queue.operations.paused, remaining: capacity.remaining, concurrent, maxConcurrent: 1, nextSlotAt: capacity.nextSlotAt })} Started this week {capacity.started}. Completed or awaiting approval {capacity.completed}. Failed {capacity.failed}, which does not use a slot. Published articles are not overwritten.</p>;
+				})() : null}
 				{queue?.operations?.themes?.length ? <p>Themes: {queue.operations.themes.join(', ')}</p> : null}
 				{(queue?.operations?.signals ?? []).map((signal) => <p key={signal.title}>{signal.kind}: {signal.title}. {signal.reason}</p>)}
 				<div className="flex flex-wrap gap-2">

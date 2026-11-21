@@ -527,6 +527,13 @@ export function articleNextStep(article: ArticleRecord): { stage: string; action
 			detail: workspace.media.deliveryError || 'The hero has to be delivered to the destination before the draft is ready.',
 		};
 	}
+	if (workspace.cms.sync?.state === 'published' && workspace.cms.sync.localChangesPending) {
+		return {
+			stage: 'Published in Folian',
+			action: 'Review changes',
+			detail: `Payload revision ${workspace.cms.sync.remoteRevision ?? 'unknown'} is live. CCE revision ${workspace.revision?.number ?? 'unknown'} is only local. Updating the published article needs an explicit approval.`,
+		};
+	}
 	if (workspace.cms.lastError) {
 		return {
 			stage: 'CMS',

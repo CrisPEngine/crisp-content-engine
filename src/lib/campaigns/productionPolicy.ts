@@ -43,6 +43,26 @@ export function remainingCapacity(weeklyCapacity: number, startedThisWeek: numbe
 	return Math.max(0, Math.floor(weeklyCapacity) - Math.max(0, startedThisWeek));
 }
 
+export function productionCapacity(jobs: Array<{ createdAt: string; status: string }>, now: number, weeklyMaximum: number): { started: number; failed: number; completed: number; remaining: number; nextSlotAt: string | null } {
+	const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+	const recent = jobs.filter((job) => new Date(job.createdAt).getTime() >= weekAgo);
+	const failed = recent.filter((job) => job.status === 'failed');
+	const counted = recent.filter((job) => job.status !== 'failed');
+	const completed = counted.filter((job) => job.status === 'completed' || job.status === 'ready_for_approval');
+	const remaining = remainingCapacity(weeklyMaximum, counted.length);
+	const nextSlotAt = remaining > 0 || !counted.length
+		? null
+		: new Date(Math.min(...counted.map((job) => new Date(job.createdAt).getTime())) + 7 * 24 * 60 * 60 * 1000).toISOString();
+	return { started: counted.length, failed: failed.length, completed: completed.length, remaining, nextSlotAt };
+}
+
+export function productionHoldReason(input: { paused: boolean; remaining: number; concurrent: number; maxConcurrent: number; nextSlotAt: string | null }): string {
+	if (input.paused) return 'The campaign is paused. Resume turns on the daily worker at 05:00 UTC. It does not publish.';
+	if (input.concurrent >= input.maxConcurrent) return 'Another article is already in production. Only one runs at a time.';
+	if (input.remaining <= 0) return `The weekly production limit is used. The next open slot is ${input.nextSlotAt ?? 'after a counted job is older than seven days'}. Failed jobs do not use a slot.`;
+	return 'Approved. The daily worker can start it at 05:00 UTC. No completion time is estimated.';
+}
+
 export function selectProductionOpportunities(input: {
 	opportunities: ContentOpportunity[];
 	opportunityIdsInProduction: string[];
