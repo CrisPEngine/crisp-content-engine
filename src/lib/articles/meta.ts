@@ -9,6 +9,7 @@ import type {
 	WordTarget,
 } from '@/lib/articles/types';
 import type { DestinationTaxonomy } from '@/lib/publishing/destinationTaxonomy';
+import { isSelfOverlap } from '@/lib/articles/reviewWorkflow';
 
 export function reviewCycleLimit(): number {
 	const raw = Number(process.env.CCE_ARTICLE_REVIEW_CYCLES ?? '2');
@@ -285,7 +286,7 @@ export function articleApprovalGate(article: ArticleRecord): GateResult {
 			message: `The last review covered revision ${workspace.editorial.reviewedRevisionNumber ?? 'unknown'}. The current revision is ${workspace.revision.number}. Rerun review.`,
 		};
 	}
-	const critical = openCriticalFindings(workspace);
+	const critical = openCriticalFindings(workspace).filter((finding) => !(finding.code === 'content_overlap' && isSelfOverlap(article.title, finding.evidence ?? [])));
 	if (critical.length) {
 		return {
 			ok: false,
@@ -496,7 +497,7 @@ export function articleNextStep(article: ArticleRecord): { stage: string; action
 			detail: `Review checks revision ${workspace.revision?.number ?? 1} against the approved brief.`,
 		};
 	}
-	const critical = openCriticalFindings(workspace);
+	const critical = openCriticalFindings(workspace).filter((finding) => !(finding.code === 'content_overlap' && isSelfOverlap(article.title, finding.evidence ?? [])));
 	if (critical.length && workspace.editorial.exhausted) {
 		return {
 			stage: 'Review blocked',
