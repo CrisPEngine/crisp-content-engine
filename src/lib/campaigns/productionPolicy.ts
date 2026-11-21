@@ -1,5 +1,6 @@
 import { sameSearchIntent } from './lanes';
-import type { ContentOpportunity } from './types';
+import { optimisationScope } from './scoring';
+import type { ContentOpportunity, ProductionWorkType } from './types';
 
 const UNSAFE_CATEGORIES = new Set(['accuracy', 'research', 'product', 'citations', 'brand']);
 const TARGETED_CATEGORIES = new Set(['examples', 'structure', 'repetition', 'writing', 'seo', 'usefulness']);
@@ -43,11 +44,24 @@ export function remainingCapacity(weeklyCapacity: number, startedThisWeek: numbe
 	return Math.max(0, Math.floor(weeklyCapacity) - Math.max(0, startedThisWeek));
 }
 
-export function productionCapacity(jobs: Array<{ createdAt: string; status: string }>, now: number, weeklyMaximum: number): { started: number; failed: number; completed: number; remaining: number; nextSlotAt: string | null } {
+export function workTypeForOpportunity(input: { recommendedAction: string; evidence?: Array<{ metrics: { position: number; ctr: number; impressions: number; clicks?: number; scope?: 'query' | 'page' } | null }> }): ProductionWorkType {
+	if (input.recommendedAction !== 'update') return 'new_article';
+	const measured = input.evidence?.find((item) => item.metrics)?.metrics ?? null;
+	const scope = optimisationScope(measured ? { impressions: measured.impressions, clicks: measured.clicks ?? 0, ctr: measured.ctr, position: measured.position, startDate: '', endDate: '', scope: measured.scope } : null);
+	return scope === 'section' || scope === 'expansion' ? 'content_improvement' : 'metadata';
+}
+
+export function countsAsArticleStart(job: { status: string; workType?: string; stageLog?: Array<{ workType?: string }> }): boolean {
+	if (job.status === 'failed') return false;
+	const workType = job.workType ?? job.stageLog?.find((item) => item.workType)?.workType;
+	return workType !== 'metadata';
+}
+
+export function productionCapacity(jobs: Array<{ createdAt: string; status: string; workType?: string; stageLog?: Array<{ workType?: string }> }>, now: number, weeklyMaximum: number): { started: number; failed: number; completed: number; remaining: number; nextSlotAt: string | null } {
 	const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
 	const recent = jobs.filter((job) => new Date(job.createdAt).getTime() >= weekAgo);
 	const failed = recent.filter((job) => job.status === 'failed');
-	const counted = recent.filter((job) => job.status !== 'failed');
+	const counted = recent.filter((job) => countsAsArticleStart(job));
 	const completed = counted.filter((job) => job.status === 'completed' || job.status === 'ready_for_approval');
 	const remaining = remainingCapacity(weeklyMaximum, counted.length);
 	const nextSlotAt = remaining > 0 || !counted.length

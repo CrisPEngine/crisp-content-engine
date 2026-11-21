@@ -89,8 +89,13 @@ export function metadataApplyDecision(input: {
 	baseUpdatedAt: string | null;
 	currentUpdatedAt: string | null;
 	live: boolean;
+	baseRevision?: number | null;
+	currentRevision?: number | null;
 }): { apply: false; reason: string } | { apply: true } {
 	if (!input.approved) return { apply: false, reason: 'The proposal is not approved. Payload was not changed.' };
+	if (typeof input.baseRevision === 'number' && typeof input.currentRevision === 'number' && input.baseRevision !== input.currentRevision) {
+		return { apply: false, reason: `Payload revision is ${input.currentRevision}. This proposal was prepared against revision ${input.baseRevision}. Payload was not changed.` };
+	}
 	if (input.baseUpdatedAt && input.currentUpdatedAt && input.baseUpdatedAt !== input.currentUpdatedAt) {
 		return { apply: false, reason: 'Payload changed since this proposal was prepared. Revalidate it before applying.' };
 	}

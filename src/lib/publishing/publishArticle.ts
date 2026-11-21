@@ -9,7 +9,13 @@ export async function guardedArticlePublish(userId: string, articleId: string, e
 	const store = getNativeContentStore();
 	const article = await store.getArticle(userId, articleId);
 	if (!article || article.ownerUserId !== userId) return { sent: false, phase: 'failed', message: 'Article not found.', retryPublication: false as const };
+	if (article.body.trimStart().startsWith('# Metadata proposal')) return { sent: false, phase: 'failed', message: 'A metadata proposal is not an article. Payload was not called.', retryPublication: false as const };
 	const workspace = ensureWorkspace(article);
+	const baselineRevision = workspace.cms.baselineRevision;
+	const remoteRevision = workspace.cms.sync?.remoteRevision ?? null;
+	if (typeof baselineRevision === 'number' && typeof remoteRevision === 'number' && baselineRevision !== remoteRevision) {
+		return { sent: false, phase: 'failed', message: `Payload revision is ${remoteRevision}. This change was prepared against revision ${baselineRevision}. Payload was not called.`, retryPublication: false as const };
+	}
 	const findings = workspace.editorialDesk?.critique?.findings ?? [];
 	const externalId = workspace.cms.externalId ?? article.library?.cms?.externalId ?? article.library?.publication?.externalId ?? null;
 	const expectedRevision = workspace.cms.revision ?? article.library?.cms?.revision ?? article.library?.publication?.revision ?? null;

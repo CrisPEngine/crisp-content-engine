@@ -14,6 +14,19 @@ export function ensureRevision(article: ArticleRecord): ArticleRevisionRef | nul
 	if (!article.body.trim()) return workspace.revision ?? null;
 	const hash = contentHash(article.body);
 	if (workspace.revision && workspace.revision.contentHash === hash) return workspace.revision;
+	if (workspace.revision && !article.versions.some((version) => version.revisionId === workspace.revision?.id)) {
+		article.versions = [...article.versions, {
+			body: '',
+			createdAt: workspace.revision.createdAt,
+			instruction: workspace.revision.note || 'The previous revision was replaced before its body was archived.',
+			revisionId: workspace.revision.id,
+			number: workspace.revision.number,
+			contentHash: workspace.revision.contentHash,
+			wordCount: workspace.revision.wordCount,
+			source: workspace.revision.source,
+			kind: workspace.revision.kind,
+		}];
+	}
 	const priorNumbers = article.versions.map((version) => version.number ?? 0);
 	const number = Math.max(workspace.revision?.number ?? 0, ...priorNumbers, 0) + 1;
 	workspace.revision = {
@@ -50,7 +63,7 @@ export function commitRevision(
 	body: string,
 	source: ArticleRevisionRef['source'],
 	note?: string,
-	options?: { refreshMetadata?: boolean },
+	options?: { refreshMetadata?: boolean; kind?: ArticleRevisionRef['kind'] },
 ): ArticleRevisionRef {
 	const workspace = article.workspace;
 	if (!workspace) throw new Error('Article workspace is missing.');
@@ -71,6 +84,7 @@ export function commitRevision(
 				contentHash: prior.contentHash,
 				wordCount: prior.wordCount,
 				source: prior.source,
+				kind: prior.kind,
 			},
 		];
 	}
@@ -83,6 +97,7 @@ export function commitRevision(
 		createdAt: now,
 		source,
 		note,
+		kind: options?.kind ?? (source === 'baseline' ? 'baseline' : source === 'metadata' ? 'metadata' : 'content'),
 	};
 	article.body = nextBody;
 	article.wordCount = revision.wordCount;

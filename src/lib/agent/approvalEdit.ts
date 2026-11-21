@@ -67,7 +67,12 @@ async function applyApprovalEdit(request: ApprovalRequest, userId: string, raw: 
 		const article = await articles.getArticle(request.ownerUserId, request.targetId);
 		if (!article) throw new AgentError('not_found', 'The article for this approval no longer exists.', 404);
 		if (title != null) article.title = title;
-		article.body = body;
+		if (article.workspace) {
+			const { commitRevision } = await import('@/lib/articles/revisions');
+			commitRevision(article, body, 'manual', 'Edited from the approval request.');
+		} else {
+			article.body = body;
+		}
 		article.updatedAt = new Date().toISOString();
 		await articles.saveArticle(article);
 		request.preview = {

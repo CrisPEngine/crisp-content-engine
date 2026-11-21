@@ -1907,6 +1907,14 @@ async function uploadIfChanged(
 export async function submitArticleDraft(ownerUserId: string, articleId: string, options?: { correction?: boolean }): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
 	const workspace = ensureWorkspace(article);
+	if (article.body.trimStart().startsWith('# Metadata proposal')) {
+		throw new ArticleWorkflowError('A metadata proposal cannot be sent as an article draft.', 409, 'metadata_not_article');
+	}
+	const baselineRevision = workspace.cms.baselineRevision;
+	const remoteRevision = workspace.cms.sync?.remoteRevision ?? null;
+	if (typeof baselineRevision === 'number' && typeof remoteRevision === 'number' && baselineRevision !== remoteRevision) {
+		throw new ArticleWorkflowError(`Payload revision is ${remoteRevision}. This change was prepared against revision ${baselineRevision}. The draft was not sent.`, 409, 'remote_revision_conflict');
+	}
 	if (!workspace.destinationId) throw new ArticleWorkflowError('Choose a website destination first.', 400, 'destination_required');
 	const externalId = await ensureUniqueCmsExternalId(ownerUserId, article);
 	if (!article.categories[0]) throw new ArticleWorkflowError('Choose a destination category before sending the draft.', 400, 'category_required');
@@ -2614,12 +2622,25 @@ export async function applyArticleEditorialImprovement(ownerUserId: string, arti
 	return persist(article);
 }
 
+export async function recordArticleMetadataProposal(ownerUserId: string, articleId: string, input: import('./metadataProposal').MetadataProposalInput): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const { storeMetadataProposal } = await import('./metadataProposal');
+	storeMetadataProposal(article, input);
+	return persist(article);
+}
+
 export async function queueProposalForApproval(ownerUserId: string, articleId: string, body: string): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
 	if (article.status === 'published' || article.workspace?.cms.lastSyncAt) {
 		throw new ArticleWorkflowError('A published article cannot be replaced by a proposal.', 409, 'published_locked');
 	}
-	article.body = body;
+	const { metadataProposalFromBody, storeMetadataProposal } = await import('./metadataProposal');
+	const proposal = metadataProposalFromBody(body, article.workspace?.cms.baselineRevision ?? article.library?.cms?.revision ?? null, article.workspace?.revision?.id ?? null);
+	if (proposal) {
+		storeMetadataProposal(article, proposal);
+		return persist(article);
+	}
+	commitRevision(article, body, 'manual', 'Queued for approval.');
 	article.status = 'review';
 	article.approval = { required: true, approver: 'human', status: 'pending' };
 	return persist(article);
@@ -2633,20 +2654,58 @@ export async function requestArticleApproval(ownerUserId: string, articleId: str
 	return persist(article);
 }
 
+export async function approveArticleMetadataProposal(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	const proposal = article.workspace?.metadataProposal;
+	if (!proposal || proposal.status === 'rejected') throw new ArticleWorkflowError('There is no metadata proposal to approve.', 409, 'metadata_missing');
+	const { approveMetadataProposalRecord } = await import('./metadataProposal');
+	const { validateMetadataProposal } = await import('@/lib/campaigns/optimisation');
+	if (!validateMetadataProposal({
+		kind: 'metadata',
+		sourceUrl: proposal.sourceUrl,
+		originalTitle: article.library?.cms?.title || article.title,
+		originalDescription: article.library?.cms?.description || article.seo.metaDescription,
+		proposedTitle: proposal.proposedSeoTitle,
+		proposedDescription: proposal.proposedMetaDescription,
+		evidence: proposal.evidence,
+		rationale: proposal.rationale,
+		query: article.topic,
+	}).pass) {
+		throw new ArticleWorkflowError('This metadata proposal has not passed its checks. Nothing was published.', 409, 'metadata_not_valid');
+	}
+	const remote = article.workspace?.cms.sync?.remoteRevision ?? null;
+	if (typeof proposal.baselineCmsRevision === 'number' && typeof remote === 'number' && proposal.baselineCmsRevision !== remote) {
+		throw new ArticleWorkflowError(`Payload revision is ${remote}. This proposal was prepared against revision ${proposal.baselineCmsRevision}. Nothing was published.`, 409, 'remote_revision_conflict');
+	}
+	approveMetadataProposalRecord(article);
+	return persist(article);
+}
+
 export async function approveWorkspaceArticle(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
-	if (article.body.startsWith('# Metadata proposal')) {
-		const { parseMetadataProposal, validateMetadataProposal } = await import('@/lib/campaigns/optimisation');
-		const parsed = parseMetadataProposal(article.body);
-		if (!parsed || !validateMetadataProposal(parsed).pass) {
-			throw new ArticleWorkflowError('This metadata proposal has not passed its checks.', 409, 'metadata_not_valid');
+	if (article.body.trimStart().startsWith('# Metadata proposal')) {
+		const { metadataProposalFromBody, approveMetadataProposalRecord, storeMetadataProposal } = await import('./metadataProposal');
+		if (!article.workspace?.metadataProposal) {
+			const parsed = metadataProposalFromBody(article.body, article.workspace?.cms.baselineRevision ?? article.library?.cms?.revision ?? null, article.workspace?.revision?.id ?? null);
+			if (!parsed) throw new ArticleWorkflowError('This metadata proposal could not be read. The article was not approved.', 409, 'metadata_not_valid');
+			storeMetadataProposal(article, parsed);
 		}
-		article.status = 'approved';
-		article.approval = { required: true, approver: 'human', status: 'approved' };
-		const workspace = ensureWorkspace(article);
-		workspace.approvedAt = new Date().toISOString();
-		workspace.approvedRevisionId = workspace.revision?.id ?? null;
-		article.workspace = workspace;
+		const proposal = article.workspace?.metadataProposal;
+		const { validateMetadataProposal } = await import('@/lib/campaigns/optimisation');
+		if (!proposal || !validateMetadataProposal({
+			kind: 'metadata',
+			sourceUrl: proposal.sourceUrl,
+			originalTitle: article.library?.cms?.title || article.title,
+			originalDescription: article.library?.cms?.description || article.seo.metaDescription,
+			proposedTitle: proposal.proposedSeoTitle,
+			proposedDescription: proposal.proposedMetaDescription,
+			evidence: proposal.evidence,
+			rationale: proposal.rationale,
+			query: article.topic,
+		}).pass) {
+			throw new ArticleWorkflowError('This metadata proposal has not passed its checks. The article body was not approved.', 409, 'metadata_not_valid');
+		}
+		approveMetadataProposalRecord(article);
 		return persist(article);
 	}
 	ensureRevision(article);
@@ -2666,6 +2725,9 @@ export async function approveWorkspaceArticle(ownerUserId: string, articleId: st
 
 export async function publishWorkspaceArticle(ownerUserId: string, articleId: string): Promise<{ article: ArticleRecord; published: false; message: string }> {
 	const article = await requireArticle(ownerUserId, articleId);
+	if (article.body.trimStart().startsWith('# Metadata proposal')) {
+		throw new ArticleWorkflowError('A metadata proposal is not an article draft. It was not published.', 409, 'metadata_not_article');
+	}
 	if (article.approval.status !== 'approved' || article.status !== 'approved') {
 		throw new ArticleWorkflowError('Publish only after a person approves the article. This did not publish.', 403, 'approval_required');
 	}

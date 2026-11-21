@@ -119,6 +119,7 @@ export function emptyWorkspace(partial?: Partial<ArticleWorkspace>): ArticleWork
 		exampleConsistency: partial?.exampleConsistency,
 		approvedAt: partial?.approvedAt ?? null,
 		approvedRevisionId: partial?.approvedRevisionId ?? null,
+		metadataProposal: partial?.metadataProposal ?? null,
 		schedule: partial?.schedule ?? {
 			publishAt: null,
 			destinationId: null,
@@ -399,6 +400,8 @@ export type ArticleListItem = {
 	canonicalUrl: string | null;
 	publicationPhase: string;
 	publicationError: string | null;
+	localChangesPending: boolean;
+	cmsState: string | null;
 };
 
 export function toListItem(article: ArticleRecord): ArticleListItem {
@@ -427,6 +430,8 @@ export function toListItem(article: ArticleRecord): ArticleListItem {
 		canonicalUrl: article.library?.canonicalUrl ?? article.publication?.url ?? null,
 		publicationPhase: article.library?.publication?.state ?? (workspace.schedule.status === 'scheduled' || workspace.schedule.status === 'due' ? 'scheduled' : article.approval.status === 'approved' ? 'approved' : 'ready_for_approval'),
 		publicationError: article.library?.publication?.error ?? null,
+		localChangesPending: workspace.cms.sync?.localChangesPending ?? false,
+		cmsState: workspace.cms.sync?.state ?? workspace.cms.remoteStatus ?? null,
 	};
 }
 

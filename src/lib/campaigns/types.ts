@@ -170,7 +170,9 @@ export type ProviderAvailability = {
 export type ProductionStage = 'research' | 'brief' | 'draft' | 'editorial' | 'corrections' | 'seo' | 'hero' | 'quality' | 'approval';
 export type ProductionJobStatus = 'queued' | 'running' | 'needs_attention' | 'ready_for_approval' | 'failed' | 'paused' | 'completed';
 
-export type ProductionStageLog = { stage: ProductionStage; at: string; note: string };
+export type ProductionWorkType = 'new_article' | 'content_improvement' | 'metadata';
+
+export type ProductionStageLog = { stage: ProductionStage; at: string; note: string; workType?: ProductionWorkType };
 
 export type ProductionJob = {
 	id: string;
@@ -185,6 +187,7 @@ export type ProductionJob = {
 	error: string | null;
 	costUsd: number;
 	stageLog: ProductionStageLog[];
+	workType?: ProductionWorkType;
 	createdAt: string;
 	updatedAt: string;
 };
