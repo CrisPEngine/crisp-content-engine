@@ -634,6 +634,27 @@ export default function ArticleWorkspacePage() {
 					</div>
 				</section>
 			) : null}
+			{stage === 'seo' && article.workspace?.metadataProposal ? (
+				<section className="card mx-auto max-w-3xl space-y-3 p-4 text-sm">
+					<h2 className="font-medium">Metadata proposal</h2>
+					<p className="text-text-soft">Status: {article.workspace.metadataProposal.status}. The proposal is separate from the article. It is not a rewrite and it is not approved for publication.</p>
+					<div className="grid gap-3 md:grid-cols-2">
+						<div>
+							<p className="text-text-dim">Current SEO title</p>
+							<p>{article.seo.seoTitle || 'Not set'}</p>
+							<p className="mt-2 text-text-dim">Current meta description</p>
+							<p>{article.seo.metaDescription || 'Not set'}</p>
+						</div>
+						<div>
+							<p className="text-text-dim">Proposed SEO title</p>
+							<p>{article.workspace.metadataProposal.proposedSeoTitle}</p>
+							<p className="mt-2 text-text-dim">Proposed meta description</p>
+							<p>{article.workspace.metadataProposal.proposedMetaDescription}</p>
+						</div>
+					</div>
+					<p><span className="text-text-dim">Evidence. </span>{article.workspace.metadataProposal.evidence}</p>
+				</section>
+			) : null}
 			{stage === 'draft' ? (
 				<div className="mx-auto flex max-w-3xl items-center justify-between">
 					<p className="text-sm text-text-soft">{reading ? 'Reading view' : 'Markdown source'}{showChanges ? ' · changes highlighted' : ''}</p>
