@@ -69,6 +69,7 @@ import {
 } from '@/lib/articles/researchPackage';
 import { instructionRequests, buildEditorialSnapshot, recordEditorialOperation, selectEditorialContext, editorialLimitReason, costComparison } from '@/lib/articles/editorialMemory';
 import { validateEditorialPatch, type EditorialPatch } from '@/lib/articles/editorialPatch';
+import { contentApprovalLocksDraft } from '@/lib/articles/publishedBaseline';
 import { commitRevision, ensureRevision, listRevisions, revisionBody } from '@/lib/articles/revisions';
 import { reviewCurrentRevision } from '@/lib/articles/reviewRun';
 import { articleWordCount, stripCmsTitleHeading, validateArticleStructure } from '@/lib/articles/structure';
@@ -215,9 +216,9 @@ export async function destinationPreview(ownerUserId: string, articleId: string)
 	};
 }
 
-function assertNotApproved(article: ArticleRecord, action: string) {
-	if (article.approval.status === 'approved' || article.status === 'published') {
-		throw new ArticleWorkflowError(`${action} is blocked because the article is approved. Approved content is not changed automatically. Edit the body yourself to withdraw approval first.`, 409, 'approved_content_locked');
+function assertEditable(article: ArticleRecord, action: string) {
+	if (contentApprovalLocksDraft(article)) {
+		throw new ArticleWorkflowError(`${action} is blocked because this content revision is approved. Approved content is not changed automatically. Start a new working revision first.`, 409, 'approved_content_locked');
 	}
 }
 
@@ -990,6 +991,15 @@ export async function importPublishedArticle(ownerUserId: string, articleId: str
 	});
 	if (prepared.imported) {
 		commitRevision(article, markdown, 'baseline', 'Imported the published article as the local baseline. The live page was not changed.');
+		const workspace = ensureWorkspace(article);
+		const remoteApproved = article.approval.status === 'approved';
+		if (remoteApproved && !workspace.historicalApproval) {
+			workspace.historicalApproval = { scope: 'remote_publication', at: article.library?.cms?.publishedAt ?? null };
+		}
+		article.approval = { required: true, approver: 'human', status: 'pending' };
+		article.status = 'review';
+		workspace.approvedAt = null;
+		workspace.approvedRevisionId = null;
 	}
 	if (!markdown.trim() && article.library) {
 		article.library.stageNote = 'The published page has no content. A first draft can be generated from the approved brief and research. The live page was not changed.';
@@ -1159,7 +1169,7 @@ export async function editRecommendation(ownerUserId: string, articleId: string,
  */
 export async function applyFindingFix(ownerUserId: string, articleId: string, findingId: string): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
-	assertNotApproved(article, 'Applying a fix');
+	assertEditable(article, 'Applying a fix');
 	const workspace = ensureWorkspace(article);
 	const revision = ensureRevision(article);
 	const finding = workspace.editorial.findings.find((item) => item.id === findingId);
@@ -1192,7 +1202,7 @@ export async function applyAcceptedRevisions(ownerUserId: string, articleId: str
 	await releaseStaleJobs(ownerUserId, articleId);
 	const article = await requireArticle(ownerUserId, articleId);
 	const workspace = ensureWorkspace(article);
-	assertNotApproved(article, 'Applying revisions');
+	assertEditable(article, 'Applying revisions');
 	const revision = ensureRevision(article);
 	if (!revision) throw new ArticleWorkflowError('There is no draft to revise.', 400, 'draft_missing');
 	if (workspace.editorial.reviewedRevisionId !== revision.id) {
@@ -2104,7 +2114,7 @@ export async function applyArticleCmsTitleCleanup(ownerUserId: string, articleId
 
 export async function applyArticleStructuralRepair(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
-	assertNotApproved(article, 'Structural repair');
+	assertEditable(article, 'Structural repair');
 	const preview = previewStructuralRepair(article.body);
 	if (!preview.canApply) {
 		throw new ArticleWorkflowError(
@@ -2272,7 +2282,7 @@ export async function approveWorkspaceEditorialBrief(ownerUserId: string, articl
 
 export async function restoreWorkspaceRevision(ownerUserId: string, articleId: string, revisionId: string): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
-	assertNotApproved(article, 'Revision restore');
+	assertEditable(article, 'Revision restore');
 	const found = revisionBody(article, revisionId);
 	if (!found) throw new ArticleWorkflowError('That revision was not found.', 404, 'revision_missing');
 	if (article.workspace?.revision?.id === revisionId) return article;
@@ -2506,7 +2516,7 @@ export async function removeEditorialProposal(ownerUserId: string, articleId: st
 
 export async function previewAcceptedEditorialProposals(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
-	assertNotApproved(article, 'Selective revision');
+	assertEditable(article, 'Selective revision');
 	const workspace = ensureWorkspace(article);
 	const proposals = workspace.editorialDesk?.proposals ?? [];
 	const accepted = proposals.filter((item) => item.status === 'accepted');
@@ -2602,7 +2612,7 @@ export async function applyAcceptedEditorialProposals(ownerUserId: string, artic
 
 async function applyAcceptedEditorialProposalsOnce(ownerUserId: string, articleId: string): Promise<{ article: ArticleRecord; summary: string }> {
 	const article = await requireArticle(ownerUserId, articleId);
-	assertNotApproved(article, 'Selective revision');
+	assertEditable(article, 'Selective revision');
 	const workspace = ensureWorkspace(article);
 	const proposals = workspace.editorialDesk?.proposals ?? [];
 	const accepted = proposals.filter((item) => item.status === 'accepted');
@@ -2646,7 +2656,7 @@ export async function previewArticleEditorialImprovement(ownerUserId: string, ar
 	const workspace = ensureWorkspace(article);
 	if (!workspace.briefApprovedAt) throw new ArticleWorkflowError('Approve the brief before using AI improvements.', 400, 'brief_not_approved');
 	if (!workspace.research?.approved) throw new ArticleWorkflowError('Approve the research before using AI improvements.', 400, 'research_not_approved');
-	assertNotApproved(article, 'AI improvement');
+	assertEditable(article, 'AI improvement');
 	const revision = ensureRevision(article);
 	if (!revision) throw new ArticleWorkflowError('There is no saved revision to improve.', 400, 'draft_missing');
 	if (await activeJob(ownerUserId, article, 'article_revision')) {
@@ -2669,7 +2679,7 @@ export async function previewArticleEditorialImprovement(ownerUserId: string, ar
 
 export async function applyArticleEditorialImprovement(ownerUserId: string, articleId: string, proposedBody: string, baseRevisionId: string): Promise<ArticleRecord> {
 	const article = await requireArticle(ownerUserId, articleId);
-	assertNotApproved(article, 'AI improvement');
+	assertEditable(article, 'AI improvement');
 	const workspace = ensureWorkspace(article);
 	const revision = ensureRevision(article);
 	if (!revision || revision.id !== baseRevisionId) {

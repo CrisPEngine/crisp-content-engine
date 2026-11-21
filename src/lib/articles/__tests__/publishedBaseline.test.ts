@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { articleLifecycle } from '@/lib/articles/meta';
-import { draftNextAction, payloadDocumentToMarkdown, preparePublishedImport } from '@/lib/articles/publishedBaseline';
+import { contentApprovalLocksDraft, draftNextAction, editorialAwaitingApplication, payloadDocumentToMarkdown, preparePublishedImport } from '@/lib/articles/publishedBaseline';
 import { commitRevision } from '@/lib/articles/revisions';
 import type { ArticleRecord } from '@/lib/articles/types';
 import { metadataApplyDecision } from '@/lib/publishing/payloadCatalogue';
@@ -136,6 +136,33 @@ describe('published articles without a local draft', () => {
 		expect(next.detail).toMatch(/Payload revision is 2/);
 		const decision = metadataApplyDecision({ approved: false, baseUpdatedAt: null, currentUpdatedAt: null, live: false, baseRevision: 1, currentRevision: 2 });
 		expect(decision.apply).toBe(false);
+	});
+
+	it('does not treat a catalogue approval as a lock on the imported baseline', () => {
+		const record = shell({ body: 'The imported page.', wordCount: 3 });
+		record.workspace!.revision = { id: 'base', number: 1, contentHash: 'abc', wordCount: 1054, createdAt: '2026-11-20T00:00:00.000Z', source: 'baseline', kind: 'baseline', note: 'Baseline' };
+		record.approval = { status: 'approved', approver: 'human', required: true };
+		expect(contentApprovalLocksDraft(record)).toBe(false);
+		expect(editorialAwaitingApplication(record)).toBe(0);
+	});
+
+	it('points editorial work to preview when accepted proposals are waiting on the baseline', () => {
+		const record = shell({ body: '## Who is Folian for?\n\nFolian is for novelists.', wordCount: 8 });
+		record.workspace!.revision = { id: 'base', number: 1, contentHash: 'abc', wordCount: 1054, createdAt: '2026-11-20T00:00:00.000Z', source: 'baseline', kind: 'baseline', note: 'Baseline' };
+		record.workspace!.editorialDesk = {
+			proposals: [{
+				id: 'proposal-1',
+				scope: 'section',
+				action: 'Close by restating the practical check.',
+				reason: 'Weak close.',
+				status: 'accepted',
+				sourceRevisionId: 'base',
+				section: 'Who is Folian for?',
+			}],
+		};
+		const next = draftNextAction(record);
+		expect(next.kind).toBe('preview_editorial');
+		expect(editorialAwaitingApplication(record)).toBe(1);
 	});
 
 	it('asks for a fresh import when only the baseline is behind the remote revision', () => {
