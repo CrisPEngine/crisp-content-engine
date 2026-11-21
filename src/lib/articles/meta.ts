@@ -9,6 +9,7 @@ import type {
 	WordTarget,
 } from '@/lib/articles/types';
 import type { DestinationTaxonomy } from '@/lib/publishing/destinationTaxonomy';
+import { isSelfOverlap } from '@/lib/articles/reviewWorkflow';
 
 export function reviewCycleLimit(): number {
 	const raw = Number(process.env.CCE_ARTICLE_REVIEW_CYCLES ?? '2');
@@ -221,7 +222,11 @@ export function isOpenFinding(finding: ArticleEditorialFinding): boolean {
 }
 
 export function openCriticalFindings(workspace: ArticleWorkspace): ArticleEditorialFinding[] {
-	return workspace.editorial.findings.filter((finding) => finding.severity === 'critical' && isOpenFinding(finding));
+	const current = workspace.revision?.id ?? null;
+	return workspace.editorial.findings.filter((finding) => {
+		if (finding.severity !== 'critical' || !isOpenFinding(finding)) return false;
+		return !(finding.revisionId && current && finding.revisionId !== current);
+	});
 }
 
 /** Moves findings that the current article data no longer supports into review history. */
@@ -278,14 +283,15 @@ export function articleApprovalGate(article: ArticleRecord): GateResult {
 	if (workspace.editorial.status === 'not_run') {
 		return { ok: false, code: 'review_required', message: 'Run editorial review before approval.' };
 	}
-	if (workspace.revision && workspace.editorial.reviewedRevisionId !== workspace.revision.id) {
+	const critiqueCurrent = Boolean(workspace.revision && workspace.editorialDesk?.critique?.revisionId === workspace.revision.id);
+	if (workspace.revision && workspace.editorial.reviewedRevisionId !== workspace.revision.id && !critiqueCurrent) {
 		return {
 			ok: false,
 			code: 'review_stale',
 			message: `The last review covered revision ${workspace.editorial.reviewedRevisionNumber ?? 'unknown'}. The current revision is ${workspace.revision.number}. Rerun review.`,
 		};
 	}
-	const critical = openCriticalFindings(workspace);
+	const critical = openCriticalFindings(workspace).filter((finding) => !(finding.code === 'content_overlap' && isSelfOverlap(article.title, finding.evidence ?? [])));
 	if (critical.length) {
 		return {
 			ok: false,
@@ -496,7 +502,7 @@ export function articleNextStep(article: ArticleRecord): { stage: string; action
 			detail: `Review checks revision ${workspace.revision?.number ?? 1} against the approved brief.`,
 		};
 	}
-	const critical = openCriticalFindings(workspace);
+	const critical = openCriticalFindings(workspace).filter((finding) => !(finding.code === 'content_overlap' && isSelfOverlap(article.title, finding.evidence ?? [])));
 	if (critical.length && workspace.editorial.exhausted) {
 		return {
 			stage: 'Review blocked',

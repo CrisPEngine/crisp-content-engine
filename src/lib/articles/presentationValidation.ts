@@ -6,11 +6,15 @@ export type PresentationStyle = {
 
 export type PresentationIssue = { code: string; message: string; severity: 'major' | 'minor' };
 
-const FOLIAN_STYLE: PresentationStyle = { titleCase: 'sentence', brandNames: ['Folian', 'Story Bible'], acronyms: ['AI', 'SEO', 'CTA', 'API'] };
+const PROTECTED_TERMS = ['ChatGPT', 'OpenAI', 'Folian', 'Story Bible'];
 
-export function presentationStyleFor(brandName: string | null | undefined): PresentationStyle {
-	if (/folian/i.test(brandName ?? '')) return FOLIAN_STYLE;
-	return { titleCase: 'sentence', brandNames: brandName ? [brandName] : [], acronyms: ['AI', 'SEO'] };
+export function presentationStyleFor(brandName: string | null | undefined, terminology: string[] = []): PresentationStyle {
+	const brandNames = [...PROTECTED_TERMS, ...(brandName ? [brandName] : []), ...terminology]
+		.map((term) => term.trim())
+		.filter(Boolean)
+		.filter((term, index, all) => all.findIndex((item) => item.toLowerCase() === term.toLowerCase()) === index)
+		.sort((left, right) => right.length - left.length);
+	return { titleCase: 'sentence', brandNames, acronyms: ['AI', 'SEO', 'CTA', 'API'] };
 }
 
 function escapeRegExp(value: string): string {
@@ -32,7 +36,7 @@ export function sentenceCase(value: string, style: PresentationStyle): string {
 	let result = trimmed.toLowerCase();
 	const first = result.search(/[a-z]/i);
 	if (first >= 0) result = result.slice(0, first) + result.charAt(first).toUpperCase() + result.slice(first + 1);
-	for (const term of terms) result = result.replace(new RegExp(escapeRegExp(term), 'ig'), term);
+	for (const term of terms) result = result.replace(new RegExp(`\\b${escapeRegExp(term)}\\b`, 'ig'), term);
 	return result;
 }
 
@@ -43,9 +47,10 @@ export function validatePresentation(input: {
 	body: string;
 	altText?: string | null;
 	brandName?: string | null;
+	terminology?: string[];
 	style?: PresentationStyle;
 }): PresentationIssue[] {
-	const style = input.style ?? presentationStyleFor(input.brandName);
+	const style = input.style ?? presentationStyleFor(input.brandName, input.terminology);
 	const issues: PresentationIssue[] = [];
 	const expectedTitle = sentenceCase(input.title, style);
 	if (input.title.trim() && input.title.trim() !== expectedTitle) {
@@ -82,5 +87,13 @@ export function validatePresentation(input: {
 	if (input.body.includes('\n##') && !/\b(next|checklist|before the next|approve)\b/i.test(ending)) {
 		issues.push({ code: 'cta-suitability', severity: 'minor', message: 'The close should tell the reader what to do next.' });
 	}
-	return issues;
+	const unique: PresentationIssue[] = [];
+	const seen = new Set<string>();
+	for (const issue of issues) {
+		const key = `${issue.code}\n${issue.message}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		unique.push(issue);
+	}
+	return unique;
 }

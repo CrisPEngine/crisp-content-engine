@@ -32,6 +32,17 @@ function article(body: string): ArticleRecord {
 }
 
 describe('revision integrity and metadata optimisation', () => {
+	it('archives a contaminated draft and stores the article without its metadata block', () => {
+		const leaked = '---\ntitle: "ChatGPT for Novel Writing: Uses & Limits | Folian"\nmeta_description: "Use ChatGPT for ideas."\nstatus: draft\nopportunity_id: 0fdbdd28-4a95-4bbf-b585-0d2a0bee5d1b\n---\n\nThe revised article. See [Folian](/product).';
+		const record = article(leaked);
+		commitRevision(record, leaked, 'structural_repair', 'Removed internal metadata from the article body.');
+		expect(record.body).toBe('The revised article. See [Folian](/product).');
+		expect(record.body).not.toContain('opportunity_id');
+		expect(record.versions[0]?.body).toContain('opportunity_id');
+		expect(record.workspace?.revision?.number).toBe(2);
+		expect(record.workspace?.revision?.source).toBe('structural_repair');
+	});
+
 	it('archives the previous article body before saving a new revision', () => {
 		const record = article('The published article body.');
 		commitRevision(record, 'A revised paragraph.', 'manual', 'Content edit');

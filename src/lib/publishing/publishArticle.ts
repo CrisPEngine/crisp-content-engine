@@ -10,6 +10,8 @@ export async function guardedArticlePublish(userId: string, articleId: string, e
 	const article = await store.getArticle(userId, articleId);
 	if (!article || article.ownerUserId !== userId) return { sent: false, phase: 'failed', message: 'Article not found.', retryPublication: false as const };
 	if (article.body.trimStart().startsWith('# Metadata proposal')) return { sent: false, phase: 'failed', message: 'A metadata proposal is not an article. Payload was not called.', retryPublication: false as const };
+	const { containsInternalMetadata } = await import('@/lib/articles/structure');
+	if (containsInternalMetadata(article.body)) return { sent: false, phase: 'failed', message: 'The article body contains internal metadata. Remove it before publishing. Payload was not called.', retryPublication: false as const };
 	const workspace = ensureWorkspace(article);
 	const baselineRevision = workspace.cms.baselineRevision;
 	const remoteRevision = workspace.cms.sync?.remoteRevision ?? null;

@@ -37,6 +37,51 @@ export function normaliseHeading(text: string): string {
 		.trim();
 }
 
+const INTERNAL_METADATA_KEYS = new Set([
+	'title',
+	'meta_description',
+	'metadescription',
+	'meta_title',
+	'seo_title',
+	'seotitle',
+	'status',
+	'opportunity_id',
+	'opportunityid',
+	'slug',
+	'canonical',
+	'canonical_url',
+]);
+
+/**
+ * A leading YAML block is internal metadata only when every line is a recognised workflow field
+ * and at least one field cannot be ordinary article prose. A thematic break is left untouched.
+ */
+export function splitInternalMetadata(markdown: string): { contaminated: boolean; body: string; fields: Record<string, string> } {
+	const text = markdown.replace(/\r\n/g, '\n');
+	if (!text.startsWith('---\n')) return { contaminated: false, body: text.trim(), fields: {} };
+	const close = text.indexOf('\n---', 4);
+	if (close < 0) return { contaminated: false, body: text.trim(), fields: {} };
+	const closeLine = text.slice(close + 1).split('\n')[0]?.trim();
+	if (closeLine !== '---') return { contaminated: false, body: text.trim(), fields: {} };
+	const lines = text.slice(4, close).split('\n').map((line) => line.trim()).filter(Boolean);
+	if (!lines.length || lines.length > 12) return { contaminated: false, body: text.trim(), fields: {} };
+	const fields: Record<string, string> = {};
+	for (const line of lines) {
+		const match = /^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/.exec(line);
+		if (!match) return { contaminated: false, body: text.trim(), fields: {} };
+		const key = match[1].toLowerCase();
+		if (!INTERNAL_METADATA_KEYS.has(key)) return { contaminated: false, body: text.trim(), fields: {} };
+		fields[key] = match[2].trim().replace(/^["']|["']$/g, '');
+	}
+	const workflowField = Boolean(fields.meta_description || fields.metadescription || fields.opportunity_id || fields.opportunityid || fields.meta_title || fields.seo_title || fields.seotitle);
+	if (!workflowField) return { contaminated: false, body: text.trim(), fields: {} };
+	return { contaminated: true, body: text.slice(close + 1 + closeLine.length).replace(/^\n+/, '').trim(), fields };
+}
+
+export function containsInternalMetadata(markdown: string): boolean {
+	return splitInternalMetadata(markdown).contaminated;
+}
+
 /** Removes a leading markdown H1 when the destination CMS already renders the page title. */
 export function stripCmsTitleHeading(markdown: string, title?: string): string {
 	let body = markdown.replace(/\r\n/g, '\n');

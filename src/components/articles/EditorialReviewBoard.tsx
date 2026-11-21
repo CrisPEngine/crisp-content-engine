@@ -5,7 +5,7 @@ import { DiffView } from '@/components/articles/RevisionDiff';
 import type { EditorialCritique, RevisionProposal, RevisionPreview } from '@/lib/articles/editorialDesk';
 import type { ArticleEditorialFinding } from '@/lib/articles/types';
 import { findingGroup, findingTitle } from '@/lib/articles/workspaceNavigation';
-import { findingLifecycle, lifecycleLabel, type FindingLifecycle } from '@/lib/articles/reviewWorkflow';
+import { findingLifecycle, findingMayBeSetAside, lifecycleLabel, type FindingLifecycle } from '@/lib/articles/reviewWorkflow';
 import { consolidateFindings, sourceLabel, type UnifiedFinding } from '@/lib/articles/unifiedFindings';
 
 type Act = (action: string, extra?: Record<string, unknown>, success?: string) => Promise<boolean>;
@@ -69,6 +69,7 @@ export function EditorialReviewBoard({
 				stale: critiqueStale,
 				historyNote: item.historyNote,
 				appliedRevisionNumber: proposal?.appliedRevisionNumber ?? null,
+				dismissible: findingMayBeSetAside({ category: item.category, severity: item.severity }),
 			};
 		}),
 		...validationFindings.filter((item) => item.decision !== 'superseded').map((item): UnifiedFinding => {
@@ -85,6 +86,7 @@ export function EditorialReviewBoard({
 				status: proposal?.status ?? item.decision,
 				stale: Boolean(item.revisionId && currentRevisionId && item.revisionId !== currentRevisionId),
 				appliedRevisionNumber: proposal?.appliedRevisionNumber ?? null,
+				dismissible: findingMayBeSetAside({ code: item.code, category: item.dimension === 'accuracy' ? 'accuracy' : undefined, severity: item.severity, rejectable: item.rejectable }),
 			};
 		}),
 	]);
@@ -101,6 +103,16 @@ export function EditorialReviewBoard({
 
 	function instructionFor(card: { item: UnifiedFinding; proposal?: RevisionProposal }) {
 		return instructions[card.item.id] ?? card.proposal?.action ?? card.item.correction;
+	}
+	function setAside(card: { item: UnifiedFinding; proposal?: RevisionProposal }, reason: string) {
+		void act('queue_editorial_change', {
+			findingId: card.item.id,
+			instruction: instructionFor(card),
+			reason,
+			section: card.item.section,
+			status: 'rejected',
+			resolutionNote: `Not applicable: ${reason}`,
+		}, 'Marked as not applicable. The draft has not changed.');
 	}
 	function decide(card: { item: UnifiedFinding; proposal?: RevisionProposal }, status: 'accepted' | 'rejected' | 'deferred') {
 		const instruction = instructionFor(card).trim();
@@ -164,7 +176,7 @@ export function EditorialReviewBoard({
 				</div>
 			) : null}
 
-			<FindingSection title="Current findings" cards={actionable} groups busy={busy} instructionFor={instructionFor} onInstruction={(id, value) => setInstructions((current) => ({ ...current, [id]: value }))} onDecide={decide} />
+			<FindingSection title="Current findings" cards={actionable} groups busy={busy} instructionFor={instructionFor} onInstruction={(id, value) => setInstructions((current) => ({ ...current, [id]: value }))} onDecide={decide} onSetAside={setAside} />
 			<FindingSection title="Approved changes awaiting application" cards={approved} busy={busy} instructionFor={instructionFor} onInstruction={(id, value) => setInstructions((current) => ({ ...current, [id]: value }))} onDecide={decide} onUndo={(card) => void act('queue_editorial_change', { findingId: card.item.id, instruction: instructionFor(card), reason: card.item.explanation, section: card.item.section, status: 'proposed' }, 'Approval removed. The draft has not changed.')} />
 			<FindingSection title="Applied changes and verification" cards={applied} busy={busy} instructionFor={instructionFor} onInstruction={(id, value) => setInstructions((current) => ({ ...current, [id]: value }))} onDecide={decide} />
 			<FindingSection title="Rejected or deferred findings" cards={held} busy={busy} instructionFor={instructionFor} onInstruction={(id, value) => setInstructions((current) => ({ ...current, [id]: value }))} onDecide={decide} onUndo={(card) => void act('queue_editorial_change', { findingId: card.item.id, instruction: instructionFor(card), reason: card.item.explanation, section: card.item.section, status: 'proposed' }, 'Decision removed. The draft has not changed.')} />
@@ -220,6 +232,7 @@ function FindingSection({
 	onInstruction,
 	onDecide,
 	onUndo,
+	onSetAside,
 }: {
 	title: string;
 	cards: Array<{ item: UnifiedFinding; proposal?: RevisionProposal; state: FindingLifecycle }>;
@@ -229,6 +242,7 @@ function FindingSection({
 	onInstruction: (id: string, value: string) => void;
 	onDecide: (card: { item: UnifiedFinding; proposal?: RevisionProposal }, status: 'accepted' | 'rejected' | 'deferred') => void;
 	onUndo?: (card: { item: UnifiedFinding; proposal?: RevisionProposal }) => void;
+	onSetAside?: (card: { item: UnifiedFinding; proposal?: RevisionProposal }, reason: string) => void;
 }) {
 	if (!cards.length) return null;
 	const blocks = groups ? GROUPS.map((group) => ({ group, cards: cards.filter((card) => findingGroup(card.item.severity) === group) })).filter((block) => block.cards.length) : [{ group: '', cards }];
@@ -240,36 +254,80 @@ function FindingSection({
 					{block.group ? <p className="text-xs uppercase text-text-dim">{block.group}</p> : null}
 					<ul className="space-y-3">
 						{block.cards.map((card) => (
-							<li key={card.item.id} className="border-t border-edge/50 pt-2">
-								<p className="font-medium">{card.item.title}</p>
-								<p className="text-xs uppercase text-text-dim">{card.item.source}{card.item.section ? ` · ${card.item.section}` : ''} · {lifecycleLabel(card.state, card.item.appliedRevisionNumber)}</p>
-								<p>{card.item.explanation}</p>
-								{card.item.historyNote ? <p className="text-text-soft">{card.item.historyNote}</p> : null}
-								{card.item.evidence.length ? <p className="text-text-soft">Evidence: {card.item.evidence.slice(0, 3).join(' · ')}</p> : null}
-								<label className="mt-2 block text-text-soft">
-									Instruction
-									<textarea className="input mt-1 w-full" rows={3} value={instructionFor(card)} disabled={busy || card.state === 'resolved' || card.state === 'stale'} onChange={(event) => onInstruction(card.item.id, event.target.value)} />
-								</label>
-								<div className="mt-2 flex flex-wrap gap-2">
-									{card.state === 'pending' || card.state === 'applied-unresolved' ? (
-										<button className="btn" type="button" disabled={busy} onClick={() => onDecide(card, 'accepted')}>{card.state === 'applied-unresolved' ? 'Approve again' : 'Approve'}</button>
-									) : null}
-									{card.state === 'approved' ? <span className="btn">✓ Approved, awaiting application</span> : null}
-									{card.state === 'pending' || card.state === 'approved' || card.state === 'deferred' || card.state === 'applied-unresolved' ? (
-										<button className="btn" type="button" disabled={busy} onClick={() => onDecide(card, 'rejected')}>Reject</button>
-									) : null}
-									{card.state === 'pending' || card.state === 'approved' || card.state === 'rejected' || card.state === 'applied-unresolved' ? (
-										<button className="btn" type="button" disabled={busy} onClick={() => onDecide(card, 'deferred')}>Defer</button>
-									) : null}
-									{onUndo && (card.state === 'approved' || card.state === 'rejected' || card.state === 'deferred') ? (
-										<button className="btn" type="button" disabled={busy} onClick={() => onUndo(card)}>Undo</button>
-									) : null}
-								</div>
-							</li>
+							<FindingCard key={card.item.id} card={card} busy={busy} instruction={instructionFor(card)} onInstruction={onInstruction} onDecide={onDecide} onUndo={onUndo} onSetAside={onSetAside} />
 						))}
 					</ul>
 				</div>
 			))}
 		</div>
+	);
+}
+
+function FindingCard({
+	card,
+	busy,
+	instruction,
+	onInstruction,
+	onDecide,
+	onUndo,
+	onSetAside,
+}: {
+	card: { item: UnifiedFinding; proposal?: RevisionProposal; state: FindingLifecycle };
+	busy: boolean;
+	instruction: string;
+	onInstruction: (id: string, value: string) => void;
+	onDecide: (card: { item: UnifiedFinding; proposal?: RevisionProposal }, status: 'accepted' | 'rejected' | 'deferred') => void;
+	onUndo?: (card: { item: UnifiedFinding; proposal?: RevisionProposal }) => void;
+	onSetAside?: (card: { item: UnifiedFinding; proposal?: RevisionProposal }, reason: string) => void;
+}) {
+	const [showFix, setShowFix] = useState(false);
+	const [editing, setEditing] = useState(false);
+	const [reason, setReason] = useState('');
+	const open = card.state === 'pending' || card.state === 'applied-unresolved' || card.state === 'stale';
+	return (
+		<li className="border-t border-edge/50 pt-2">
+			<p className="font-medium">{card.item.title}</p>
+			<p className="text-xs uppercase text-text-dim">{card.item.severity} · {card.item.source}{card.item.section ? ` · ${card.item.section}` : ''} · {lifecycleLabel(card.state, card.item.appliedRevisionNumber)}</p>
+			<p><span className="text-text-soft">Explanation. </span>{card.item.explanation}</p>
+			{card.item.historyNote ? <p className="text-text-soft">{card.item.historyNote}</p> : null}
+			<p className="text-text-soft">Affected content. {card.item.section ? `Section “${card.item.section}”. ` : ''}{card.item.evidence.length ? card.item.evidence.slice(0, 4).join(' ') : 'No quoted passage was recorded.'}</p>
+			{showFix ? (
+				<div className="mt-2 rounded border border-edge/60 p-2">
+					<p className="text-text-soft">Recommended resolution</p>
+					<p>{card.item.correction}</p>
+					<p className="text-xs text-text-soft">Approving this suggestion does not change the draft until you preview it.</p>
+				</div>
+			) : null}
+			{editing ? (
+				<label className="mt-2 block text-text-soft">
+					Manual resolution
+					<textarea className="input mt-1 w-full" rows={3} value={instruction} disabled={busy || card.state === 'resolved'} onChange={(event) => onInstruction(card.item.id, event.target.value)} />
+				</label>
+			) : null}
+			{open && onSetAside && card.item.dismissible ? (
+				<label className="mt-2 block text-text-soft">
+					Reason it does not apply
+					<input className="input mt-1 w-full" value={reason} disabled={busy} onChange={(event) => setReason(event.target.value)} />
+				</label>
+			) : null}
+			{open && !card.item.dismissible ? <p className="text-text-soft">This has to be corrected before approval. It cannot be marked not applicable.</p> : null}
+			<div className="mt-2 flex flex-wrap gap-2">
+				{open ? <button className="btn" type="button" disabled={busy} onClick={() => setShowFix((current) => !current)}>Review suggested fix</button> : null}
+				{open ? <button className="btn" type="button" disabled={busy} onClick={() => setEditing((current) => !current)}>Edit manually</button> : null}
+				{card.state === 'pending' || card.state === 'applied-unresolved' ? (
+					<button className="btn" type="button" disabled={busy} onClick={() => onDecide(card, 'accepted')}>{card.state === 'applied-unresolved' ? 'Approve again' : 'Approve'}</button>
+				) : null}
+				{card.state === 'approved' ? <span className="btn">Approved, awaiting application</span> : null}
+				{open && onSetAside && card.item.dismissible ? (
+					<button className="btn" type="button" disabled={busy || reason.trim().length < 8} onClick={() => onSetAside(card, reason.trim())}>Mark as not applicable</button>
+				) : null}
+				{card.state === 'pending' || card.state === 'approved' || card.state === 'deferred' || card.state === 'applied-unresolved' ? (
+					<button className="btn" type="button" disabled={busy} onClick={() => onDecide(card, 'deferred')}>Defer</button>
+				) : null}
+				{onUndo && (card.state === 'approved' || card.state === 'rejected' || card.state === 'deferred') ? (
+					<button className="btn" type="button" disabled={busy} onClick={() => onUndo(card)}>Undo</button>
+				) : null}
+			</div>
+		</li>
 	);
 }

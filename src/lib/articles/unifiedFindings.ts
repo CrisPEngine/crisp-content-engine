@@ -11,6 +11,7 @@ export type UnifiedFinding = {
 	stale: boolean;
 	historyNote?: string | null;
 	appliedRevisionNumber?: number | null;
+	dismissible: boolean;
 };
 
 function tokens(value: string): Set<string> {
@@ -62,6 +63,7 @@ export function consolidateFindings(items: UnifiedFinding[]): UnifiedFinding[] {
 		for (const note of item.evidence) if (!match.evidence.includes(note)) match.evidence.push(note);
 		if (!match.source.includes(item.source)) match.source = `${match.source}; ${item.source}`;
 		if (item.historyNote && !match.historyNote) match.historyNote = item.historyNote;
+		if (!item.dismissible) match.dismissible = false;
 	}
 	return kept.sort((a, b) => ({ critical: 0, major: 1, minor: 2 })[a.severity] - ({ critical: 0, major: 1, minor: 2 })[b.severity]);
 }

@@ -58,8 +58,8 @@ describe('editorial sprint', () => {
 
 	it('keeps one finding when two engines recommend the same correction', () => {
 		const merged = consolidateFindings([
-			{ id: 'a', title: 'Examples', severity: 'major', source: 'AI editorial critique', section: 'Open', explanation: 'Names differ.', evidence: ['Sela'], correction: 'Use one spelling for the crew member throughout the example.', status: 'open', stale: false },
-			{ id: 'b', title: 'Names', severity: 'critical', source: 'Deterministic structural validation', section: 'Open', explanation: 'The same person has two spellings.', evidence: ['Sena'], correction: 'Use one spelling for the crew member throughout the example.', status: 'open', stale: false },
+			{ id: 'a', title: 'Examples', severity: 'major', source: 'AI editorial critique', section: 'Open', explanation: 'Names differ.', evidence: ['Sela'], correction: 'Use one spelling for the crew member throughout the example.', status: 'open', stale: false, dismissible: true },
+			{ id: 'b', title: 'Names', severity: 'critical', source: 'Deterministic structural validation', section: 'Open', explanation: 'The same person has two spellings.', evidence: ['Sena'], correction: 'Use one spelling for the crew member throughout the example.', status: 'open', stale: false, dismissible: false },
 		]);
 		expect(merged).toHaveLength(1);
 		expect(merged[0]?.severity).toBe('critical');

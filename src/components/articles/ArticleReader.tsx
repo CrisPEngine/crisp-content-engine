@@ -1,6 +1,7 @@
 'use client';
 
 import { parseCanonicalBlocks, type CanonicalBlock, type CanonicalInline } from '@/lib/articles/canonical';
+import { splitInternalMetadata } from '@/lib/articles/structure';
 
 function Inline({ nodes }: { nodes: CanonicalInline[] }) {
 	return (
@@ -94,7 +95,8 @@ function Blocks({ blocks, anchor, highlights }: { blocks: CanonicalBlock[]; anch
 }
 
 export function ArticleReader({ title, body, anchor, highlights = [] }: { title: string; body: string; anchor?: string | null; highlights?: string[] }) {
-	const blocks = body.trim() ? parseCanonicalBlocks(body) : [];
+	const readable = splitInternalMetadata(body).body;
+	const blocks = readable.trim() ? parseCanonicalBlocks(readable) : [];
 	return (
 		<article className="mx-auto max-w-3xl px-2 py-4 text-text">
 			<h1 className="text-4xl font-semibold leading-tight tracking-tight">{title}</h1>

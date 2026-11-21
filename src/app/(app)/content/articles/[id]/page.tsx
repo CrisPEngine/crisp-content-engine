@@ -308,7 +308,7 @@ export default function ArticleWorkspacePage() {
 		currentRevisionId: workspace?.revision?.id ?? null,
 		body: article.body,
 		critiqueRevisionId: workspace?.editorialDesk?.critique?.revisionId ?? null,
-		openCritical: (workspace?.editorial?.findings ?? []).filter((finding) => finding.severity === 'critical' && (finding.decision === 'pending' || finding.decision === 'accepted')).map((finding) => ({ code: finding.code, evidence: finding.evidence, explanation: finding.explanation ?? undefined })),
+		openCritical: (workspace?.editorial?.findings ?? []).filter((finding) => finding.severity === 'critical' && (finding.decision === 'pending' || finding.decision === 'accepted')).map((finding) => ({ code: finding.code, evidence: finding.evidence, explanation: finding.explanation ?? undefined, revisionId: finding.revisionId })),
 		title: article.title,
 		structureOk: structure?.ok !== false,
 	});
@@ -554,7 +554,7 @@ export default function ArticleWorkspacePage() {
 				<div className="card p-4 text-sm">
 					<p className="font-medium">Editorial presentation</p>
 					<ul className="list-disc pl-4">
-						{detail.presentation.map((issue) => <li key={issue.code}>{issue.message}</li>)}
+						{detail.presentation.map((issue) => <li key={`${issue.code}:${issue.message}`}>{issue.message}</li>)}
 					</ul>
 					<p className="text-text-soft">These are checks only. The article is not rewritten from this list.</p>
 				</div>

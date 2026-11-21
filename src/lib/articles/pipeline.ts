@@ -18,7 +18,7 @@ import { normaliseUrl, termsFrom } from './researchPackage';
 import { attributionRule, evidenceLevel } from './sourceClass';
 import { commitRevision } from './revisions';
 import { reviewCurrentRevision } from './reviewRun';
-import { articleWordCount, assembleSections, cleanSectionBody, parseSections, stripCmsTitleHeading, validateArticleStructure } from './structure';
+import { articleWordCount, assembleSections, cleanSectionBody, parseSections, splitInternalMetadata, stripCmsTitleHeading, validateArticleStructure } from './structure';
 
 export const DEFAULT_TARGET_WORDS = 1500;
 export const MIN_TARGET_WORDS = 300;
@@ -808,6 +808,7 @@ export async function previewArticleImprovement(input: {
 				'Return JSON with body (complete revised markdown) and summary (one sentence on what changed).',
 				'Keep ## for section headings and ### for sub-steps. Do not repeat a section heading inside the section body.',
 				'Do not add a leading # title line; the destination CMS renders the article title as the page H1.',
+				'Do not add YAML front matter or lines for title, meta_description, status, or opportunity_id. Those are metadata, not article text.',
 				'Do not add sources or statistics that are not in the approved research.',
 				'Preserve factual content unless a recommendation explicitly asks to cut or rewrite it.',
 			].join(' '),
@@ -846,7 +847,7 @@ export async function previewArticleImprovement(input: {
 		modelCalls = 1 + completion.meta.continuationPasses;
 	}
 	const proposedBody = stripCmsTitleHeading(
-		postProcessPlainDraft(data.body?.trim() ?? ''),
+		splitInternalMetadata(postProcessPlainDraft(data.body?.trim() ?? '')).body,
 		article.workspace?.destinationId ? article.title : undefined,
 	);
 	if (!proposedBody) throw new Error('The improvement returned no text.');
