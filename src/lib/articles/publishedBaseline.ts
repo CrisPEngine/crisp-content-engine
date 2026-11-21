@@ -2,7 +2,7 @@ import type { ArticleRecord } from '@/lib/articles/types';
 import { proposalDisposition } from '@/lib/articles/reviewWorkflow';
 
 export type DraftNext = {
-	kind: 'import' | 'revise' | 'generate' | 'continue' | 'blocked';
+	kind: 'import' | 'revise' | 'generate' | 'continue' | 'blocked' | 'preview_editorial';
 	label: string;
 	detail: string;
 	available: boolean;
