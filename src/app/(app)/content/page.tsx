@@ -52,6 +52,7 @@ export default function ContentOverviewPage() {
 			</header>
 			{error ? <p className="card border-danger/60 p-3 text-sm" role="alert">{error}</p> : null}
 			{brandId ? null : <p className="text-sm">Loading the content queue…</p>}
+			{brandId ? <>
 			<Section title="Needs attention" empty="Nothing needs attention." href="/campaigns#production">
 				{attention.map((job) => <Item key={job.id} href={job.articleId ? `/content/articles/${job.articleId}` : '/campaigns#production'} title={titleFor(job)} detail={job.error || job.note} />)}
 			</Section>
@@ -73,6 +74,7 @@ export default function ContentOverviewPage() {
 			<Section title="Published" empty="No published articles are in this list yet." href="/content/published">
 				{published.map((article) => <Item key={article.id} href={`/content/articles/${article.id}`} title={article.title} detail="Published" />)}
 			</Section>
+			</> : null}
 		</div>
 	);
 }

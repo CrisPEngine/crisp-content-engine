@@ -261,7 +261,7 @@ export default function CampaignsPage() {
 				{(queue?.jobs ?? []).map((job) => (
 					<article key={job.id} className="border-t border-edge/50 pt-2">
 						<p>{job.stage} · {job.status.replaceAll('_', ' ')} · attempt {job.attempt} · cost ${job.costUsd.toFixed(4)}</p>
-						<p>{job.note}</p>
+						<p>{job.note.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, 'this article')}</p>
 						{job.error ? <p role="alert">{job.error}</p> : null}
 						{job.articleId ? <p><a className="underline" href={`/content/articles/${job.articleId}`}>Open the article</a> · {job.stage.replaceAll('_', ' ')}</p> : null}
 						<button className="btn" type="button" disabled={busy || job.status === 'ready_for_approval' || job.status === 'paused'} onClick={() => void post('advance_production', { jobId: job.id }, job.id, 'The next production stage ran. Nothing was published.')}>{pending === job.id ? 'Running stage…' : 'Run next stage'}</button>
