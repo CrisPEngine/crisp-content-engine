@@ -13,6 +13,7 @@ const STATUS_LABEL: Record<RevisionProposal['status'], string> = {
 	rejected: 'Rejected',
 	deferred: 'Deferred',
 	applied: 'Applied',
+	manual: 'Needs a manual decision',
 };
 
 export function EditorialDeskPanel({

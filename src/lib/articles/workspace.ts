@@ -2452,14 +2452,30 @@ export async function previewAcceptedEditorialProposals(ownerUserId: string, art
 	const accepted = proposals.filter((item) => item.status === 'accepted');
 	if (!accepted.length) throw new ArticleWorkflowError('Accept at least one proposal before previewing a revision.', 400, 'nothing_accepted');
 	if (!workspace.revision) throw new ArticleWorkflowError('There is no saved revision to revise.', 400, 'draft_missing');
-	const stale = accepted.find((item) => item.sourceRevisionId && item.sourceRevisionId !== workspace.revision?.id);
-	if (stale) throw new ArticleWorkflowError('Review current revision. An accepted change belongs to an older draft.', 409, 'preview_stale');
+	const { proposalDisposition } = await import('@/lib/articles/reviewWorkflow');
+	const applicable: RevisionProposal[] = [];
+	for (const item of accepted) {
+		const disposition = proposalDisposition(item, workspace.revision.id, article.body);
+		if (disposition === 'apply') {
+			applicable.push(item);
+			continue;
+		}
+		item.status = 'manual';
+		item.resolutionNote = disposition === 'conflict'
+			? 'This instruction does not match the current article, so it was not applied. Rewrite it against a section in this draft, or reject it.'
+			: 'This instruction does not change the article text, so it was not applied.';
+	}
+	if (!applicable.length) {
+		workspace.editorialDesk = { ...(workspace.editorialDesk ?? emptyEditorialDesk()), proposals, preview: null, updatedAt: new Date().toISOString() };
+		article.workspace = workspace;
+		return persist(article);
+	}
 	const brand = await requireBrand(ownerUserId, article.brandId);
 	const { loadResolvedIntelligence } = await import('@/lib/intelligence/knowledge/load');
 	const { intelligenceManifest } = await import('@/lib/intelligence/knowledge/resolver');
 	const intelligence = await loadResolvedIntelligence(ownerUserId, brand, `${article.title} ${article.topic}`, 'revision');
 	workspace.intelligence = intelligenceManifest(intelligence);
-	const narrative = accepted.filter((item) => !item.localFix);
+	const narrative = applicable.filter((item) => !item.localFix);
 	let proposedBody = article.body;
 	let summary = 'Deterministic fixes only.';
 	let baseRevisionId = workspace.revision.id;
@@ -2486,7 +2502,7 @@ export async function previewAcceptedEditorialProposals(ownerUserId: string, art
 		summary = `${preview.summary} ${callNote}`;
 		baseRevisionId = preview.baseRevisionId;
 	}
-	for (const item of accepted) {
+	for (const item of applicable) {
 		if (!item.localFix) continue;
 		const fixed = unlinkRepeats(proposedBody, item.localFix.url, item.localFix.keepFirst);
 		proposedBody = fixed.body;
@@ -2498,7 +2514,7 @@ export async function previewAcceptedEditorialProposals(ownerUserId: string, art
 			baseRevisionId,
 			proposedBody,
 			summary,
-			acceptedIds: accepted.map((item) => item.id),
+			acceptedIds: applicable.map((item) => item.id),
 			preservedIds: proposals.filter((item) => item.status === 'rejected' || item.status === 'deferred').map((item) => item.id),
 			wordCountBefore: articleWordCount(article.body),
 			wordCountAfter: articleWordCount(proposedBody),

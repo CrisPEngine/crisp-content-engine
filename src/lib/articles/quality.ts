@@ -369,6 +369,7 @@ export function overlapFindings(ctx: QualityContext): ReviewFinding[] {
 			})
 			.filter((item): item is string => Boolean(item));
 		const linked = other.url ? ctx.body.includes(other.url) : false;
+		if (!other.body?.trim() && titleScore >= 0.99) continue;
 		if (titleScore >= 0.5 || mirrored.length >= 2) {
 			findings.push({
 				severity: titleScore >= 0.7 ? 'critical' : 'major',
