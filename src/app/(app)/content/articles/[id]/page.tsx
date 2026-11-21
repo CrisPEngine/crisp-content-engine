@@ -27,6 +27,7 @@ type ArticleDetail = {
 	model: { role: string; resolved: string };
 	job: { status: string; error: string | null } | null;
 	nextStep?: { stage: string; action: string; detail: string };
+	presentation?: Array<{ code: string; message: string; severity: 'major' | 'minor' }>;
 	lifecycle: Lifecycle;
 	revisions: ArticleRevisionRef[];
 	approvalGate: { ok: true } | { ok: false; code: string; message: string };
@@ -408,7 +409,9 @@ export default function ArticleWorkspacePage() {
 		},
 		images: { label: 'Review images', run: () => chooseStage('images') },
 		seo: { label: seoDirty ? 'Save metadata' : 'Metadata saved', disabled: !seoDirty, run: () => document.getElementById('save-article')?.click() },
-		publish: { label: workspace?.cms.lastSyncAt ? 'Update CMS draft' : 'Send to CMS as draft', disabled: busy || !workspace?.destinationId || unsaved, run: () => void actBool('submit_draft', {}, 'Draft sent to the CMS. It is not published.') },
+		publish: workspace?.cms.sync?.state === 'published'
+			? { label: workspace.cms.sync.localChangesPending ? 'Review changes' : 'Published in Folian', run: () => chooseStage('draft') }
+			: { label: workspace?.cms.lastSyncAt ? 'Update CMS draft' : 'Send to CMS as draft', disabled: busy || !workspace?.destinationId || unsaved, run: () => void actBool('submit_draft', {}, 'Draft sent to the CMS. It is not published.') },
 	};
 
 	return (
@@ -519,9 +522,21 @@ export default function ArticleWorkspacePage() {
 					<p className="font-medium">Published in Folian</p>
 					<p>Payload revision {detail.article.workspace.cms.sync.remoteRevision ?? 'unknown'} is live. CCE revision {detail.article.workspace.cms.sync.localRevision ?? detail.article.workspace.revision?.number ?? 'unknown'} {detail.article.workspace.cms.sync.localChangesPending ? 'has local changes pending.' : 'matches the last check.'}</p>
 					<p className="text-text-soft">{detail.article.workspace.cms.sync.flag || 'Updating the published article needs an explicit approval. This page does not publish it.'}</p>
-					{detail.revisions?.filter((revision) => detail.article.workspace?.cms.submittedRevisionId && revision.id !== detail.article.workspace.cms.submittedRevisionId && revision.number > (detail.article.workspace.cms.sync?.remoteRevision ?? 0)).slice(0, 4).map((revision) => (
+					{(detail.revisions ?? []).filter((revision) => {
+						const submitted = detail.revisions.find((item) => item.id === detail.article.workspace?.cms.submittedRevisionId);
+						return submitted ? revision.number > submitted.number : false;
+					}).slice(0, 6).map((revision) => (
 						<p key={revision.id}>Local revision {revision.number}: {revision.note || 'Saved change'}</p>
 					))}
+				</div>
+			) : null}
+			{detail?.presentation?.length ? (
+				<div className="card p-4 text-sm">
+					<p className="font-medium">Editorial presentation</p>
+					<ul className="list-disc pl-4">
+						{detail.presentation.map((issue) => <li key={issue.code}>{issue.message}</li>)}
+					</ul>
+					<p className="text-text-soft">These are checks only. The article is not rewritten from this list.</p>
 				</div>
 			) : null}
 			{detail?.article.workspace?.revision && detail.article.approval.status !== 'approved' ? (
@@ -841,8 +856,8 @@ export default function ArticleWorkspacePage() {
 					<button className="btn" type="button" disabled={busy || !workspace?.destinationId} onClick={() => actBool('destination_preview', {}, 'CMS compatibility preview ready.')}>
 						{pending === 'destination_preview' ? 'Checking…' : 'Preview CMS mapping'}
 					</button>
-					<button className="btn" type="button" disabled={busy || jobRunning || !workspace?.destinationId || unsaved || Boolean(cmsPreview?.blocking?.length)} onClick={() => actBool('submit_draft', {}, 'Draft sent to the CMS. It is not published.')}>
-						{pending === 'submit_draft' ? 'Sending…' : workspace?.cms.lastSyncAt ? 'Update CMS draft' : 'Send to CMS as draft'}
+					<button className="btn" type="button" disabled={busy || jobRunning || !workspace?.destinationId || unsaved || Boolean(cmsPreview?.blocking?.length) || workspace?.cms.sync?.state === 'published'} onClick={() => actBool('submit_draft', {}, 'Draft sent to the CMS. It is not published.')}>
+						{workspace?.cms.sync?.state === 'published' ? 'Published article is protected' : pending === 'submit_draft' ? 'Sending…' : workspace?.cms.lastSyncAt ? 'Update CMS draft' : 'Send to CMS as draft'}
 					</button>
 				</div>
 				{unsaved ? <span className="text-xs text-text-soft">Save your changes first.</span> : null}

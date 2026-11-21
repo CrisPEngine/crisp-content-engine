@@ -298,8 +298,19 @@ export async function getWorkspaceArticle(ownerUserId: string, articleId: string
 		const brain = await requireBrand(ownerUserId, article.brandId).catch(() => null);
 		research.sources = withSourceClasses(research.sources, { brandDomain: brandDomain(brain?.identity.website) });
 	}
+	const brain = await requireBrand(ownerUserId, article.brandId).catch(() => null);
+	const { validatePresentation } = await import('@/lib/articles/presentationValidation');
+	const presentation = validatePresentation({
+		title: article.title,
+		seoTitle: article.seo.seoTitle,
+		metaDescription: article.seo.metaDescription,
+		body: article.body,
+		altText: article.workspace?.media.heroUrl ? article.workspace.media.heroAlt : undefined,
+		brandName: brain?.identity.name ?? null,
+	});
 	return {
 		article,
+		presentation,
 		nextStep: articleNextStep(article),
 		lifecycle: articleLifecycle(article),
 		revisions: listRevisions(article),

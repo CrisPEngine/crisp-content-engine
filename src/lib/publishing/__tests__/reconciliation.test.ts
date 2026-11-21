@@ -46,7 +46,10 @@ describe('capacity and presentation', () => {
 	});
 
 	it('uses sentence case for Folian and preserves the brand name', () => {
-		expect(sentenceCase('how to continue a fiction scene with AI', { titleCase: 'sentence', brandNames: ['Folian'], acronyms: ['AI'] })).toBe('How to continue a fiction scene with AI');
+		const style = { titleCase: 'sentence' as const, brandNames: ['Folian', 'Story Bible'], acronyms: ['AI'] };
+		expect(sentenceCase('how to continue a fiction scene with AI', style)).toBe('How to continue a fiction scene with AI');
+		expect(sentenceCase('How to Continue a Fiction Scene With AI', style)).toBe('How to continue a fiction scene with AI');
+		expect(sentenceCase('keep the story bible current', style)).toBe('Keep the Story Bible current');
 		const issues = validatePresentation({
 			title: 'how to continue a fiction scene',
 			seoTitle: 'How to continue a fiction scene with AI',
