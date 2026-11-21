@@ -66,7 +66,7 @@ export function editorialProgress(input: {
 	currentRevisionId: string | null;
 	body: string;
 	critiqueRevisionId: string | null;
-	openCritical: Array<{ code?: string; evidence?: string[]; explanation?: string }>;
+	openCritical: Array<{ code?: string; evidence?: string[]; explanation?: string; revisionId?: string | null }>;
 	title: string;
 	structureOk: boolean;
 }): { complete: boolean; blocker: string | null; next: string; awaitingApplication: number } {
@@ -74,7 +74,10 @@ export function editorialProgress(input: {
 	const applyCount = dispositions.filter((item) => item === 'apply').length;
 	const conflictCount = dispositions.filter((item) => item === 'conflict').length;
 	const openCount = dispositions.filter((item) => item === 'open').length;
-	const blocking = input.openCritical.filter((finding) => !(finding.code === 'content_overlap' && isSelfOverlap(input.title, finding.evidence ?? [])));
+	const blocking = input.openCritical.filter((finding) => {
+		if (finding.revisionId && input.currentRevisionId && finding.revisionId !== input.currentRevisionId) return false;
+		return !(finding.code === 'content_overlap' && isSelfOverlap(input.title, finding.evidence ?? []));
+	});
 	const critiqueCurrent = Boolean(input.critiqueRevisionId && input.critiqueRevisionId === input.currentRevisionId);
 	const parts: string[] = [];
 	if (conflictCount) parts.push(`${conflictCount} approved change${conflictCount === 1 ? '' : 's'} cannot be applied because the instruction does not match the current article.`);
@@ -109,7 +112,8 @@ export function publicationChanges(input: {
 }): { kind: 'metadata' | 'body' | 'both' | 'none'; detail: string } {
 	const metadata = input.metadataStatus === 'pending'
 		&& ((input.proposedSeoTitle ?? '') !== (input.currentSeoTitle ?? '') || (input.proposedDescription ?? '') !== (input.currentDescription ?? ''));
-	const body = input.revisionKind === 'improvement' || input.revisionSource === 'improvement';
+	const unchangedBody = input.revisionKind === 'baseline' || input.revisionKind === 'metadata' || input.revisionSource === 'baseline' || input.revisionSource === 'metadata' || input.revisionSource === 'legacy';
+	const body = !unchangedBody && Boolean(input.revisionKind || input.revisionSource);
 	const kind = metadata && body ? 'both' : metadata ? 'metadata' : body ? 'body' : 'none';
 	const baseline = typeof input.baselineRevision === 'number' ? ` Payload baseline revision ${input.baselineRevision}. An update is refused if that revision has changed.` : '';
 	const detail = kind === 'both'
@@ -138,6 +142,16 @@ export function findingLifecycle(input: {
 	if (input.findingStatus === 'resolved') return 'resolved';
 	if (input.stale) return 'stale';
 	return 'pending';
+}
+
+const LOCKED_CODES = new Set(['unsupported-claim', 'factual_error', 'safety', 'internal_metadata', 'publishing_integrity']);
+
+/** A person can record that a finding does not apply. Safety, factual, and publishing-integrity failures stay open until corrected. */
+export function findingMayBeSetAside(input: { code?: string; category?: string; severity?: string; rejectable?: boolean }): boolean {
+	if (input.rejectable === false) return false;
+	if (input.code && LOCKED_CODES.has(input.code)) return false;
+	if (input.severity === 'critical' && (input.category === 'accuracy' || input.category === 'examples' || input.category === 'cms' || input.code === 'content_overlap')) return false;
+	return true;
 }
 
 export function lifecycleLabel(state: FindingLifecycle, revision?: number | null): string {

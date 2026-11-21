@@ -6,6 +6,8 @@ import {
 	diffParagraphs,
 	excerptFrom,
 	parseSections,
+	containsInternalMetadata,
+	splitInternalMetadata,
 	stripCmsTitleHeading,
 	validateArticleStructure,
 } from '../structure';
@@ -13,6 +15,18 @@ import {
 const MODEL_SECTION = '## 1. Turn your idea into a premise\n\nA premise names the character, the want and the obstacle. Write it in one sentence.';
 
 describe('article structure', () => {
+	it('removes a leading metadata block and leaves a thematic break in place', () => {
+		const article = 'What it can help with.\n\nSee [Folian](/product).\n\n---\n\nA later break.';
+		const leaked = `---\ntitle: "ChatGPT for Novel Writing: Uses & Limits | Folian"\nmeta_description: "Use ChatGPT for ideas."\nstatus: draft\nopportunity_id: 0fdbdd28-4a95-4bbf-b585-0d2a0bee5d1b\n---\n\n${article}`;
+		const split = splitInternalMetadata(leaked);
+		expect(split.contaminated).toBe(true);
+		expect(split.body).toBe(article);
+		expect(split.body).toContain('[Folian](/product)');
+		expect(split.fields.opportunity_id).toBe('0fdbdd28-4a95-4bbf-b585-0d2a0bee5d1b');
+		expect(containsInternalMetadata(article)).toBe(false);
+		expect(splitInternalMetadata('---\n\nA scene break.\n\n---\n\nThe story continues.').contaminated).toBe(false);
+	});
+
 	it('removes the heading a section model repeats, so assembly emits each H2 once', () => {
 		const body = assembleSections([
 			{ heading: '1. Turn your idea into a premise', body: MODEL_SECTION },

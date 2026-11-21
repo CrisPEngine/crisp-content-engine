@@ -1,6 +1,6 @@
 import type { ReviewFinding } from './editorialReview';
 import { normaliseUrl } from './researchPackage';
-import { parseSections, plainText } from './structure';
+import { containsInternalMetadata, parseSections, plainText } from './structure';
 
 /**
  * Deterministic quality checks that look across sections: repeated ideas (not only identical sentences),
@@ -123,10 +123,19 @@ export type QualityContext = {
 	/** Existing articles this one must not duplicate. */
 	related?: RelatedArticle[];
 	contentType?: string;
+	searchIntent?: string | null;
 };
 
 export type InventoryItem = { url: string; title?: string };
-export type RelatedArticle = { title: string; url?: string | null; primaryKeyword?: string | null; body?: string | null };
+export type RelatedArticle = { title: string; url?: string | null; primaryKeyword?: string | null; searchIntent?: string | null; body?: string | null };
+
+/** The question an article answers. A shared topic label such as "informational" is not a distinct job. */
+export function articleSearchJob(title: string, keyword?: string | null): 'comparison' | 'method' | 'topical' {
+	const text = `${title} ${keyword ?? ''}`;
+	if (/\b(?:vs\.?|versus|compared with|compared to)\b/i.test(text)) return 'comparison';
+	if (/\bhow to\b/i.test(text)) return 'method';
+	return 'topical';
+}
 
 export type LinkUse = { url: string; key: string; anchor: string; section: string; internal: boolean; host: string };
 
@@ -370,21 +379,36 @@ export function overlapFindings(ctx: QualityContext): ReviewFinding[] {
 			.filter((item): item is string => Boolean(item));
 		const linked = other.url ? ctx.body.includes(other.url) : false;
 		if (!other.body?.trim() && titleScore >= 0.99) continue;
-		if (titleScore >= 0.5 || mirrored.length >= 2) {
-			findings.push({
-				severity: titleScore >= 0.7 ? 'critical' : 'major',
-				code: 'content_overlap',
-				source: 'deterministic',
-				dimension: 'topic_completeness',
-				evidence: [
-					`Title and keyword overlap with “${other.title}”: ${Math.round(titleScore * 100)}%.`,
-					...(mirrored.length ? [`Section headings that mirror it: ${mirrored.slice(0, 4).join('; ')}.`] : []),
-				],
-				explanation: 'Two articles that answer the same question compete with each other in search and give readers the same material twice.',
-				instruction: `Give this article a distinct job from “${other.title}”: cover what that article does not, and ${linked ? 'keep the single link to it where a reader needs the broader picture' : 'link to it once where a reader needs the broader picture'} instead of repeating its sections.`,
-				rejectable: titleScore < 0.7,
-			});
-		}
+		if (titleScore < 0.5 && mirrored.length < 2) continue;
+		const ownJob = articleSearchJob(ctx.title ?? '', ctx.primaryKeyword);
+		const otherJob = articleSearchJob(other.title, other.primaryKeyword);
+		const distinctJob = ownJob !== otherJob;
+		const confirmedConflict = !distinctJob && mirrored.length >= 2 && titleScore >= 0.5;
+		const competing = `Competing article: “${other.title}”${other.url ? ` (${other.url})` : ''}.`;
+		const overlap = `Title and keyword overlap: ${Math.round(titleScore * 100)}%.`;
+		const jobs = `This article’s job: ${ownJob}. Competing article’s job: ${otherJob}.`;
+		const intents = `Recorded search intent: “${ctx.searchIntent || 'not recorded'}” here and “${other.searchIntent || 'not recorded'}” on the other article.`;
+		const sections = mirrored.length
+			? `Similar headings: ${mirrored.slice(0, 4).join('; ')}.`
+			: 'No duplicated section headings were found in the copy of the other article held here.';
+		findings.push({
+			severity: confirmedConflict ? 'critical' : 'minor',
+			code: 'content_overlap',
+			source: 'deterministic',
+			dimension: 'topic_completeness',
+			evidence: [competing, overlap, jobs, intents, sections],
+			explanation: confirmedConflict
+				? `“${other.title}” answers the same question and repeats sections of this article. That is a publishing conflict, not just a shared topic.`
+				: distinctJob
+					? `“${ctx.title ?? 'This article'}” and “${other.title}” share topic words, but they answer different questions. This page is a ${ownJob} article and the other is a ${otherJob} article, so the similarity does not block publication.`
+					: `“${other.title}” uses similar topic words, but no duplicated section headings were found. Title similarity alone does not block publication.`,
+			instruction: confirmedConflict
+				? `Keep the sections that serve this article and replace each repeated section with one sentence pointing to “${other.title}”. Do not change the other article from this review.`
+				: distinctJob
+					? `Retain both articles. ${linked ? 'Keep the existing link' : 'Link once'} to “${other.title}” where a reader needs the ${otherJob}, and leave that article unchanged.`
+					: `Retain both articles unless a section-by-section reading shows they give the same answer. Do not change “${other.title}” from this review.`,
+			rejectable: !confirmedConflict,
+		});
 	}
 	return findings;
 }
@@ -417,8 +441,22 @@ export function practicalValueFindings(ctx: QualityContext): ReviewFinding[] {
 	];
 }
 
+export function internalMetadataFindings(ctx: QualityContext): ReviewFinding[] {
+	if (!containsInternalMetadata(ctx.body)) return [];
+	return [{
+		severity: 'critical',
+		code: 'internal_metadata',
+		source: 'deterministic',
+		dimension: 'publication_readiness',
+		rejectable: false,
+		evidence: ['The draft starts with a metadata block containing a title, meta description, status, or opportunity id.'],
+		explanation: 'Those fields are workflow data. Publishing them would show internal identifiers to readers.',
+		instruction: 'Remove the metadata block from the article body. Keep the title and description in the SEO fields.',
+	}];
+}
+
 export function runQualityChecks(ctx: QualityContext): ReviewFinding[] {
-	return [...repetitionFindings(ctx), ...linkFindings(ctx), ...overlapFindings(ctx), ...practicalValueFindings(ctx)];
+	return [...internalMetadataFindings(ctx), ...repetitionFindings(ctx), ...linkFindings(ctx), ...overlapFindings(ctx), ...practicalValueFindings(ctx)];
 }
 
 /** Removes repeat links to one URL, keeping the first `keepFirst`. Anchor text stays as plain words. */

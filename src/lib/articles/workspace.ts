@@ -300,6 +300,10 @@ export async function getWorkspaceArticle(ownerUserId: string, articleId: string
 	}
 	const brain = await requireBrand(ownerUserId, article.brandId).catch(() => null);
 	const { validatePresentation } = await import('@/lib/articles/presentationValidation');
+	const terminology = [
+		...(brain?.guardrails.termRules ?? []).filter((rule) => rule.level !== 'AVOID' && rule.level !== 'PROHIBITED').map((rule) => rule.term),
+		...(brain?.guardrails.requiredTerminology ?? []),
+	];
 	const presentation = validatePresentation({
 		title: article.title,
 		seoTitle: article.seo.seoTitle,
@@ -307,6 +311,7 @@ export async function getWorkspaceArticle(ownerUserId: string, articleId: string
 		body: article.body,
 		altText: article.workspace?.media.heroUrl ? article.workspace.media.heroAlt : undefined,
 		brandName: brain?.identity.name ?? null,
+		terminology,
 	});
 	return {
 		article,
@@ -2357,18 +2362,34 @@ export async function recordEditorialFeedback(ownerUserId: string, articleId: st
 export async function queueEditorialChange(
 	ownerUserId: string,
 	articleId: string,
-	input: { findingId: string; instruction: string; reason: string; section?: string | null; status?: 'accepted' | 'rejected' | 'deferred' | 'proposed'; localFix?: { url: string; keepFirst: number } | null },
+	input: { findingId: string; instruction: string; reason: string; section?: string | null; status?: 'accepted' | 'rejected' | 'deferred' | 'proposed'; resolutionNote?: string | null; localFix?: { url: string; keepFirst: number } | null },
 ): Promise<ArticleRecord> {
 	const instruction = input.instruction.trim();
 	if (!instruction) throw new ArticleWorkflowError('Write the change to queue.', 400, 'instruction_required');
+	if (input.resolutionNote?.startsWith('Not applicable') && !input.resolutionNote.replace(/^Not applicable:\s*/, '').trim()) {
+		throw new ArticleWorkflowError('Record why this finding does not apply.', 400, 'reason_required');
+	}
 	const status = input.status ?? 'accepted';
 	const article = await requireArticle(ownerUserId, articleId);
+	if (input.resolutionNote?.startsWith('Not applicable')) {
+		const { findingMayBeSetAside } = await import('@/lib/articles/reviewWorkflow');
+		const workspace = ensureWorkspace(article);
+		const editorial = workspace.editorial.findings.find((item) => item.id === input.findingId);
+		const critique = workspace.editorialDesk?.critique?.findings.find((item) => item.id === input.findingId);
+		const allowed = editorial
+			? findingMayBeSetAside({ code: editorial.code, category: editorial.dimension === 'accuracy' ? 'accuracy' : undefined, severity: editorial.severity, rejectable: editorial.rejectable })
+			: critique
+				? findingMayBeSetAside({ category: critique.category, severity: critique.severity })
+				: false;
+		if (!allowed) throw new ArticleWorkflowError('This finding has to be corrected. It cannot be marked not applicable.', 400, 'finding_not_rejectable');
+	}
 	const workspace = ensureWorkspace(article);
 	const proposals = workspace.editorialDesk?.proposals ?? [];
 	const existing = proposals.find((item) => item.sourceFindingId === input.findingId && item.status !== 'applied');
 	if (existing) {
 		existing.action = instruction.slice(0, 500);
 		existing.status = status;
+		existing.resolutionNote = input.resolutionNote?.trim().slice(0, 400) || existing.resolutionNote || null;
 		existing.sourceRevisionId = workspace.revision?.id ?? null;
 		existing.localFix = input.localFix ?? null;
 	} else {
@@ -2382,6 +2403,7 @@ export async function queueEditorialChange(
 			needsResearch: instructionRequests(instruction, /research|sources?|evidence/i),
 			needsBrandVerification: instructionRequests(instruction, /product|capabilit|verified/i),
 			status,
+			resolutionNote: input.resolutionNote?.trim().slice(0, 400) || null,
 			sourceFeedback: input.reason.slice(0, 400),
 			sourceFindingId: input.findingId,
 			sourceRevisionId: workspace.revision?.id ?? null,
@@ -2390,7 +2412,7 @@ export async function queueEditorialChange(
 	}
 	workspace.editorialDesk = { ...(workspace.editorialDesk ?? emptyEditorialDesk()), proposals, preview: null, updatedAt: new Date().toISOString() };
 	article.workspace = workspace;
-	if (status === 'rejected') {
+	if (status === 'rejected' && !input.resolutionNote?.startsWith('Not applicable')) {
 		const { proposeEditorialLearning } = await import('@/lib/intelligence/knowledge/proposeLearning');
 		await proposeEditorialLearning(ownerUserId, article.brandId, instruction).catch(() => undefined);
 	}

@@ -222,7 +222,11 @@ export function isOpenFinding(finding: ArticleEditorialFinding): boolean {
 }
 
 export function openCriticalFindings(workspace: ArticleWorkspace): ArticleEditorialFinding[] {
-	return workspace.editorial.findings.filter((finding) => finding.severity === 'critical' && isOpenFinding(finding));
+	const current = workspace.revision?.id ?? null;
+	return workspace.editorial.findings.filter((finding) => {
+		if (finding.severity !== 'critical' || !isOpenFinding(finding)) return false;
+		return !(finding.revisionId && current && finding.revisionId !== current);
+	});
 }
 
 /** Moves findings that the current article data no longer supports into review history. */
@@ -279,7 +283,8 @@ export function articleApprovalGate(article: ArticleRecord): GateResult {
 	if (workspace.editorial.status === 'not_run') {
 		return { ok: false, code: 'review_required', message: 'Run editorial review before approval.' };
 	}
-	if (workspace.revision && workspace.editorial.reviewedRevisionId !== workspace.revision.id) {
+	const critiqueCurrent = Boolean(workspace.revision && workspace.editorialDesk?.critique?.revisionId === workspace.revision.id);
+	if (workspace.revision && workspace.editorial.reviewedRevisionId !== workspace.revision.id && !critiqueCurrent) {
 		return {
 			ok: false,
 			code: 'review_stale',

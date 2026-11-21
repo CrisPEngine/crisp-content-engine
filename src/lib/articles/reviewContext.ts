@@ -63,10 +63,11 @@ export function buildQualityContext(input: {
 			const mentioned = named.some((line) => line.includes(other.title.toLowerCase()) || (url && normaliseUrl(line) === normaliseUrl(url)));
 			return mentioned || other.status === 'published';
 		})
-		.map((other) => ({ title: other.title, url: publishedUrl(other, origin), primaryKeyword: other.primaryKeyword ?? null, body: other.body }));
+		.map((other) => ({ title: other.title, url: publishedUrl(other, origin), primaryKeyword: other.primaryKeyword ?? null, searchIntent: other.searchIntent, body: other.body }));
 	return {
 		title: article.title,
 		primaryKeyword: article.primaryKeyword ?? null,
+		searchIntent: article.searchIntent,
 		siteHosts,
 		promotedNames: [brain.identity.name, ...(taxonomy?.tools ?? []).map((tool) => tool.label)].filter(Boolean),
 		inventory,

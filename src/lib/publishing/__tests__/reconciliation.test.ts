@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { classifyRemoteLifecycle, reconcilePublicationState } from '@/lib/publishing/reconcile';
 import { productionCapacity, productionHoldReason } from '@/lib/campaigns/productionPolicy';
-import { sentenceCase, validatePresentation } from '@/lib/articles/presentationValidation';
+import { presentationStyleFor, sentenceCase, validatePresentation } from '@/lib/articles/presentationValidation';
 import { planOperationTick } from '@/lib/operations/policy';
 
 describe('publication reconciliation', () => {
@@ -69,6 +69,22 @@ describe('capacity and presentation', () => {
 			brandName: 'Folian',
 		});
 		expect(linked.some((issue) => issue.code === 'brand-name')).toBe(false);
+		const styleWithBrands = presentationStyleFor('Folian', ['canon']);
+		expect(sentenceCase('ChatGPT and author voice', styleWithBrands)).toBe('ChatGPT and author voice');
+		expect(sentenceCase('What ChatGPT can do for novelists', styleWithBrands)).toBe('What ChatGPT can do for novelists');
+		expect(sentenceCase('connect OpenAI to Folian', styleWithBrands)).toBe('Connect OpenAI to Folian');
+		expect(sentenceCase('keep the story bible current', styleWithBrands)).toBe('Keep the Story Bible current');
+		expect(sentenceCase('this tool is available', styleWithBrands)).toBe('This tool is available');
+		const repeated = validatePresentation({
+			title: 'ChatGPT for Novel Writing',
+			seoTitle: 'ChatGPT for Novel Writing',
+			metaDescription: 'Use ChatGPT for ideas, then check the story bible before the next chapter.',
+			body: '## Chatgpt\n\nOne.\n\n## Chatgpt\n\nTwo.\n\n## Next step\n\nApprove the scene.',
+			brandName: 'Folian',
+			terminology: ['canon'],
+		});
+		expect(repeated.filter((issue) => issue.message.includes('Chatgpt'))).toHaveLength(1);
+		expect(repeated.some((issue) => /Chatgpt/.test(issue.message) && /should be “Chatgpt”/.test(issue.message))).toBe(false);
 	});
 
 	it('does not start production while paused', () => {
