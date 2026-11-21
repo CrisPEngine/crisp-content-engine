@@ -129,18 +129,7 @@ export function DraftWorkspace({
 			</div>
 
 			{surface === 'draft' ? <div className="flex flex-wrap gap-2 items-center">
-				<button
-					className="btn"
-					type="button"
-					disabled={busy || jobRunning || (draftAction ? !draftAction.available || draftAction.kind === 'continue' : Boolean(generateBlocked))}
-					onClick={() => void act(
-						draftAction?.kind === 'import' ? 'import_published_baseline' : 'generate',
-						{},
-						draftAction?.kind === 'import' ? 'Published article imported. The live page was not changed.' : 'Generation started.',
-					)}
-				>
-					{pending === 'generate' || pending === 'import_published_baseline' ? 'Working…' : (draftAction?.label ?? (articleBody.trim() ? 'Regenerate draft' : 'Generate draft'))}
-				</button>
+				{draftAction?.detail ? <p className="w-full text-sm text-text-soft">{draftAction.detail}</p> : null}
 				<button
 					className="btn"
 					type="button"
@@ -155,7 +144,7 @@ export function DraftWorkspace({
 				>
 					{pending === 'preview_structural_repair' ? 'Checking…' : 'Fix structural issues'}
 				</button>
-				<button
+				{draftAction?.kind === 'generate' ? <button
 					className="btn"
 					type="button"
 					disabled={busy || bodyDirty || !articleBody.trim()}
@@ -168,8 +157,8 @@ export function DraftWorkspace({
 					}}
 				>
 					{pending === 'preview_improve' ? 'Preparing…' : 'Improve article with AI'}
-				</button>
-				{draftAction?.detail ? <span className="text-xs text-text-soft">{draftAction.detail}</span> : generateBlocked ? <span className="text-xs text-text-soft">{generateBlocked}</span> : null}
+				</button> : null}
+				{!draftAction?.detail && generateBlocked ? <span className="text-xs text-text-soft">{generateBlocked}</span> : null}
 			</div> : null}
 
 			{surface === 'draft' && structure ? (

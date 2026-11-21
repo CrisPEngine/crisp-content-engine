@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { articleLifecycle } from '@/lib/articles/meta';
-import { contentApprovalLocksDraft, draftNextAction, editorialAwaitingApplication, payloadDocumentToMarkdown, preparePublishedImport } from '@/lib/articles/publishedBaseline';
+import { contentApprovalLocksDraft, draftNextAction, editorialAwaitingApplication, improvementJourney, payloadDocumentToMarkdown, preparePublishedImport } from '@/lib/articles/publishedBaseline';
 import { commitRevision } from '@/lib/articles/revisions';
 import type { ArticleRecord } from '@/lib/articles/types';
 import { metadataApplyDecision } from '@/lib/publishing/payloadCatalogue';
@@ -97,7 +97,7 @@ describe('published articles without a local draft', () => {
 		expect(record.approval.status).toBe('approved');
 		const next = draftNextAction(record);
 		expect(next.kind).toBe('revise');
-		expect(next.label).toBe('Create revised draft');
+		expect(next.label).toBe('Generate improved article');
 		expect(next.available).toBe(true);
 	});
 
@@ -161,8 +161,24 @@ describe('published articles without a local draft', () => {
 			}],
 		};
 		const next = draftNextAction(record);
-		expect(next.kind).toBe('preview_editorial');
+		expect(next.kind).toBe('revise');
+		expect(next.label).toBe('Generate improved article');
 		expect(editorialAwaitingApplication(record)).toBe(1);
+		expect(improvementJourney(record).label).toBe('Generate improved article');
+	});
+
+	it('asks to apply a ready preview on the working revision', () => {
+		const record = shell({ body: '## Who is Folian for?\n\nFolian is for novelists.', wordCount: 8, status: 'review' });
+		record.approval = { status: 'pending', approver: 'human', required: true };
+		record.workspace!.revision = { id: 'work', number: 2, contentHash: 'abc', wordCount: 8, createdAt: '2026-11-21T00:00:00.000Z', source: 'improvement', kind: 'content', note: 'Polish' };
+		record.workspace!.editorialDesk = {
+			proposals: [{ id: 'p', status: 'accepted', sourceRevisionId: 'work', section: 'Who is Folian for?', action: 'Close the section.', scope: 'section', reason: 'Weak close.' }],
+			preview: { baseRevisionId: 'work', proposedBody: 'Updated article.', acceptedIds: ['p'], summary: 'Ready', createdAt: '2026-11-21T00:00:00.000Z', preservedIds: [], wordCountBefore: 8, wordCountAfter: 10 },
+		} as typeof record.workspace.editorialDesk;
+		const journey = improvementJourney(record);
+		expect(journey.action).toBe('apply');
+		expect(journey.label).toBe('Apply changes');
+		expect(journey.pendingChanges).toBe(1);
 	});
 
 	it('asks for a fresh import when only the baseline is behind the remote revision', () => {

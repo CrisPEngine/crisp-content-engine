@@ -21,7 +21,7 @@ import { summariseRevisionChange } from '@/lib/articles/revisionSummary';
 import { findingGroup, findingTitle, passageAnchor, stageTone, workspaceStageFromLocation, type WorkspaceStageId } from '@/lib/articles/workspaceNavigation';
 import type { ArticleRecord, ArticleRevisionRef } from '@/lib/articles/types';
 import { MetadataProposalPanel } from '@/components/articles/MetadataProposalPanel';
-import { contentRevisionApproved, draftNextAction, localStatusLabel } from '@/lib/articles/publishedBaseline';
+import { contentRevisionApproved, draftNextAction, improvementJourney, localStatusLabel } from '@/lib/articles/publishedBaseline';
 
 type ArticleDetail = {
 	article: ArticleRecord;
@@ -326,6 +326,7 @@ export default function ArticleWorkspacePage() {
 	});
 	const research = workspace?.research;
 	const draftAction = draftNextAction(article);
+	const journey = improvementJourney(article);
 	const generateBlocked = draftAction.kind === 'generate' || draftAction.kind === 'continue' ? '' : draftAction.detail;
 	const target = article.targetWords;
 	const suggestion = workspace?.categorySuggestion;
@@ -450,22 +451,35 @@ export default function ArticleWorkspacePage() {
 					{unsaved ? <span className="text-warning">Unsaved changes</span> : null}
 				</>
 			}
-			primaryLabel={primary[stage].label}
-			onPrimary={primary[stage].run}
-			primaryDisabled={primary[stage].disabled}
+			primaryLabel={journey.label}
+			onPrimary={() => {
+				if (!journey.available) return;
+				if (journey.action === 'import') void act('import_published_baseline', {}, 'Published article imported. The live page was not changed.');
+				else if (journey.action === 'generate') void act('generate', {}, 'Improved article generation started. The published baseline stays in revision history.');
+				else if (journey.action === 'preview' || journey.action === 'apply' || journey.action === 'review') {
+					chooseStage('review');
+					primary.review.run();
+				}
+				else if (journey.action === 'decide') chooseStage('review');
+				else if (journey.action === 'approve') void actBool('approve', {}, `Revision ${workspace?.revision?.number ?? ''} approved.`);
+				else if (journey.action === 'publish') void actBool('publish', { confirmPublish: true }, 'Publish checked. Nothing is sent unless live publishing is enabled and every gate passes.');
+			}}
+			primaryDisabled={!journey.available || (journey.action === 'approve' && !gate.ok)}
 			primaryBusy={busy}
 			primaryBusyLabel={pending === 'preview_editorial_proposals' ? 'Preparing preview…' : pending === 'apply_editorial_proposals' ? 'Saving revision…' : 'Working…'}
 			contextOpen={contextOpen}
 			onToggleContext={() => setContextOpen((value) => !value)}
 			context={
 				<div className="space-y-4 text-sm">
-					{detail.nextStep ? (
-						<div>
-							<p className="text-xs uppercase text-text-dim">Next</p>
-							<p className="font-medium">{detail.nextStep.action}</p>
-							<p className="text-text-soft">{detail.nextStep.detail}</p>
-						</div>
-					) : null}
+					<div>
+						<p className="text-xs uppercase text-text-dim">{journey.stage}</p>
+						<p className="font-medium">{journey.label}</p>
+						<p className="text-text-soft">{journey.detail}</p>
+						<p className="mt-2 text-text-soft">{journey.publishedVersion}</p>
+						<p className="text-text-soft">{journey.workingVersion}</p>
+						<p className="text-text-soft">{journey.pendingChanges} pending change{journey.pendingChanges === 1 ? '' : 's'}</p>
+						<p className="text-text-soft">Last completed: {journey.lastCompleted}</p>
+					</div>
 					{stage === 'brief' && editorialBrief ? (
 						<div className="space-y-2">
 							<p className="font-medium">Confirmed</p>
@@ -478,8 +492,6 @@ export default function ArticleWorkspacePage() {
 					{stage === 'draft' ? (
 						<div className="space-y-2">
 							<p>Read the article, then switch to Edit only when you want to change the Markdown source.</p>
-							<button className="btn" type="button" disabled={busy || Boolean(generateBlocked)} onClick={() => void actBool('preview_improve', {}, '')}>Improve article</button>
-							{generateBlocked ? <p className="text-text-soft">{generateBlocked}</p> : null}
 						</div>
 					) : null}
 					{stage === 'review' && critique ? (
