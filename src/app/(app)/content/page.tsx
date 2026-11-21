@@ -25,7 +25,7 @@ export default function ContentOverviewPage() {
 				]);
 				const operations = (queue.operations ?? {}) as Operations;
 				const jobs = (queue.jobs ?? []) as OverviewJob[];
-				const capacity = productionCapacity(jobs, Date.now(), operations.weeklyMaximum ?? 0);
+				const capacity = productionCapacity(jobs.flatMap((job) => job.createdAt ? [{ createdAt: job.createdAt, status: job.status, workType: job.workType }] : []), Date.now(), operations.weeklyMaximum ?? 0);
 				setView(buildContentOverview({
 					paused: operations.paused ?? queue.campaigns?.[0]?.status !== 'active',
 					publishingEnabled: operations.autonomousPublishingEnabled === true,

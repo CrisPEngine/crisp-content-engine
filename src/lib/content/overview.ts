@@ -1,5 +1,5 @@
 export type OverviewOpportunity = { id: string; title: string; status: string; recommendedAction: string };
-export type OverviewJob = { id: string; opportunityId: string; articleId: string | null; stage: string; status: string; note: string; error: string | null; workType?: string };
+export type OverviewJob = { id: string; opportunityId: string; articleId: string | null; stage: string; status: string; note: string; error: string | null; workType?: string; createdAt?: string };
 export type OverviewArticle = { id: string; title: string; status: string; publicationPhase?: string; contentStage?: string; localChangesPending?: boolean; cmsState?: string | null; updatedAt?: string };
 
 export type OverviewLink = { title: string; detail: string; href: string };
