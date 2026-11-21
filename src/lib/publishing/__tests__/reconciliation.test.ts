@@ -60,6 +60,15 @@ describe('capacity and presentation', () => {
 		});
 		expect(issues.some((issue) => issue.code === 'title-case')).toBe(true);
 		expect(issues.some((issue) => issue.code === 'heading-case')).toBe(false);
+		const linked = validatePresentation({
+			title: 'How to continue a fiction scene with AI',
+			seoTitle: 'How to continue a fiction scene with AI',
+			metaDescription: 'Continue a scene without contradicting earlier chapters.',
+			body: 'Use the Story Bible.\n\nSee [the timeline](https://folian.app/articles/how-to-organize-timelines-in-fiction).\n\n## Next-session checklist\n\n- Approve the scene.',
+			altText: 'A writer reviewing notes.',
+			brandName: 'Folian',
+		});
+		expect(linked.some((issue) => issue.code === 'brand-name')).toBe(false);
 	});
 
 	it('does not start production while paused', () => {

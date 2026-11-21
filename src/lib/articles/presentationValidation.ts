@@ -64,11 +64,10 @@ export function validatePresentation(input: {
 		if (heading !== sentenceCase(heading, style)) issues.push({ code: 'heading-case', severity: 'minor', message: `Heading “${heading}” should be “${sentenceCase(heading, style)}”.` });
 	}
 	if (/  +/.test(input.body) || /[ ][,.;]/.test(input.body) || /[!?]{2,}|,,/.test(input.body)) issues.push({ code: 'punctuation-spacing', severity: 'minor', message: 'Remove the extra space or repeated punctuation.' });
+	const prose = `${input.title}\n${input.body}`.replace(/https?:\/\/\S+/g, ' ');
 	for (const name of style.brandNames) {
-		const wrong = new RegExp(`\\b${name.split('').join('')}\\b`, 'i');
-		if (wrong.test(`${input.title} ${input.body}`) && !new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(`${input.title} ${input.body}`)) {
-			issues.push({ code: 'brand-name', severity: 'major', message: `Write the brand as “${name}”.` });
-		}
+		const forms = [...prose.matchAll(new RegExp(`\\b${escapeRegExp(name)}\\b`, 'gi'))].map((match) => match[0]);
+		if (forms.some((form) => form !== name)) issues.push({ code: 'brand-name', severity: 'major', message: `Write the brand as “${name}”.` });
 	}
 	const links = [...input.body.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)].map((match) => match[1]);
 	for (const url of links) {
