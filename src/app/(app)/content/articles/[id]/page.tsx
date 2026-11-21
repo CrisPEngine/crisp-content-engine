@@ -308,7 +308,7 @@ export default function ArticleWorkspacePage() {
 		currentRevisionId: workspace?.revision?.id ?? null,
 		body: article.body,
 		critiqueRevisionId: workspace?.editorialDesk?.critique?.revisionId ?? null,
-		openCritical: (workspace?.editorial?.findings ?? []).filter((finding) => finding.severity === 'critical' && (finding.decision === 'pending' || finding.decision === 'accepted')).map((finding) => ({ code: finding.code, evidence: finding.evidence, explanation: finding.explanation })),
+		openCritical: (workspace?.editorial?.findings ?? []).filter((finding) => finding.severity === 'critical' && (finding.decision === 'pending' || finding.decision === 'accepted')).map((finding) => ({ code: finding.code, evidence: finding.evidence, explanation: finding.explanation ?? undefined })),
 		title: article.title,
 		structureOk: structure?.ok !== false,
 	});
