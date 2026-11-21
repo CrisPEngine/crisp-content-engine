@@ -13,16 +13,26 @@ export function presentationStyleFor(brandName: string | null | undefined): Pres
 	return { titleCase: 'sentence', brandNames: brandName ? [brandName] : [], acronyms: ['AI', 'SEO'] };
 }
 
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function sentenceCase(value: string, style: PresentationStyle): string {
 	const trimmed = value.trim();
 	if (!trimmed) return trimmed;
-	const lower = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-	let result = style.titleCase === 'title'
-		? lower.replace(/\b[a-z]/g, (letter) => letter.toUpperCase())
-		: lower.charAt(0).toUpperCase() + lower.slice(1).replace(/\b[A-Z]{2,}\b/g, (word) => word);
-	for (const name of [...style.brandNames, ...(style.acronyms ?? [])]) {
-		result = result.replace(new RegExp(name, 'ig'), name);
+	const terms = [...style.brandNames, ...(style.acronyms ?? [])].filter(Boolean).sort((left, right) => right.length - left.length);
+	if (style.titleCase === 'title') {
+		return trimmed.replace(/\S+/g, (word) => {
+			const kept = terms.find((term) => !term.includes(' ') && term.toLowerCase() === word.toLowerCase());
+			if (kept) return kept;
+			const lower = word.toLowerCase();
+			return lower.charAt(0).toUpperCase() + lower.slice(1);
+		});
 	}
+	let result = trimmed.toLowerCase();
+	const first = result.search(/[a-z]/i);
+	if (first >= 0) result = result.slice(0, first) + result.charAt(first).toUpperCase() + result.slice(first + 1);
+	for (const term of terms) result = result.replace(new RegExp(escapeRegExp(term), 'ig'), term);
 	return result;
 }
 
@@ -53,7 +63,7 @@ export function validatePresentation(input: {
 	for (const heading of headings) {
 		if (heading !== sentenceCase(heading, style)) issues.push({ code: 'heading-case', severity: 'minor', message: `Heading “${heading}” should be “${sentenceCase(heading, style)}”.` });
 	}
-	if (/  +/.test(input.body) || /[ ][,.;]/.test(input.body)) issues.push({ code: 'punctuation-spacing', severity: 'minor', message: 'Remove the extra space before punctuation.' });
+	if (/  +/.test(input.body) || /[ ][,.;]/.test(input.body) || /[!?]{2,}|,,/.test(input.body)) issues.push({ code: 'punctuation-spacing', severity: 'minor', message: 'Remove the extra space or repeated punctuation.' });
 	for (const name of style.brandNames) {
 		const wrong = new RegExp(`\\b${name.split('').join('')}\\b`, 'i');
 		if (wrong.test(`${input.title} ${input.body}`) && !new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(`${input.title} ${input.body}`)) {

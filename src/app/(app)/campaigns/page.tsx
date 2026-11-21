@@ -17,6 +17,7 @@ type Queue = {
 		paused: boolean;
 		autonomousPublishingEnabled: boolean;
 		weeklyMaximum: number;
+		maxConcurrentJobs?: number;
 		maxCostUsdPerArticle: number;
 		discovered: number;
 		inProduction: number;
@@ -199,8 +200,8 @@ export default function CampaignsPage() {
 				))}
 			</section>
 			<section id="operations" className="card space-y-3 p-4 text-sm">
-				<h2 className="font-medium">Campaign</h2>
-				<p className="text-text-soft">The daily worker discovers and drafts only while a campaign is active. It cannot publish, and it does not change published articles.</p>
+				<h2 className="font-medium">Campaign controls</h2>
+				<p className="text-text-soft">Pause, resume, and the weekly settings are here. Discovery and provider checks stay further down the page. The worker cannot publish, and it does not change published articles.</p>
 				{queue?.operations ? (
 					<div className="grid gap-2 md:grid-cols-4">
 						<p>Mode {queue.operations.mode.replaceAll('_', ' ')} · {queue.operations.paused ? 'paused' : 'running'}</p>
@@ -216,7 +217,8 @@ export default function CampaignsPage() {
 				{queue?.operations ? (() => {
 					const capacity = productionCapacity(queue.jobs ?? [], Date.now(), queue.operations.weeklyMaximum);
 					const concurrent = (queue.jobs ?? []).filter((job) => job.status === 'queued' || job.status === 'running').length;
-					return <p>{productionHoldReason({ paused: queue.operations.paused, remaining: capacity.remaining, concurrent, maxConcurrent: 1, nextSlotAt: capacity.nextSlotAt })} Started this week {capacity.started}. Completed or awaiting approval {capacity.completed}. Failed {capacity.failed}, which does not use a slot. Published articles are not overwritten.</p>;
+					const publishedCount = board.filter((article) => article.publicationPhase === 'verified_live' || article.publicationPhase === 'published' || article.status === 'published').length;
+					return <p>{productionHoldReason({ paused: queue.operations.paused, remaining: capacity.remaining, concurrent, maxConcurrent: queue.operations.maxConcurrentJobs ?? 1, nextSlotAt: capacity.nextSlotAt })} Started this week {capacity.started}. Completed or awaiting approval {capacity.completed}. Published {publishedCount}. Failed {capacity.failed}, which does not use a slot. {capacity.nextSlotAt ? `Next open slot ${new Date(capacity.nextSlotAt).toLocaleString()}.` : 'A production slot is open.'}</p>;
 				})() : null}
 				{queue?.operations?.themes?.length ? <p>Themes: {queue.operations.themes.join(', ')}</p> : null}
 				{(queue?.operations?.signals ?? []).map((signal) => <p key={signal.title}>{signal.kind}: {signal.title}. {signal.reason}</p>)}

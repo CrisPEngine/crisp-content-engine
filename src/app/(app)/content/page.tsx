@@ -35,7 +35,8 @@ export default function ContentOverviewPage() {
 	}, []);
 
 	const approved = opportunities.filter((item) => item.status === 'approved');
-	const attention = jobs.filter((job) => job.status === 'needs_attention' || job.status === 'failed');
+	const attention = jobs.filter((job) => job.status === 'needs_attention');
+	const failed = jobs.filter((job) => job.status === 'failed');
 	const producing = jobs.filter((job) => job.status === 'queued' || job.status === 'running');
 	const review = articles.filter((article) => article.status === 'review' || article.publicationPhase === 'ready_for_approval');
 	const scheduled = articles.filter((article) => article.publicationPhase === 'scheduled');
@@ -47,7 +48,7 @@ export default function ContentOverviewPage() {
 			<header>
 				<p className="text-xs text-text-dim">Content</p>
 				<h1 className="text-2xl font-semibold">Overview</h1>
-				<p className="text-sm text-text-soft">The campaign is {paused ? 'paused' : 'active'}. Publishing stays off until you approve an article and publish it in the website.</p>
+				<p className="text-sm text-text-soft">The campaign is {paused ? 'paused' : 'active'}. Approved opportunities stay waiting while it is paused. Publishing stays off until you approve an article and publish it in the website. A failed job does not use a weekly slot.</p>
 			</header>
 			{error ? <p className="card border-danger/60 p-3 text-sm" role="alert">{error}</p> : null}
 			{brandId ? null : <p className="text-sm">Loading the content queue…</p>}
@@ -55,7 +56,7 @@ export default function ContentOverviewPage() {
 				{attention.map((job) => <Item key={job.id} href={job.articleId ? `/content/articles/${job.articleId}` : '/campaigns#production'} title={titleFor(job)} detail={job.error || job.note} />)}
 			</Section>
 			<Section title="Approved opportunities" empty="No opportunities are waiting to start." href="/campaigns#approved">
-				{approved.map((item) => <Item key={item.id} href="/campaigns#approved" title={item.title} detail={item.recommendedAction === 'update' ? 'Improve an existing article' : 'New article'} />)}
+				{approved.map((item) => <Item key={item.id} href="/campaigns#approved" title={item.title} detail={paused ? 'Approved. Production does not start while the campaign is paused.' : item.recommendedAction === 'update' ? 'Improve an existing article' : 'New article'} />)}
 			</Section>
 			<Section title="In production" empty="No article is being researched or written." href="/campaigns#production">
 				{producing.map((job) => <Item key={job.id} href={job.articleId ? `/content/articles/${job.articleId}` : '/campaigns#production'} title={titleFor(job)} detail={job.stage} />)}
@@ -65,6 +66,9 @@ export default function ContentOverviewPage() {
 			</Section>
 			<Section title="Scheduled" empty="Nothing is scheduled." href="/content/schedule">
 				{scheduled.map((article) => <Item key={article.id} href={`/content/articles/${article.id}`} title={article.title} detail="Scheduled" />)}
+			</Section>
+			<Section title="Production failures" empty="No production jobs have failed." href="/campaigns#production">
+				{failed.map((job) => <Item key={job.id} href={job.articleId ? `/content/articles/${job.articleId}` : '/campaigns#production'} title={titleFor(job)} detail={job.error || job.note || 'The job failed. It does not use a weekly slot.'} />)}
 			</Section>
 			<Section title="Published" empty="No published articles are in this list yet." href="/content/published">
 				{published.map((article) => <Item key={article.id} href={`/content/articles/${article.id}`} title={article.title} detail="Published" />)}
