@@ -44,6 +44,13 @@ export async function runOperationsTick(now = Date.now()): Promise<OperationTick
 				}
 			}
 		}
+		for (const campaign of campaigns) {
+			const jobs = await getOpportunityRepository().listJobs(campaign.ownerUserId, campaign.brandId);
+			const { rememberRemotePublication } = await import('@/lib/publishing/reconcile');
+			for (const job of jobs.filter((item) => item.articleId).slice(0, 5)) {
+				await rememberRemotePublication(campaign.ownerUserId, job.articleId!).catch(() => null);
+			}
+		}
 		await rememberRun(actions, errors);
 		return { ok: errors.length === 0, published: false, lease, actions, errors, continueWork };
 	} finally {

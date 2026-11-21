@@ -275,6 +275,8 @@ async function releaseStaleJobs(ownerUserId: string, articleId: string) {
 
 export async function getWorkspaceArticle(ownerUserId: string, articleId: string) {
 	await releaseStaleJobs(ownerUserId, articleId);
+	const { rememberRemotePublication } = await import('@/lib/publishing/reconcile');
+	await rememberRemotePublication(ownerUserId, articleId).catch(() => null);
 	const article = await requireArticle(ownerUserId, articleId);
 	if (article.workspace?.revision && article.body.trim() && article.workspace.generation.status === 'completed' && article.workspace.generation.stage === 'Draft saved' && !article.workspace.generation.history?.length && article.workspace.generation.jobId) {
 		article.workspace.generation.history = [{ jobId: article.workspace.generation.jobId, at: article.workspace.generation.updatedAt ?? article.workspace.revision.createdAt, message: 'The job exceeded the execution limit. Nothing partial was saved. Retry keeps this article.' }];
@@ -2012,7 +2014,10 @@ export async function submitArticleDraft(ownerUserId: string, articleId: string,
 		workspace.cms.ogSourceUrl = og ?? null;
 	}
 	article.workspace = workspace;
-	return persist(article);
+	await persist(article);
+	const { rememberRemotePublication } = await import('@/lib/publishing/reconcile');
+	await rememberRemotePublication(ownerUserId, articleId).catch(() => null);
+	return requireArticle(ownerUserId, articleId);
 }
 
 export function previewArticleStructuralRepair(_ownerUserId: string, article: ArticleRecord): StructuralRepairPreview {
