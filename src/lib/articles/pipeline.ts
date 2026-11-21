@@ -293,6 +293,47 @@ function coveredPoints(heading: string, plan: SectionPlan, body: string): string
 	return `${heading}: ${plan.contribution}${firstSentences ? ` (${firstSentences.slice(0, 240)})` : ''}`;
 }
 
+async function revisePublishedArticle(
+	input: { ownerUserId: string; brand: BrandBrain; brief?: ArticleBriefDetails; onStage?: GenerationStage },
+	existing: ArticleRecord | null,
+): Promise<ArticleRecord> {
+	const stage = input.onStage ?? (async () => {});
+	if (!existing?.body.trim() || !existing.workspace) throw new Error('Import the published article before creating a revised draft.');
+	const { remoteRevisionOf } = await import('@/lib/articles/publishedBaseline');
+	const remote = remoteRevisionOf(existing);
+	const baseline = existing.workspace.cms.baselineRevision ?? null;
+	if (typeof remote === 'number' && typeof baseline === 'number' && remote !== baseline) {
+		throw new Error(`Payload revision is ${remote}. The local baseline is revision ${baseline}. Import the current published article before revising. Nothing was generated.`);
+	}
+	await stage('Revising the published article');
+	const preview = await previewArticleImprovement({
+		ownerUserId: input.ownerUserId,
+		article: existing,
+		brand: input.brand,
+		brief: input.brief,
+		findings: [],
+		extraInstructions: [
+			'Revise the published article so it satisfies the approved brief and research.',
+			'Start from the existing article. Preserve its structure, internal links, and accurate claims unless the brief explicitly asks for a change.',
+			'Do not add YAML front matter, a title line, or internal workflow fields.',
+			'Do not invent sources, statistics, or product capabilities.',
+		],
+	});
+	commitRevision(existing, preview.proposedBody, 'revision', 'Revised draft from the published baseline and the approved brief. It is not approved and was not published.');
+	const wasRemoteApproval = existing.approval.status === 'approved';
+	existing.approval = { required: true, approver: 'human', status: 'pending' };
+	existing.status = 'review';
+	const workspace = ensureWorkspace(existing);
+	if (wasRemoteApproval && !workspace.historicalApproval) {
+		workspace.historicalApproval = { scope: 'remote_publication', at: existing.library?.cms?.publishedAt ?? null };
+	}
+	workspace.approvedAt = null;
+	workspace.approvedRevisionId = null;
+	workspace.editorial.status = 'not_run';
+	existing.workspace = workspace;
+	return existing;
+}
+
 export async function generateArticle(input: {
 	ownerUserId: string;
 	brand: BrandBrain;
@@ -313,12 +354,14 @@ export async function generateArticle(input: {
 	searchIntent?: string;
 	contentType?: string;
 	skipAutoRevision?: boolean;
+	mode?: 'create' | 'revise';
 	onStage?: GenerationStage;
 }): Promise<ArticleRecord> {
 	const stage = input.onStage ?? (async () => {});
 	const targetWords = normaliseTargetWords(input.targetWords);
 	const store = getNativeContentStore();
 	const existing = input.articleId ? await store.getArticle(input.ownerUserId, input.articleId) : null;
+	if (input.mode === 'revise') return revisePublishedArticle(input, existing);
 	const theme = input.themes.find((item) => item.status === 'active') ?? input.themes[0];
 	const topic = input.topic ?? theme?.title ?? input.strategy?.objectives[0] ?? input.brand.identity.name;
 	const { loadResolvedIntelligence } = await import('@/lib/intelligence/knowledge/load');
@@ -548,7 +591,7 @@ export async function generateArticle(input: {
 		secondaryTopics: article.secondaryTopics,
 	};
 	if (!article.slug) article.slug = slugify(title);
-	article.status = article.status === 'published' ? 'published' : 'draft';
+	article.status = !base.body?.trim() && base.status === 'published' ? 'review' : article.status === 'published' ? 'published' : 'draft';
 	article.approval = { required: true, approver: 'human', status: 'pending' };
 	const assets = (await store.listAssets(input.ownerUserId, input.brand.id)).map(publicAsset);
 	article.mediaPlan = {

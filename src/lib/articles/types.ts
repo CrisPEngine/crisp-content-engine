@@ -319,6 +319,8 @@ export type ArticleWorkspace = {
 		submittedRevisionId?: string | null;
 		remoteStatus?: string | null;
 		baselineRevision?: number | null;
+		/** Whether the published CMS document has a body. Unknown until an import is attempted. */
+		remoteBodyState?: 'unknown' | 'present' | 'empty';
 		sync?: {
 			state: 'published' | 'draft' | 'scheduled' | 'unpublished' | 'deleted' | 'unknown';
 			remoteRevision: number | null;
@@ -367,6 +369,7 @@ export type ArticleWorkspace = {
 	exampleConsistency?: string[];
 		approvedAt?: string | null;
 		approvedRevisionId?: string | null;
+		historicalApproval?: { scope: 'remote_publication'; at: string | null } | null;
 		metadataProposal?: {
 			status: 'pending' | 'approved' | 'rejected';
 			proposedSeoTitle: string;

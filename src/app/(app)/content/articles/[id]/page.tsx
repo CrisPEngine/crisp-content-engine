@@ -21,6 +21,7 @@ import { summariseRevisionChange } from '@/lib/articles/revisionSummary';
 import { findingGroup, findingTitle, passageAnchor, stageTone, workspaceStageFromLocation, type WorkspaceStageId } from '@/lib/articles/workspaceNavigation';
 import type { ArticleRecord, ArticleRevisionRef } from '@/lib/articles/types';
 import { MetadataProposalPanel } from '@/components/articles/MetadataProposalPanel';
+import { draftNextAction, localStatusLabel } from '@/lib/articles/publishedBaseline';
 
 type ArticleDetail = {
 	article: ArticleRecord;
@@ -324,13 +325,8 @@ export default function ArticleWorkspacePage() {
 		baselineRevision: workspace?.cms.baselineRevision,
 	});
 	const research = workspace?.research;
-	const generateBlocked = !workspace?.briefApprovedAt
-		? 'Approve the brief first.'
-		: research?.status !== 'approved'
-			? research?.status === 'changed_since_approval' ? 'Research changed since approval. Approve the current version first.' : 'Approve the research first.'
-			: article.approval.status === 'approved'
-				? 'The article is approved. Remove approval by editing before regenerating.'
-				: '';
+	const draftAction = draftNextAction(article);
+	const generateBlocked = draftAction.kind === 'generate' || draftAction.kind === 'continue' ? '' : draftAction.detail;
 	const target = article.targetWords;
 	const suggestion = workspace?.categorySuggestion;
 	const categoryName = (id: string) => detail.taxonomy?.categories.find((category) => category.id === id)?.name ?? id;
@@ -447,8 +443,8 @@ export default function ArticleWorkspacePage() {
 			meta={
 				<>
 					<Link className="underline" href="/content/articles">Articles</Link>
-					<span>{article.status}</span>
-					<span>{article.wordCount.toLocaleString()} words</span>
+					<span>{localStatusLabel(article)}</span>
+					<span>{article.body.trim() ? `${article.wordCount.toLocaleString()} words` : 'No local draft'}</span>
 					<span>{workspace?.revision ? `Revision ${workspace.revision.number}` : 'No revision'}</span>
 					<span>Saved {new Date(article.updatedAt).toLocaleString()}</span>
 					{unsaved ? <span className="text-warning">Unsaved changes</span> : null}
@@ -697,6 +693,7 @@ export default function ArticleWorkspacePage() {
 				structure={structure}
 				revisionNumber={workspace?.revision?.number ?? null}
 				generateBlocked={generateBlocked}
+				draftAction={draftAction}
 				jobRunning={jobRunning}
 				busy={busy}
 				pending={pending}

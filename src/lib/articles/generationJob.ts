@@ -28,6 +28,7 @@ export type ArticleGenerationJobPayload = {
 	searchIntent?: string;
 	contentType?: string;
 	skipAutoRevision?: boolean;
+	mode?: 'create' | 'revise';
 };
 
 export type ArticleGenerationJobResult = {
@@ -163,6 +164,7 @@ export async function runArticleGenerationJob(job: WorkflowJob): Promise<Article
 		searchIntent: payload.searchIntent,
 		contentType: payload.contentType,
 		skipAutoRevision: payload.skipAutoRevision,
+		mode: payload.mode,
 		onStage,
 	}));
 	if (article.workspace) article.workspace.generation.jobId = job.id;
