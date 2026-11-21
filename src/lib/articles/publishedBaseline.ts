@@ -2,7 +2,7 @@ import type { ArticleRecord } from '@/lib/articles/types';
 import { proposalDisposition } from '@/lib/articles/reviewWorkflow';
 
 export type DraftNext = {
-	kind: 'import' | 'revise' | 'generate' | 'continue' | 'blocked' | 'preview_editorial';
+	kind: 'import' | 'revise' | 'generate' | 'continue' | 'blocked';
 	label: string;
 	detail: string;
 	available: boolean;
@@ -181,19 +181,10 @@ export function draftNextAction(article: ArticleRecord): DraftNext {
 		};
 	}
 	if (isPublishedBaseline(article)) {
-		const awaiting = editorialAwaitingApplication(article);
-		if (awaiting > 0) {
-			return {
-				kind: 'preview_editorial',
-				label: 'Preview approved changes',
-				detail: `${awaiting} approved recommendation${awaiting === 1 ? '' : 's'} are waiting to be previewed on Editorial Review. The published baseline stays in revision history.`,
-				available: false,
-			};
-		}
 		return {
 			kind: 'revise',
-			label: 'Create revised draft',
-			detail: 'Published article with an imported baseline. Create a revised draft using the approved brief and research. The published baseline stays in revision history, and the new revision is not approved.',
+			label: 'Generate improved article',
+			detail: 'The published baseline is imported. Generate an improved article from the approved brief and research. Editorial polishing happens after that draft exists. The live page is not changed.',
 			available: true,
 		};
 	}
@@ -245,4 +236,96 @@ export function preparePublishedImport(
 		if (remote.description) article.library.cms.description = remote.description;
 	}
 	return { imported: true, empty: false };
+}
+
+export type ImprovementJourney = {
+	stage: string;
+	label: string;
+	detail: string;
+	action: 'import' | 'generate' | 'review' | 'preview' | 'apply' | 'decide' | 'checks' | 'approve' | 'publish' | 'wait' | 'blocked';
+	available: boolean;
+	publishedVersion: string;
+	workingVersion: string;
+	pendingChanges: number;
+	lastCompleted: string;
+};
+
+/** One next action for an existing article. Editorial notes on a baseline do not block a full improved draft. */
+export function improvementJourney(article: ArticleRecord): ImprovementJourney {
+	const workspace = article.workspace;
+	const revision = workspace?.revision;
+	const remote = remoteRevisionOf(article);
+	const baseline = workspace?.cms.baselineRevision ?? null;
+	const publishedVersion = hasRemotePublication(article)
+		? `Published in the CMS${typeof remote === 'number' ? `, revision ${remote}` : ''}`
+		: 'Not published';
+	const workingVersion = !article.body.trim()
+		? 'No working draft'
+		: isPublishedBaseline(article)
+			? `Baseline revision ${revision?.number ?? 1} · ${article.wordCount.toLocaleString()} words`
+			: `Revision ${revision?.number ?? 1} · ${article.wordCount.toLocaleString()} words`;
+	const pendingChanges = editorialAwaitingApplication(article);
+	const lastCompleted = !article.body.trim()
+		? workspace?.briefApprovedAt ? 'Brief and research approved' : 'Article opened'
+		: isPublishedBaseline(article)
+			? 'Published article imported'
+			: revision?.source === 'generation' || revision?.source === 'revision'
+				? `Improved article saved as revision ${revision.number}`
+				: `Revision ${revision?.number ?? 1} saved`;
+	const base = { publishedVersion, workingVersion, pendingChanges, lastCompleted };
+	if (workspace?.generation?.status === 'queued' || workspace?.generation?.status === 'processing') {
+		return { ...base, stage: 'Improve', label: 'Generating improved article', detail: workspace.generation?.stage || 'The improved article is being written. This page updates when it finishes.', action: 'wait', available: false };
+	}
+	if (workspace?.revisionJob?.status === 'queued' || workspace?.revisionJob?.status === 'processing') {
+		return { ...base, stage: 'Review', label: 'Applying changes', detail: 'Selected editorial changes are being saved as a new revision.', action: 'wait', available: false };
+	}
+	if (!workspace?.briefApprovedAt) {
+		return { ...base, stage: 'Analyse', label: 'Approve the brief', detail: 'Approve the brief before improving this article.', action: 'blocked', available: false };
+	}
+	if (workspace.research?.status !== 'approved') {
+		return { ...base, stage: 'Analyse', label: 'Approve the research', detail: 'Approve the research before improving this article.', action: 'blocked', available: false };
+	}
+	if (!article.body.trim() && hasRemotePublication(article) && workspace.cms.remoteBodyState !== 'empty') {
+		return { ...base, stage: 'Analyse', label: 'Import published article', detail: 'Import the published article before generating an improvement. The live page is not changed.', action: 'import', available: true };
+	}
+	if (!article.body.trim()) {
+		return { ...base, stage: 'Improve', label: 'Generate first draft', detail: 'Generate the first draft from the approved brief and research. Nothing is published.', action: 'generate', available: true };
+	}
+	const remoteChanged = typeof remote === 'number' && typeof baseline === 'number' && remote !== baseline;
+	if (remoteChanged && !isPublishedBaseline(article)) {
+		return { ...base, stage: 'Publish', label: 'Remote changes detected', detail: `The CMS revision is ${remote}. This draft was prepared against revision ${baseline}. Publishing stays blocked.`, action: 'blocked', available: false };
+	}
+	if (isPublishedBaseline(article)) {
+		return { ...base, stage: 'Improve', label: 'Generate improved article', detail: 'Generate an improved article from the approved brief, research, and published baseline. Editorial recommendations are for the improved draft, not a requirement before generation.', action: 'generate', available: true, pendingChanges: 0 };
+	}
+	const preview = workspace.editorialDesk?.preview;
+	if (preview && revision && preview.baseRevisionId === revision.id && preview.proposedBody.trim()) {
+		return { ...base, stage: 'Review', label: 'Apply changes', detail: `The preview is ready. Applying it saves a new working revision and marks ${preview.acceptedIds.length} selected recommendation${preview.acceptedIds.length === 1 ? '' : 's'} applied. Nothing is published.`, action: 'apply', available: true, pendingChanges: preview.acceptedIds.length };
+	}
+	if (pendingChanges > 0) {
+		return { ...base, stage: 'Review', label: 'Preview selected changes', detail: `${pendingChanges} selected recommendation${pendingChanges === 1 ? '' : 's'} ${pendingChanges === 1 ? 'is' : 'are'} not in the draft yet. Preview them before anything is saved.`, action: 'preview', available: true };
+	}
+	const critique = workspace.editorialDesk?.critique;
+	const critiqueCurrent = Boolean(critique && revision && critique.revisionId === revision.id);
+	if (!critiqueCurrent) {
+		const followUp = (revision?.number ?? 1) > 1;
+		return {
+			...base,
+			stage: 'Review',
+			label: followUp ? 'Run final checks' : 'Review improvements',
+			detail: followUp
+				? `Revision ${revision?.number ?? 1} is saved. Run editorial review before approval. This does not publish.`
+				: `Run editorial review on revision ${revision?.number ?? 1}. This reads the draft and does not change it.`,
+			action: 'review',
+			available: true,
+		};
+	}
+	const openSuggestions = (critique?.findings ?? []).filter((finding) => finding.status === 'open').length;
+	if (openSuggestions > 0) {
+		return { ...base, stage: 'Review', label: 'Review recommendations', detail: `${openSuggestions} suggestion${openSuggestions === 1 ? '' : 's'} still need a decision: accept, reject, or defer.`, action: 'decide', available: true, pendingChanges: openSuggestions };
+	}
+	if (contentRevisionApproved(article)) {
+		return { ...base, stage: 'Publish', label: 'Publish update', detail: 'This working revision is approved. Publishing updates the existing CMS page and stays off until you use this action.', action: 'publish', available: true, pendingChanges: 0 };
+	}
+	return { ...base, stage: 'Approve', label: 'Approve article', detail: `Revision ${revision?.number ?? 1} has no selected changes waiting. Approve it when you are ready. Approval does not publish.`, action: 'approve', available: true, pendingChanges: 0 };
 }

@@ -156,7 +156,7 @@ export function EditorialReviewBoard({
 						{approved.length} edit{approved.length === 1 ? '' : 's'} approved. Ready to preview. The article has not changed yet.
 					</p>
 					<button className="btn mt-3 border-primary bg-primary/15" type="button" disabled={busy} aria-busy={pending === 'preview_editorial_proposals' || undefined} onClick={() => (onPreview ? onPreview() : void act('preview_editorial_proposals', {}, 'Preview ready. The article was not changed.'))}>
-						{pending === 'preview_editorial_proposals' ? 'Preparing preview…' : `Preview ${approved.length} Approved Change${approved.length === 1 ? '' : 's'}`}
+						{pending === 'preview_editorial_proposals' ? 'Preparing preview…' : 'Preview selected changes'}
 					</button>
 				</div>
 			) : null}
@@ -167,7 +167,7 @@ export function EditorialReviewBoard({
 					<p className="text-text-soft">Words {preview.wordCountBefore} → {preview.wordCountAfter}. Only approved instructions are included.</p>
 					<div className="mt-3 flex flex-wrap gap-2">
 						<button className="btn border-primary bg-primary/15" type="button" disabled={busy} aria-busy={pending === 'apply_editorial_proposals' || undefined} onClick={() => (onConfirm ? onConfirm() : void act('apply_editorial_proposals', {}, 'New revision saved.'))}>
-							{pending === 'apply_editorial_proposals' ? 'Saving revision…' : 'Confirm new revision'}
+							{pending === 'apply_editorial_proposals' ? 'Saving revision…' : 'Apply changes'}
 						</button>
 						<button className="btn" type="button" disabled={busy} onClick={() => (onCancelPreview ? onCancelPreview() : void act('discard_editorial_preview', {}, 'Preview discarded. The article was not changed.'))}>
 							{pending === 'discard_editorial_preview' ? 'Cancelling preview…' : 'Cancel preview'}

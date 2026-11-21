@@ -17,25 +17,20 @@ export function reviewPrimary(input: {
 	blockingOpen: number;
 }): ReviewPrimary {
 	if (input.justApplied) return { action: 'draft', label: 'Review changes' };
-	if (input.accepted > 0 && !input.hasPreview) {
-		const count = input.accepted;
-		return { action: 'preview', label: `Preview ${count} Approved Change${count === 1 ? '' : 's'}` };
-	}
-	if (input.accepted > 0 && input.hasPreview) {
-		return { action: 'apply', label: 'Confirm new revision' };
-	}
-	if (!input.hasCritique || input.reviewStale) return { action: input.hasCritique ? 'rereview' : 'critique', label: 'Run Editorial Pass of Draft' };
+	if (input.accepted > 0 && !input.hasPreview) return { action: 'preview', label: 'Preview selected changes' };
+	if (input.accepted > 0 && input.hasPreview) return { action: 'apply', label: 'Apply changes' };
+	if (!input.hasCritique || input.reviewStale) return { action: input.hasCritique ? 'rereview' : 'critique', label: 'Review improvements' };
 	if (input.blockingOpen === 0) return { action: 'images', label: 'Continue to Images' };
 	return { action: 'stay', label: 'Approve edits' };
 }
 
 export function acceptanceLabel(status: 'proposed' | 'accepted' | 'rejected' | 'deferred' | 'applied' | 'manual'): string {
-	if (status === 'accepted') return 'Approved, awaiting application';
-	if (status === 'applied') return 'Applied to the draft';
-	if (status === 'rejected') return 'Rejected, excluded from revision';
+	if (status === 'accepted') return 'Accepted';
+	if (status === 'applied') return 'Applied';
+	if (status === 'rejected') return 'Rejected';
 	if (status === 'deferred') return 'Deferred';
-	if (status === 'manual') return 'Not applied. It needs a manual decision.';
-	return 'Pending review';
+	if (status === 'manual') return 'Needs a manual decision';
+	return 'Suggested';
 }
 
 export type ProposalDisposition = 'apply' | 'manual' | 'conflict' | 'resolved' | 'open';
