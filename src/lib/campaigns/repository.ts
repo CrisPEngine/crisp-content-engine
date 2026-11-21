@@ -369,6 +369,7 @@ function jobFromRow(row: {
 		error: row.last_error,
 		costUsd: Number(row.cost_usd ?? 0),
 		stageLog: row.stage_log ?? [],
+		workType: (row.stage_log ?? []).find((item) => item.workType)?.workType,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};

@@ -11,6 +11,8 @@ const SOURCE_LABELS: Record<ArticleRevisionRef['source'], string> = {
 	legacy: 'Imported',
 	structural_repair: 'Structural repair',
 	improvement: 'Editorial improvements',
+	baseline: 'Published baseline',
+	metadata: 'Metadata proposal',
 };
 
 export function DiffView({ before, after }: { before: string; after: string }) {

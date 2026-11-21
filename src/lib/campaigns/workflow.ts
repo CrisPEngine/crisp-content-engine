@@ -1,4 +1,4 @@
-import { classifyEditorialWork, remainingCapacity, selectProductionOpportunities } from './productionPolicy';
+import { classifyEditorialWork, remainingCapacity, selectProductionOpportunities, workTypeForOpportunity } from './productionPolicy';
 import { getOpportunityRepository } from './repository';
 import type { ProductionJob, ProductionStage } from './types';
 import { CampaignError } from './service';
@@ -40,9 +40,18 @@ export async function startProductionJob(userId: string, opportunityId: string, 
 	}
 	const existing = await repository.getJobByOpportunity(userId, opportunityId);
 	if (existing) return existing;
-	const job = await repository.saveJob(userId, blankJob({ brandId: opportunity.brandId, campaignId, opportunityId }));
+	const workType = workTypeForOpportunity(opportunity);
+	const job = blankJob({ brandId: opportunity.brandId, campaignId, opportunityId });
+	job.workType = workType;
+	job.note = workType === 'metadata'
+		? 'Queued as metadata optimisation. The article body will not be rewritten.'
+		: workType === 'content_improvement'
+			? 'Queued as an improvement to an existing article.'
+			: 'Waiting to research the approved opportunity.';
+	job.stageLog = [{ stage: 'research', at: job.createdAt, note: job.note, workType }];
+	const saved = await repository.saveJob(userId, job);
 	await repository.setStatus(userId, opportunityId, 'in_production');
-	return job;
+	return saved;
 }
 
 export async function advanceProductionJob(userId: string, jobId: string): Promise<ProductionJob> {
@@ -57,7 +66,8 @@ export async function advanceProductionJob(userId: string, jobId: string): Promi
 		const current = await workspace.getWorkspaceArticle(userId, job.articleId);
 		const state = current.article.library?.publication?.state;
 		const remoteStatus = current.article.workspace?.cms.remoteStatus;
-		if (state === 'verified_live' || state === 'published' || remoteStatus === 'published' || current.article.publication?.url) {
+		const live = state === 'verified_live' || state === 'published' || remoteStatus === 'published' || Boolean(current.article.publication?.url);
+		if (live && job.workType !== 'metadata') {
 			job.status = 'needs_attention';
 			job.error = 'This article is already live. The worker did not regenerate or publish it.';
 			job.note = job.error;
@@ -74,7 +84,7 @@ export async function advanceProductionJob(userId: string, jobId: string): Promi
 		job.articleId = result.articleId ?? job.articleId;
 		if (typeof result.costUsd === 'number') job.costUsd = Math.round((job.costUsd + result.costUsd) * 1_000_000) / 1_000_000;
 		else if (result.modelCall) result.note = `${result.note} A model call ran, but its cost was not returned.`;
-		job.stageLog = [...job.stageLog, { stage: job.stage, at: new Date().toISOString(), note: result.note }];
+		job.stageLog = [...job.stageLog, { stage: job.stage, at: new Date().toISOString(), note: result.note, workType: job.workType }];
 		job.error = result.escalate ?? null;
 		job.note = result.note;
 		if (result.retry) {
@@ -111,6 +121,49 @@ export async function advanceProductionJob(userId: string, jobId: string): Promi
 	}
 }
 
+async function findPublishedArticle(userId: string, brandId: string, url: string | null) {
+	const { getNativeContentStore } = await import('@/lib/media/store');
+	const { isMetadataProposalDocument } = await import('./optimisation');
+	const articles = await getNativeContentStore().listArticles(userId, brandId);
+	const slug = url?.split('/').filter(Boolean).pop() ?? '';
+	return articles.find((article) => !isMetadataProposalDocument(article.body) && (
+		article.library?.canonicalUrl === url
+		|| article.publication?.url === url
+		|| (slug.length > 0 && (article.slug === slug || article.library?.cms?.slug === slug))
+	)) ?? null;
+}
+
+async function runMetadataStage(userId: string, job: ProductionJob, opportunity: { title: string }, evidenceUrls: string[], scope: string): Promise<{ articleId?: string; note: string; costUsd?: number; escalate?: string; modelCall?: boolean }> {
+	const workspace = await import('@/lib/articles/workspace');
+	if (job.stage === 'research') {
+		const found = await findPublishedArticle(userId, job.brandId, evidenceUrls[0] ?? null);
+		if (!found) return { note: 'The published article is not in CCE. A new article was not created and nothing was generated.', escalate: 'The published article is not in CCE. A new article was not created.' };
+		return { articleId: found.id, note: 'The published article is the baseline. No new article was created.' };
+	}
+	if (!job.articleId) return { note: 'Metadata optimisation has no article.', escalate: 'Metadata optimisation has no article.' };
+	if (job.stage === 'brief') {
+		if (scope === 'none') return { articleId: job.articleId, note: 'The evidence does not justify a change. No title, description, or article body was generated.' };
+		const current = (await workspace.getWorkspaceArticle(userId, job.articleId)).article;
+		const { isMetadataProposalDocument, parseMetadataProposal } = await import('./optimisation');
+		if (isMetadataProposalDocument(current.body)) return { articleId: job.articleId, note: 'This record is a metadata proposal, not the article. The body was not rewritten.', escalate: 'Restore the published article before storing another proposal.' };
+		const proposal = await writeUpdateProposal({ sourceUrl: evidenceUrls[0] ?? null, scope, measured: null, topic: opportunity.title, userId });
+		const parsed = parseMetadataProposal(proposal.body);
+		if (!parsed) return { articleId: job.articleId, note: 'The metadata proposal could not be read. The article body was not changed.', escalate: 'The metadata proposal could not be read. The article body was not changed.' };
+		await workspace.recordArticleMetadataProposal(userId, job.articleId, {
+			proposedSeoTitle: parsed.proposedTitle,
+			proposedMetaDescription: parsed.proposedDescription,
+			rationale: parsed.rationale,
+			evidence: parsed.evidence,
+			sourceUrl: parsed.sourceUrl,
+			baselineCmsRevision: current.library?.cms?.revision ?? current.workspace?.cms.baselineRevision ?? null,
+			baselineContentRevisionId: current.workspace?.revision?.id ?? null,
+		});
+		return { articleId: job.articleId, note: 'The metadata proposal was stored in the brief and SEO proposal. The article body was not changed.', costUsd: proposal.costUsd ?? undefined, modelCall: true };
+	}
+	if (job.stage === 'approval') return { articleId: job.articleId, note: 'The metadata proposal is waiting for a person. The article body was not changed and nothing was published.' };
+	return { articleId: job.articleId, note: 'Metadata optimisation does not rewrite the article.' };
+}
+
 async function runStage(userId: string, job: ProductionJob, opportunity: { title: string; recommendedAction: string; evidence: Array<{ url: string | null; metrics: { position: number; ctr: number; impressions: number; clicks?: number; scope?: 'query' | 'page' } | null }> }): Promise<{ articleId?: string; note: string; costUsd?: number; escalate?: string; modelCall?: boolean; retry?: boolean }> {
 	const workspace = await import('@/lib/articles/workspace');
 	const evidenceUrls = opportunity.evidence.map((item) => item.url).filter((url): url is string => Boolean(url));
@@ -118,7 +171,15 @@ async function runStage(userId: string, job: ProductionJob, opportunity: { title
 	const measured = opportunity.evidence.find((item) => item.metrics)?.metrics ?? null;
 	const { optimisationScope } = await import('./scoring');
 	const scope = opportunity.recommendedAction === 'update' ? optimisationScope(measured ? { impressions: measured.impressions, clicks: measured.clicks ?? 0, ctr: measured.ctr, position: measured.position, startDate: '', endDate: '', scope: measured.scope } : null) : 'expansion';
-	const title = opportunity.recommendedAction === 'update' ? `Update proposal: ${opportunity.title}` : opportunity.title;
+	const title = opportunity.title;
+	const workType = job.workType ?? (opportunity.recommendedAction === 'update' ? workTypeForOpportunity(opportunity) : 'new_article');
+	job.workType = workType;
+	if (workType === 'metadata') return runMetadataStage(userId, job, opportunity, evidenceUrls, scope);
+	if (job.stage === 'research' && workType === 'content_improvement') {
+		const found = await findPublishedArticle(userId, job.brandId, evidenceUrls[0] ?? null);
+		if (!found) return { note: 'The published article is not in CCE. A new article was not created.', escalate: 'The published article is not in CCE. A new article was not created.' };
+		return { articleId: found.id, note: 'The existing article is the baseline. Its body was not replaced.' };
+	}
 	if (job.stage === 'research') {
 		const created = job.articleId
 			? { article: (await workspace.getWorkspaceArticle(userId, job.articleId)).article }
@@ -140,11 +201,23 @@ async function runStage(userId: string, job: ProductionJob, opportunity: { title
 	if (!job.articleId) throw new Error('This stage needs the article created by research.');
 	const articleId = job.articleId;
 	if (job.stage === 'brief') {
-		if (opportunity.recommendedAction === 'update') {
+		if (workType === 'content_improvement') {
 			const proposal = await writeUpdateProposal({ sourceUrl: evidenceUrls[0] ?? null, scope, measured, topic: opportunity.title, userId });
-			await workspace.saveArticleDraft(userId, articleId, { body: proposal.body });
+			const { parseMetadataProposal } = await import('./optimisation');
+			const parsed = parseMetadataProposal(proposal.body);
+			const current = (await workspace.getWorkspaceArticle(userId, articleId)).article;
+			if (!parsed) return { articleId, note: 'The improvement brief could not be read. The article body was not changed.', escalate: 'The improvement brief could not be read. The article body was not changed.' };
+			await workspace.recordArticleMetadataProposal(userId, articleId, {
+				proposedSeoTitle: parsed.proposedTitle,
+				proposedMetaDescription: parsed.proposedDescription,
+				rationale: parsed.rationale,
+				evidence: parsed.evidence,
+				sourceUrl: parsed.sourceUrl,
+				baselineCmsRevision: current.library?.cms?.revision ?? null,
+				baselineContentRevisionId: current.workspace?.revision?.id ?? null,
+			});
 			await workspace.approveArticleBrief(userId, articleId);
-			return { articleId, note: `A ${scope} proposal was saved on a new draft. The published article was not changed.`, costUsd: proposal.costUsd ?? undefined, modelCall: true };
+			return { articleId, note: 'The improvement brief was stored. The article body was not replaced.', costUsd: proposal.costUsd ?? undefined, modelCall: true };
 		}
 		await workspace.enhanceArticleBrief(userId, articleId);
 		const approved = await workspace.approveArticleBrief(userId, articleId);

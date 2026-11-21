@@ -13,7 +13,7 @@ export function MetadataProposalPanel({ body, pending, canonicalUrl, onAction }:
 	return (
 		<section className="card mb-4 space-y-3 p-4 text-sm">
 			<h2 className="font-medium">Metadata proposal</h2>
-			<p className="text-text-soft">Approving this proposal does not publish it and does not change the live article.{canonicalUrl ? ` Linked to ${canonicalUrl}.` : ''}</p>
+			<p className="text-text-soft">This is a title and description proposal, not the article. Approving it does not publish it and does not change the live page.{canonicalUrl ? ` Linked to ${canonicalUrl}.` : ''}</p>
 			<div className="grid gap-3 md:grid-cols-2">
 				<div>
 					<p className="text-text-dim">Original title</p>

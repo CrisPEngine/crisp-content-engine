@@ -30,7 +30,6 @@ export const APP_NAV: NavItem[] = [
 			{ label: 'Articles', href: '/content/articles' },
 			{ label: 'Campaigns', href: '/campaigns#operations' },
 			{ label: 'Publishing', href: '/content/published' },
-			{ label: 'Diagnostics', href: '/intelligence?tab=diagnostics' },
 			{ label: 'Create', href: '/content/generate' },
 			{ label: 'Scheduled', href: '/content/schedule' },
 			{ label: 'Idea Engine', href: '/content/idea-engine' },

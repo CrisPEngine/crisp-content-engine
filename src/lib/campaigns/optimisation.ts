@@ -83,6 +83,10 @@ export function addStageCost(current: number, stageCost: number | null | undefin
 	return { costUsd: Math.round((current + stageCost) * 1_000_000) / 1_000_000, missing: false };
 }
 
+export function isMetadataProposalDocument(body: string): boolean {
+	return body.trimStart().startsWith('# Metadata proposal');
+}
+
 export function parseMetadataProposal(body: string): MetadataProposal | null {
 	const read = (label: string) => body.match(new RegExp(`^${label}:\\s*(.+)$`, 'im'))?.[1]?.trim() ?? '';
 	const proposedTitle = read('Proposed title') || body.match(/^## Suggested title\s*\n+(.+)$/m)?.[1]?.trim() || '';

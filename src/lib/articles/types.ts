@@ -109,8 +109,9 @@ export type ArticleRevisionRef = {
 	contentHash: string;
 	wordCount: number;
 	createdAt: string;
-	source: 'generation' | 'manual' | 'revision' | 'legacy' | 'structural_repair' | 'improvement';
+	source: 'generation' | 'manual' | 'revision' | 'legacy' | 'structural_repair' | 'improvement' | 'baseline' | 'metadata';
 	note?: string;
+	kind?: 'content' | 'metadata' | 'baseline';
 };
 
 export type ArticleReviewRun = {
@@ -317,6 +318,7 @@ export type ArticleWorkspace = {
 		mode: DestinationDraftMode | null;
 		submittedRevisionId?: string | null;
 		remoteStatus?: string | null;
+		baselineRevision?: number | null;
 		sync?: {
 			state: 'published' | 'draft' | 'scheduled' | 'unpublished' | 'deleted' | 'unknown';
 			remoteRevision: number | null;
@@ -363,8 +365,19 @@ export type ArticleWorkspace = {
 		verifiedNames: string[];
 	};
 	exampleConsistency?: string[];
-	approvedAt?: string | null;
-	approvedRevisionId?: string | null;
+		approvedAt?: string | null;
+		approvedRevisionId?: string | null;
+		metadataProposal?: {
+			status: 'pending' | 'approved' | 'rejected';
+			proposedSeoTitle: string;
+			proposedMetaDescription: string;
+			rationale: string;
+			evidence: string;
+			sourceUrl: string;
+			baselineCmsRevision: number | null;
+			baselineContentRevisionId: string | null;
+			history: Array<{ at: string; status: 'pending' | 'approved' | 'rejected' | 'historical'; proposedSeoTitle: string; proposedMetaDescription: string }>;
+		} | null;
 	seoEdited?: {
 		seoTitle?: boolean;
 		metaDescription?: boolean;
@@ -397,6 +410,7 @@ export type ArticleVersion = {
 	contentHash?: string;
 	wordCount?: number;
 	source?: ArticleRevisionRef['source'];
+	kind?: ArticleRevisionRef['kind'];
 };
 
 export type ArticleRecord = {

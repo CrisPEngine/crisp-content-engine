@@ -38,6 +38,7 @@ import {
 	previewArticleStructuralRepair,
 	researchArticle,
 	researchEditorialSection,
+	approveArticleMetadataProposal,
 	recordArticlePublication,
 	regenerateArticleSeo,
 	replaceArticleMedia,
@@ -295,6 +296,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 				return NextResponse.json({ article: await restoreWorkspaceRevision(userId, id, text(body.revisionId)) });
 			case 'request_approval':
 				return NextResponse.json({ article: await requestArticleApproval(userId, id) });
+			case 'approve_metadata':
+				return NextResponse.json({ article: await approveArticleMetadataProposal(userId, id), published: false });
 			case 'approve': {
 				const article = await approveWorkspaceArticle(userId, id);
 				if (article.body.startsWith('# Metadata proposal')) await finishProposalJob(userId, id, 'approved');
