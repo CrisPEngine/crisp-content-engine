@@ -69,7 +69,7 @@ export function editorialProgress(input: {
 	openCritical: Array<{ code?: string; evidence?: string[]; explanation?: string }>;
 	title: string;
 	structureOk: boolean;
-}): { complete: boolean; blocker: string | null; next: string } {
+}): { complete: boolean; blocker: string | null; next: string; awaitingApplication: number } {
 	const dispositions = input.proposals.map((proposal) => proposalDisposition(proposal, input.currentRevisionId, input.body));
 	const applyCount = dispositions.filter((item) => item === 'apply').length;
 	const conflictCount = dispositions.filter((item) => item === 'conflict').length;
