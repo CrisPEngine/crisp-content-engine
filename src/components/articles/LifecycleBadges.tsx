@@ -30,7 +30,11 @@ export function LifecycleBadges({ lifecycle }: { lifecycle: Lifecycle }) {
 			/>
 			<Badge on={lifecycle.approved} label="Approved" title="A person approved this revision." />
 			<Badge on={lifecycle.scheduled} label="Scheduled" title="A publication time is recorded. Publishing still happens in the CMS." />
-			<Badge on={lifecycle.published} label="Published" title="The published URL was recorded after publishing in the CMS." />
+			<Badge
+				on={lifecycle.published}
+				label={lifecycle.published && !lifecycle.savedInCce ? 'Published remotely' : 'Published'}
+				title={lifecycle.published && !lifecycle.savedInCce ? 'The CMS page is published. CCE has not stored its body yet.' : 'The published URL was recorded after publishing in the CMS.'}
+			/>
 		</div>
 	);
 }

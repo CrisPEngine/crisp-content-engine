@@ -17,6 +17,7 @@ import {
 	enhanceArticleBrief,
 	generateArticleMedia,
 	getWorkspaceArticle,
+	importPublishedArticle,
 	lookupArticleDraft,
 	ensureArticleCmsExternalId,
 	acceptArticleImageCandidate,
@@ -98,6 +99,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 				return NextResponse.json({ article: await resolveBriefSuggestion(userId, id, Number(body.index), body.apply === true) });
 			case 'generate':
 				return NextResponse.json(await startArticleGeneration(userId, id));
+			case 'import_published_baseline':
+				return NextResponse.json({ article: await importPublishedArticle(userId, id) });
 			case 'retry':
 				return NextResponse.json(await retryArticleGeneration(userId, id));
 			case 'review':

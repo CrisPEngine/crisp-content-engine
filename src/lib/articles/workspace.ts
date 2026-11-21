@@ -964,6 +964,39 @@ async function activeJob(ownerUserId: string, article: ArticleRecord, type: 'art
 	);
 }
 
+export async function importPublishedArticle(ownerUserId: string, articleId: string): Promise<ArticleRecord> {
+	const article = await requireArticle(ownerUserId, articleId);
+	ensureWorkspace(article);
+	const payloadId = article.library?.cms?.payloadId;
+	const canonical = article.library?.canonicalUrl || article.publication?.url;
+	if (!payloadId || !canonical) {
+		throw new ArticleWorkflowError('This article is not connected to a published CMS document.', 409, 'remote_missing');
+	}
+	const origin = new URL(canonical).origin;
+	const response = await fetch(`${origin}/api/articles/${encodeURIComponent(payloadId)}?depth=2`);
+	if (!response.ok) {
+		throw new ArticleWorkflowError('The published article could not be read. Nothing was saved.', 502, 'remote_read_failed');
+	}
+	const json = await response.json() as { doc?: Record<string, unknown> } & Record<string, unknown>;
+	const document = (json.doc ?? json) as { id?: string | number; revision?: number; updatedAt?: string; title?: string; seoDescription?: string; dek?: string; layout?: unknown };
+	const { preparePublishedImport, payloadDocumentToMarkdown } = await import('@/lib/articles/publishedBaseline');
+	const markdown = payloadDocumentToMarkdown(document);
+	const prepared = preparePublishedImport(article, {
+		markdown,
+		revision: typeof document.revision === 'number' ? document.revision : null,
+		updatedAt: document.updatedAt ?? null,
+		description: document.seoDescription ?? document.dek ?? '',
+		payloadId: String(document.id ?? payloadId),
+	});
+	if (prepared.imported) {
+		commitRevision(article, markdown, 'baseline', 'Imported the published article as the local baseline. The live page was not changed.');
+	}
+	if (!markdown.trim() && article.library) {
+		article.library.stageNote = 'The published page has no content. A first draft can be generated from the approved brief and research. The live page was not changed.';
+	}
+	return persist(article);
+}
+
 export async function startArticleGeneration(ownerUserId: string, articleId: string): Promise<{ article: ArticleRecord; jobId: string }> {
 	await releaseStaleJobs(ownerUserId, articleId);
 	const article = await requireArticle(ownerUserId, articleId);
@@ -977,7 +1010,11 @@ export async function startArticleGeneration(ownerUserId: string, articleId: str
 	if (!workspace.research?.approved) {
 		throw new ArticleWorkflowError('Approve the research before generating. Generation uses only the approved research version.', 400, 'research_not_approved');
 	}
-	assertNotApproved(article, 'Regeneration');
+	const { draftNextAction } = await import('@/lib/articles/publishedBaseline');
+	const next = draftNextAction(article);
+	if (next.kind === 'import') throw new ArticleWorkflowError(next.detail, 409, 'import_required');
+	if (next.kind === 'blocked' || next.kind === 'continue' || !next.available) throw new ArticleWorkflowError(next.detail, 409, 'draft_not_available');
+	const mode = next.kind === 'revise' ? 'revise' : 'create';
 	if (await activeJob(ownerUserId, article, 'article_generation')) {
 		throw new ArticleWorkflowError('A generation job is already running for this article.', 409, 'generation_in_progress');
 	}
@@ -1000,6 +1037,7 @@ export async function startArticleGeneration(ownerUserId: string, articleId: str
 			searchIntent: article.searchIntent,
 			contentType: workspace.contentType,
 			skipAutoRevision: true,
+			mode,
 		},
 	});
 	const now = new Date().toISOString();

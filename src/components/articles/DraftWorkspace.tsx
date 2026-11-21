@@ -36,6 +36,7 @@ export function DraftWorkspace({
 	structure,
 	revisionNumber,
 	generateBlocked,
+	draftAction,
 	jobRunning,
 	busy,
 	pending,
@@ -59,6 +60,7 @@ export function DraftWorkspace({
 	structure: ReturnType<typeof validateArticleStructure> | null;
 	revisionNumber: number | null;
 	generateBlocked: string;
+	draftAction?: { kind: string; label: string; detail: string; available: boolean };
 	jobRunning: boolean;
 	busy: boolean;
 	pending: string;
@@ -127,8 +129,17 @@ export function DraftWorkspace({
 			</div>
 
 			{surface === 'draft' ? <div className="flex flex-wrap gap-2 items-center">
-				<button className="btn" type="button" disabled={busy || jobRunning || Boolean(generateBlocked)} onClick={() => void act('generate', {}, 'Generation started.')}>
-					{pending === 'generate' ? 'Starting…' : articleBody.trim() ? 'Regenerate draft' : 'Generate draft'}
+				<button
+					className="btn"
+					type="button"
+					disabled={busy || jobRunning || (draftAction ? !draftAction.available || draftAction.kind === 'continue' : Boolean(generateBlocked))}
+					onClick={() => void act(
+						draftAction?.kind === 'import' ? 'import_published_baseline' : 'generate',
+						{},
+						draftAction?.kind === 'import' ? 'Published article imported. The live page was not changed.' : 'Generation started.',
+					)}
+				>
+					{pending === 'generate' || pending === 'import_published_baseline' ? 'Working…' : (draftAction?.label ?? (articleBody.trim() ? 'Regenerate draft' : 'Generate draft'))}
 				</button>
 				<button
 					className="btn"
@@ -158,7 +169,7 @@ export function DraftWorkspace({
 				>
 					{pending === 'preview_improve' ? 'Preparing…' : 'Improve article with AI'}
 				</button>
-				{generateBlocked ? <span className="text-xs text-text-soft">{generateBlocked}</span> : null}
+				{draftAction?.detail ? <span className="text-xs text-text-soft">{draftAction.detail}</span> : generateBlocked ? <span className="text-xs text-text-soft">{generateBlocked}</span> : null}
 			</div> : null}
 
 			{surface === 'draft' && structure ? (
