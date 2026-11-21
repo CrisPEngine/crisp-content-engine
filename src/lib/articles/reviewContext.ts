@@ -14,6 +14,19 @@ function originOf(url: string | undefined | null): string | null {
 	}
 }
 
+function pageIdentity(article: ArticleRecord): string[] {
+	return [article.library?.canonicalUrl, article.publication?.url, article.seo?.canonical, article.slug, article.library?.cms?.payloadId]
+		.map((value) => value?.trim())
+		.filter((value): value is string => Boolean(value));
+}
+
+/** A catalogue shell and the working article for the same Payload page are one article, not two competitors. */
+export function samePublishedPage(article: ArticleRecord, other: ArticleRecord): boolean {
+	if (article.library?.canonicalArticleId === other.id || other.library?.canonicalArticleId === article.id) return true;
+	const left = new Set(pageIdentity(article));
+	return pageIdentity(other).some((value) => left.has(value));
+}
+
 function publishedUrl(article: ArticleRecord, origin: string | null): string | null {
 	if (article.publication?.url) return article.publication.url;
 	if (article.status === 'published' && origin && article.slug) return `${origin}/articles/${article.slug}`;
@@ -33,7 +46,7 @@ export function buildQualityContext(input: {
 	const { article, brain, taxonomy } = input;
 	const origin = originOf(brain.identity.website);
 	const siteHosts = origin ? [new URL(origin).hostname.replace(/^www\./, '')] : [];
-	const others = input.siblings.filter((item) => item.id !== article.id && item.brandId === article.brandId);
+	const others = input.siblings.filter((item) => item.id !== article.id && item.brandId === article.brandId && !samePublishedPage(article, item));
 	const inventory: InventoryItem[] = [];
 	for (const other of others) {
 		const url = publishedUrl(other, origin);

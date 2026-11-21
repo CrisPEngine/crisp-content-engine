@@ -55,7 +55,8 @@ export type RevisionProposal = {
 	benefit: string;
 	needsResearch: boolean;
 	needsBrandVerification: boolean;
-	status: 'proposed' | 'accepted' | 'rejected' | 'deferred' | 'applied';
+	status: 'proposed' | 'accepted' | 'rejected' | 'deferred' | 'applied' | 'manual';
+	resolutionNote?: string | null;
 	sourceFeedback: string;
 	sourceFindingId?: string | null;
 	sourceRevisionId?: string | null;

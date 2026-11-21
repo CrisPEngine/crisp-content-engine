@@ -16,7 +16,7 @@ import { DraftWorkspace } from '@/components/articles/DraftWorkspace';
 import { ImagePanel } from '@/components/articles/ImagePanel';
 import { RevisionHistory } from '@/components/articles/RevisionDiff';
 import { validateArticleStructure } from '@/lib/articles/structure';
-import { reviewPrimary } from '@/lib/articles/reviewWorkflow';
+import { editorialProgress, publicationChanges, reviewPrimary } from '@/lib/articles/reviewWorkflow';
 import { summariseRevisionChange } from '@/lib/articles/revisionSummary';
 import { findingGroup, findingTitle, passageAnchor, stageTone, workspaceStageFromLocation, type WorkspaceStageId } from '@/lib/articles/workspaceNavigation';
 import type { ArticleRecord, ArticleRevisionRef } from '@/lib/articles/types';
@@ -303,6 +303,26 @@ export default function ArticleWorkspacePage() {
 	const workspace = article.workspace;
 	const busy = pending !== '';
 	const stages = stageState(article, detail.lifecycle, detail.taxonomy);
+	const progress = editorialProgress({
+		proposals: workspace?.editorialDesk?.proposals ?? [],
+		currentRevisionId: workspace?.revision?.id ?? null,
+		body: article.body,
+		critiqueRevisionId: workspace?.editorialDesk?.critique?.revisionId ?? null,
+		openCritical: (workspace?.editorial?.findings ?? []).filter((finding) => finding.severity === 'critical' && (finding.decision === 'pending' || finding.decision === 'accepted')).map((finding) => ({ code: finding.code, evidence: finding.evidence, explanation: finding.explanation ?? undefined })),
+		title: article.title,
+		structureOk: structure?.ok !== false,
+	});
+	stages.Review = progress.complete;
+	const changes = publicationChanges({
+		revisionKind: workspace?.revision?.kind,
+		revisionSource: workspace?.revision?.source,
+		metadataStatus: workspace?.metadataProposal?.status,
+		currentSeoTitle: article.seo.seoTitle,
+		currentDescription: article.seo.metaDescription,
+		proposedSeoTitle: workspace?.metadataProposal?.proposedSeoTitle,
+		proposedDescription: workspace?.metadataProposal?.proposedMetaDescription,
+		baselineRevision: workspace?.cms.baselineRevision,
+	});
 	const research = workspace?.research;
 	const generateBlocked = !workspace?.briefApprovedAt
 		? 'Approve the brief first.'
@@ -319,7 +339,7 @@ export default function ArticleWorkspacePage() {
 	const tones = {
 		brief: stageTone('brief', { briefApproved: stages.Brief, briefNeedsReapproval: Boolean(workspace?.briefChangedAfterApproval), researchApproved: stages.Research, researchChanged: research?.status === 'changed_since_approval', hasDraft: stages.Draft, reviewCurrent: stages.Review, reviewBlocked: !stages.Review && stages.Draft, imagesReady: stages.Images, seoReady: Boolean(article.seo.seoTitle && article.seo.metaDescription), cmsCurrent: stages.CMS }),
 		research: stageTone('research', { briefApproved: stages.Brief, briefNeedsReapproval: false, researchApproved: stages.Research, researchChanged: research?.status === 'changed_since_approval', hasDraft: stages.Draft, reviewCurrent: stages.Review, reviewBlocked: false, imagesReady: stages.Images, seoReady: true, cmsCurrent: stages.CMS }),
-		draft: stageTone('draft', { briefApproved: true, briefNeedsReapproval: false, researchApproved: true, researchChanged: false, hasDraft: stages.Draft, reviewCurrent: true, reviewBlocked: false, imagesReady: true, seoReady: true, cmsCurrent: true }),
+		draft: stageTone('draft', { briefApproved: true, briefNeedsReapproval: false, researchApproved: true, researchChanged: false, hasDraft: stages.Draft, draftChangesPending: progress.awaitingApplication > 0, reviewCurrent: true, reviewBlocked: false, imagesReady: true, seoReady: true, cmsCurrent: true }),
 		review: stageTone('review', { briefApproved: true, briefNeedsReapproval: false, researchApproved: true, researchChanged: false, hasDraft: true, reviewCurrent: stages.Review, reviewBlocked: stages.Draft && !stages.Review, imagesReady: true, seoReady: true, cmsCurrent: true }),
 		images: stageTone('images', { briefApproved: true, briefNeedsReapproval: false, researchApproved: true, researchChanged: false, hasDraft: true, reviewCurrent: true, reviewBlocked: false, imagesReady: stages.Images, seoReady: true, cmsCurrent: true }),
 		seo: stageTone('seo', { briefApproved: true, briefNeedsReapproval: false, researchApproved: true, researchChanged: false, hasDraft: true, reviewCurrent: true, reviewBlocked: false, imagesReady: true, seoReady: Boolean(article.seo.seoTitle && article.seo.metaDescription && article.seo.slug), cmsCurrent: true }),
@@ -720,6 +740,7 @@ export default function ArticleWorkspacePage() {
 			) : null}
 
 			<div className={stage === 'review' ? 'space-y-6' : 'hidden'}>
+			{progress.blocker ? <p className="card mx-auto max-w-3xl p-4 text-sm text-warning" role="status">{progress.blocker} {progress.next}</p> : null}
 			{workspace ? (
 				<EditorialReviewBoard
 					critique={critique ?? null}
@@ -912,7 +933,8 @@ export default function ArticleWorkspacePage() {
 				</p>
 				{!gate.ok ? <p className="text-sm text-warning">{gate.message}</p> : null}
 				{workspace?.schedule.blockedReason ? <p className="text-sm">{workspace.schedule.blockedReason}</p> : null}
-				<p className="text-sm text-text-dim">Approval does not publish. Publish stays off until the article is approved and someone uses the button below.</p>
+				<p className="text-sm">{changes.detail}</p>
+				<p className="text-sm text-text-dim">Approval does not publish. Publish stays off until the article is approved and someone uses the button below. The update targets the existing Payload document and keeps its URL.</p>
 				<div className="flex flex-wrap gap-2">
 					<button className="btn" type="button" disabled={busy || article.approval.status === 'approved'} onClick={() => actBool('request_approval', {}, 'Approval requested.')}>Request approval</button>
 					<button className="btn" type="button" disabled={busy || !gate.ok || article.approval.status === 'approved'} onClick={() => actBool('approve', {}, `Revision ${workspace?.revision?.number ?? ''} approved.`)}>Approve article</button>

@@ -30,6 +30,7 @@ export function stageTone(id: WorkspaceStageId, flags: {
 	researchApproved: boolean;
 	researchChanged: boolean;
 	hasDraft: boolean;
+	draftChangesPending?: boolean;
 	reviewCurrent: boolean;
 	reviewBlocked: boolean;
 	imagesReady: boolean;
@@ -38,7 +39,7 @@ export function stageTone(id: WorkspaceStageId, flags: {
 }): StageTone {
 	if (id === 'brief') return flags.briefNeedsReapproval ? 'attention' : flags.briefApproved ? 'complete' : 'pending';
 	if (id === 'research') return flags.researchChanged ? 'attention' : flags.researchApproved ? 'complete' : 'pending';
-	if (id === 'draft') return flags.hasDraft ? 'complete' : 'pending';
+	if (id === 'draft') return !flags.hasDraft ? 'pending' : flags.draftChangesPending ? 'attention' : 'complete';
 	if (id === 'review') return flags.reviewBlocked ? 'attention' : flags.reviewCurrent ? 'complete' : 'pending';
 	if (id === 'images') return flags.imagesReady ? 'complete' : 'pending';
 	if (id === 'seo') return flags.seoReady ? 'complete' : 'pending';
