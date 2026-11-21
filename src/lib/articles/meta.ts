@@ -10,7 +10,9 @@ import type {
 } from '@/lib/articles/types';
 import type { DestinationTaxonomy } from '@/lib/publishing/destinationTaxonomy';
 import { isSelfOverlap } from '@/lib/articles/reviewWorkflow';
-import { contentRevisionApproved, draftNextAction, isPublishedBaseline } from '@/lib/articles/publishedBaseline';
+import { contentRevisionApproved, draftNextAction, editorialAwaitingApplication, isPublishedBaseline } from '@/lib/articles/publishedBaseline';
+import { editorialProgress } from '@/lib/articles/reviewWorkflow';
+import { validateArticleStructure } from '@/lib/articles/structure';
 
 export function reviewCycleLimit(): number {
 	const raw = Number(process.env.CCE_ARTICLE_REVIEW_CYCLES ?? '2');
@@ -488,6 +490,26 @@ export function articleNextStep(article: ArticleRecord): { stage: string; action
 			action: 'Review and approve the research',
 			detail: 'Generation uses only the research version you approve.',
 		};
+	}
+	if (editorialAwaitingApplication(article) > 0) {
+		const workspace = ensureWorkspace(article);
+		const progress = editorialProgress({
+			proposals: workspace.editorialDesk?.proposals ?? [],
+			currentRevisionId: workspace.revision?.id ?? null,
+			body: article.body,
+			critiqueRevisionId: workspace.editorialDesk?.critique?.revisionId ?? null,
+			openCritical: openCriticalFindings(workspace)
+				.filter((finding) => !(finding.code === 'content_overlap' && isSelfOverlap(article.title, finding.evidence ?? [])))
+				.map((finding) => ({
+					code: finding.code,
+					evidence: finding.evidence ?? undefined,
+					explanation: finding.explanation ?? undefined,
+					revisionId: finding.revisionId ?? null,
+				})),
+			title: article.title,
+			structureOk: validateArticleStructure(article.body).ok,
+		});
+		return { stage: 'Review', action: 'Preview approved changes', detail: progress.next };
 	}
 	if (!article.body.trim() || isPublishedBaseline(article)) {
 		const next = draftNextAction(article);

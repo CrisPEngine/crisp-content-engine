@@ -16,6 +16,7 @@ import type { ArticleBriefDetails, ArticleEditorialFinding, ArticleRecord, Artic
 import { postProcessPlainDraft } from '@/lib/content/postProcessGeneration';
 import { normaliseUrl, termsFrom } from './researchPackage';
 import { attributionRule, evidenceLevel } from './sourceClass';
+import { emptyEditorialDesk } from './editorialDesk';
 import { commitRevision } from './revisions';
 import { reviewCurrentRevision } from './reviewRun';
 import { articleWordCount, assembleSections, cleanSectionBody, parseSections, splitInternalMetadata, stripCmsTitleHeading, validateArticleStructure } from './structure';
@@ -141,6 +142,7 @@ async function draftArticleSection(input: {
 	alreadyCovered: string[];
 	alreadyLinked: string[];
 	laterSections: string[];
+	publishedBaselineReference?: string;
 }): Promise<SectionDraft> {
 	const sectionRange = {
 		min: Math.max(100, Math.round(input.plan.targetWords * 0.8)),
@@ -156,6 +158,7 @@ async function draftArticleSection(input: {
 				'Make this section’s own contribution. Do not restate any point in alreadyCovered, and leave the topics of laterSections to those sections.',
 				'Do not link any URL in alreadyLinked. Use each URL in requiredLinks exactly once, where it helps the reader.',
 				'Include the practicalElement concretely: show it, do not only describe it. Do not pad to reach the length.',
+				'When publishedBaselineReference is supplied, start from the matching section of that article. Preserve accurate claims, internal links, and FAQ answers unless the brief requires a change.',
 				'Finish the section with a complete sentence.',
 			].join(' '),
 		},
@@ -181,6 +184,7 @@ async function draftArticleSection(input: {
 				evidence: input.evidence,
 				gaps: input.gaps,
 				productKnowledge: input.productKnowledge,
+				publishedBaselineReference: input.publishedBaselineReference,
 			}),
 		},
 	];
@@ -293,47 +297,6 @@ function coveredPoints(heading: string, plan: SectionPlan, body: string): string
 	return `${heading}: ${plan.contribution}${firstSentences ? ` (${firstSentences.slice(0, 240)})` : ''}`;
 }
 
-async function revisePublishedArticle(
-	input: { ownerUserId: string; brand: BrandBrain; brief?: ArticleBriefDetails; onStage?: GenerationStage },
-	existing: ArticleRecord | null,
-): Promise<ArticleRecord> {
-	const stage = input.onStage ?? (async () => {});
-	if (!existing?.body.trim() || !existing.workspace) throw new Error('Import the published article before creating a revised draft.');
-	const { remoteRevisionOf } = await import('@/lib/articles/publishedBaseline');
-	const remote = remoteRevisionOf(existing);
-	const baseline = existing.workspace.cms.baselineRevision ?? null;
-	if (typeof remote === 'number' && typeof baseline === 'number' && remote !== baseline) {
-		throw new Error(`Payload revision is ${remote}. The local baseline is revision ${baseline}. Import the current published article before revising. Nothing was generated.`);
-	}
-	await stage('Revising the published article');
-	const preview = await previewArticleImprovement({
-		ownerUserId: input.ownerUserId,
-		article: existing,
-		brand: input.brand,
-		brief: input.brief,
-		findings: [],
-		extraInstructions: [
-			'Revise the published article so it satisfies the approved brief and research.',
-			'Start from the existing article. Preserve its structure, internal links, and accurate claims unless the brief explicitly asks for a change.',
-			'Do not add YAML front matter, a title line, or internal workflow fields.',
-			'Do not invent sources, statistics, or product capabilities.',
-		],
-	});
-	commitRevision(existing, preview.proposedBody, 'revision', 'Revised draft from the published baseline and the approved brief. It is not approved and was not published.');
-	const wasRemoteApproval = existing.approval.status === 'approved';
-	existing.approval = { required: true, approver: 'human', status: 'pending' };
-	existing.status = 'review';
-	const workspace = ensureWorkspace(existing);
-	if (wasRemoteApproval && !workspace.historicalApproval) {
-		workspace.historicalApproval = { scope: 'remote_publication', at: existing.library?.cms?.publishedAt ?? null };
-	}
-	workspace.approvedAt = null;
-	workspace.approvedRevisionId = null;
-	workspace.editorial.status = 'not_run';
-	existing.workspace = workspace;
-	return existing;
-}
-
 export async function generateArticle(input: {
 	ownerUserId: string;
 	brand: BrandBrain;
@@ -361,7 +324,17 @@ export async function generateArticle(input: {
 	const targetWords = normaliseTargetWords(input.targetWords);
 	const store = getNativeContentStore();
 	const existing = input.articleId ? await store.getArticle(input.ownerUserId, input.articleId) : null;
-	if (input.mode === 'revise') return revisePublishedArticle(input, existing);
+	const revisingFromBaseline = input.mode === 'revise';
+	if (revisingFromBaseline) {
+		if (!existing?.body.trim() || !existing.workspace) throw new Error('Import the published article before creating a revised draft.');
+		const { isPublishedBaseline, remoteRevisionOf } = await import('@/lib/articles/publishedBaseline');
+		if (!isPublishedBaseline(existing)) throw new Error('Create a revised draft from the imported published baseline first.');
+		const remote = remoteRevisionOf(existing);
+		const baseline = existing.workspace.cms.baselineRevision ?? null;
+		if (typeof remote === 'number' && typeof baseline === 'number' && remote !== baseline) {
+			throw new Error(`Payload revision is ${remote}. The local baseline is revision ${baseline}. Import the current published article before revising. Nothing was generated.`);
+		}
+	}
 	const theme = input.themes.find((item) => item.status === 'active') ?? input.themes[0];
 	const topic = input.topic ?? theme?.title ?? input.strategy?.objectives[0] ?? input.brand.identity.name;
 	const { loadResolvedIntelligence } = await import('@/lib/intelligence/knowledge/load');
@@ -394,6 +367,7 @@ export async function generateArticle(input: {
 					'Every question in the brief must be answered by a section. No two sections may make the same point. The words of all sections must add up to targetWords.',
 					'Headings are short reader-facing phrases, never copied research sentences. Use only the supplied evidence. Do not pad the outline.',
 					'If differentiateFrom lists existing articles, cover what they do not and do not repeat their sections.',
+					'When publishedBaselineMarkdown is supplied, plan a revision of that article for the approved brief and research. Keep the strongest sections and improve weak areas. Preserve internal links and FAQ coverage unless the brief requires change.',
 				].join(' '),
 			},
 			{
@@ -422,6 +396,10 @@ export async function generateArticle(input: {
 					evidence: research.claims.map((claim, index) => ({ index, text: claim.text, kind: claim.sourceClass ?? claim.kind })),
 					gaps: research.gaps,
 					productKnowledge: intelligence.prompt,
+					publishedBaselineMarkdown: revisingFromBaseline && existing?.body ? existing.body.slice(0, 60000) : undefined,
+					revisionGoal: revisingFromBaseline
+						? 'Revise the published article for the approved brief and research. Preserve accurate claims, internal links, and FAQ answers unless the brief requires a change.'
+						: undefined,
 				}),
 			},
 		],
@@ -465,6 +443,7 @@ export async function generateArticle(input: {
 			alreadyCovered: [...covered],
 			alreadyLinked: [...linked.values()],
 			laterSections: plans.slice(index + 1).map((later) => `${later.heading}: ${later.contribution}`),
+			publishedBaselineReference: revisingFromBaseline && existing?.body ? existing.body.slice(0, 60000) : undefined,
 		});
 		promptTokens += drafted.promptTokens;
 		completionTokens += drafted.completionTokens;
@@ -480,7 +459,9 @@ export async function generateArticle(input: {
 	}
 	const assembled = assembleSections(sections);
 	const searchIntent = input.searchIntent?.trim() || outlineCompletion.data.searchIntent?.trim() || existing?.searchIntent || 'informational';
-	const title = existing?.title?.trim() || outlineCompletion.data.title?.trim() || topic;
+	const title = revisingFromBaseline
+		? (existing?.title?.trim() || topic)
+		: (existing?.title?.trim() || outlineCompletion.data.title?.trim() || topic);
 	await stage('Checking brand guardrails');
 	const brief: ContentBrief = {
 		objective: input.objective ?? 'authority',
@@ -591,7 +572,7 @@ export async function generateArticle(input: {
 		secondaryTopics: article.secondaryTopics,
 	};
 	if (!article.slug) article.slug = slugify(title);
-	article.status = !base.body?.trim() && base.status === 'published' ? 'review' : article.status === 'published' ? 'published' : 'draft';
+	article.status = revisingFromBaseline ? 'review' : !base.body?.trim() && base.status === 'published' ? 'review' : article.status === 'published' ? 'published' : 'draft';
 	article.approval = { required: true, approver: 'human', status: 'pending' };
 	const assets = (await store.listAssets(input.ownerUserId, input.brand.id)).map(publicAsset);
 	article.mediaPlan = {
@@ -599,8 +580,18 @@ export async function generateArticle(input: {
 		inline: articleInlinePlan(sections),
 		note: 'Images are proposed, not generated, until an approved media action runs.',
 	};
-	commitRevision(article, finalBody, 'generation', `Generated with ${modelUsed}${research.packageVersion ? ` from research version ${research.packageVersion}` : ''}.`);
+	const revisionSource = revisingFromBaseline ? 'revision' : 'generation';
+	const revisionNote = revisingFromBaseline
+		? `Revised from published baseline with ${modelUsed}${research.packageVersion ? ` using research version ${research.packageVersion}` : ''}. The baseline stays in revision history and is not published.`
+		: `Generated with ${modelUsed}${research.packageVersion ? ` from research version ${research.packageVersion}` : ''}.`;
+	commitRevision(article, finalBody, revisionSource, revisionNote, { kind: revisingFromBaseline ? 'content' : undefined });
 	const workspace = ensureWorkspace(article);
+	if (revisingFromBaseline) {
+		workspace.approvedAt = null;
+		workspace.approvedRevisionId = null;
+		workspace.editorial = { ...workspace.editorial, status: 'not_run', findings: [], reviewedRevisionId: null, reviewedRevisionNumber: null };
+		workspace.editorialDesk = { ...(workspace.editorialDesk ?? emptyEditorialDesk()), preview: null, proposals: [], critique: null, updatedAt: new Date().toISOString() };
+	}
 	const { exampleConsistencyIssues } = await import('./editorialDesk');
 	workspace.exampleConsistency = exampleConsistencyIssues(finalBody);
 	const { intelligenceManifest } = await import('@/lib/intelligence/knowledge/resolver');

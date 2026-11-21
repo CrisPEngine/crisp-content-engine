@@ -21,7 +21,7 @@ import { summariseRevisionChange } from '@/lib/articles/revisionSummary';
 import { findingGroup, findingTitle, passageAnchor, stageTone, workspaceStageFromLocation, type WorkspaceStageId } from '@/lib/articles/workspaceNavigation';
 import type { ArticleRecord, ArticleRevisionRef } from '@/lib/articles/types';
 import { MetadataProposalPanel } from '@/components/articles/MetadataProposalPanel';
-import { draftNextAction, localStatusLabel } from '@/lib/articles/publishedBaseline';
+import { contentRevisionApproved, draftNextAction, localStatusLabel } from '@/lib/articles/publishedBaseline';
 
 type ArticleDetail = {
 	article: ArticleRecord;
@@ -555,7 +555,7 @@ export default function ArticleWorkspacePage() {
 					<p className="text-text-soft">These are checks only. The article is not rewritten from this list.</p>
 				</div>
 			) : null}
-			{detail?.article.workspace?.revision && detail.article.approval.status !== 'approved' ? (
+			{detail?.article.workspace?.revision && !contentRevisionApproved(detail.article) ? (
 				<div className="card p-4 text-sm">
 					<p className="font-medium">{detail.nextStep?.action ?? 'The draft is saved'}</p>
 					<p>{detail.nextStep?.detail}</p>

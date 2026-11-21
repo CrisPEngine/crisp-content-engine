@@ -1,7 +1,8 @@
 import type { ArticleRecord } from '@/lib/articles/types';
+import { proposalDisposition } from '@/lib/articles/reviewWorkflow';
 
 export type DraftNext = {
-	kind: 'import' | 'revise' | 'generate' | 'continue' | 'blocked';
+	kind: 'import' | 'revise' | 'generate' | 'continue' | 'blocked' | 'preview_editorial';
 	label: string;
 	detail: string;
 	available: boolean;
@@ -106,6 +107,17 @@ export function contentRevisionApproved(article: ArticleRecord): boolean {
 	return !approved;
 }
 
+export function contentApprovalLocksDraft(article: ArticleRecord): boolean {
+	return contentRevisionApproved(article);
+}
+
+export function editorialAwaitingApplication(article: ArticleRecord): number {
+	const workspace = article.workspace;
+	if (!workspace?.revision) return 0;
+	const proposals = workspace.editorialDesk?.proposals ?? [];
+	return proposals.filter((item) => item.status === 'accepted' && proposalDisposition(item, workspace.revision!.id, article.body) === 'apply').length;
+}
+
 export function localStatusLabel(article: ArticleRecord): string {
 	if (!article.body.trim() && hasRemotePublication(article)) return 'Published remotely';
 	if (isPublishedBaseline(article)) return 'Baseline imported';
@@ -169,6 +181,15 @@ export function draftNextAction(article: ArticleRecord): DraftNext {
 		};
 	}
 	if (isPublishedBaseline(article)) {
+		const awaiting = editorialAwaitingApplication(article);
+		if (awaiting > 0) {
+			return {
+				kind: 'preview_editorial',
+				label: 'Preview approved changes',
+				detail: `${awaiting} approved recommendation${awaiting === 1 ? '' : 's'} are waiting to be previewed on Editorial Review. The published baseline stays in revision history.`,
+				available: false,
+			};
+		}
 		return {
 			kind: 'revise',
 			label: 'Create revised draft',
