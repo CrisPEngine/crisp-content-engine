@@ -73,5 +73,11 @@ describe('production policy', () => {
 			remaining: 1,
 		});
 		expect(chosen.map((item) => item.id)).toEqual(['high']);
+		expect(selectProductionOpportunities({
+			opportunities: [opportunity({ id: 'low', title: 'How to revise one chapter', score: 0.2 }), opportunity({ id: 'high', title: 'How to track clues and reveals', score: 0.9 })],
+			opportunityIdsInProduction: [],
+			remaining: 2,
+			minimumScore: 0.7,
+		}).map((item) => item.id)).toEqual(['high']);
 	});
 });

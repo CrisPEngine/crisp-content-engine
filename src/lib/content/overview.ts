@@ -15,6 +15,7 @@ export function buildContentOverview(input: {
 	remaining: number;
 	nextSlotAt: string | null;
 	weeklyMaximum: number;
+	indexed?: number | null;
 	opportunities: OverviewOpportunity[];
 	jobs: OverviewJob[];
 	articles: OverviewArticle[];
@@ -60,7 +61,15 @@ export function buildContentOverview(input: {
 			weeklyMaximum: input.weeklyMaximum,
 			state: input.paused ? 'paused' : blocked.length ? 'blocked' : 'active',
 		},
-		metrics: { approved: approved.length, production: producing.length, review: review.length, scheduled: scheduled.length, published: published.length },
+		metrics: {
+			approved: approved.length,
+			production: producing.length,
+			review: review.length,
+			scheduled: scheduled.length,
+			published: published.length,
+			attention: blocked.length + failed.length,
+			indexed: input.indexed ?? null,
+		},
 		actions: actions.slice(0, 8),
 		pipeline,
 		activity,

@@ -415,10 +415,11 @@ export const AGENT_ACTIONS: AgentActionDefinition[] = [
 		'cce_generate_article',
 		'content:create',
 		1,
-		'Queue long-form article generation (returns jobId; poll with cce_get_article_generation_job). Pass sync:true to run inline. Does not publish.',
+		'Queue long-form article generation (returns jobId; poll with cce_get_article_generation_job). Pass articleId to resume or regenerate an existing brief. Pass sync:true to run inline. Does not publish.',
 		z
 			.object({
 				brandId,
+				articleId: z.string().optional(),
 				topic: z.string().optional(),
 				objective: z.string().optional(),
 				instruction: z.string().optional(),

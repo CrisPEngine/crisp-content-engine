@@ -23,6 +23,11 @@ type Queue = {
 		inProduction: number;
 		awaitingApproval: number;
 		attention: number;
+		label?: string;
+		publishingDays?: number[];
+		publishingTimezone?: string | null;
+		indexingMonitoring?: boolean;
+		minimumScore?: number;
 		costUsd: number;
 		themes: string[];
 		signals: Array<{ title: string; kind: string; reason: string }>;
@@ -49,6 +54,10 @@ export default function CampaignsPage() {
 	const [campaignName, setCampaignName] = useState('');
 	const [capacity, setCapacity] = useState(3);
 	const [budget, setBudget] = useState(1);
+	const [publishingDays, setPublishingDays] = useState('2,4');
+	const [publishingTimezone, setPublishingTimezone] = useState('Asia/Dubai');
+	const [minimumScore, setMinimumScore] = useState(0.7);
+	const [indexingMonitoring, setIndexingMonitoring] = useState(true);
 	const [openId, setOpenId] = useState<string | null>(null);
 	const [q, setQ] = useState('');
 	const [demand, setDemand] = useState<DemandClass | ''>('');
@@ -78,7 +87,12 @@ export default function CampaignsPage() {
 			setError(body.error ?? 'The opportunity queue could not be loaded.');
 			return;
 		}
-		setQueue(body as Queue);
+		const next = body as Queue;
+		setQueue(next);
+		if (next.operations?.publishingDays?.length) setPublishingDays(next.operations.publishingDays.join(','));
+		if (next.operations?.publishingTimezone) setPublishingTimezone(next.operations.publishingTimezone);
+		if (typeof next.operations?.minimumScore === 'number') setMinimumScore(next.operations.minimumScore);
+		if (typeof next.operations?.indexingMonitoring === 'boolean') setIndexingMonitoring(next.operations.indexingMonitoring);
 		const articles = await fetch(`/api/articles?brandId=${encodeURIComponent(id)}&pageSize=50`);
 		const listed = await articles.json();
 		setBoard(Array.isArray(listed.articles) ? listed.articles : []);
@@ -211,7 +225,8 @@ export default function CampaignsPage() {
 						<p>Needs attention {queue.operations.attention}</p>
 						<p>Model cost ${queue.operations.costUsd.toFixed(2)}</p>
 						<p>Publishing {queue.operations.autonomousPublishingEnabled ? 'on' : 'off'}</p>
-						<p>Next publication: the worker does not publish on a schedule.</p>
+						<p>{queue.operations.label ?? 'Paused'}. {queue.operations.publishingDays?.length ? `Publishing days ${queue.operations.publishingDays.join(', ')} in ${queue.operations.publishingTimezone ?? 'UTC'}.` : 'No fixed publishing days are configured.'}</p>
+						<p>{queue.operations.indexingMonitoring ? 'Indexing is monitored. A sitemap listing is not treated as indexed.' : 'Indexing monitoring is off.'}</p>
 					</div>
 				) : null}
 				{queue?.operations ? (() => {
@@ -225,13 +240,32 @@ export default function CampaignsPage() {
 				<div className="flex flex-wrap gap-2">
 					<label>Up to <input className="input w-20" type="number" min={0} max={14} value={capacity} onChange={(event) => setCapacity(Number(event.target.value))} aria-label="Weekly production maximum" /> per week</label>
 					<label>Budget $<input className="input w-24" type="number" min={0.1} max={5} step={0.1} value={budget} onChange={(event) => setBudget(Number(event.target.value))} aria-label="Maximum model budget per article" /></label>
+					<label>Publishing days <input className="input w-28" value={publishingDays} onChange={(event) => setPublishingDays(event.target.value)} aria-label="Publishing weekdays as 0-6" placeholder="2,4" /></label>
+					<label>Timezone <input className="input w-40" value={publishingTimezone} onChange={(event) => setPublishingTimezone(event.target.value)} aria-label="Publishing timezone" placeholder="Asia/Dubai" /></label>
+					<label>Min score <input className="input w-24" type="number" min={0} max={1} step={0.05} value={minimumScore} onChange={(event) => setMinimumScore(Number(event.target.value))} aria-label="Minimum opportunity score" /></label>
+					<label className="flex items-center gap-2"><input type="checkbox" checked={indexingMonitoring} onChange={(event) => setIndexingMonitoring(event.target.checked)} /> Monitor indexing (Search Console only)</label>
 				</div>
 				{(queue?.campaigns ?? []).map((campaign) => (
 					<div key={campaign.id} className="flex flex-wrap gap-2">
 						<button className="btn" type="button" disabled={busy} onClick={() => void post('apply_pilot', { campaignId: campaign.id }, campaign.id, 'Folian pilot saved and paused. Nothing was published.')}>Apply Folian pilot</button>
 						<button className="btn" type="button" disabled={busy} onClick={() => void post('pause_operation', { campaignId: campaign.id }, campaign.id, 'Automation paused. Nothing was published.')}>Pause</button>
 						<button className="btn" type="button" disabled={busy} onClick={() => void post('resume_operation', { campaignId: campaign.id }, campaign.id, 'Automation resumed with approval required. Nothing was published.')}>Resume</button>
-						<button className="btn" type="button" disabled={busy} onClick={() => void post('update_operation', { campaignId: campaign.id, weeklyMaximum: capacity, maxCostUsdPerArticle: budget }, campaign.id, 'Limits saved. Publishing stays off.')}>Save limits</button>
+						<button
+							className="btn"
+							type="button"
+							disabled={busy}
+							onClick={() => void post('update_operation', {
+								campaignId: campaign.id,
+								weeklyMaximum: capacity,
+								maxCostUsdPerArticle: budget,
+								publishingDays: publishingDays.split(/[\s,]+/).map((day) => Number(day)).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6),
+								publishingTimezone,
+								minimumScore,
+								indexingMonitoring,
+							}, campaign.id, 'Schedule and limits saved. Publishing stays off.')}
+						>
+							Save schedule and limits
+						</button>
 					</div>
 				))}
 			</section>
