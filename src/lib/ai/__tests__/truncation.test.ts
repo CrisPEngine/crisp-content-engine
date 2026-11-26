@@ -15,6 +15,17 @@ describe('truncation detection', () => {
 		expect(isOutputTruncated({ text: 'Complete sentence.', incompleteReason: 'max_output_tokens' })).toBe(true);
 	});
 
+	it('does not treat a finished thought as truncated when the model stopped', () => {
+		const finished = 'Choose one idea, write the scene that proves it, and stop comparing it with every other possibility you have collected this week';
+		expect(looksTruncatedMidSentence(finished)).toBe(false);
+		expect(isOutputTruncated({ text: finished, finishReason: 'stop' })).toBe(false);
+		expect(isOutputTruncated({ text: finished, finishReason: 'completed' })).toBe(false);
+	});
+
+	it('treats an incomplete provider status as truncated', () => {
+		expect(isOutputTruncated({ text: 'This sentence is complete.', finishReason: 'incomplete', incompleteReason: 'max_output_tokens' })).toBe(true);
+	});
+
 	it('detects mid-sentence endings', () => {
 		const truncated =
 			'This paragraph makes a clear point and then keeps going until it stops without finishing the last thought about canon and';

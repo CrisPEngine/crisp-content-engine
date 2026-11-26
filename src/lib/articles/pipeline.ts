@@ -1,5 +1,7 @@
-import { completeLongFormJson } from '@/lib/ai/longFormComplete';
-import { assertLongFormDraftReady } from '@/lib/ai/longFormComplete';
+import { assertLongFormDraftReady, completeLongFormJson } from '@/lib/ai/longFormComplete';
+import { resolveLongFormMaxTokens } from '@/lib/ai/longFormConfig';
+import { isOutputTruncated } from '@/lib/ai/truncation';
+import { appendContinuation, completedSectionMap, sectionOutputBudget, type GenerationCheckpoint, type GenerationSectionCheckpoint } from '@/lib/articles/generationCheckpoint';
 import { estimateModelCostUsd } from '@/lib/ai/pricing';
 import { resolveModelForRole } from '@/lib/ai/roles';
 import { DEFAULT_WORD_TOLERANCE_PCT, effectiveInstruction, emptyWorkspace, ensureWorkspace, isOpenFinding, reviewCycleLimit, splitLines } from '@/lib/articles/meta';
@@ -129,7 +131,8 @@ type EvidenceItem = { text: string; source: string; url?: string; howToAttribute
 async function draftArticleSection(input: {
 	ai: ReturnType<typeof getIntelligenceAi>;
 	ownerUserId: string;
-	item: { heading: string; purpose: string };
+	onRecover?: () => Promise<void>;
+	item: { id?: string; heading: string; purpose: string };
 	plan: SectionPlan;
 	previousHeading: string | null;
 	nextHeading: string | null;
@@ -196,24 +199,53 @@ async function draftArticleSection(input: {
 		return { body, model: drafted.model, promptTokens: drafted.promptTokens ?? 0, completionTokens: drafted.completionTokens ?? 0 };
 	}
 
-	const drafted = await completeLongFormJson<{ body?: string }>({
+	const roleMax = resolveLongFormMaxTokens();
+	const budget = sectionOutputBudget(input.plan.targetWords, roleMax);
+	const merge = (previous: { body?: string }, piece: string) => ({
+		...previous,
+		body: appendContinuation(previous.body ?? '', piece),
+	});
+	let drafted = await completeLongFormJson<{ body?: string }>({
 		messages,
 		feature: 'article_section',
+		sectionId: input.item.id,
 		userId: input.ownerUserId,
+		maxTokens: budget,
 		wordRange: sectionRange,
 		extractText: (data) => data.body ?? '',
-		mergeContinuation: (previous, piece) => ({
-			...previous,
-			body: `${(previous.body ?? '').trim()}\n\n${piece}`.trim(),
-		}),
+		mergeContinuation: merge,
 	});
-	const body = drafted.data.body?.trim();
-	if (!body) throw new Error(`The section “${input.item.heading}” came back empty.`);
-	assertLongFormDraftReady({
-		text: body,
-		finishReason: drafted.meta.finishReason,
-		incompleteReason: drafted.meta.incompleteReason,
-	});
+	let body = drafted.data.body?.trim() ?? '';
+	const unfinished = () => isOutputTruncated({ text: body, finishReason: drafted.meta.finishReason, incompleteReason: drafted.meta.incompleteReason });
+	if (body && unfinished()) {
+		await input.onRecover?.();
+		const lengthLimited = isOutputTruncated({ text: 'Complete sentence.', finishReason: drafted.meta.finishReason, incompleteReason: drafted.meta.incompleteReason });
+		drafted = await completeLongFormJson<{ body?: string }>({
+			messages: [
+				...messages,
+				{ role: 'user', content: 'The previous attempt was interrupted. Rewrite this one section in full and end it with a complete sentence.' },
+			],
+			feature: 'article_section_retry',
+			sectionId: input.item.id,
+			userId: input.ownerUserId,
+			maxTokens: lengthLimited ? Math.min(roleMax, budget * 2) : budget,
+			wordRange: sectionRange,
+			extractText: (data) => data.body ?? '',
+			mergeContinuation: merge,
+		});
+		body = drafted.data.body?.trim() ?? '';
+	}
+	if (!body) throw new Error(`The section “${input.item.heading}” came back empty. Saved sections were kept.`);
+	try {
+		assertLongFormDraftReady({
+			text: body,
+			finishReason: drafted.meta.finishReason,
+			incompleteReason: drafted.meta.incompleteReason,
+		});
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : 'The section was interrupted.';
+		throw new Error(`${reason} Saved sections were kept. Resume generation to continue.`);
+	}
 	return {
 		body,
 		model: drafted.model,
@@ -319,6 +351,8 @@ export async function generateArticle(input: {
 	skipAutoRevision?: boolean;
 	mode?: 'create' | 'revise';
 	onStage?: GenerationStage;
+	resume?: GenerationCheckpoint | null;
+	onCheckpoint?: (checkpoint: GenerationCheckpoint) => Promise<void>;
 }): Promise<ArticleRecord> {
 	const stage = input.onStage ?? (async () => {});
 	const targetWords = normaliseTargetWords(input.targetWords);
@@ -354,9 +388,13 @@ export async function generateArticle(input: {
 	};
 	const questions = splitLines(input.brief?.questions);
 	const ai = getIntelligenceAi();
-	await stage('Planning the outline');
+	const savedSections = completedSectionMap(input.resume);
+	const resumedOutline = input.resume?.outline?.length ? input.resume.outline : null;
+	await stage(resumedOutline ? 'Resuming saved sections' : 'Generating outline');
 	const requiredLinks = splitLines(input.brief?.requiredLinks).filter((link) => /^https?:\/\//.test(link));
-	const outlineCompletion = await ai.completeJson<{ title?: string; searchIntent?: string; sections?: OutlineSection[] }>(
+	const outlineCompletion = resumedOutline
+		? null
+		: await ai.completeJson<{ title?: string; searchIntent?: string; sections?: OutlineSection[] }>(
 		'STRATEGY',
 		[
 			{
@@ -406,30 +444,87 @@ export async function generateArticle(input: {
 		'article_outline',
 		input.ownerUserId,
 	);
-	const proposed = Array.isArray(outlineCompletion.data.sections) ? outlineCompletion.data.sections : [];
-	const planned: Array<{ id: string; heading: string; purpose: string; raw?: OutlineSection }> = proposed.length
-		? proposed.slice(0, sectionCount(targetWords) + 1).map((section) => ({
-				id: crypto.randomUUID(),
-				heading: (section.heading?.trim() || 'Untitled section').replace(/^#+\s*/, ''),
-				purpose: section.purpose?.trim() || 'Develop the heading with approved evidence.',
-				raw: section,
+	const proposed = Array.isArray(outlineCompletion?.data.sections) ? outlineCompletion.data.sections : [];
+	const planned: Array<{ id: string; heading: string; purpose: string; raw?: OutlineSection }> = resumedOutline
+		? resumedOutline.map((section) => ({
+				id: section.id,
+				heading: section.heading,
+				purpose: section.purpose,
+				raw: { words: section.targetWords },
 			}))
-		: fallbackOutline(topic, questions);
+		: proposed.length
+			? proposed.slice(0, sectionCount(targetWords) + 1).map((section) => ({
+					id: crypto.randomUUID(),
+					heading: (section.heading?.trim() || 'Untitled section').replace(/^#+\s*/, ''),
+					purpose: section.purpose?.trim() || 'Develop the heading with approved evidence.',
+					raw: section,
+				}))
+			: fallbackOutline(topic, questions);
 	const outline = planned.map(({ id, heading, purpose }) => ({ id, heading, purpose }));
 	const evidence = evidenceFrom(research);
 	const plans = planSections(planned, { targetWords, evidence, requiredLinks });
 	const sections: ArticleSection[] = [];
 	const covered: string[] = [];
 	const linked = new Map<string, string>();
-	let promptTokens = outlineCompletion.promptTokens ?? 0;
-	let completionTokens = outlineCompletion.completionTokens ?? 0;
-	let modelUsed = outlineCompletion.model ?? resolveModelForRole('LONG_FORM_WRITING');
+	let promptTokens = outlineCompletion?.promptTokens ?? 0;
+	let completionTokens = outlineCompletion?.completionTokens ?? 0;
+	let modelUsed = outlineCompletion?.model ?? resolveModelForRole('LONG_FORM_WRITING');
+	const checkpointFrom = (failed?: { id: string; heading: string; error: string }): GenerationCheckpoint => ({
+		jobId: input.resume?.jobId ?? null,
+		outline: planned.map((item, index) => ({
+			id: item.id,
+			heading: item.heading,
+			purpose: item.purpose,
+			targetWords: plans[index]?.targetWords ?? 0,
+		})),
+		sections: [
+			...sections.map((section): GenerationSectionCheckpoint => ({
+				id: section.id,
+				heading: section.heading,
+				status: 'complete',
+				body: section.body,
+				attempts: 1,
+				error: null,
+				model: modelUsed,
+				updatedAt: new Date().toISOString(),
+			})),
+			...(failed
+				? [{
+						id: failed.id,
+						heading: failed.heading,
+						status: 'failed' as const,
+						body: '',
+						attempts: 1,
+						error: failed.error,
+						model: modelUsed,
+						updatedAt: new Date().toISOString(),
+					}]
+				: []),
+		],
+		updatedAt: new Date().toISOString(),
+	});
+	if (!resumedOutline) await input.onCheckpoint?.(checkpointFrom());
 	for (const [index, item] of outline.entries()) {
 		const plan = plans[index];
+		const saved = savedSections.get(item.id);
+		if (saved) {
+			await stage(`Keeping saved section ${index + 1} of ${outline.length}`);
+			for (const match of saved.body.matchAll(/\]\((https?:\/\/[^)\s]+)\)/g)) linked.set(normaliseUrl(match[1]), match[1]);
+			covered.push(coveredPoints(item.heading, plan, saved.body));
+			sections.push({
+				...item,
+				body: saved.body,
+				claims: evidence.filter((entry) => entry.url && saved.body.includes(entry.url)).map((entry) => entry.text).slice(0, 5),
+			});
+			continue;
+		}
 		await stage(`Writing section ${index + 1} of ${outline.length}: ${item.heading}`);
-		const drafted = await draftArticleSection({
+		let drafted: Awaited<ReturnType<typeof draftArticleSection>>;
+		try {
+			drafted = await draftArticleSection({
 			ai,
 			ownerUserId: input.ownerUserId,
+			onRecover: () => stage('Recovering interrupted generation'),
 			item,
 			plan,
 			previousHeading: outline[index - 1]?.heading ?? null,
@@ -445,6 +540,11 @@ export async function generateArticle(input: {
 			laterSections: plans.slice(index + 1).map((later) => `${later.heading}: ${later.contribution}`),
 			publishedBaselineReference: revisingFromBaseline && existing?.body ? existing.body.slice(0, 60000) : undefined,
 		});
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : 'The section was interrupted.';
+			await input.onCheckpoint?.(checkpointFrom({ id: item.id, heading: item.heading, error: reason }));
+			throw error;
+		}
 		promptTokens += drafted.promptTokens;
 		completionTokens += drafted.completionTokens;
 		if (drafted.model) modelUsed = drafted.model;
@@ -456,13 +556,15 @@ export async function generateArticle(input: {
 			body,
 			claims: evidence.filter((entry) => entry.url && drafted.body.includes(entry.url)).map((entry) => entry.text).slice(0, 5),
 		});
+		await input.onCheckpoint?.(checkpointFrom());
 	}
+	await stage('Assembling article');
 	const assembled = assembleSections(sections);
-	const searchIntent = input.searchIntent?.trim() || outlineCompletion.data.searchIntent?.trim() || existing?.searchIntent || 'informational';
+	const searchIntent = input.searchIntent?.trim() || outlineCompletion?.data.searchIntent?.trim() || existing?.searchIntent || 'informational';
 	const title = revisingFromBaseline
 		? (existing?.title?.trim() || topic)
-		: (existing?.title?.trim() || outlineCompletion.data.title?.trim() || topic);
-	await stage('Checking brand guardrails');
+		: (existing?.title?.trim() || outlineCompletion?.data.title?.trim() || topic);
+	await stage('Validating content');
 	const brief: ContentBrief = {
 		objective: input.objective ?? 'authority',
 		audience: input.audience ?? input.strategy?.audiences[0]?.name ?? input.brand.identity.audiences?.[0] ?? 'the brand audience',
@@ -647,7 +749,7 @@ export async function generateArticle(input: {
 		await reviewCurrentRevision({ article: current, brain: input.brand, taxonomy, ai, ownerUserId: input.ownerUserId });
 	}
 	const finalWorkspace = ensureWorkspace(current);
-	finalWorkspace.generation = { ...finalWorkspace.generation, status: 'completed', stage: 'Completed', updatedAt: new Date().toISOString() };
+	finalWorkspace.generation = { ...finalWorkspace.generation, status: 'completed', stage: 'Draft ready', checkpoint: null, updatedAt: new Date().toISOString() };
 	current.workspace = finalWorkspace;
 	current.updatedAt = new Date().toISOString();
 	await store.saveArticle(current);

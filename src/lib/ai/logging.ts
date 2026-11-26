@@ -30,6 +30,10 @@ type LogScope = { brandId?: string; contentId?: string; correlationId?: string }
 
 const scopeStore = new AsyncLocalStorage<LogScope>();
 
+export function currentLogScope(): LogScope | undefined {
+	return scopeStore.getStore();
+}
+
 export function withIntelligenceLogScope<T>(scope: LogScope, run: () => Promise<T>): Promise<T> {
 	return scopeStore.run(scope, run);
 }
