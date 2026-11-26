@@ -3,7 +3,7 @@ import { analyticsSignals, searchConsoleSignals } from '@/lib/campaigns/analytic
 import { fetchGa4Report } from '@/lib/campaigns/ga4';
 import { getGoogleAccessToken, parseServiceAccount } from '@/lib/campaigns/googleAuth';
 import { resolveBrandProperties } from '@/lib/campaigns/googleConfig';
-import { providerStatus } from '@/lib/campaigns/providers';
+import { providerStatus, searchCredentialIssue } from '@/lib/campaigns/providers';
 import { createMemoryOpportunityRepository, setOpportunityRepositoryForTests } from '@/lib/campaigns/repository';
 import { fetchSearchConsoleReport } from '@/lib/campaigns/searchConsole';
 import { testBrandAnalytics } from '@/lib/campaigns/service';
@@ -249,5 +249,11 @@ describe('brand-scoped analytics', () => {
 		});
 		expect(errored.find((item) => item.id === 'search_console')?.state).toBe('error');
 		expect(errored.find((item) => item.id === 'analytics')?.state).toBe('error');
+	});
+
+	it('flags placeholder Tavily keys without treating them as configured', () => {
+		expect(searchCredentialIssue({ TAVILY_API_KEY: '[SENSITIVE]' })).toMatch(/placeholder/);
+		const status = providerStatus({ env: { TAVILY_API_KEY: '[SENSITIVE]' }, brandId: '', binding: null }).find((item) => item.id === 'search');
+		expect(status?.state).toBe('unavailable');
 	});
 });

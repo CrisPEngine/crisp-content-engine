@@ -2,6 +2,20 @@ import { googleAuthMode, serviceAccountEmail } from './googleAuth';
 import { resolveBrandProperties } from './googleConfig';
 import type { AnalyticsBinding, ProviderAvailability } from './types';
 
+export function searchCredentialIssue(env: Record<string, string | undefined> = process.env): string | null {
+	const provider = (env.RESEARCH_SEARCH_PROVIDER ?? 'tavily').toLowerCase();
+	if (provider === 'brave') {
+		const key = env.BRAVE_SEARCH_API_KEY?.trim();
+		if (!key) return 'BRAVE_SEARCH_API_KEY is not set.';
+		if (key === '[SENSITIVE]' || key.length < 20) return 'BRAVE_SEARCH_API_KEY looks like a placeholder or is too short.';
+		return null;
+	}
+	const key = env.TAVILY_API_KEY?.trim();
+	if (!key) return 'TAVILY_API_KEY is not set.';
+	if (key === '[SENSITIVE]' || key.length < 20) return 'TAVILY_API_KEY looks like a placeholder or is too short.';
+	return null;
+}
+
 function googleState(input: { configured: boolean; bound: boolean; lastSuccessAt: string | null; lastError: string | null; bindingError: string | null }): 'connected' | 'unavailable' | 'error' {
 	if (input.bindingError || input.lastError) return 'error';
 	if (input.configured && input.bound && input.lastSuccessAt) return 'connected';
@@ -14,7 +28,8 @@ export function providerStatus(input: {
 	binding?: AnalyticsBinding | null;
 }): ProviderAvailability[] {
 	const env = input.env ?? process.env;
-	const searchConfigured = Boolean(env.TAVILY_API_KEY?.trim() || env.BRAVE_SEARCH_API_KEY?.trim());
+	const searchIssue = searchCredentialIssue(env);
+	const searchConfigured = !searchIssue;
 	const auth = googleAuthMode(env);
 	const properties = resolveBrandProperties(input.brandId, env, input.binding ?? null);
 	const account = serviceAccountEmail(env);
@@ -41,7 +56,7 @@ export function providerStatus(input: {
 			state: searchConfigured ? 'available' : 'unavailable',
 			detail: searchConfigured
 				? `Using ${env.RESEARCH_SEARCH_PROVIDER?.trim() || 'tavily'}. Results are evidence of coverage, not keyword volume.`
-				: 'Set TAVILY_API_KEY or BRAVE_SEARCH_API_KEY, and optionally RESEARCH_SEARCH_PROVIDER, to retrieve public search results.',
+				: searchIssue ?? 'Set TAVILY_API_KEY or BRAVE_SEARCH_API_KEY, and optionally RESEARCH_SEARCH_PROVIDER, to retrieve public search results.',
 		},
 		{
 			id: 'search_console',
