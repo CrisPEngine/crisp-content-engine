@@ -3,6 +3,7 @@ import { getOpportunityRepository } from '@/lib/campaigns/repository';
 import { progressProductionJob, startProductionJob } from '@/lib/campaigns/workflow';
 import type { ContentCampaign } from '@/lib/campaigns/types';
 import { getSupabaseService } from '@/lib/supabaseService';
+import { autopilotLabel } from '@/lib/operations/autopilot';
 import { articlePolicyInput, normaliseOperationPolicy, performanceSignals, planOperationTick, publicationPolicyDecision, type TickAction } from '@/lib/operations/policy';
 
 const WORKER = 'content-operations';
@@ -213,8 +214,12 @@ export function operationSummary(input: { campaigns: ContentCampaign[]; jobs: im
 	const policy = campaign?.operation ?? null;
 	return {
 		mode: policy?.mode ?? 'assisted',
+		label: autopilotLabel({ paused: policy?.paused ?? true, mode: policy?.mode ?? 'assisted', autonomousPublishingEnabled: false }),
 		paused: policy?.paused ?? true,
 		autonomousPublishingEnabled: false,
+		publishingDays: policy?.publishingDays ?? [],
+		publishingTimezone: policy?.publishingTimezone ?? null,
+		indexingMonitoring: policy?.indexingMonitoring === true,
 		weeklyMaximum: policy?.weeklyMaximum ?? campaign?.weeklyCapacity ?? 0,
 		maxCostUsdPerArticle: policy?.maxCostUsdPerArticle ?? 1,
 		maxConcurrentJobs: policy?.maxConcurrentJobs ?? 1,

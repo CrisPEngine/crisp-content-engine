@@ -23,6 +23,10 @@ type Queue = {
 		inProduction: number;
 		awaitingApproval: number;
 		attention: number;
+		label?: string;
+		publishingDays?: number[];
+		publishingTimezone?: string | null;
+		indexingMonitoring?: boolean;
 		costUsd: number;
 		themes: string[];
 		signals: Array<{ title: string; kind: string; reason: string }>;
@@ -211,7 +215,8 @@ export default function CampaignsPage() {
 						<p>Needs attention {queue.operations.attention}</p>
 						<p>Model cost ${queue.operations.costUsd.toFixed(2)}</p>
 						<p>Publishing {queue.operations.autonomousPublishingEnabled ? 'on' : 'off'}</p>
-						<p>Next publication: the worker does not publish on a schedule.</p>
+						<p>{queue.operations.label ?? 'Paused'}. {queue.operations.publishingDays?.length ? `Publishing days ${queue.operations.publishingDays.join(', ')} in ${queue.operations.publishingTimezone ?? 'UTC'}.` : 'No fixed publishing days are configured.'}</p>
+						<p>{queue.operations.indexingMonitoring ? 'Indexing is monitored. A sitemap listing is not treated as indexed.' : 'Indexing monitoring is off.'}</p>
 					</div>
 				) : null}
 				{queue?.operations ? (() => {

@@ -63,6 +63,8 @@ export default function ContentOverviewPage() {
 						<Metric label="Awaiting review" value={view.metrics.review} href="/content/articles?view=review" />
 						<Metric label="Scheduled" value={view.metrics.scheduled} href="/content/schedule" />
 						<Metric label="Published" value={view.metrics.published} href="/content/published" />
+						<Metric label="Needs attention" value={view.metrics.attention} href="/campaigns#production" />
+						<Metric label="Indexed" value={view.metrics.indexed ?? 'Not confirmed'} href="/campaigns#operations" />
 					</section>
 					<ListCard title="Action queue" href="/campaigns" empty="Nothing is waiting for a decision." items={view.actions} />
 					<section className="card grid gap-3 p-4 text-sm md:grid-cols-5">
@@ -80,7 +82,7 @@ export default function ContentOverviewPage() {
 	);
 }
 
-function Metric(props: { label: string; value: number; href: string }) {
+function Metric(props: { label: string; value: number | string; href: string }) {
 	return <a className="card p-3 text-sm" href={props.href}><span className="block text-text-dim">{props.label}</span><span className="text-xl font-semibold">{props.value}</span></a>;
 }
 

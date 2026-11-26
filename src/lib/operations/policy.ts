@@ -1,5 +1,6 @@
 import { productionCapacity, selectProductionOpportunities } from '@/lib/campaigns/productionPolicy';
 import type { ApprovalMode, ContentOpportunity, ProductionJob, ProductionStage } from '@/lib/campaigns/types';
+import { autopilotMayPublish } from '@/lib/operations/autopilot';
 
 export type OperatingMode = 'assisted' | 'autonomous_approval' | 'autonomous_publishing';
 
@@ -34,6 +35,14 @@ export type BrandOperationPolicy = {
 	allowPublishedUpdates: boolean;
 	paused: boolean;
 	themes: string[];
+	/** Weekday numbers in publishingTimezone. Absent means the existing campaign is not restricted to particular days. */
+	publishingDays?: number[];
+	publishingTimezone?: string;
+	lengthMinWords?: number;
+	lengthMaxWords?: number;
+	indexingMonitoring?: boolean;
+	performanceMonitoring?: boolean;
+	minimumScore?: number;
 };
 
 export const FOLIAN_PILOT_THEMES = [
@@ -79,7 +88,25 @@ export function normaliseOperationPolicy(input: {
 		allowPublishedUpdates: input.stored?.allowPublishedUpdates === true,
 		paused: input.status !== 'active' || input.stored?.paused === true,
 		themes: input.stored?.themes?.length ? input.stored.themes.slice(0, 12) : input.themes,
+		publishingDays: cleanDays(input.stored?.publishingDays),
+		publishingTimezone: typeof input.stored?.publishingTimezone === 'string' ? input.stored.publishingTimezone : undefined,
+		lengthMinWords: optionalBound(input.stored?.lengthMinWords, 300, 4000),
+		lengthMaxWords: optionalBound(input.stored?.lengthMaxWords, 300, 6000),
+		indexingMonitoring: input.stored?.indexingMonitoring === true,
+		performanceMonitoring: input.stored?.performanceMonitoring === true,
+		minimumScore: optionalBound(input.stored?.minimumScore, 0, 1),
 	};
+}
+
+function cleanDays(value: unknown): number[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const days = [...new Set(value.filter((day): day is number => Number.isInteger(day) && day >= 0 && day <= 6))];
+	return days.length ? days : undefined;
+}
+
+function optionalBound(value: unknown, min: number, max: number): number | undefined {
+	if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+	return Math.min(max, Math.max(min, value));
 }
 
 function clampNumber(value: unknown, fallback: number, min: number, max: number): number {
@@ -217,8 +244,18 @@ export function planOperationTick(input: {
 			actions.push({ type: 'hold_publish', jobId: item.jobId, reason: 'Payload already has this article live. It was not published or overwritten.' });
 			continue;
 		}
-		if (input.policy.mode !== 'autonomous_publishing' || !input.policy.autonomousPublishingEnabled || !item.approved || !item.policyAllows) {
-			actions.push({ type: 'hold_publish', jobId: item.jobId, reason: 'Autonomous publishing is not enabled for this brand. The article was not published.' });
+		const decision = autopilotMayPublish({
+			paused: input.policy.paused,
+			mode: input.policy.mode,
+			autonomousPublishingEnabled: input.policy.autonomousPublishingEnabled,
+			approved: item.approved,
+			policyAllows: item.policyAllows,
+			publishingDays: input.policy.publishingDays,
+			publishingTimezone: input.policy.publishingTimezone,
+			now: new Date(now),
+		});
+		if (!decision.allow) {
+			actions.push({ type: 'hold_publish', jobId: item.jobId, reason: decision.reason });
 			continue;
 		}
 		actions.push({ type: 'publish', articleId: item.articleId });
