@@ -194,8 +194,15 @@ async function runStage(userId: string, job: ProductionJob, opportunity: { title
 				brief: { instructions: `Preserve opportunity ${job.opportunityId}. Do not publish.` },
 			});
 		if (!created.article) throw new Error('The article brief could not be created.');
-		const researched = await workspace.researchArticle(userId, created.article.id);
-		await workspace.approveArticleResearch(userId, researched.id);
+		let researched = await workspace.researchArticle(userId, created.article.id);
+		try {
+			researched = await workspace.approveArticleResearch(userId, researched.id);
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : '';
+			if (!/topic finding or author expertise/i.test(reason)) throw error;
+			researched = await workspace.researchArticle(userId, created.article.id, { mode: 'deeper' });
+			researched = await workspace.approveArticleResearch(userId, researched.id);
+		}
 		return { articleId: researched.id, note: 'Research was completed and approved for generation.', costUsd: researched.workspace?.generation.estimatedCostUsd ?? 0 };
 	}
 	if (!job.articleId) throw new Error('This stage needs the article created by research.');
@@ -294,9 +301,8 @@ async function runStage(userId: string, job: ProductionJob, opportunity: { title
 	const current = (await workspace.getWorkspaceArticle(userId, articleId)).article;
 	const live = current.library?.publication?.state === 'verified_live' || current.library?.publication?.state === 'published' || current.workspace?.cms.remoteStatus === 'published' || Boolean(current.publication?.url);
 	if (live) return { articleId, note: 'This article is already live. The draft was not submitted and nothing was published.', escalate: 'This article is already live. The draft was not submitted and nothing was published.' };
-	await workspace.submitArticleDraft(userId, articleId);
 	const queued = await workspace.requestArticleApproval(userId, articleId);
-	return { articleId, note: `An unpublished Payload draft was submitted. Article ${queued.id} is waiting for a person. Nothing was published.`, costUsd: queued.workspace?.generation.estimatedCostUsd ?? 0 };
+	return { articleId, note: `Article ${queued.id} is waiting for a person. It was not sent to the CMS and nothing was published.`, costUsd: queued.workspace?.generation.estimatedCostUsd ?? 0 };
 }
 
 async function writeUpdateProposal(input: {

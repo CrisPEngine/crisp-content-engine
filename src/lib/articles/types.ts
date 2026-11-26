@@ -257,6 +257,16 @@ export type ArticleWorkspace = {
 	externalId: string | null;
 	researchId: string | null;
 	research?: ResearchPackage;
+	discovery?: {
+		checkedAt: string;
+		url: string;
+		publication: 'unpublished' | 'published';
+		discovery: 'unverified' | 'discoverable' | 'blocked';
+		indexing: 'indexed' | 'not_confirmed';
+		indexNowSubmitted: boolean;
+		searchConsoleCoverage: string | null;
+		notes: string[];
+	};
 	assignedModelRole: string;
 	assignedModel: string | null;
 	revision?: ArticleRevisionRef | null;

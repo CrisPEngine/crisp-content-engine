@@ -52,6 +52,9 @@ export async function runOperationsTick(now = Date.now()): Promise<OperationTick
 				await rememberRemotePublication(campaign.ownerUserId, job.articleId!).catch(() => null);
 			}
 		}
+		await monitorPublishedArticles().catch((error: unknown) => {
+			errors.push(error instanceof Error ? error.message : 'Indexing monitoring failed.');
+		});
 		await rememberRun(actions, errors);
 		return { ok: errors.length === 0, published: false, lease, actions, errors, continueWork };
 	} finally {
@@ -198,6 +201,36 @@ async function releaseLease(): Promise<void> {
 	await getSupabaseService().from('content_operation_leases').update({ leased_until: new Date(0).toISOString(), updated_at: new Date().toISOString() }).eq('worker', WORKER);
 }
 
+const INDEXING_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+async function monitorPublishedArticles(): Promise<void> {
+	const { data, error } = await getSupabaseService().from('content_campaigns').select('user_id,brand_id,quality_policy');
+	if (error) throw new Error(error.message);
+	const { getNativeContentStore } = await import('@/lib/media/store');
+	const { verifyPublishedUrl } = await import('@/lib/operations/publishedDiscovery');
+	const store = getNativeContentStore();
+	for (const row of data ?? []) {
+		const policy = row.quality_policy && typeof row.quality_policy === 'object' ? row.quality_policy as { indexingMonitoring?: boolean } : null;
+		if (policy?.indexingMonitoring !== true) continue;
+		const articles = await store.listArticles(String(row.user_id), String(row.brand_id));
+		const due = articles.find((article) => {
+			const state = article.library?.publication?.state;
+			const url = article.library?.publication?.canonicalUrl;
+			if (!url || (state !== 'verified_live' && state !== 'published')) return false;
+			const checked = Date.parse(article.workspace?.discovery?.checkedAt ?? '');
+			return !Number.isFinite(checked) || Date.now() - checked >= INDEXING_INTERVAL_MS;
+		});
+		if (!due?.library?.publication?.canonicalUrl) continue;
+		if (!due.workspace) continue;
+		const url = due.library.publication.canonicalUrl;
+		const result = await verifyPublishedUrl(url, { indexNowKey: process.env.INDEXNOW_KEY });
+		due.workspace.discovery = { checkedAt: result.checkedAt, url, publication: result.publication, discovery: result.discovery, indexing: result.indexing, indexNowSubmitted: result.indexNowSubmitted, searchConsoleCoverage: result.searchConsoleCoverage, notes: result.notes.slice(0, 8) };
+		due.updatedAt = result.checkedAt;
+		await store.saveArticle(due);
+		return;
+	}
+}
+
 async function rememberRun(actions: TickAction[], errors: string[]): Promise<void> {
 	await getSupabaseService().from('publish_worker_heartbeats').upsert({
 		worker: WORKER,
@@ -207,6 +240,16 @@ async function rememberRun(actions: TickAction[], errors: string[]): Promise<voi
 		last_processed: actions.filter((action) => action.type === 'advance' || action.type === 'start').length,
 		updated_at: new Date().toISOString(),
 	});
+}
+
+export async function latestOperationRun(): Promise<{ at: string | null; ok: boolean | null; error: string | null; processed: number | null }> {
+	const { data } = await getSupabaseService().from('publish_worker_heartbeats').select('last_run_at,last_ok,last_error,last_processed').eq('worker', WORKER).maybeSingle();
+	return {
+		at: typeof data?.last_run_at === 'string' ? data.last_run_at : null,
+		ok: typeof data?.last_ok === 'boolean' ? data.last_ok : null,
+		error: typeof data?.last_error === 'string' ? data.last_error : null,
+		processed: typeof data?.last_processed === 'number' ? data.last_processed : null,
+	};
 }
 
 export function operationSummary(input: { campaigns: ContentCampaign[]; jobs: import('@/lib/campaigns/types').ProductionJob[]; opportunities: import('@/lib/campaigns/types').ContentOpportunity[] }) {
@@ -225,6 +268,7 @@ export function operationSummary(input: { campaigns: ContentCampaign[]; jobs: im
 		maxCostUsdPerArticle: policy?.maxCostUsdPerArticle ?? 1,
 		maxConcurrentJobs: policy?.maxConcurrentJobs ?? 1,
 		themes: policy?.themes ?? [],
+		planned: input.opportunities.filter((item) => item.status === 'approved').length,
 		discovered: input.opportunities.filter((item) => item.status === 'discovered').length,
 		inProduction: input.jobs.filter((job) => job.status === 'queued' || job.status === 'running').length,
 		awaitingApproval: input.jobs.filter((job) => job.status === 'ready_for_approval').length,
