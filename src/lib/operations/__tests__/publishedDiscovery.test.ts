@@ -33,7 +33,8 @@ describe('post-publication discovery', () => {
 			fetchImpl: fetchImpl as unknown as typeof fetch,
 		});
 		expect(indexed.indexing).toBe('indexed');
-		expect(String(fetchImpl.mock.calls[0]?.[0])).toBe('https://searchconsole.googleapis.com/v1/urlInspection/index:inspect');
+		const calls = fetchImpl.mock.calls as unknown as Array<[string]>;
+		expect(String(calls[0]?.[0])).toBe('https://searchconsole.googleapis.com/v1/urlInspection/index:inspect');
 		const limited = inspectSearchConsoleUrl({
 			siteUrl: 'https://folian.app/',
 			inspectionUrl: 'https://folian.app/articles/example',

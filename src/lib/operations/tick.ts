@@ -221,9 +221,10 @@ async function monitorPublishedArticles(): Promise<void> {
 			return !Number.isFinite(checked) || Date.now() - checked >= INDEXING_INTERVAL_MS;
 		});
 		if (!due?.library?.publication?.canonicalUrl) continue;
+		if (!due.workspace) continue;
 		const url = due.library.publication.canonicalUrl;
 		const result = await verifyPublishedUrl(url, { indexNowKey: process.env.INDEXNOW_KEY });
-		due.workspace = { ...due.workspace, discovery: { checkedAt: result.checkedAt, url, publication: result.publication, discovery: result.discovery, indexing: result.indexing, indexNowSubmitted: result.indexNowSubmitted, searchConsoleCoverage: result.searchConsoleCoverage, notes: result.notes.slice(0, 8) } };
+		due.workspace.discovery = { checkedAt: result.checkedAt, url, publication: result.publication, discovery: result.discovery, indexing: result.indexing, indexNowSubmitted: result.indexNowSubmitted, searchConsoleCoverage: result.searchConsoleCoverage, notes: result.notes.slice(0, 8) };
 		due.updatedAt = result.checkedAt;
 		await store.saveArticle(due);
 		return;
