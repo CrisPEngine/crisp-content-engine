@@ -121,3 +121,53 @@ export async function fetchSearchConsoleReport(input: {
 		}),
 	};
 }
+
+export type UrlInspection = {
+	inspectionUrl: string;
+	coverageState: string | null;
+	verdict: string | null;
+	indexing: 'indexed' | 'not_confirmed';
+	lastCrawlTime: string | null;
+	googleCanonical: string | null;
+	userCanonical: string | null;
+	retrievedAt: string;
+};
+
+/** URL Inspection only. This does not call the Indexing API. */
+export async function inspectSearchConsoleUrl(input: {
+	siteUrl: string;
+	inspectionUrl: string;
+	accessToken: string;
+	fetchImpl?: typeof fetch;
+}): Promise<UrlInspection> {
+	const fetchImpl = input.fetchImpl ?? fetch;
+	const response = await fetchImpl('https://searchconsole.googleapis.com/v1/urlInspection/index:inspect', {
+		method: 'POST',
+		headers: { Authorization: `Bearer ${input.accessToken}`, 'Content-Type': 'application/json' },
+		body: JSON.stringify({ inspectionUrl: input.inspectionUrl, siteUrl: input.siteUrl, languageCode: 'en-US' }),
+	});
+	if (!response.ok) await googleFailure(response, 'search_console');
+	const body = (await response.json()) as {
+		inspectionResult?: {
+			indexStatusResult?: {
+				verdict?: string;
+				coverageState?: string;
+				lastCrawlTime?: string;
+				googleCanonical?: string;
+				userCanonical?: string;
+			};
+		};
+	};
+	const status = body.inspectionResult?.indexStatusResult;
+	const coverage = status?.coverageState ?? null;
+	return {
+		inspectionUrl: input.inspectionUrl,
+		coverageState: coverage,
+		verdict: status?.verdict ?? null,
+		indexing: coverage === 'Submitted and indexed' ? 'indexed' : 'not_confirmed',
+		lastCrawlTime: status?.lastCrawlTime ?? null,
+		googleCanonical: status?.googleCanonical ?? null,
+		userCanonical: status?.userCanonical ?? null,
+		retrievedAt: new Date().toISOString(),
+	};
+}

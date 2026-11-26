@@ -19,8 +19,10 @@ type Queue = {
 		weeklyMaximum: number;
 		maxConcurrentJobs?: number;
 		maxCostUsdPerArticle: number;
+		planned?: number;
 		discovered: number;
 		inProduction: number;
+		lastRun?: { at: string | null; ok: boolean | null; error: string | null; processed: number | null } | null;
 		awaitingApproval: number;
 		attention: number;
 		label?: string;
@@ -219,14 +221,15 @@ export default function CampaignsPage() {
 				{queue?.operations ? (
 					<div className="grid gap-2 md:grid-cols-4">
 						<p>Mode {queue.operations.mode.replaceAll('_', ' ')} · {queue.operations.paused ? 'paused' : 'running'}</p>
-						<p>Discovered {queue.operations.discovered}</p>
-						<p>In production {queue.operations.inProduction}</p>
+						<p>Planned {queue.operations.planned ?? 0}</p>
+						<p>Generating {queue.operations.inProduction}</p>
 						<p>Awaiting approval {queue.operations.awaitingApproval}</p>
 						<p>Needs attention {queue.operations.attention}</p>
 						<p>Model cost ${queue.operations.costUsd.toFixed(2)}</p>
 						<p>Publishing {queue.operations.autonomousPublishingEnabled ? 'on' : 'off'}</p>
 						<p>{queue.operations.label ?? 'Paused'}. {queue.operations.publishingDays?.length ? `Publishing days ${queue.operations.publishingDays.join(', ')} in ${queue.operations.publishingTimezone ?? 'UTC'}.` : 'No fixed publishing days are configured.'}</p>
 						<p>{queue.operations.indexingMonitoring ? 'Indexing is monitored. A sitemap listing is not treated as indexed.' : 'Indexing monitoring is off.'}</p>
+						<p>Last worker run {queue.operations.lastRun?.at ? new Date(queue.operations.lastRun.at).toLocaleString() : 'not recorded'}{queue.operations.lastRun?.ok === false ? ` · failed${queue.operations.lastRun.error ? `: ${queue.operations.lastRun.error}` : ''}` : ''}</p>
 					</div>
 				) : null}
 				{queue?.operations ? (() => {

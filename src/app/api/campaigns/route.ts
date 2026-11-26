@@ -20,8 +20,10 @@ export async function GET(request: Request) {
 		const brandId = new URL(request.url).searchParams.get('brandId') ?? '';
 		if (!brandId) return NextResponse.json({ error: 'Choose a brand.' }, { status: 400 });
 		const listed = await listContentOpportunities(userId, brandId);
-		const { operationSummary } = await import('@/lib/operations/tick');
-		return NextResponse.json({ ...listed, operations: operationSummary(listed) });
+		const { latestOperationRun, operationSummary } = await import('@/lib/operations/tick');
+		const operations = operationSummary(listed);
+		const lastRun = await latestOperationRun().catch(() => null);
+		return NextResponse.json({ ...listed, operations: { ...operations, lastRun } });
 	} catch (error) {
 		return fail(error);
 	}
