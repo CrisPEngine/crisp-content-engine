@@ -91,7 +91,7 @@ describe('revision integrity and metadata optimisation', () => {
 			{ createdAt: '2026-11-20T00:00:00.000Z', status: 'ready_for_approval', workType: 'metadata' },
 		], now, 3);
 		expect(countsAsArticleStart({ status: 'completed' })).toBe(true);
-		expect(usage.started).toBe(1);
+		expect(usage.completed).toBe(1);
 		expect(usage.remaining).toBe(2);
 	});
 

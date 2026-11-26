@@ -1,4 +1,4 @@
-import { classifyEditorialWork, remainingCapacity, selectProductionOpportunities, workTypeForOpportunity } from './productionPolicy';
+import { classifyEditorialWork, productionCapacity, selectProductionOpportunities, workTypeForOpportunity } from './productionPolicy';
 import { getOpportunityRepository } from './repository';
 import type { ProductionJob, ProductionStage } from './types';
 import { CampaignError } from './service';
@@ -539,9 +539,7 @@ export async function scheduleCampaign(userId: string, brandId: string, campaign
 		throw new CampaignError('Auto-publish stays off.', 403, 'auto_publish_locked');
 	}
 	const jobs = await repository.listJobs(userId, campaign.brandId);
-	const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-	const startedThisWeek = jobs.filter((job) => new Date(job.createdAt).getTime() >= weekAgo).length;
-	const remaining = remainingCapacity(campaign.weeklyCapacity, startedThisWeek);
+	const { remaining } = productionCapacity(jobs, Date.now(), campaign.operation?.weeklyMaximum ?? campaign.weeklyCapacity);
 	const opportunities = await repository.list(userId, campaign.brandId);
 	const chosen = selectProductionOpportunities({ opportunities, opportunityIdsInProduction: jobs.map((job) => job.opportunityId), remaining });
 	const started: ProductionJob[] = [];

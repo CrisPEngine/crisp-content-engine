@@ -39,7 +39,7 @@ describe('capacity and presentation', () => {
 			{ createdAt: '2026-11-20T01:00:00.000Z', status: 'ready_for_approval' },
 		], now, 1);
 		expect(usage.failed).toBe(1);
-		expect(usage.started).toBe(1);
+		expect(usage.attempted).toBe(1);
 		expect(usage.remaining).toBe(0);
 		expect(usage.nextSlotAt).toBe('2026-11-27T01:00:00.000Z');
 		expect(productionHoldReason({ paused: true, remaining: 0, concurrent: 0, maxConcurrent: 1, nextSlotAt: usage.nextSlotAt })).toMatch(/paused/);
