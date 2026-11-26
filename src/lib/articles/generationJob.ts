@@ -11,6 +11,7 @@ import { editorialStatusFromFindings, ensureWorkspace, isOpenFinding } from './m
 import { articleResearchFromApproved } from './researchPackage';
 import { generationContextFromBrief } from './editorialBrief';
 import { withIntelligenceLogScope } from '@/lib/ai/logging';
+import { canResumeGeneration, generationPausedMessage } from './generationCheckpoint';
 import { reviewCurrentRevision } from './reviewRun';
 import type { ArticleRecord } from './types';
 
@@ -166,6 +167,21 @@ export async function runArticleGenerationJob(job: WorkflowJob): Promise<Article
 		skipAutoRevision: payload.skipAutoRevision,
 		mode: payload.mode,
 		onStage,
+		resume: canResumeGeneration(workspaceArticle?.body, workspaceArticle?.workspace?.generation.checkpoint),
+		onCheckpoint: async (checkpoint) => {
+			if (!priorId) return;
+			await updateArticle(job.userId, priorId, (article) => {
+				const generation = article.workspace!.generation;
+				article.workspace!.generation = {
+					...generation,
+					jobId: job.id,
+					status: 'processing',
+					checkpoint: { ...checkpoint, jobId: job.id },
+					updatedAt: new Date().toISOString(),
+					error: null,
+				};
+			});
+		},
 	}));
 	if (article.workspace) article.workspace.generation.jobId = job.id;
 	await getNativeContentStore().saveArticle(article);
@@ -180,12 +196,14 @@ export async function noteGenerationFailure(job: WorkflowJob, message: string): 
 			recordHistoricalGeneration(article, job.id, message);
 			return;
 		}
+		const checkpoint = article.workspace!.generation.checkpoint ?? null;
+		const paused = (checkpoint?.sections ?? []).some((section) => section.status === 'complete' && section.body.trim());
 		article.workspace!.generation = {
 			...article.workspace!.generation,
 			status: 'failed',
-			error: message,
+			error: generationPausedMessage(checkpoint, message),
 			jobId: job.id,
-			stage: 'Failed',
+			stage: paused ? 'Generation paused. Resume available' : 'Failed',
 			updatedAt: new Date().toISOString(),
 		};
 	});

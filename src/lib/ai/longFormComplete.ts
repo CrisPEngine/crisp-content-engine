@@ -8,6 +8,8 @@ import {
 	type WordCountRange,
 	wordCountInRange,
 } from './truncation';
+import { currentLogScope } from './logging';
+import { estimateModelCostUsd } from './pricing';
 import { LONG_FORM_MODEL_ROLE, resolveLongFormMaxTokens, resolveLongFormTimeoutMs } from './longFormConfig';
 import type { ModelRole } from './roles';
 import { coerceModelText } from '@/lib/content/channelBodyLimit';
@@ -17,6 +19,8 @@ export type LongFormCompletionMeta = {
 	incompleteReason?: string | null;
 	continuationPasses: number;
 	wordCount: number;
+	truncated: boolean;
+	maxTokens: number;
 };
 
 export type LongFormJsonResult<T> = {
@@ -39,6 +43,7 @@ export async function completeLongFormJson<T>(input: {
 	role?: ModelRole;
 	messages: LlmMessage[];
 	feature: string;
+	sectionId?: string;
 	userId?: string;
 	maxTokens?: number;
 	timeoutMs?: number;
@@ -47,6 +52,7 @@ export async function completeLongFormJson<T>(input: {
 	wordRange?: WordCountRange;
 }): Promise<LongFormJsonResult<T>> {
 	const role = input.role ?? LONG_FORM_MODEL_ROLE;
+	const started = Date.now();
 	const maxTokens = input.maxTokens ?? resolveLongFormMaxTokens();
 	const timeoutMs = input.timeoutMs ?? resolveLongFormTimeoutMs();
 	const messages = input.messages;
@@ -78,19 +84,34 @@ export async function completeLongFormJson<T>(input: {
 		};
 		const text = coerceModelText(input.extractText(result.data)).trim();
 		const truncated = isOutputTruncated({ text, ...lastFinish });
+		logGenerationAttempt({
+			feature: input.feature,
+			sectionId: input.sectionId,
+			model: result.model,
+			provider: result.provider,
+			attempt: pass + 1,
+			maxTokens,
+			text,
+			truncated,
+			finishReason: lastFinish.finishReason,
+			incompleteReason: lastFinish.incompleteReason,
+			usage: result.rawUsage,
+			durationMs: Date.now() - started,
+			recovery: truncated && pass < MAX_CONTINUATIONS ? 'continue' : truncated ? 'section_retry' : 'accept',
+		});
 		if (!truncated || pass >= MAX_CONTINUATIONS) break;
 		continuationPasses += 1;
-		const tail = text.slice(-800);
+		const tail = text.slice(-2500);
 		const continuation = await completeWithRole<T>(role, {
 			messages: [
 				{
 					role: 'system',
 					content:
-						'Continue the draft exactly where it stopped. Do not repeat earlier sentences. Return the same JSON shape as before with only the new continuation in the draft/body field.',
+						'Continue the draft exactly where it stopped. Do not repeat earlier sentences. Finish the current sentence and end the section with a complete sentence. Return the same JSON shape as before with only the new continuation in the draft/body field.',
 				},
 				{
 					role: 'user',
-					content: `Previous ending:\n${tail}\n\nContinue in the same voice and JSON format.`,
+					content: `Draft so far:\n${tail}\n\nContinue in the same voice and JSON format. Do not restart the section.`,
 				},
 			],
 			feature: `${input.feature}_continuation`,
@@ -129,6 +150,7 @@ export async function completeLongFormJson<T>(input: {
 			});
 			addUsage(expanded.rawUsage);
 			result = { ...result, ...expanded, data: expanded.data, rawUsage: usage };
+			lastFinish = { finishReason: expanded.finishReason, incompleteReason: expanded.incompleteReason };
 			text = coerceModelText(input.extractText(result.data)).trim();
 		}
 	}
@@ -141,8 +163,52 @@ export async function completeLongFormJson<T>(input: {
 			...lastFinish,
 			continuationPasses,
 			wordCount: countWords(text),
+			truncated: isOutputTruncated({ text, ...lastFinish }),
+			maxTokens,
 		},
 	};
+}
+
+function logGenerationAttempt(input: {
+	feature: string;
+	sectionId?: string;
+	model?: string | null;
+	provider?: string | null;
+	attempt: number;
+	maxTokens: number;
+	text: string;
+	truncated: boolean;
+	finishReason?: string | null;
+	incompleteReason?: string | null;
+	usage?: { promptTokens?: number; completionTokens?: number; reasoningTokens?: number };
+	durationMs: number;
+	recovery: 'accept' | 'continue' | 'section_retry';
+}): void {
+	const scope = currentLogScope();
+	const completionTokens = input.usage?.completionTokens ?? 0;
+	const reasoningTokens = input.usage?.reasoningTokens ?? 0;
+	console.info('[article-generation]', {
+		correlation_id: scope?.correlationId ?? null,
+		content_id: scope?.contentId ?? null,
+		section_id: input.sectionId ?? null,
+		model: input.model ?? null,
+		provider: input.provider ?? null,
+		feature: input.feature,
+		attempt: input.attempt,
+		max_output_tokens: input.maxTokens,
+		prompt_tokens: input.usage?.promptTokens ?? null,
+		completion_tokens: input.usage?.completionTokens ?? null,
+		reasoning_tokens: input.usage?.reasoningTokens ?? null,
+		finish_reason: input.finishReason ?? null,
+		incomplete_reason: input.incompleteReason ?? null,
+		truncated: input.truncated,
+		recovery: input.recovery,
+		duration_ms: input.durationMs,
+		estimated_cost_usd: input.model
+			? estimateModelCostUsd({ model: input.model, inputTokens: input.usage?.promptTokens, outputTokens: completionTokens + reasoningTokens })
+			: null,
+		words: countWords(input.text),
+	});
 }
 
 export function assertLongFormDraftReady(input: {

@@ -10,7 +10,9 @@ export function countWords(text: string): number {
 
 const SENTENCE_END = /[.!?…]["')\]]*\s*$/;
 
-/** Heuristic: ends mid-clause without terminal punctuation (allows closing quote/paren). */
+const DANGLING_WORD = /^(and|or|but|the|a|an|of|to|with|about|for|in|on|from|that|which|because|into|over)$/i;
+
+/** Heuristic: the text stops inside a clause. A finished sentence or list item is not truncated. */
 export function looksTruncatedMidSentence(text: string): boolean {
 	const trimmed = text.trim();
 	if (trimmed.length < 80) return false;
@@ -18,8 +20,9 @@ export function looksTruncatedMidSentence(text: string): boolean {
 	if (trimmed.endsWith('—') || trimmed.endsWith(':')) return false;
 	const tail = trimmed.slice(-120);
 	if (/\[[^\]]*$/.test(tail) || /\([^)]*$/.test(tail)) return true;
-	if (/[,;:]\s*[\w'-]+$/.test(tail)) return true;
-	return true;
+	if (/[,;]\s*[\w'-]+$/.test(tail)) return true;
+	const last = trimmed.split(/\s+/).pop()?.replace(/[^\w'-]/g, '') ?? '';
+	return DANGLING_WORD.test(last);
 }
 
 export function isOutputTruncated(input: {
@@ -28,12 +31,7 @@ export function isOutputTruncated(input: {
 	incompleteReason?: string | null;
 }): boolean {
 	const reason = `${input.finishReason ?? ''} ${input.incompleteReason ?? ''}`.toLowerCase();
-	if (
-		reason.includes('max_tokens') ||
-		reason.includes('max_output') ||
-		reason.includes('length') ||
-		reason.includes('token')
-	) {
+	if (/\bincomplete\b/.test(reason) || reason.includes('max_tokens') || reason.includes('max_output') || reason.includes('length')) {
 		return true;
 	}
 	return looksTruncatedMidSentence(input.text);

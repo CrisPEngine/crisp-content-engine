@@ -582,9 +582,11 @@ export default function ArticleWorkspacePage() {
 			) : null}
 			{generation?.status === 'failed' && generation.error && !detail?.article.workspace?.revision ? (
 				<div className="card p-4 text-sm border-danger/60" role="alert">
-					<p className="font-medium">Generation failed</p>
-					<p>{generation.error}</p>
-					<button className="btn mt-2" type="button" disabled={busy || Boolean(generateBlocked)} onClick={() => actBool('retry', {}, 'Generation restarted.')}>Retry</button>
+					<p className="font-medium">{(generation.checkpoint?.sections ?? []).some((section) => section.status === 'complete') ? 'Generation paused' : 'Generation failed'}</p>
+					<p>{/truncated by the model/i.test(generation.error) ? 'A section was interrupted before it could be finished. Starting again keeps each finished section, so a later interruption can be resumed.' : generation.error}</p>
+					<button className="btn mt-2" type="button" disabled={busy || Boolean(generateBlocked)} onClick={() => actBool('retry', {}, 'Generation resumed.')}>
+						{(generation.checkpoint?.sections ?? []).some((section) => section.status === 'complete') ? 'Resume generation' : 'Try again'}
+					</button>
 				</div>
 			) : null}
 			{revisionJob?.status === 'failed' && revisionJob.error ? (
