@@ -63,6 +63,12 @@ export const FOLIAN_PILOT_POLICY: BrandOperationPolicy = {
 	allowPublishedUpdates: false,
 	paused: true,
 	themes: [...FOLIAN_PILOT_THEMES],
+	/** Tuesday and Thursday in Asia/Dubai. Publishing stays off until the owner enables full autopilot. */
+	publishingDays: [2, 4],
+	publishingTimezone: 'Asia/Dubai',
+	indexingMonitoring: true,
+	performanceMonitoring: true,
+	minimumScore: 0.7,
 };
 
 export function operatingMode(approvalMode: ApprovalMode, stored?: Partial<BrandOperationPolicy> | null): OperatingMode {
@@ -233,6 +239,7 @@ export function planOperationTick(input: {
 			opportunities: input.opportunities.filter((item) => input.policy.allowPublishedUpdates || item.recommendedAction !== 'update'),
 			opportunityIdsInProduction: input.jobs.map((job) => job.opportunityId),
 			remaining: 1,
+			minimumScore: input.policy.minimumScore,
 		});
 		if (chosen[0]) actions.push({ type: 'start', opportunityId: chosen[0].id });
 		else actions.push({ type: 'skip', reason: 'capacity' });

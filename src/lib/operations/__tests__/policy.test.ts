@@ -71,6 +71,10 @@ describe('autonomous content policy', () => {
 		expect(FOLIAN_PILOT_POLICY.weeklyMaximum).toBe(3);
 		expect(FOLIAN_PILOT_POLICY.maxCostUsdPerArticle).toBe(1);
 		expect(FOLIAN_PILOT_POLICY.allowPublishedUpdates).toBe(false);
+		expect(FOLIAN_PILOT_POLICY.publishingDays).toEqual([2, 4]);
+		expect(FOLIAN_PILOT_POLICY.publishingTimezone).toBe('Asia/Dubai');
+		expect(FOLIAN_PILOT_POLICY.indexingMonitoring).toBe(true);
+		expect(FOLIAN_PILOT_POLICY.minimumScore).toBe(0.7);
 	});
 
 	it('does not let an assisted or paused brand start production', () => {

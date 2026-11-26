@@ -157,7 +157,29 @@ export async function POST(request: Request) {
 			}
 			const weekly = typeof body.weeklyMaximum === 'number' ? Math.max(0, Math.min(14, body.weeklyMaximum)) : current.operation.weeklyMaximum;
 			const budget = typeof body.maxCostUsdPerArticle === 'number' ? Math.max(0.1, Math.min(5, body.maxCostUsdPerArticle)) : current.operation.maxCostUsdPerArticle;
-			const campaign = await repository.updateCampaign(userId, current.id, { weeklyCapacity: weekly, operation: { ...current.operation, weeklyMaximum: weekly, maxCostUsdPerArticle: budget, autonomousPublishingEnabled: false } });
+			const publishingDays = Array.isArray(body.publishingDays)
+				? [...new Set((body.publishingDays as unknown[]).filter((day): day is number => typeof day === 'number' && Number.isInteger(day) && day >= 0 && day <= 6))]
+				: current.operation.publishingDays;
+			const publishingTimezone = typeof body.publishingTimezone === 'string' && body.publishingTimezone.trim()
+				? body.publishingTimezone.trim()
+				: current.operation.publishingTimezone;
+			const indexingMonitoring = typeof body.indexingMonitoring === 'boolean' ? body.indexingMonitoring : current.operation.indexingMonitoring;
+			const minimumScore = typeof body.minimumScore === 'number' && Number.isFinite(body.minimumScore)
+				? Math.min(1, Math.max(0, body.minimumScore))
+				: current.operation.minimumScore;
+			const campaign = await repository.updateCampaign(userId, current.id, {
+				weeklyCapacity: weekly,
+				operation: {
+					...current.operation,
+					weeklyMaximum: weekly,
+					maxCostUsdPerArticle: budget,
+					publishingDays: publishingDays?.length ? publishingDays : undefined,
+					publishingTimezone,
+					indexingMonitoring,
+					minimumScore,
+					autonomousPublishingEnabled: false,
+				},
+			});
 			return NextResponse.json({ campaign, published: false });
 		}
 		if (action === 'create_campaign') {

@@ -1,4 +1,5 @@
 import { sameSearchIntent } from './lanes';
+import { planEditorialSelection } from '@/lib/operations/autopilot';
 import { optimisationScope } from './scoring';
 import type { ContentOpportunity, ProductionWorkType } from './types';
 
@@ -81,13 +82,27 @@ export function selectProductionOpportunities(input: {
 	opportunities: ContentOpportunity[];
 	opportunityIdsInProduction: string[];
 	remaining: number;
+	minimumScore?: number;
+	takenTopicKeys?: string[];
 }): ContentOpportunity[] {
 	if (input.remaining <= 0) return [];
 	const used = new Set(input.opportunityIdsInProduction);
 	const active = input.opportunities.filter((item) => used.has(item.id));
-	return input.opportunities
+	const eligible = input.opportunities
 		.filter((item) => item.status === 'approved' && (item.recommendedAction === 'create' || item.recommendedAction === 'update') && !item.scoreDetail.promotionBlocked && item.demandClass !== 'unvalidated' && !used.has(item.id))
-		.filter((item) => !active.some((existing) => sameSearchIntent(existing.title, item.title)))
-		.sort((left, right) => right.score - left.score || left.updatedAt.localeCompare(right.updatedAt))
-		.slice(0, input.remaining);
+		.filter((item) => !active.some((existing) => sameSearchIntent(existing.title, item.title)));
+	const plan = planEditorialSelection({
+		target: input.remaining,
+		minimumScore: typeof input.minimumScore === 'number' ? input.minimumScore : 0,
+		takenTopicKeys: input.takenTopicKeys ?? [],
+		candidates: eligible.map((item) => ({
+			id: item.id,
+			score: item.score,
+			approved: true,
+			topicKey: item.title,
+			overlapping: false,
+		})),
+	});
+	const byId = new Map(eligible.map((item) => [item.id, item]));
+	return plan.selected.map((id) => byId.get(id)).filter((item): item is ContentOpportunity => Boolean(item));
 }

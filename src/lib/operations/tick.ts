@@ -220,6 +220,7 @@ export function operationSummary(input: { campaigns: ContentCampaign[]; jobs: im
 		publishingDays: policy?.publishingDays ?? [],
 		publishingTimezone: policy?.publishingTimezone ?? null,
 		indexingMonitoring: policy?.indexingMonitoring === true,
+		minimumScore: policy?.minimumScore ?? null,
 		weeklyMaximum: policy?.weeklyMaximum ?? campaign?.weeklyCapacity ?? 0,
 		maxCostUsdPerArticle: policy?.maxCostUsdPerArticle ?? 1,
 		maxConcurrentJobs: policy?.maxConcurrentJobs ?? 1,

@@ -344,14 +344,24 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 			if (block === 'native_intelligence_brand_disabled') {
 				throw new AgentError(block, 'Native intelligence is turned off for this brand.', 403);
 			}
+			const articleId = text(input, 'articleId');
+			let existing: ArticleRecord | null = null;
+			if (articleId) {
+				existing = await store.getArticle(ctx.credential.ownerUserId, articleId);
+				if (!existing || existing.brandId !== brain.id) {
+					throw new AgentError('not_found', 'Article not found for this brand.', 404);
+				}
+			}
+			const topic = text(input, 'topic') ?? existing?.topic;
+			const objective = text(input, 'objective') ?? existing?.objective;
+			const instruction = text(input, 'instruction');
+			const targetWords = typeof input.targetWords === 'number' ? input.targetWords : existing?.targetWords;
 			const sync = input.sync === true || input.wait === true;
 			if (sync) {
 				const strategy = await getIntelligenceStore().getStrategyForBrand(ctx.credential.ownerUserId, brain.id);
 				const themes = await getIntelligenceStore().listThemes(ctx.credential.ownerUserId, brain.id);
 				const { selectRelevantResearch } = await import('@/lib/research/retrieve');
 				const { getAgentStore } = await import('@/lib/agent/controlStore');
-				const topic = text(input, 'topic');
-				const instruction = text(input, 'instruction');
 				const researchRecords = selectRelevantResearch(
 					await getAgentStore().listResearch(ctx.credential.ownerUserId, brain.id),
 					`${topic ?? ''} ${instruction ?? ''}`,
@@ -361,11 +371,16 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 					brand: brain,
 					strategy,
 					themes,
-					objective: text(input, 'objective'),
+					objective,
 					topic,
-					targetWords: typeof input.targetWords === 'number' ? input.targetWords : undefined,
+					targetWords,
 					instruction,
 					researchRecords,
+					articleId: existing?.id,
+					primaryKeyword: existing?.primaryKeyword,
+					audience: existing?.audience,
+					searchIntent: existing?.searchIntent,
+					resume: existing?.workspace?.generation?.checkpoint ?? null,
 				});
 				return { article: publicArticle(article), published: false, async: false };
 			}
@@ -374,11 +389,18 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 				brandBrainId: brain.id,
 				payload: {
 					brandId: brain.id,
-					objective: text(input, 'objective'),
-					topic: text(input, 'topic'),
-					targetWords: typeof input.targetWords === 'number' ? input.targetWords : undefined,
-					instruction: text(input, 'instruction'),
+					articleId: existing?.id,
+					objective,
+					topic,
+					targetWords,
+					instruction,
 					credentialId: ctx.credential.id,
+					primaryKeyword: existing?.primaryKeyword,
+					audience: existing?.audience,
+					searchIntent: existing?.searchIntent,
+					destinationId: existing?.workspace?.destinationId ?? undefined,
+					skipAutoRevision: Boolean(existing),
+					mode: existing?.body.trim() ? 'revise' : 'create',
 				},
 			});
 			await dispatchArticleGenerationWorker(job.id);
@@ -386,7 +408,7 @@ export async function dispatchContentExtensions(name: string, ctx: AgentContext,
 				async: true,
 				jobId: job.id,
 				status: job.status,
-				articleId: null,
+				articleId: existing?.id ?? null,
 				pollWith: 'cce_get_article_generation_job',
 				published: false,
 			};
