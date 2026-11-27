@@ -51,7 +51,23 @@ export const APP_NAV: NavItem[] = [
 ];
 
 export const APP_NAV_SECONDARY: NavSubItem[] = [
-	{ label: 'Brand Brain', href: '/intelligence' },
 	{ label: 'Settings', href: '/billing' },
 	{ label: 'Help', href: '/docs' },
 ];
+
+export function navPath(href: string): string {
+	return href.split('?')[0]?.split('#')[0] ?? href;
+}
+
+/** One current page. A shorter parent route does not stay selected beside a more specific match. */
+export function isNavHrefActive(pathname: string, href: string, siblings: string[]): boolean {
+	const path = navPath(href);
+	const matches = pathname === path || (path !== '/' && pathname.startsWith(`${path}/`));
+	if (!matches) return false;
+	return !siblings.some((other) => {
+		const otherPath = navPath(other);
+		if (otherPath === path) return false;
+		const otherMatches = pathname === otherPath || pathname.startsWith(`${otherPath}/`);
+		return otherMatches && otherPath.length > path.length;
+	});
+}

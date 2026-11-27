@@ -286,18 +286,19 @@ function FindingCard({
 	const [reason, setReason] = useState('');
 	const open = card.state === 'pending' || card.state === 'applied-unresolved' || card.state === 'stale';
 	return (
-		<li className="border-t border-edge/50 pt-2">
+		<li className="card-info space-y-2 p-3">
+			<p className="text-xs font-medium text-text-soft">{card.item.severity} · {card.item.source}</p>
 			<p className="font-medium">{card.item.title}</p>
-			<p className="text-sm text-text-soft">{card.item.severity} · {card.item.source}{card.item.section ? ` · ${card.item.section}` : ''} · {lifecycleLabel(card.state, card.item.appliedRevisionNumber)}</p>
-			{card.item.diagnosticCode ? (
-				<details className="text-xs text-text-dim">
-					<summary>Diagnostic details</summary>
-					Code: {card.item.diagnosticCode}
-				</details>
-			) : null}
-			<p><span className="text-text-soft">Explanation. </span>{card.item.explanation}</p>
-			{card.item.historyNote ? <p className="text-text-soft">{card.item.historyNote}</p> : null}
-			<p className="text-text-soft">Affected content. {card.item.section ? `Section “${card.item.section}”. ` : ''}{card.item.evidence.length ? card.item.evidence.slice(0, 4).join(' ') : 'No quoted passage was recorded.'}</p>
+			<p className="text-sm text-text-soft">{lifecycleLabel(card.state, card.item.appliedRevisionNumber)}{card.item.section ? ` · ${card.item.section}` : ''}</p>
+			<details className="text-sm">
+				<summary className="cursor-pointer text-primary underline-offset-2 hover:underline">Recommended action</summary>
+				<div className="mt-2 space-y-2">
+					<p>{card.item.explanation}</p>
+					{card.item.historyNote ? <p className="text-text-soft">{card.item.historyNote}</p> : null}
+					<p className="text-text-soft">Affected content. {card.item.section ? `Section “${card.item.section}”. ` : ''}{card.item.evidence.length ? card.item.evidence.slice(0, 4).join(' ') : 'No quoted passage was recorded.'}</p>
+					{card.item.diagnosticCode ? <p className="text-xs text-text-dim">Diagnostic code: {card.item.diagnosticCode}</p> : null}
+				</div>
+			</details>
 			{showFix ? (
 				<div className="mt-2 rounded border border-edge/60 p-2">
 					<p className="text-text-soft">Recommended resolution</p>

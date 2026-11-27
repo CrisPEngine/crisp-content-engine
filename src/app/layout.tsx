@@ -61,8 +61,13 @@ export default function RootLayout({
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.crispdigital.io";
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var stored=localStorage.getItem('crisp-theme')||'system';var dark=window.matchMedia('(prefers-color-scheme: dark)').matches;var theme=stored==='light'||stored==='dark'?stored:(dark?'dark':'light');document.documentElement.dataset.theme=theme;document.documentElement.dataset.themePreference=stored;document.documentElement.style.colorScheme=theme;document.documentElement.dataset.sidebar=localStorage.getItem('crisp-sidebar')==='collapsed'?'collapsed':'expanded';}catch(e){}})();`,
+          }}
+        />
         <link rel="llms-txt" href={`${appUrl}/llms.txt`} />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} body-grid min-h-screen`}>

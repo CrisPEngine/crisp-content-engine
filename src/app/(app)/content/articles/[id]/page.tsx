@@ -23,7 +23,6 @@ import type { ArticleRecord, ArticleRevisionRef } from '@/lib/articles/types';
 import { MetadataProposalPanel } from '@/components/articles/MetadataProposalPanel';
 import { contentRevisionApproved, draftNextAction, improvementJourney, localStatusLabel } from '@/lib/articles/publishedBaseline';
 import { ArticleCommandBar } from '@/components/articles/ArticleCommandBar';
-import { STAGE_TONE_LABEL } from '@/lib/articles/workspaceNavigation';
 
 type ArticleDetail = {
 	article: ArticleRecord;
@@ -102,6 +101,7 @@ export default function ArticleWorkspacePage() {
 	const articleId = typeof params.id === 'string' ? params.id : '';
 	const [detail, setDetail] = useState<ArticleDetail | null>(null);
 	const [loadError, setLoadError] = useState('');
+	const [editorialAttention, setEditorialAttention] = useState(false);
 	const [toast, setToast] = useState<Toast | null>(() =>
 		typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('existing') === '1'
 			? { kind: 'ok', text: 'This article already existed, so it was opened instead of creating a duplicate.', at: Date.now() }
@@ -453,6 +453,7 @@ export default function ArticleWorkspacePage() {
 					{unsaved ? <span className="text-warning">Unsaved changes</span> : null}
 				</>
 			}
+			editorialAttention={editorialAttention || Boolean(progress.blocker?.match(/(\d+) recommendation/))}
 			primaryLabel={journey.label}
 			onPrimary={() => {
 				if (!journey.available) return;
@@ -509,13 +510,19 @@ export default function ArticleWorkspacePage() {
 											{items.map((finding) => {
 												const located = passageAnchor(article.body, finding);
 												return (
-													<li key={finding.id}>
-														<button type="button" className="text-left underline" onClick={() => { setAnchor(located); chooseStage('draft'); setReading(true); }}>
-															{findingTitle(finding.category)}
-														</button>
+													<li key={finding.id} className="card-info space-y-2 p-3">
+														<p className="text-xs font-medium text-text-soft">{group}</p>
+														<p className="font-medium">{findingTitle(finding.category)}</p>
 														<p className="text-text-soft">{finding.explanation}</p>
-														<p>{finding.recommendation}</p>
-														<p className="text-xs text-text-dim">{finding.status}{located ? '' : ' · not tied to one passage'}</p>
+														<details>
+															<summary className="cursor-pointer text-primary underline-offset-2 hover:underline">Recommended action</summary>
+															<p className="mt-2">{finding.recommendation}</p>
+														</details>
+														{located ? (
+															<button type="button" className="text-primary underline underline-offset-2" onClick={() => { setAnchor(located); chooseStage('draft'); setReading(true); }}>
+																View affected section
+															</button>
+														) : <p className="text-xs text-text-dim">{finding.status} · not tied to one passage</p>}
 													</li>
 												);
 											})}
@@ -540,20 +547,14 @@ export default function ArticleWorkspacePage() {
 			<ArticleCommandBar
 				brandId={article.brandId}
 				articleId={article.id}
-				title={article.title}
 				approval={article.approval.status}
-				nextAction={detail.nextStep?.action ?? journey.label}
-				nextDetail={detail.nextStep?.detail ?? journey.detail}
 				published={detail.lifecycle.published}
 				submittedToCms={detail.lifecycle.submittedToCms}
-				stages={[
-					{ name: 'Brief', status: STAGE_TONE_LABEL[tones.brief] },
-					{ name: 'Research', status: STAGE_TONE_LABEL[tones.research] },
-					{ name: 'Draft', status: STAGE_TONE_LABEL[tones.draft] },
-					{ name: 'Editorial', status: STAGE_TONE_LABEL[tones.review] },
-					{ name: 'Approval', status: detail.lifecycle.approved ? 'Complete' : 'Waiting for approval' },
-					{ name: 'Publication', status: detail.lifecycle.published ? 'Published' : detail.lifecycle.submittedToCms ? 'CMS draft only' : 'Not started' },
-				]}
+				decisionCount={Math.max(
+					Number(progress.blocker?.match(/(\d+) recommendation/)?.[1] ?? 0),
+					critique?.findings.filter((finding) => finding.status === 'open').length ?? 0,
+				)}
+				onAttention={setEditorialAttention}
 			/>
 
 			<div aria-live="polite" className="sticky top-16 z-10">

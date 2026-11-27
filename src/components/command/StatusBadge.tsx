@@ -8,9 +8,9 @@ const TONE: Record<string, string> = {
 
 export function StatusBadge({ label, tone = 'neutral' }: { label: string; tone?: keyof typeof TONE }) {
 	return (
-		<span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${TONE[tone] ?? TONE.neutral}`}>
-			<span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
-			{label}
+		<span className={`inline-flex max-w-full items-start gap-1.5 rounded-full border px-2.5 py-1 text-left text-xs font-medium leading-snug ${TONE[tone] ?? TONE.neutral}`}>
+			<span aria-hidden="true" className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+			<span className="min-w-0 whitespace-normal">{label}</span>
 		</span>
 	);
 }

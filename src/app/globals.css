@@ -1,10 +1,37 @@
 @import "tailwindcss";
 
 /* Design tokens */
-:root {
-  /* Semantic palette. Components read these tokens so a later light theme can swap values. */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --bg:        #F3F5F7;
+  --surface:   #FFFFFF;
+  --surface-hover: #E7EDF3;
+  --sidebar:   #FFFFFF;
+  --edge:      #D3DBE3;
+  --primary:   #1558C0;
+  --accent:    #0E7A45;
+  --success:   #0E7A45;
+  --warning:   #8A5A00;
+  --review:    #8A5A00;
+  --danger:    #B42318;
+  --info:      #1558C0;
+  --text:      #12171C;
+  --text-soft: #3D4A57;
+  --text-dim:  #5C6B7A;
+  --on-primary:#FFFFFF;
+  --ring: 0 0% 100%;
+  --motion-hover: 140ms;
+  --motion-panel: 220ms;
+  --sidebar-width: 15rem;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
   --bg:        #0B0F12;
   --surface:   #141B24;
+  --surface-hover: #243140;
+  --sidebar:   #10161D;
   --edge:      #314050;
   --primary:   #8EBEFF;
   --accent:    #3DDC97;
@@ -17,11 +44,10 @@
   --text-soft: #C5D0DE;
   --text-dim:  #A8B6C8;
   --on-primary:#0B0F12;
+}
 
-  /* Misc */
-  --ring: 0 0% 100%;
-  --motion-hover: 150ms;
-  --motion-panel: 220ms;
+html[data-sidebar="collapsed"] {
+  --sidebar-width: 4.5rem;
 }
 
 /* Map tokens to Tailwind v4 theme */
@@ -29,6 +55,8 @@
   /* colors for bg-*, text-*, border-* */
   --color-bg: var(--bg);
   --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-sidebar: var(--sidebar);
   --color-edge: var(--edge);
   --color-primary: var(--primary);
   --color-accent: var(--accent);
@@ -60,11 +88,61 @@ html {
 }
 
 /* Subtle vignette like AI Studio (pinstripe removed) */
-.body-grid {
+[data-theme="dark"] .body-grid {
   background:
     radial-gradient(60% 40% at 80% 10%, rgba(72,149,239,.08) 0%, rgba(0,0,0,0) 100%),
     radial-gradient(40% 30% at 10% 90%, rgba(79,240,184,.07) 0%, rgba(0,0,0,0) 100%),
-    linear-gradient(to bottom, rgba(255,255,255,0.02), rgba(255,255,255,0.0));
+    var(--bg);
+}
+
+.app-main {
+  padding-top: 3.5rem;
+}
+@media (min-width: 768px) {
+  .app-main { padding-left: var(--sidebar-width); }
+  .app-header { left: var(--sidebar-width); }
+}
+.app-header,
+.app-sidebar {
+  transition: width var(--motion-panel) ease, left var(--motion-panel) ease, padding var(--motion-panel) ease;
+}
+
+.workspace-shell {
+  container-type: inline-size;
+  container-name: workspace;
+  min-width: 0;
+  flex: 1;
+}
+.workspace-layout {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+.workspace-layout[data-left-open="true"][data-right-open="false"] {
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+}
+.workspace-layout[data-left-open="false"][data-right-open="true"] {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 34%);
+}
+.workspace-layout[data-left-open="true"][data-right-open="true"] {
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr) minmax(280px, 32%);
+}
+@container workspace (min-width: 1100px) and (max-width: 1399px) {
+  .workspace-layout[data-left-open="true"][data-right-open="true"] > :first-child {
+    display: none;
+  }
+  .workspace-layout[data-left-open="true"][data-right-open="true"] {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 34%);
+  }
+}
+@container workspace (max-width: 1099px) {
+  .workspace-layout,
+  .workspace-layout[data-left-open="true"][data-right-open="false"],
+  .workspace-layout[data-left-open="false"][data-right-open="true"],
+  .workspace-layout[data-left-open="true"][data-right-open="true"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .card {
@@ -92,7 +170,7 @@ html {
 }
 
 .btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-lg border border-edge bg-surface px-3 py-2 text-sm font-medium text-text hover:border-primary hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-45;
+  @apply inline-flex items-center justify-center gap-2 rounded-lg border border-edge bg-surface px-3 py-2 text-sm font-medium text-text hover:border-primary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-45;
   transition: background-color var(--motion-hover) ease, border-color var(--motion-hover) ease;
 }
 

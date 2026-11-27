@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { findingCodeLabel } from '@/lib/articles/workspaceNavigation';
-import { APP_NAV } from '@/lib/nav';
-import { activityProcess, presentWorkflowNote, workflowStageLabel, workflowStatusLabel } from '@/lib/command/status';
+import { APP_NAV, isNavHrefActive } from '@/lib/nav';
+import { activityProcess, presentArticleHeadline, presentWorkflowNote, workflowStageLabel, workflowStatusLabel } from '@/lib/command/status';
 import { AGENT_CAPABILITIES } from '@/lib/command/agents';
 
 describe('command copy', () => {
@@ -27,5 +27,15 @@ describe('command copy', () => {
 		expect(APP_NAV.some((item) => item.href === '/agents')).toBe(true);
 		expect(AGENT_CAPABILITIES.find((item) => item.id === 'reputation')?.status).toBe('planned');
 		expect(AGENT_CAPABILITIES.find((item) => item.id === 'reputation')?.href).toBeNull();
+	});
+
+	it('selects the most specific navigation item and names the decision a person must make', () => {
+		const content = ['/content', '/content/articles', '/content/published'];
+		expect(isNavHrefActive('/content/articles/abc', '/content', content)).toBe(false);
+		expect(isNavHrefActive('/content/articles/abc', '/content/articles', content)).toBe(true);
+		expect(presentArticleHeadline({ needsAttention: true, decisionCount: 2, approval: 'pending', published: false })).toEqual({
+			label: 'Human review required',
+			detail: '2 editorial recommendations need a decision.',
+		});
 	});
 });

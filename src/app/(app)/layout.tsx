@@ -8,7 +8,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 	return (
 		<SupabaseProviderWrapper>
 			<AppHeader />
-			<div className="min-w-0 overflow-x-hidden pt-14 md:pl-[17rem]">
+			<div className="app-main min-w-0 overflow-x-hidden">
 				{children}
 			</div>
 		</SupabaseProviderWrapper>

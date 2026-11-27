@@ -45,6 +45,26 @@ export function presentWorkflowNote(note: string): string {
 		.replace(/\b[0-9a-f]{8}-[0-9a-f-]{20,}\b/gi, 'the article');
 }
 
+export function presentArticleHeadline(input: {
+	needsAttention: boolean;
+	decisionCount: number;
+	approval: string;
+	published: boolean;
+}): { label: string; detail: string } {
+	if (input.needsAttention || input.decisionCount > 0) {
+		const count = input.decisionCount;
+		return {
+			label: 'Human review required',
+			detail: count > 0
+				? `${count} editorial recommendation${count === 1 ? '' : 's'} need a decision.`
+				: 'A person needs to review this before the workflow can continue.',
+		};
+	}
+	if (input.published) return { label: 'Published', detail: 'A live publication is recorded. Further changes stay in CRISP until someone publishes them.' };
+	if (input.approval !== 'approved') return { label: 'Awaiting approval', detail: 'Approving this draft does not publish the website.' };
+	return { label: 'Approved', detail: 'This draft is approved. Publishing is a separate action.' };
+}
+
 export function activityProcess(detail: string): string {
 	if (/published in the cms/i.test(detail)) return 'Publication record';
 	if (/metadata/i.test(detail)) return 'Search preparation';
