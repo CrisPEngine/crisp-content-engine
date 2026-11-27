@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { productionCapacity } from '@/lib/campaigns/productionPolicy';
 import { buildContentOverview, type OverviewArticle, type OverviewJob, type OverviewOpportunity } from '@/lib/content/overview';
 
@@ -16,55 +16,88 @@ export type WorkspaceOperations = {
 	articles: OverviewArticle[];
 };
 
+let cachedOperations: WorkspaceOperations | null = null;
+let inflightOperations: Promise<WorkspaceOperations> | null = null;
+const listeners = new Set<() => void>();
+
+function publish(next: WorkspaceOperations | null) {
+	cachedOperations = next;
+	listeners.forEach((listener) => listener());
+}
+
+async function readJson(response: Response): Promise<unknown> {
+	if (response.status === 401) {
+		publish(null);
+		throw new Error('unauthorized');
+	}
+	if (!response.ok) throw new Error('request failed');
+	return response.json();
+}
+
+function loadOperations(): Promise<WorkspaceOperations> {
+	if (inflightOperations) return inflightOperations;
+	inflightOperations = (async () => {
+		const body = await readJson(await fetch('/api/intelligence/brands')) as { brands?: Brand[] };
+		const brand = (body.brands ?? []).find((item) => /folian/i.test(item.name)) ?? body.brands?.[0];
+		if (!brand) throw new Error('empty');
+		const [queue, listed] = await Promise.all([
+			readJson(await fetch(`/api/campaigns?brandId=${encodeURIComponent(brand.id)}`)),
+			readJson(await fetch(`/api/articles?brandId=${encodeURIComponent(brand.id)}&pageSize=100`)),
+		]) as [{ operations?: Operations; jobs?: OverviewJob[]; opportunities?: OverviewOpportunity[]; campaigns?: Array<{ status?: string }> }, { articles?: OverviewArticle[] }];
+		const operations = queue.operations ?? {};
+		const jobs = queue.jobs ?? [];
+		const opportunities = queue.opportunities ?? [];
+		const articles = Array.isArray(listed.articles) ? listed.articles : [];
+		const capacity = productionCapacity(
+			jobs.flatMap((job) => (job.createdAt ? [{ createdAt: job.createdAt, status: job.status, workType: job.workType }] : [])),
+			Date.now(),
+			operations.weeklyMaximum ?? 0,
+		);
+		const next: WorkspaceOperations = {
+			brandName: brand.name,
+			brandId: brand.id,
+			jobs,
+			opportunities,
+			articles,
+			view: buildContentOverview({
+				paused: operations.paused ?? queue.campaigns?.[0]?.status !== 'active',
+				publishingEnabled: operations.autonomousPublishingEnabled === true,
+				started: capacity.started,
+				remaining: capacity.remaining,
+				nextSlotAt: capacity.nextSlotAt,
+				weeklyMaximum: operations.weeklyMaximum ?? 0,
+				opportunities,
+				jobs,
+				articles,
+			}),
+		};
+		publish(next);
+		return next;
+	})().finally(() => {
+		inflightOperations = null;
+	});
+	return inflightOperations;
+}
+
 export function useWorkspaceOperations() {
-	const [data, setData] = useState<WorkspaceOperations | null>(null);
+	const data = useSyncExternalStore(
+		(listener) => {
+			listeners.add(listener);
+			return () => listeners.delete(listener);
+		},
+		() => cachedOperations,
+		() => null,
+	);
 	const [error, setError] = useState('');
 
 	useEffect(() => {
 		let cancelled = false;
-		fetch('/api/intelligence/brands')
-			.then((response) => response.json())
-			.then(async (body: { brands?: Brand[] }) => {
-				const brand = (body.brands ?? []).find((item) => /folian/i.test(item.name)) ?? body.brands?.[0];
-				if (!brand) {
-					if (!cancelled) setError('No workspace is available.');
-					return;
-				}
-				const [queue, listed] = await Promise.all([
-					fetch(`/api/campaigns?brandId=${encodeURIComponent(brand.id)}`).then((response) => response.json()),
-					fetch(`/api/articles?brandId=${encodeURIComponent(brand.id)}&pageSize=100`).then((response) => response.json()),
-				]);
-				const operations = (queue.operations ?? {}) as Operations;
-				const jobs = (queue.jobs ?? []) as OverviewJob[];
-				const opportunities = (queue.opportunities ?? []) as OverviewOpportunity[];
-				const articles = (Array.isArray(listed.articles) ? listed.articles : []) as OverviewArticle[];
-				const capacity = productionCapacity(
-					jobs.flatMap((job) => (job.createdAt ? [{ createdAt: job.createdAt, status: job.status, workType: job.workType }] : [])),
-					Date.now(),
-					operations.weeklyMaximum ?? 0,
-				);
-				if (cancelled) return;
-				setData({
-					brandName: brand.name,
-					brandId: brand.id,
-					jobs,
-					opportunities,
-					articles,
-					view: buildContentOverview({
-						paused: operations.paused ?? queue.campaigns?.[0]?.status !== 'active',
-						publishingEnabled: operations.autonomousPublishingEnabled === true,
-						started: capacity.started,
-						remaining: capacity.remaining,
-						nextSlotAt: capacity.nextSlotAt,
-						weeklyMaximum: operations.weeklyMaximum ?? 0,
-						opportunities,
-						jobs,
-						articles,
-					}),
-				});
+		loadOperations()
+			.then(() => {
+				if (!cancelled) setError('');
 			})
 			.catch(() => {
-				if (!cancelled) setError('Workspace activity could not be loaded.');
+				if (!cancelled && !cachedOperations) setError('Workspace activity could not be loaded.');
 			});
 		return () => {
 			cancelled = true;

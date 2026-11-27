@@ -29,7 +29,7 @@ export default function WorkflowsPage() {
 			) : null}
 			<section className="space-y-3">
 				<h2 className="text-xl font-semibold">Workflow library</h2>
-				{!data && !error ? <p className="text-sm text-text-soft">Loading workflow runs…</p> : null}
+				{!data && !error ? <div className="grid gap-3 md:grid-cols-2" aria-busy="true"><div className="card-info h-24 animate-pulse" /><div className="card-info h-24 animate-pulse" /></div> : null}
 				{data && !jobs.length ? <p className="card-info text-sm text-text-soft">No production jobs are recorded.</p> : null}
 				<div className="grid gap-3 md:grid-cols-2">
 					{jobs.slice(0, 8).map((job) => {

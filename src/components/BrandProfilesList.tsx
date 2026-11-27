@@ -50,6 +50,7 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 	const [isDeleting, setIsDeleting] = useState(false);
 	const [showBrandLimitModal, setShowBrandLimitModal] = useState(false);
 	const [nativeByBrand, setNativeByBrand] = useState<Record<string, NativeBrandSummary>>({});
+	const [notice, setNotice] = useState('');
 
 	useEffect(() => {
 		loadProfiles();
@@ -64,6 +65,7 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 			const res = await fetch('/api/brands', { cache: 'no-store' });
 			const data = await res.json();
 			if (res.ok) {
+				setNotice(typeof data.integration?.detail === 'string' ? data.integration.detail : '');
 				setProfiles((data.profiles || []).map((profile: BrandProfile) => ({
 					...profile,
 					status: normaliseStatus(profile.status),
@@ -81,11 +83,11 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 				setBillingLimitError(true);
 				setProfiles([]);
 			} else {
-				console.error('Failed to load brand profiles:', data.error || 'Unknown error');
+				setNotice(data.message || data.error || 'Brand profiles could not be loaded.');
 				setProfiles([]);
 			}
-		} catch (error) {
-			console.error('Failed to load brand profiles:', error);
+		} catch {
+			setNotice('Brand profiles could not be loaded. This did not remove any workspace records.');
 			setProfiles([]);
 		} finally {
 			setLoading(false);
@@ -222,6 +224,7 @@ export function BrandProfilesList({ maxBrands = 999, currentBrandCount = 0 }: Br
 						New Brand
 					</Link>
 				</div>
+				{notice ? <p className="rounded-xl border border-warning/50 p-3 text-sm" role="status">{notice}</p> : null}
 
 				{profiles.length === 0 ? (
 					<div className="text-center py-8">

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { listRecords } from '@/lib/airtable/client';
+import { getIntelligenceStore } from '@/lib/intelligence/actions';
 
 export const runtime = 'nodejs';
 
@@ -27,6 +28,36 @@ const ROLLUP_FIELD_NAMES = {
 	scheduled_count: BRANDPROFILES_ROLLUP_FIELDS.scheduled_count.name,
 	published_count: BRANDPROFILES_ROLLUP_FIELDS.published_count.name,
 } as const;
+
+async function workspaceBrandResponse(userId: string) {
+	try {
+		const brains = await getIntelligenceStore().listBrandBrains(userId);
+		const profiles = brains.map((brain) => ({
+			id: brain.airtableBrandId || brain.id,
+			client_name: brain.identity?.name || 'Workspace',
+			status: 'Workspace record',
+			original_status: 'Workspace record',
+			has_pending_content: false,
+			created_time: brain.updatedAt || '',
+			platforms_requested: [],
+			strategy_summary: '',
+			strategy_payload: null,
+			strategy_meta: null,
+			source: 'workspace',
+		}));
+		return NextResponse.json({
+			profiles,
+			source: 'workspace',
+			integration: {
+				airtable: 'missing_configuration',
+				detail: 'Brand profiles from the connected source are not configured. These names come from CRISP workspace records.',
+			},
+		});
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Workspace records could not be loaded.';
+		return NextResponse.json({ error: message, profiles: [], source: 'unavailable' }, { status: 503 });
+	}
+}
 
 export async function GET(req: Request) {
 	try {
@@ -59,10 +90,7 @@ export async function GET(req: Request) {
 		const TABLE_ID = process.env.AIRTABLE_BRANDPROFILES_TABLE;
 
 		if (!TABLE_ID) {
-			return NextResponse.json(
-				{ error: 'Airtable configuration missing' },
-				{ status: 500 }
-			);
+			return workspaceBrandResponse(user.id);
 		}
 
 		// SINGLE Airtable call: Fetch brand profiles with rollup fields
@@ -265,6 +293,9 @@ export async function GET(req: Request) {
 				);
 			}
 			
+			if (/configuration missing|AIRTABLE_PAT|AIRTABLE_BASE_ID/i.test(errorMessage)) {
+				return workspaceBrandResponse(user.id);
+			}
 			return NextResponse.json(
 				{ 
 					error: errorMessage || 'Failed to fetch brand profiles',

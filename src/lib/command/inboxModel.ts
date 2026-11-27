@@ -15,6 +15,7 @@ export type InboxConversation = {
 	workspace: string;
 	events: InboxEvent[];
 	explanation: string;
+	publication: string;
 };
 
 export function explainInboxRecord(input: { status: string; stage: string; note: string; error: string | null }): string {
@@ -36,10 +37,18 @@ function filterFor(status: string): Exclude<InboxFilter, 'all'> {
 	return 'progress';
 }
 
-export function answerFromRecord(question: string, conversation: Pick<InboxConversation, 'explanation' | 'events' | 'status'>): string {
+function publicationLine(article: OverviewArticle | undefined): string {
+	if (!article) return 'No article record is attached, so CRISP cannot confirm publication from its own records.';
+	const live = article.cmsState === 'published' || article.publicationPhase === 'published' || article.publicationPhase === 'verified_live' || article.status === 'published';
+	if (live) return `The article record is marked ${article.publicationPhase || article.cmsState || article.status}. This is the stored CRISP state, not a fresh check of the live website.`;
+	return `The article record does not show a live publication. Status is ${article.status}. CMS is ${article.cmsState || 'not sent'}.`;
+}
+
+export function answerFromRecord(question: string, conversation: Pick<InboxConversation, 'explanation' | 'events' | 'status' | 'publication'>): string {
 	const ask = question.toLowerCase();
+	if (/already published|been published|is it published|publication status|live page/.test(ask)) return conversation.publication;
 	if (/publish|go live|cms/.test(ask)) {
-		return 'Publishing is not available from this conversation. Draft approval, a CMS draft, and a live page are separate actions. Open the record to see which of those is still outstanding.';
+		return `${conversation.publication} Publishing is not available from this conversation. Draft approval, a CMS draft, and a live page are separate actions.`;
 	}
 	if (/why|stop|issue|finding|what happened|status/.test(ask)) return conversation.explanation;
 	if (/next|do next/.test(ask)) return conversation.events.at(-1)?.text ?? conversation.explanation;
@@ -57,6 +66,7 @@ export function buildInboxConversations(input: {
 		const article = input.articles.find((item) => item.id === job.articleId);
 		const title = article?.title || opportunity?.title || 'Content workflow';
 		const explanation = explainInboxRecord(job);
+		const publication = publicationLine(article);
 		const events: InboxEvent[] = [
 			{ speaker: 'CRISP', text: `Recorded stage: ${workflowStageLabel(job.stage)}.` },
 			{ speaker: 'CRISP', text: explanation },
@@ -70,8 +80,9 @@ export function buildInboxConversations(input: {
 			status: workflowStatusLabel(job.status),
 			stage: workflowStageLabel(job.stage),
 			workspace: input.workspace,
-			events,
+			events: [...events, { speaker: 'CRISP', text: publication }],
 			explanation,
+			publication,
 		};
 	});
 	const started = new Set(input.jobs.map((job) => job.opportunityId));
@@ -86,6 +97,7 @@ export function buildInboxConversations(input: {
 			stage: 'Opportunity',
 			workspace: input.workspace,
 			explanation: 'This opportunity is approved and has not started. A paused campaign does not start it.',
+			publication: 'No article record is attached, so publication cannot be confirmed.',
 			events: [
 				{ speaker: 'CRISP', text: 'This opportunity is approved and has not started.' },
 				{ speaker: 'CRISP', text: 'A paused campaign does not start new production.' },

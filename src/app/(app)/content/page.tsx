@@ -46,7 +46,7 @@ export default function ContentOverviewPage() {
 
 	return (
 		<div className="mx-auto max-w-5xl space-y-6 p-4 md:p-8">
-			<PageHeader eyebrow="Content" title="Content overview" description="This page shows article production. Other formats are not measured here until a workflow records them. Drafts, approval, and publication stay separate." />
+			<PageHeader eyebrow="Content" title="Article overview" description="This page measures articles only. Social posts, email, and other formats are not included. Drafts, approval, and publication stay separate." />
 			{error ? <p className="card border-danger/60 p-3 text-sm" role="alert">{error}</p> : null}
 			{brandId && view ? null : <p className="text-sm">Loading the content queue…</p>}
 			{view ? (
@@ -68,7 +68,7 @@ export default function ContentOverviewPage() {
 						<h2 className="text-xl font-semibold">Needs a decision</h2>
 						<p className="text-sm text-text-soft">These are article records. Approving them happens on the article, not on this overview. <a className="text-link" href="/inbox">Open the inbox</a> for the decision list.</p>
 						{view.actions.length ? view.actions.map((item) => (
-							<article key={`${item.href}-${item.title}`} className="flex flex-col gap-3 rounded-xl border border-edge bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
+							<article key={item.id} className="flex flex-col gap-3 rounded-xl border border-edge bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
 								<div>
 									<p className="text-xs font-medium uppercase tracking-wide text-text-dim">Article</p>
 									<h3 className="font-semibold">{item.title}</h3>
@@ -97,7 +97,7 @@ function Metric(props: { label: string; value: number | string; href: string }) 
 	return <a className="card-nav" href={props.href}><span className="block text-sm text-text-soft">{props.label}</span><span className="text-2xl font-semibold">{props.value}</span><span className="mt-2 block text-sm text-primary">Open →</span></a>;
 }
 
-function ListCard(props: { title: string; href: string; empty: string; items: Array<{ title: string; detail: string; href: string }> }) {
+function ListCard(props: { title: string; href: string; empty: string; items: Array<{ id: string; title: string; detail: string; href: string }> }) {
 	return (
 		<section className="card space-y-2 p-4 text-sm">
 			<div className="flex items-center justify-between gap-3">
@@ -105,7 +105,7 @@ function ListCard(props: { title: string; href: string; empty: string; items: Ar
 				<a className="text-link" href={props.href}>Open →</a>
 			</div>
 			{props.items.length ? props.items.map((item) => (
-				<div key={`${item.href}-${item.title}`} className="flex flex-col gap-2 border-t border-edge pt-3 sm:flex-row sm:items-center sm:justify-between">
+				<div key={item.id} className="flex flex-col gap-2 border-t border-edge pt-3 sm:flex-row sm:items-center sm:justify-between">
 					<div>
 						<p className="font-medium">{item.title}</p>
 						<p className="text-text-soft">{item.detail}</p>

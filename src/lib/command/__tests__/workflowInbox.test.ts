@@ -31,6 +31,7 @@ describe('workflow and inbox records', () => {
 		expect(conversations).toHaveLength(1);
 		expect(conversations[0]?.explanation).toContain('Needs attention');
 		expect(answerFromRecord('publish this', conversations[0]!)).toContain('not available from this conversation');
+		expect(answerFromRecord('Has this article already been published?', conversations[0]!)).toContain('does not show a live publication');
 		expect(explainInboxRecord(job)).toContain('does not approve or publish');
 	});
 });

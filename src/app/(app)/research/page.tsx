@@ -15,6 +15,19 @@ type ResearchRow = {
 	reviewSummary: string | null;
 };
 
+function shortRequest(request: string): string {
+	const sentence = request.split(/(?<=\.)\s/)[0] ?? request;
+	return sentence.length > 140 ? `${sentence.slice(0, 137)}…` : sentence;
+}
+
+function safeDomain(url: string): string {
+	try {
+		return new URL(url).hostname;
+	} catch {
+		return 'Unknown domain';
+	}
+}
+
 export default function ResearchPage() {
 	const [brands, setBrands] = useState<Brand[]>([]);
 	const [brandId, setBrandId] = useState('');
@@ -93,22 +106,50 @@ export default function ResearchPage() {
 				{message ? <p className="text-sm">{message}</p> : null}
 			</div>
 			{rows.map((row) => (
-				<article className="card p-4 space-y-2" key={row.id}>
-					<h2 className="font-medium">{row.projectType || 'Research'} · {row.request}</h2>
-					{row.reviewSummary ? <p className="text-sm">{row.reviewSummary}</p> : null}
-					{row.trend ? <p className="text-sm">{row.trend.state}: {row.trend.reason}</p> : null}
-					{row.gaps.map((gap) => <p className="text-sm" key={gap}>Missing: {gap}</p>)}
-					{row.contradictions.map((item) => <p className="text-sm" key={item.evidenceB}>{item.topic}: {item.evidenceA} / {item.evidenceB}</p>)}
-					<ul className="text-sm">
-						{row.sources.slice(0, 6).map((source) => (
-							<li key={source.url}><a href={source.url}>{source.title || source.url}</a></li>
-						))}
-					</ul>
-					{row.proposals.map((proposal) => (
-						<button className="btn" key={proposal.id} type="button" onClick={() => confirm(row.id, proposal.id)}>
-							Confirm: {proposal.text.slice(0, 140)}
-						</button>
-					))}
+				<article className="card space-y-4 p-4" key={row.id}>
+					<header>
+						<p className="text-xs font-medium uppercase tracking-wide text-text-dim">{row.projectType || 'Research'} · {row.sources.length} source{row.sources.length === 1 ? '' : 's'}</p>
+						<h2 className="text-lg font-semibold">{shortRequest(row.request)}</h2>
+						<details>
+							<summary className="cursor-pointer text-sm text-link">Full stored request</summary>
+							<p className="mt-2 text-sm">{row.request}</p>
+						</details>
+						<p className="text-sm text-text-soft">Findings stay proposals until someone confirms them. A source title is a stored search result, not a verified Brand Brain fact. Dates that were not stored are marked unknown.</p>
+					</header>
+					{row.reviewSummary ? <section><h3 className="font-medium">Summary</h3><p className="text-sm">{row.reviewSummary}</p></section> : null}
+					{row.trend ? <section><h3 className="font-medium">Trend</h3><p className="text-sm">{row.trend.state}: {row.trend.reason}</p></section> : null}
+					{row.gaps.length ? <section><h3 className="font-medium">Limits</h3>{row.gaps.map((gap) => <p className="text-sm" key={gap}>{gap}</p>)}</section> : null}
+					{row.sources.length ? (
+						<section className="space-y-2">
+							<h3 className="font-medium">Sources</h3>
+							{row.sources.slice(0, 8).map((source) => {
+								const domain = source.url ? safeDomain(source.url) : 'Unknown domain';
+								return (
+									<div key={source.url || source.title} className="rounded-xl border border-edge p-3 text-sm">
+										<p className="font-medium">{source.title || 'Untitled source'}</p>
+										<p className="text-text-soft">{domain} · Retrieved date unknown · Not a verified brand fact</p>
+										{source.url ? <a className="text-link" href={source.url}>{source.url}</a> : null}
+									</div>
+								);
+							})}
+						</section>
+					) : null}
+					{row.contradictions.length ? (
+						<section>
+							<h3 className="font-medium">Contradictions in the stored research</h3>
+							{row.contradictions.map((item) => <p className="text-sm" key={`${item.topic}-${item.evidenceB}`}>{item.topic}: {item.evidenceA} / {item.evidenceB}</p>)}
+						</section>
+					) : null}
+					{row.proposals.length ? (
+						<section className="space-y-2">
+							<h3 className="font-medium">Unverified proposals</h3>
+							{row.proposals.map((proposal) => (
+								<button className="btn w-full justify-start text-left" key={proposal.id} type="button" onClick={() => confirm(row.id, proposal.id)}>
+									Confirm for Brand Brain: {proposal.text.slice(0, 180)}
+								</button>
+							))}
+						</section>
+					) : null}
 				</article>
 			))}
 		</div>

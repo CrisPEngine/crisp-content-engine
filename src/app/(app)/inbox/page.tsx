@@ -32,7 +32,7 @@ function InboxWorkspace() {
 	const [selectedId, setSelectedId] = useState<string | null>(params.get('focus'));
 	const [showList, setShowList] = useState(!params.get('focus'));
 	const [question, setQuestion] = useState('');
-	const [answer, setAnswer] = useState('');
+	const [asked, setAsked] = useState<Array<{ id: string; speaker: string; text: string }>>([]);
 	const conversations = useMemo(() => data ? buildInboxConversations({
 		workspace: data.brandName,
 		jobs: data.jobs,
@@ -41,6 +41,15 @@ function InboxWorkspace() {
 	}) : [], [data]);
 	const visible = conversations.filter((item) => filter === 'all' || item.filter === filter);
 	const selected = visible.find((item) => item.id === selectedId) ?? conversations.find((item) => item.id === selectedId) ?? visible[0] ?? null;
+	function ask(fallback: boolean) {
+		if (!selected) return;
+		const text = question.trim() || (fallback ? 'why' : '');
+		if (!text) return;
+		const reply = answerFromRecord(text, selected);
+		const stamp = `${selected.id}-${asked.length}`;
+		setAsked((current) => [...current, { id: `${stamp}-you`, speaker: 'You', text }, { id: `${stamp}-crisp`, speaker: 'CRISP', text: reply }]);
+		setQuestion('');
+	}
 
 	return (
 		<main className="mx-auto max-w-6xl space-y-4 p-4 md:p-6">
@@ -54,12 +63,12 @@ function InboxWorkspace() {
 					);
 				})}
 			</div>
-			{!data && !error ? <p className="text-sm text-text-soft">Loading decisions…</p> : null}
+			{!data && !error ? <div className="grid gap-3 lg:grid-cols-[18rem_minmax(0,1fr)]" aria-busy="true"><div className="card-info h-40 animate-pulse" /><div className="card-info h-40 animate-pulse" /></div> : null}
 			<div className="grid min-h-[32rem] gap-3 lg:grid-cols-[18rem_minmax(0,1fr)_16rem]">
 				<section className={`space-y-2 ${showList ? '' : 'hidden lg:block'}`} aria-label="Conversations">
 					{data && !visible.length ? <p className="card-info text-sm text-text-soft">Nothing in this filter.</p> : null}
 					{visible.map((item) => (
-						<button key={item.id} type="button" aria-pressed={item.id === selected?.id} className={`card-info w-full space-y-1 text-left ${item.id === selected?.id ? 'ring-2 ring-primary' : ''}`} onClick={() => { setSelectedId(item.id); setAnswer(''); setShowList(false); }}>
+						<button key={item.id} type="button" aria-pressed={item.id === selected?.id} className={`card-info w-full space-y-1 text-left ${item.id === selected?.id ? 'ring-2 ring-primary' : ''}`} onClick={() => { setSelectedId(item.id); setAsked([]); setShowList(false); }}>
 							<span className="block font-medium">{item.title}</span>
 							<span className="block text-sm text-text-soft">{item.status} · {item.stage}</span>
 						</button>
@@ -75,17 +84,23 @@ function InboxWorkspace() {
 						</header>
 						<ol className="space-y-3">
 							{selected.events.map((event, index) => (
-								<li key={`${event.speaker}-${index}`} className="rounded-xl border border-edge bg-surface-muted px-3 py-3">
+								<li key={`${selected.id}-event-${index}`} className="rounded-xl border border-edge bg-surface-muted px-3 py-3">
+									<p className="text-xs font-semibold uppercase tracking-wide text-text-dim">{event.speaker}</p>
+									<p className="mt-1 text-sm">{event.text}</p>
+								</li>
+							))}
+							{asked.map((event) => (
+								<li key={event.id} className="rounded-xl border border-edge bg-surface-muted px-3 py-3">
 									<p className="text-xs font-semibold uppercase tracking-wide text-text-dim">{event.speaker}</p>
 									<p className="mt-1 text-sm">{event.text}</p>
 								</li>
 							))}
 						</ol>
-						<form className="mt-auto space-y-2" onSubmit={(event) => { event.preventDefault(); setAnswer(answerFromRecord(question, selected)); }}>
+						<form className="mt-auto space-y-2" onSubmit={(event) => { event.preventDefault(); ask(false); }}>
 							<label className="block text-sm font-medium" htmlFor="inbox-question">Ask about this record</label>
-							<textarea id="inbox-question" className="input w-full" rows={3} value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Why did this stop?" />
-							<button type="button" className="btn-primary" onClick={() => setAnswer(answerFromRecord(question || 'why', selected))}>Explain from the record</button>
-							{answer ? <p className="rounded-xl border border-edge bg-bg p-3 text-sm">{answer}</p> : null}
+							<textarea id="inbox-question" className="input w-full" rows={3} value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); ask(false); } }} placeholder="Why did this stop?" />
+							<p className="text-xs text-text-dim">Enter asks about this record. Shift+Enter adds a line. The reply stays on this screen and is not saved.</p>
+							<button type="button" className="btn-primary" onClick={() => ask(true)}>Explain from the record</button>
 						</form>
 					</section>
 				) : <section className="card-info text-sm text-text-soft">Select a conversation.</section>}

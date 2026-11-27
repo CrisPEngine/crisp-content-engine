@@ -60,7 +60,7 @@ export function CommandHome() {
 				/>
 			</div>
 			{error ? <p className="card border-danger/70 p-4 text-sm" role="alert">{error}</p> : null}
-			{!view && !error ? <p className="text-sm text-text-soft">Loading workspace activity…</p> : null}
+			{!view && !error ? <div className="grid gap-3 sm:grid-cols-3" aria-busy="true"><div className="card-info h-20 animate-pulse" /><div className="card-info h-20 animate-pulse" /><div className="card-info h-20 animate-pulse" /></div> : null}
 			{view ? (
 				<>
 					<div className="flex flex-wrap gap-2">
@@ -79,14 +79,14 @@ export function CommandHome() {
 							<Link className="text-link text-sm" href="/inbox">Open in the inbox</Link>
 						</div>
 						{view.actions.length ? view.actions.slice(0, 4).map((item) => (
-							<ActionCard key={`${item.href}-${item.title}`} title={item.title} detail={item.detail} status={statusForAction(item.detail)} href={item.href} action={actionLabel(item.detail)} />
+							<ActionCard key={item.id} title={item.title} detail={item.detail} status={statusForAction(item.detail)} href={item.href} action={actionLabel(item.detail)} />
 						)) : <p className="card-info text-sm text-text-soft">Nothing is waiting for a decision.</p>}
 					</div>
 					<div className="space-y-3">
 						<h2 className="text-xl font-semibold">Agent activity</h2>
 						<ul className="card-info divide-y divide-edge">
 							{view.activity.length ? view.activity.map((item) => (
-								<li key={item.href + item.title} className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
+								<li key={item.id} className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
 									<div>
 										<p className="font-medium"><a className="text-link" href={item.href}>{item.title}</a></p>
 										<p className="text-sm text-text-soft">{activityProcess(item.detail)} · {item.detail}</p>
