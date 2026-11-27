@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { StatusBadge } from './StatusBadge';
 
@@ -11,13 +12,13 @@ export function CapabilityCard({
 	href?: string | null;
 	title: string;
 	description: string;
-	icon: string;
+	icon: ReactNode;
 	planned?: boolean;
 }) {
 	const body = (
 		<>
 			<span className="flex items-start justify-between gap-3">
-				<span aria-hidden="true" className="text-xl">{icon}</span>
+				<span aria-hidden="true" className="text-primary">{icon}</span>
 				{planned ? <StatusBadge label="Planned" tone="neutral" /> : <span aria-hidden="true" className="text-primary">→</span>}
 			</span>
 			<span className="mt-4 block text-base font-semibold">{title}</span>

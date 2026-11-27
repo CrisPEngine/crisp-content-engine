@@ -101,6 +101,7 @@ function IntelligencePageInner() {
 	const [brainLoading, setBrainLoading] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [profileWarning, setProfileWarning] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
 	const [payload, setPayload] = useState<IntelligencePayload | null>(null);
 	const [identity, setIdentity] = useState('{\n  "name": "",\n  "positioning": "",\n  "purpose": ""\n}');
@@ -161,24 +162,60 @@ function IntelligencePageInner() {
 	const [themeObjective, setThemeObjective] = useState('');
 	const [coreIdea, setCoreIdea] = useState('');
 
-	const loadBrands = useCallback(async () => {
-		const res = await fetch('/api/brands', { cache: 'no-store' });
-		if (!res.ok) throw new Error('Failed to load brands');
-		const data = (await res.json()) as { profiles?: Array<{ id: string; client_name?: string; brand_name?: string }> };
-		const profiles: BrandProfile[] = (data.profiles || []).map((row: { id: string; client_name?: string; brand_name?: string }) => ({
-			id: row.id,
-			name: row.id === CRISP_RETAINED_PRODUCT_PROFILE_ID
-				? 'CrisP Digital'
-				: row.id === CRISP_CANONICAL_AIRTABLE_ID
-					? 'CrisP Digital consultancy'
-					: row.client_name || row.brand_name || 'Unnamed Brand',
-		}));
+	const applyBrands = useCallback((profiles: BrandProfile[]) => {
 		setBrands(profiles);
 		const ids = profiles.map((row) => row.id);
 		const resolved = resolveWorkingBrandId(searchParams, ids, profiles[0]?.id);
 		setBrandId(resolved);
 		if (resolved) writeWorkingBrandId(resolved);
 	}, [searchParams]);
+
+	const loadBrands = useCallback(async () => {
+		setLoading(true);
+		try {
+			const res = await fetch('/api/brands', { cache: 'no-store' });
+			if (res.ok) {
+				const data = (await res.json()) as { profiles?: Array<{ id: string; client_name?: string; brand_name?: string }> };
+				const profiles: BrandProfile[] = (data.profiles || []).map((row) => ({
+					id: row.id,
+					name: row.id === CRISP_RETAINED_PRODUCT_PROFILE_ID
+						? 'CrisP Digital'
+						: row.id === CRISP_CANONICAL_AIRTABLE_ID
+							? 'CrisP Digital consultancy'
+							: row.client_name || row.brand_name || 'Unnamed Brand',
+				}));
+				applyBrands(profiles);
+				setProfileWarning(null);
+				setError(null);
+				return;
+			}
+			const intelRes = await fetch('/api/intelligence/brands', { cache: 'no-store' });
+			if (!intelRes.ok) {
+				setBrands([]);
+				setError('Brand information is temporarily unavailable.');
+				setProfileWarning(null);
+				return;
+			}
+			const intel = (await intelRes.json()) as { brands?: Array<{ id: string; name?: string; airtableBrandId?: string | null }> };
+			const profiles = (intel.brands ?? []).map((row) => ({
+				id: row.airtableBrandId || row.id,
+				name: row.name || 'Unnamed workspace',
+			})).filter((row) => row.id);
+			if (!profiles.length) {
+				setBrands([]);
+				setError('Brand information is temporarily unavailable.');
+				return;
+			}
+			applyBrands(profiles);
+			setError(null);
+			setProfileWarning('The connected brand-profile source did not respond. Names below come from CRISP workspace records.');
+		} catch {
+			setBrands([]);
+			setError('Brand information is temporarily unavailable.');
+		} finally {
+			setLoading(false);
+		}
+	}, [applyBrands]);
 
 	const loadIntelligence = useCallback(async (id: string) => {
 		if (!id) return;
@@ -229,9 +266,7 @@ function IntelligencePageInner() {
 	}, []);
 
 	useEffect(() => {
-		loadBrands()
-			.catch((err) => setError(err.message))
-			.finally(() => setLoading(false));
+		void loadBrands();
 	}, [loadBrands]);
 
 	useEffect(() => {
@@ -555,6 +590,20 @@ function IntelligencePageInner() {
 		return () => window.removeEventListener('beforeunload', warn);
 	}, [brainDirty]);
 
+	if (!loading && brands.length === 0) {
+		return (
+			<main className="mx-auto max-w-3xl space-y-4 p-6">
+				<h1 className="text-2xl font-semibold">Brand information is temporarily unavailable</h1>
+				<p>Some workspace information could not be loaded. Articles, workflows and the inbox still use their own records.</p>
+				<button type="button" className="btn-primary" onClick={() => void loadBrands()}>Retry</button>
+				<details className="text-sm">
+					<summary className="cursor-pointer text-link">Technical details</summary>
+					<p className="mt-2 text-text-soft">{error ?? 'The brand profile request failed.'} No credentials are shown here.</p>
+				</details>
+			</main>
+		);
+	}
+
 	if (loading) {
 		return (
 			<div className="mx-auto max-w-6xl p-6 space-y-3" aria-busy="true">
@@ -619,6 +668,16 @@ function IntelligencePageInner() {
 			</header>
 
 			<div aria-live="polite">
+				{profileWarning ? (
+					<div className="card border-warning/50 p-4 text-sm" role="status">
+						<p>{profileWarning}</p>
+						<button type="button" className="btn mt-3" onClick={() => void loadBrands()}>Retry</button>
+						<details className="mt-2">
+							<summary className="cursor-pointer">Technical details</summary>
+							<p className="mt-1 text-text-soft">The brand profile request failed. Workspace names were loaded from CRISP records instead. No credentials are shown here.</p>
+						</details>
+					</div>
+				) : null}
 				{error ? <div className="card border-danger/40 bg-danger/10 p-4 text-sm text-danger" role="alert">{error} You can try the action again. Unrelated records were not changed.</div> : null}
 				{notice ? <div className="card border-primary/40 bg-primary/10 p-4 text-sm">{notice}</div> : null}
 			</div>

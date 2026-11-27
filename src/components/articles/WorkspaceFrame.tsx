@@ -111,7 +111,7 @@ export function WorkspaceFrame({
 							<button
 								key={item.id}
 								type="button"
-								className={`flex min-w-[9.5rem] max-w-full flex-1 flex-col items-start gap-1 rounded-xl border px-3 py-2 text-left ${item.id === stage ? 'border-primary bg-primary/10' : 'border-edge bg-surface hover:bg-surface-hover'}`}
+								className={`flex min-w-[7.5rem] max-w-full flex-1 flex-col items-start gap-0.5 rounded-lg border px-2.5 py-1.5 text-left text-sm ${item.id === stage ? 'border-primary bg-primary/10' : 'border-edge bg-surface hover:bg-surface-hover'}`}
 								aria-current={item.id === stage ? 'step' : undefined}
 								onClick={() => onStage(item.id)}
 							>

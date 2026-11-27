@@ -13,9 +13,11 @@ export function HeaderBrandSwitcher({ variant = 'header' }: { variant?: 'header'
 	const [brainByAirtable, setBrainByAirtable] = useState<Record<string, string>>({});
 	const [brandId, setBrandId] = useState('');
 	const [loading, setLoading] = useState(true);
+	const [failed, setFailed] = useState(false);
 
 	const load = useCallback(async () => {
 		setLoading(true);
+		setFailed(false);
 		try {
 			const [brandRes, socialRes] = await Promise.all([
 				fetch('/api/brands', { cache: 'no-store' }),
@@ -67,6 +69,9 @@ export function HeaderBrandSwitcher({ variant = 'header' }: { variant?: 'header'
 				'';
 			setBrandId(pick);
 			if (pick) writeWorkingBrandId(pick);
+			if (!rows.length && !brandRes.ok) setFailed(true);
+		} catch {
+			setFailed(true);
 		} finally {
 			setLoading(false);
 		}
@@ -77,11 +82,20 @@ export function HeaderBrandSwitcher({ variant = 'header' }: { variant?: 'header'
 	}, [load]);
 
 	if (loading) return variant === 'sidebar' ? <p className="text-sm text-text-dim">Workspace loading…</p> : null;
-	if (brands.length === 0) return variant === 'sidebar' ? <p className="text-sm text-text-dim">No workspace</p> : null;
+	if (brands.length === 0) {
+		return variant === 'sidebar' ? (
+			<div className="space-y-2">
+				<p className="text-sm text-text-soft">{failed ? 'Workspace list is temporarily unavailable.' : 'No workspace is recorded.'}</p>
+				{failed ? <button type="button" className="btn" onClick={() => void load()}>Retry</button> : null}
+			</div>
+		) : null;
+	}
 	if (brands.length === 1) {
+		const mark = brands[0].name.slice(0, 2).toUpperCase();
 		return (
-			<div className={variant === 'sidebar' ? 'truncate text-sm font-medium text-text' : 'hidden md:flex items-center max-w-[180px] truncate text-xs text-text-soft px-2'} title={brands[0].name}>
-				{brands[0].name}
+			<div className={variant === 'sidebar' ? 'flex items-center gap-2 truncate text-sm font-medium text-text' : 'hidden md:flex items-center max-w-[180px] truncate text-xs text-text-soft px-2'} title={brands[0].name}>
+				<span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-[10px] font-semibold text-[var(--on-primary)]" aria-hidden="true">{mark}</span>
+				<span className="truncate">{brands[0].name}</span>
 			</div>
 		);
 	}

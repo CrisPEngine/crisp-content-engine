@@ -8,6 +8,7 @@ import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { useWorkspaceOperations } from './useWorkspaceOperations';
 import { activityProcess } from '@/lib/command/status';
+import { NavIcon } from '@/components/command/NavIcon';
 
 function greeting(date = new Date()) {
 	const hour = date.getHours();
@@ -32,14 +33,14 @@ function actionLabel(detail: string) {
 }
 
 const LAUNCHER = [
-	{ title: 'Intelligence', description: 'Discover opportunities and understand the business.', href: '/intelligence', icon: '◎' },
-	{ title: 'Agents', description: 'See which AI capabilities are available.', href: '/agents', icon: '✦' },
-	{ title: 'Workflows', description: 'Follow work from opportunity to approval.', href: '/workflows', icon: '↪' },
-	{ title: 'Content', description: 'Plan, review and improve articles.', href: '/content', icon: '☰' },
-	{ title: 'Campaigns', description: 'Coordinate opportunities and distribution.', href: '/campaigns', icon: '▣' },
-	{ title: 'Brand Brain', description: 'Manage business knowledge and brand rules.', href: '/intelligence', icon: '◉' },
-	{ title: 'Integrations', description: 'Connect websites and marketing channels.', href: '/connections', icon: '⧉' },
-	{ title: 'Reports', description: 'Outcome reporting is not a separate workspace yet.', href: null, icon: '▤', planned: true },
+	{ title: 'Intelligence', description: 'Discover opportunities and understand the business.', href: '/intelligence' },
+	{ title: 'Agents', description: 'See which AI capabilities are available.', href: '/agents' },
+	{ title: 'Workflows', description: 'Follow work from opportunity to approval.', href: '/workflows' },
+	{ title: 'Content', description: 'Plan, review and improve articles.', href: '/content' },
+	{ title: 'Campaigns', description: 'Coordinate opportunities and distribution.', href: '/campaigns' },
+	{ title: 'Brand Brain', description: 'Manage business knowledge and brand rules.', href: '/intelligence' },
+	{ title: 'Integrations', description: 'Connect websites and marketing channels.', href: '/connections' },
+	{ title: 'Reports', description: 'Outcome reporting is not a separate workspace yet.', href: null, planned: true },
 ];
 
 export function CommandHome() {
@@ -49,11 +50,15 @@ export function CommandHome() {
 
 	return (
 		<section className="space-y-8" aria-label="Command centre">
-			<PageHeader
-				eyebrow="CRISP Command"
-				title={`${greeting()}. Here’s what’s happening with ${brand}.`}
-				description="Your agents are monitoring opportunities, preparing work and highlighting decisions that need your attention."
-			/>
+			<div className="command-hero rounded-2xl border border-edge p-6">
+				<PageHeader
+					eyebrow="CRISP Command"
+					title={`${greeting()}. ${view?.campaign.paused ? `${brand} is paused.` : `Here’s what’s happening with ${brand}.`}`}
+					description={view?.campaign.paused
+						? 'The campaign is not starting new work, and publishing is off unless the workspace says otherwise. Decisions already recorded still need a person.'
+						: 'CRISP has recorded opportunities and work that may need a decision. It does not publish on its own.'}
+				/>
+			</div>
 			{error ? <p className="card border-danger/70 p-4 text-sm" role="alert">{error}</p> : null}
 			{!view && !error ? <p className="text-sm text-text-soft">Loading workspace activity…</p> : null}
 			{view ? (
@@ -69,7 +74,10 @@ export function CommandHome() {
 						<MetricCard href="/content/published" icon="✓" title="Completed work" value={view.metrics.published} detail="Articles recorded as published. Drafts are not counted here." />
 					</div>
 					<div className="space-y-3">
-						<h2 className="text-xl font-semibold">Your priorities</h2>
+						<div className="flex flex-wrap items-end justify-between gap-2">
+							<h2 className="text-xl font-semibold">Your priorities</h2>
+							<Link className="text-link text-sm" href="/inbox">Open in the inbox</Link>
+						</div>
 						{view.actions.length ? view.actions.slice(0, 4).map((item) => (
 							<ActionCard key={`${item.href}-${item.title}`} title={item.title} detail={item.detail} status={statusForAction(item.detail)} href={item.href} action={actionLabel(item.detail)} />
 						)) : <p className="card-info text-sm text-text-soft">Nothing is waiting for a decision.</p>}
@@ -90,6 +98,16 @@ export function CommandHome() {
 					</div>
 				</>
 			) : null}
+			<div className="space-y-3">
+				<h2 className="text-xl font-semibold">Ask from the records</h2>
+				<p className="text-sm text-text-soft">These open real screens. They do not generate an answer.</p>
+				<div className="flex flex-wrap gap-2">
+					<Link className="btn" href="/inbox">What needs my attention?</Link>
+					<Link className="btn" href="/workflows">Why did a workflow stop?</Link>
+					<Link className="btn" href="/campaigns#approved">Which opportunities are approved?</Link>
+					<Link className="btn" href="/content/published">What is already published?</Link>
+				</div>
+			</div>
 			<div className="card-action space-y-2">
 				<h2 className="text-xl font-semibold">See CRISP in action</h2>
 				<p className="text-sm text-text-soft">Follow a real marketing opportunity from discovery to editorial review and human approval. This uses existing records and does not change the website.</p>
@@ -99,7 +117,7 @@ export function CommandHome() {
 				<h2 className="text-xl font-semibold">Explore CRISP</h2>
 				<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 					{LAUNCHER.map((item) => (
-						<CapabilityCard key={item.title} href={item.href} title={item.title} description={item.description} icon={item.icon} planned={item.planned} />
+						<CapabilityCard key={item.title} href={item.href} title={item.title} description={item.description} icon={<NavIcon name={item.title} />} planned={item.planned} />
 					))}
 				</div>
 			</div>

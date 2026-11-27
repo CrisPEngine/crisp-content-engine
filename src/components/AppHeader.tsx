@@ -5,7 +5,9 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useSupabase } from './SupabaseProvider';
 import { AppSidebar } from '@/components/command/AppSidebar';
+import { NavIcon } from '@/components/command/NavIcon';
 import { ThemeControl } from '@/components/command/ThemeControl';
+import { PanelLeft } from 'lucide-react';
 
 export function AppHeader() {
 	const pathname = usePathname();
@@ -45,6 +47,17 @@ export function AppHeader() {
 		localStorage.setItem('crisp-sidebar', next ? 'collapsed' : 'expanded');
 	}
 
+	const pageLabel = pathname.startsWith('/dashboard') ? 'Home'
+		: pathname.startsWith('/inbox') ? 'Inbox'
+		: pathname.startsWith('/workflows') ? 'Workflows'
+		: pathname.startsWith('/agents') ? 'Agents'
+		: pathname.startsWith('/intelligence') ? 'Intelligence'
+		: pathname.startsWith('/content/articles/') ? 'Article'
+		: pathname.startsWith('/content') ? 'Content'
+		: pathname.startsWith('/campaigns') ? 'Campaigns'
+		: pathname.startsWith('/connections') ? 'Integrations'
+		: 'CRISP Command';
+
 	const signOut = async () => {
 		if (!supabase) return;
 		await supabase.auth.signOut();
@@ -56,10 +69,11 @@ export function AppHeader() {
 			{mobileNav ? <button className="fixed inset-0 z-30 bg-black/50 md:hidden" aria-label="Close navigation" onClick={() => setMobileNav(false)} /> : null}
 			<AppSidebar pathname={pathname} open={mobileNav} collapsed={collapsed && !mobileNav} onNavigate={() => setMobileNav(false)} onExpand={() => setSidebar(false)} />
 			<header className="app-header fixed top-0 right-0 left-0 z-20 flex h-14 items-center gap-2 border-b border-edge bg-sidebar px-4">
-				<button type="button" className="inline-flex items-center rounded-lg border border-edge px-3 py-2 text-sm font-medium md:hidden" onClick={() => setMobileNav(true)}>Menu</button>
-				<button type="button" className="hidden items-center rounded-lg border border-edge bg-surface px-3 py-2 text-sm font-medium hover:bg-surface-hover md:inline-flex" aria-pressed={collapsed} onClick={() => setSidebar(!collapsed)}>{collapsed ? 'Expand menu' : 'Collapse menu'}</button>
-				<p className="hidden text-sm text-text-soft md:block">CRISP Command</p>
-				<div className="relative ml-auto">
+				<button type="button" className="inline-flex items-center gap-2 rounded-lg border border-edge px-3 py-2 text-sm font-medium md:hidden" onClick={() => setMobileNav(true)}><PanelLeft className="h-4 w-4" aria-hidden="true" /> Menu</button>
+				<button type="button" className="hidden items-center gap-2 rounded-lg border border-edge bg-surface px-3 py-2 text-sm font-medium hover:bg-surface-hover md:inline-flex" aria-pressed={collapsed} aria-label={collapsed ? 'Expand menu' : 'Collapse menu'} onClick={() => setSidebar(!collapsed)}><PanelLeft className="h-4 w-4" aria-hidden="true" />{collapsed ? 'Expand' : 'Collapse'}</button>
+				<p className="truncate text-sm text-text-soft"><span className="text-text-dim">CRISP</span> <span aria-hidden="true">/</span> <span className="text-text">{pageLabel}</span></p>
+				<Link href="/inbox" className="ml-auto inline-flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-text-soft hover:bg-surface-hover hover:text-text" aria-label="Inbox"><NavIcon name="Inbox" /> <span className="hidden sm:inline">Inbox</span></Link>
+				<div className="relative">
 					<button type="button" className="flex h-9 w-9 items-center justify-center rounded-full border border-primary/50 bg-primary/15 text-xs font-semibold" aria-expanded={menuOpen} aria-label="Account menu" onClick={() => setMenuOpen((open) => !open)}>
 						{user?.initials ?? '…'}
 					</button>
