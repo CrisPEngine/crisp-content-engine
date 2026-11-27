@@ -46,7 +46,7 @@ export default function ContentOverviewPage() {
 
 	return (
 		<div className="mx-auto max-w-5xl space-y-6 p-4 md:p-8">
-			<PageHeader eyebrow="Content" title="Editorial planning" description="Drafts, reviews and publication stay separate. A count is a record in this workspace, not a target." />
+			<PageHeader eyebrow="Content" title="Content overview" description="This page shows article production. Other formats are not measured here until a workflow records them. Drafts, approval, and publication stay separate." />
 			{error ? <p className="card border-danger/60 p-3 text-sm" role="alert">{error}</p> : null}
 			{brandId && view ? null : <p className="text-sm">Loading the content queue…</p>}
 			{view ? (
@@ -64,18 +64,29 @@ export default function ContentOverviewPage() {
 						{ name: 'Scheduling', status: view.pipeline.scheduling ? `${view.pipeline.scheduling} scheduled` : 'None scheduled' },
 						{ name: 'Published', status: view.pipeline.publication ? `${view.pipeline.publication} published` : 'None published' },
 					]} />
-					<section className="grid gap-3 md:grid-cols-5">
-						<Metric label="Approved" value={view.metrics.approved} href="/campaigns#approved" />
-						<Metric label="In production" value={view.metrics.production} href="/campaigns#production" />
+					<section className="space-y-3">
+						<h2 className="text-xl font-semibold">Needs a decision</h2>
+						<p className="text-sm text-text-soft">These are article records. Approving them happens on the article, not on this overview. <a className="text-link" href="/inbox">Open the inbox</a> for the decision list.</p>
+						{view.actions.length ? view.actions.map((item) => (
+							<article key={`${item.href}-${item.title}`} className="flex flex-col gap-3 rounded-xl border border-edge bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
+								<div>
+									<p className="text-xs font-medium uppercase tracking-wide text-text-dim">Article</p>
+									<h3 className="font-semibold">{item.title}</h3>
+									<p className="text-sm text-text-soft">{item.detail}</p>
+								</div>
+								<a className="btn-primary w-fit" href={item.href}>Open record</a>
+							</article>
+						)) : <p className="text-sm text-text-soft">Nothing is waiting for a decision.</p>}
+					</section>
+					<section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+						<Metric label="In production" value={view.metrics.production} href="/workflows" />
 						<Metric label="Awaiting review" value={view.metrics.review} href="/content/articles?view=review" />
 						<Metric label="Scheduled" value={view.metrics.scheduled} href="/content/schedule" />
 						<Metric label="Published" value={view.metrics.published} href="/content/published" />
-						<Metric label="Needs attention" value={view.metrics.attention} href="/campaigns#production" />
-						<Metric label="Indexed" value={view.metrics.indexed ?? 'Not confirmed'} href="/campaigns#operations" />
+						<Metric label="Needs attention" value={view.metrics.attention} href="/inbox" />
 					</section>
-					<ListCard title="Action queue" href="/campaigns" empty="Nothing is waiting for a decision." items={view.actions} />
-					<ListCard title="Recent activity" href="/content/articles" empty="No recent article activity." items={view.activity} />
-					<ListCard title="Production failures" href="/campaigns#production" empty="No production jobs have failed." items={view.failures} />
+					<ListCard title="Recent articles" href="/content/articles" empty="No recent article activity." items={view.activity} />
+					<ListCard title="Production failures" href="/workflows" empty="No production jobs have failed." items={view.failures} />
 				</>
 			) : null}
 		</div>
@@ -93,7 +104,15 @@ function ListCard(props: { title: string; href: string; empty: string; items: Ar
 				<h2 className="font-medium">{props.title}</h2>
 				<a className="text-link" href={props.href}>Open →</a>
 			</div>
-			{props.items.length ? props.items.map((item) => <p key={`${item.href}-${item.title}`}><a className="text-link font-medium" href={item.href}>{item.title}</a><span className="block text-text-soft">{item.detail}</span></p>) : <p className="text-text-soft">{props.empty}</p>}
+			{props.items.length ? props.items.map((item) => (
+				<div key={`${item.href}-${item.title}`} className="flex flex-col gap-2 border-t border-edge pt-3 sm:flex-row sm:items-center sm:justify-between">
+					<div>
+						<p className="font-medium">{item.title}</p>
+						<p className="text-text-soft">{item.detail}</p>
+					</div>
+					<a className="btn w-fit" href={item.href}>Open</a>
+				</div>
+			)) : <p className="text-text-soft">{props.empty}</p>}
 		</section>
 	);
 }

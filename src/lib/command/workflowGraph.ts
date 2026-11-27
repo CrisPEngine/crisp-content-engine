@@ -48,7 +48,7 @@ export function workflowNodesForRun(job: OverviewJob, article?: OverviewArticle)
 		}
 		const index = ORDER.indexOf(node.id as (typeof ORDER)[number]);
 		if (currentIndex < 0) return { ...node, label: 'Stage not recorded', tone: 'idle' };
-		if (index < currentIndex) return { ...node, label: 'Earlier stage', tone: 'complete' };
+		if (index < currentIndex) return { ...node, label: 'Historical stage', tone: 'complete' };
 		if (index === currentIndex) {
 			const label = node.id === 'draft' && job.stage === 'metadata' ? 'Search metadata' : workflowStatusLabel(job.status);
 			return { ...node, label, tone: job.status === 'failed' ? 'failed' : job.status === 'completed' ? 'complete' : 'current' };

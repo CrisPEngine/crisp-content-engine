@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Monitor, Moon, Sun } from 'lucide-react';
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 
@@ -37,24 +38,35 @@ export function ThemeControl() {
 		return () => media.removeEventListener('change', onChange);
 	}, []);
 
+	const options = [
+		{ id: 'light' as const, label: 'Light', icon: Sun },
+		{ id: 'dark' as const, label: 'Dark', icon: Moon },
+		{ id: 'system' as const, label: 'System', icon: Monitor },
+	];
+
 	return (
-		<div className="px-2 py-2" role="group" aria-label="Theme">
-			<p className="px-1 pb-1 text-xs text-text-dim">Theme</p>
+		<div className="px-2 py-2" role="group" aria-label="Appearance">
+			<p className="px-1 pb-1 text-xs font-medium text-text-dim">Appearance</p>
 			<div className="grid grid-cols-3 gap-1">
-				{(['light', 'dark', 'system'] as const).map((option) => (
-					<button
-						key={option}
-						type="button"
-						className={preference === option ? 'btn-primary px-2 py-1 text-xs capitalize' : 'btn px-2 py-1 text-xs capitalize'}
-						aria-pressed={preference === option}
-						onClick={() => {
-							setPreference(option);
-							applyTheme(option);
-						}}
-					>
-						{option}
-					</button>
-				))}
+				{options.map((option) => {
+					const selected = preference === option.id;
+					const Icon = option.icon;
+					return (
+						<button
+							key={option.id}
+							type="button"
+							className={`inline-flex items-center justify-center gap-1 rounded-lg px-2 py-2 text-xs font-medium ${selected ? 'bg-primary text-[var(--on-primary)]' : 'border border-edge bg-surface text-text hover:bg-surface-hover'}`}
+							aria-pressed={selected}
+							onClick={() => {
+								setPreference(option.id);
+								applyTheme(option.id);
+							}}
+						>
+							<Icon className="h-3.5 w-3.5" aria-hidden="true" />
+							{option.label}
+						</button>
+					);
+				})}
 			</div>
 		</div>
 	);

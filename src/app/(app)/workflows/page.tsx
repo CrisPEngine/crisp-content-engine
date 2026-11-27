@@ -19,7 +19,7 @@ export default function WorkflowsPage() {
 
 	return (
 		<main className="mx-auto max-w-6xl space-y-6 p-4 md:p-8">
-			<PageHeader eyebrow="Workflows" title="How work moves" description="Each run below is a recorded production job. The canvas shows the stages CRISP already uses. It does not create a new executable workflow." />
+			<PageHeader eyebrow="Workflows" title="Workflows" description="The definition is the path CRISP already runs. A run is one recorded job on that path. This screen cannot edit the live workflow." />
 			{error ? <p className="card border-danger/70 p-4" role="alert">{error}</p> : null}
 			{data ? (
 				<div className="flex flex-wrap gap-2">

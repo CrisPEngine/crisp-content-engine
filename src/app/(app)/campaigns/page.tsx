@@ -148,14 +148,14 @@ export default function CampaignsPage() {
 		<div className="mx-auto max-w-6xl space-y-6 p-4">
 			<header>
 				<p className="text-sm font-medium text-text-soft">Campaigns</p>
-				<h1 className="text-[1.75rem] font-semibold">Opportunity queue</h1>
-				<p className="text-base text-text-soft">Discover and validate a topic before an article is produced. A weekly number is a maximum, not a quota. Opening an opportunity does not start it, and this page does not publish.</p>
-				<p className="mt-2 text-sm"><a className="text-link" href="/workflows">View the workflow path →</a></p>
-				<nav className="mt-3 flex flex-wrap gap-3 text-sm" aria-label="Content operations">
-					<a className="underline" href="#approved">Approved opportunities</a>
-					<a className="underline" href="#production">Production jobs</a>
-					<a className="underline" href="#awaiting">Articles awaiting approval</a>
-					<a className="underline" href="/content/articles?view=published">Published articles</a>
+				<h1 className="text-[1.75rem] font-semibold">Campaigns</h1>
+				<p className="text-base text-text-soft">A campaign is the schedule and limits for this workspace. Opportunities, production jobs, and article decisions are listed separately below. This page does not publish.</p>
+				<nav className="mt-3 flex flex-wrap gap-2 text-sm" aria-label="Campaign sections">
+					<a className="btn" href="#operations">Campaign settings</a>
+					<a className="btn" href="#approved">Opportunities</a>
+					<a className="btn" href="#production">Production jobs</a>
+					<a className="btn" href="/inbox">Open decisions</a>
+					<a className="btn" href="/workflows">View workflows</a>
 				</nav>
 			</header>
 			<label className="block text-sm">
@@ -176,12 +176,16 @@ export default function CampaignsPage() {
 						{provider.property ? <p>Property {provider.property}</p> : null}
 						{provider.lastSuccessAt ? <p>Last successful retrieval {provider.lastSuccessAt}</p> : null}
 						{provider.error ? <p role="alert">{provider.error}</p> : null}
-						<p className="text-text-soft">{provider.detail}</p>
+						<details className="mt-2">
+							<summary className="cursor-pointer text-link">Technical details</summary>
+							<p className="mt-1 text-text-soft">{provider.detail}</p>
+						</details>
 					</article>
 				))}
 			</section>
-			<section className="card space-y-3 p-4 text-sm">
-				<h2 className="font-medium">Test Google connections</h2>
+			<details className="card space-y-3 p-4 text-sm">
+				<summary className="cursor-pointer font-medium">Connection diagnostics</summary>
+				<h2 className="mt-3 font-medium">Test Google connections</h2>
 				<p className="text-text-soft">This reads Search Console and GA4 for the selected brand only. It does not create opportunities or articles.</p>
 				<button className="btn" type="button" disabled={busy || !brandId} onClick={() => void post('test_analytics', {}, 'test', 'Connection test finished. No opportunities or articles were created.')}>{pending === 'test' ? 'Testing connection…' : 'Run read-only connection test'}</button>
 				{connection ? (
@@ -192,9 +196,9 @@ export default function CampaignsPage() {
 						{connection.analytics?.error ? <p role="alert">{connection.analytics.error}</p> : null}
 					</div>
 				) : null}
-			</section>
+			</details>
 			<section className="card space-y-3 p-4 text-sm">
-				<h2 className="font-medium">Find evidence</h2>
+				<h2 className="font-medium">Find evidence for an opportunity</h2>
 				<div className="flex flex-wrap gap-2">
 					<input className="input min-w-0 flex-1" value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="Topic or query" aria-label="Topic or query" />
 					<button className="btn border-primary bg-primary/15" type="button" disabled={busy || !topic.trim()} onClick={() => void post('discover', { source: 'search', topic }, 'search', 'Search results were saved as inferred coverage. No keyword volume was added.')}>{pending === 'search' ? 'Searching…' : 'Search the public web'}</button>
@@ -217,8 +221,8 @@ export default function CampaignsPage() {
 				))}
 			</section>
 			<section id="operations" className="card space-y-3 p-4 text-sm">
-				<h2 className="font-medium">Campaign controls</h2>
-				<p className="text-text-soft">Pause, resume, and the weekly settings are here. Discovery and provider checks stay further down the page. The worker cannot publish, and it does not change published articles.</p>
+				<h2 className="font-medium">Campaign settings</h2>
+				<p className="text-text-soft">Save limits separately from pausing the campaign. Resume does not publish, and autonomous publishing stays off.</p>
 				{queue?.operations ? (
 					<div className="grid gap-2 md:grid-cols-4">
 						<p>Mode {queue.operations.mode.replaceAll('_', ' ')} · {queue.operations.paused ? 'paused' : 'running'}</p>
@@ -281,31 +285,49 @@ export default function CampaignsPage() {
 					<button className="btn" type="button" disabled={busy || !title.trim() || !problem.trim()} onClick={() => void post('record', { title, audienceProblem: problem, demandClass: 'unvalidated' }, 'record', 'Saved as an unvalidated idea. It cannot be approved until it has evidence.')}>{pending === 'record' ? 'Saving…' : 'Save unvalidated idea'}</button>
 				</div>
 			</section>
-			<section id="awaiting" className="card space-y-2 p-4 text-sm">
-				<h2 className="font-medium">Articles awaiting approval</h2>
-				<p className="text-text-soft">Approval, scheduling, and live verification stay separate. Nothing here publishes a page.</p>
-				{board.filter((article) => article.publicationPhase && article.publicationPhase !== 'ready_for_approval' || article.status === 'review' || article.status === 'approved').slice(0, 12).map((article) => (
-					<p key={article.id}>
-						<a href={`/content/articles/${article.id}`}>{article.title}</a>
-						{' · '}{article.publicationPhase?.replaceAll('_', ' ') ?? article.status}
-						{article.publicationError ? ` · ${article.publicationError}` : ''}
-					</p>
-				))}
-				{board.length === 0 ? <p className="text-text-soft">No articles are waiting for publication.</p> : null}
+			<section id="awaiting" className="card space-y-3 p-4 text-sm">
+				<div className="flex flex-wrap items-center justify-between gap-2">
+					<h2 className="font-medium">Article decisions</h2>
+					<a className="btn" href="/inbox">Open in the inbox</a>
+				</div>
+				<p className="text-text-soft">The status is the record’s own status. Opening an article does not approve or publish it.</p>
+				{board.slice(0, 8).map((article) => {
+					const approved = article.status === 'approved';
+					const waiting = article.status === 'review' || article.publicationPhase === 'ready_for_approval';
+					return (
+						<article key={article.id} className="flex flex-col gap-2 border-t border-edge pt-3 sm:flex-row sm:items-center sm:justify-between">
+							<div>
+								<h3 className="font-medium">{article.title}</h3>
+								<p className="text-text-soft">{approved ? 'Approved. Publishing is a separate step.' : waiting ? 'Awaiting a human decision.' : (article.publicationPhase?.replaceAll('_', ' ') ?? article.status)}</p>
+							</div>
+							<a className="btn-primary w-fit" href={`/content/articles/${article.id}`}>{waiting ? 'Review article' : 'Open article'}</a>
+						</article>
+					);
+				})}
+				{board.length === 0 ? <p className="text-text-soft">No articles are recorded for this workspace.</p> : null}
 			</section>
-			<section id="production" className="card space-y-2 p-4 text-sm">
-				<h2 className="font-medium">Production jobs</h2>
-				<p className="text-text-soft">Auto-draft can prepare an article. It cannot publish the site.</p>
+			<section id="production" className="card space-y-3 p-4 text-sm">
+				<div className="flex flex-wrap items-center justify-between gap-2">
+					<h2 className="font-medium">Production jobs</h2>
+					<a className="btn" href="/workflows">Inspect on the workflow canvas</a>
+				</div>
+				<p className="text-text-soft">A job prepares work. It does not publish the site. {queue?.operations?.paused ? 'The campaign is paused, so new work is not starting.' : ''}</p>
 				{(queue?.jobs ?? []).map((job) => (
-					<article key={job.id} className="border-t border-edge/50 pt-2">
-						<p>{job.stage} · {job.status.replaceAll('_', ' ')} · attempt {job.attempt} · cost ${job.costUsd.toFixed(4)}</p>
-						<p>{job.note.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, 'this article')}</p>
-						{job.error ? <p role="alert">{job.error}</p> : null}
-						{job.articleId ? <p><a className="underline" href={`/content/articles/${job.articleId}`}>Open the article</a> · {job.stage.replaceAll('_', ' ')}</p> : null}
-						<button className="btn" type="button" disabled={busy || job.status === 'ready_for_approval' || job.status === 'paused'} onClick={() => void post('advance_production', { jobId: job.id }, job.id, 'The next production stage ran. Nothing was published.')}>{pending === job.id ? 'Running stage…' : 'Run next stage'}</button>
+					<article key={job.id} className="grid gap-2 border-t border-edge pt-3 md:grid-cols-[1.4fr_0.8fr_auto] md:items-center">
+						<div>
+							<p className="font-medium">{job.stage.replaceAll('_', ' ')} · {job.status.replaceAll('_', ' ')}</p>
+							<p className="text-text-soft">{job.note.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, 'this article')}</p>
+							{job.error ? <p role="alert">{job.error}</p> : null}
+						</div>
+						<p className="text-text-soft">Attempt {job.attempt} · ${job.costUsd.toFixed(4)}</p>
+						<div className="flex flex-wrap gap-2">
+							{job.articleId ? <a className="btn" href={`/content/articles/${job.articleId}`}>Open article</a> : null}
+							<a className="btn" href="/workflows">View workflow</a>
+							<button className="btn" type="button" disabled={busy || job.status === 'ready_for_approval' || job.status === 'paused'} onClick={() => void post('advance_production', { jobId: job.id }, job.id, 'The next production stage ran. Nothing was published.')}>{pending === job.id ? 'Running stage…' : 'Run next stage'}</button>
+						</div>
 					</article>
 				))}
-				{queue && queue.jobs.length === 0 ? <p className="text-text-soft">No production jobs.</p> : null}
+				{queue && queue.jobs.length === 0 ? <p className="text-text-soft">No production jobs are running. {queue.operations?.paused ? 'The campaign is paused.' : ''}</p> : null}
 			</section>
 			{pending === 'load' ? <p className="text-sm">Loading opportunities…</p> : null}
 			<OpportunityTable

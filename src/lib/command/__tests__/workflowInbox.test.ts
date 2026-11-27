@@ -16,7 +16,7 @@ describe('workflow and inbox records', () => {
 	it('marks the recorded stage as current and does not call earlier stages successful events', () => {
 		const nodes = workflowNodesForRun(job, { id: 'article-1', title: 'Chapter', status: 'draft', cmsState: null });
 		expect(nodes.find((node) => node.id === 'corrections')?.label).toBe('Needs attention');
-		expect(nodes.find((node) => node.id === 'research')?.label).toBe('Earlier stage');
+		expect(nodes.find((node) => node.id === 'research')?.label).toBe('Historical stage');
 		expect(nodes.find((node) => node.id === 'approval')?.label).toBe('Not reached');
 		expect(nodes.find((node) => node.id === 'publish')?.label).toBe('Not published');
 	});

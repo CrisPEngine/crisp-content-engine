@@ -27,7 +27,8 @@ export default function InboxPage() {
 function InboxWorkspace() {
 	const params = useSearchParams();
 	const { data, error } = useWorkspaceOperations();
-	const [filter, setFilter] = useState<InboxFilter>('all');
+	const requested = params.get('filter');
+	const [filter, setFilter] = useState<InboxFilter>(requested === 'approval' || requested === 'attention' || requested === 'progress' || requested === 'completed' ? requested : 'all');
 	const [selectedId, setSelectedId] = useState<string | null>(params.get('focus'));
 	const [showList, setShowList] = useState(!params.get('focus'));
 	const [question, setQuestion] = useState('');

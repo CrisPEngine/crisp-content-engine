@@ -1,6 +1,8 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { APP_NAV, APP_NAV_SECONDARY, isNavHrefActive, type NavItem } from '@/lib/nav';
 import { HeaderBrandSwitcher } from '@/components/HeaderBrandSwitcher';
 import { NavIcon } from '@/components/command/NavIcon';
@@ -27,6 +29,23 @@ export function AppSidebar({
 	onNavigate: () => void;
 	onExpand: () => void;
 }) {
+	const search = useSearchParams().toString();
+	const [closed, setClosed] = useState<Record<string, boolean>>({});
+	useEffect(() => {
+		try {
+			const stored = JSON.parse(localStorage.getItem('crisp-nav-sections') ?? '{}') as Record<string, boolean>;
+			setClosed(stored);
+		} catch {
+			setClosed({});
+		}
+	}, []);
+	function toggleSection(label: string) {
+		setClosed((current) => {
+			const next = { ...current, [label]: !current[label] };
+			localStorage.setItem('crisp-nav-sections', JSON.stringify(next));
+			return next;
+		});
+	}
 	return (
 		<aside className={`${open ? 'flex' : 'hidden'} app-sidebar md:flex fixed inset-y-0 left-0 z-40 w-64 flex-col border-r border-edge bg-sidebar md:w-[var(--sidebar-width)]`}>
 			<div className="border-b border-edge px-3 py-4">
@@ -50,7 +69,7 @@ export function AppSidebar({
 			<nav className="flex-1 space-y-1 overflow-y-auto px-2 py-4" aria-label="Primary">
 				{APP_NAV.map((item) => {
 					if (!item.items && item.href) {
-						const on = isNavHrefActive(pathname, item.href, siblingsOf(item));
+						const on = isNavHrefActive(pathname, item.href, siblingsOf(item), search);
 						return (
 							<Link key={item.label} href={item.href} onClick={onNavigate} aria-current={on ? 'page' : undefined} title={item.label} className={itemClass(on)}>
 								<NavIcon name={item.label} />
@@ -59,7 +78,7 @@ export function AppSidebar({
 						);
 					}
 					const childHrefs = item.items?.map((sub) => sub.href) ?? [];
-					const sectionOn = childHrefs.some((href) => isNavHrefActive(pathname, href, childHrefs));
+					const sectionOn = childHrefs.some((href) => isNavHrefActive(pathname, href, childHrefs, search));
 					if (collapsed && item.items?.[0]) {
 						return (
 							<Link key={item.label} href={item.items[0].href} onClick={onNavigate} aria-current={sectionOn ? 'page' : undefined} title={item.label} className={itemClass(sectionOn)}>
@@ -68,18 +87,22 @@ export function AppSidebar({
 							</Link>
 						);
 					}
+					const sectionOpen = sectionOn || !closed[item.label];
 					return (
 						<div key={item.label} className="pt-3">
-							<p className={`px-2.5 pb-1 text-xs font-semibold uppercase tracking-wide ${sectionOn ? 'text-primary' : 'text-text-dim'}`}>{item.label}</p>
-							{item.items?.map((sub) => {
-								const subOn = isNavHrefActive(pathname, sub.href, childHrefs);
+							<button type="button" className={`flex w-full items-center justify-between px-2.5 pb-1 text-xs font-semibold uppercase tracking-wide ${sectionOn ? 'text-text' : 'text-text-dim'}`} aria-expanded={sectionOpen} onClick={() => toggleSection(item.label)}>
+								{item.label}
+								<span aria-hidden="true">{sectionOpen ? '–' : '+'}</span>
+							</button>
+							{sectionOpen ? item.items?.map((sub) => {
+								const subOn = isNavHrefActive(pathname, sub.href, childHrefs, search);
 								return (
 									<Link key={sub.href} href={sub.href} onClick={onNavigate} aria-current={subOn ? 'page' : undefined} title={sub.label} className={itemClass(subOn)}>
 										<NavIcon name={sub.label} />
 										<span>{sub.label}</span>
 									</Link>
 								);
-							})}
+							}) : null}
 						</div>
 					);
 				})}

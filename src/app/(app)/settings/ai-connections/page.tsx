@@ -127,11 +127,13 @@ export default function AiConnectionsPage() {
 			</div>
 
 			<section className="card p-4 space-y-2">
-				<h2 className="font-medium">MCP endpoint</h2>
-				<p className="text-sm">https://app.crispdigital.io/api/mcp</p>
-				<p className="text-sm text-text-soft">
-					Supported clients can use OAuth with PKCE. Bearer tokens still work for scripts. Approval, publishing, and ad activation are never granted from a client request alone.
-				</p>
+				<h2 className="font-medium">What a connection can do</h2>
+				<p className="text-sm text-text-soft">Read access and proposal access can be granted. Approval and publishing stay with a person. Connecting an assistant does not let it approve a draft or publish a page.</p>
+				<details className="text-sm">
+					<summary className="cursor-pointer text-link">Advanced setup</summary>
+					<p className="mt-2">MCP endpoint: https://app.crispdigital.io/api/mcp</p>
+					<p className="text-text-soft">Supported clients can use OAuth with PKCE. Bearer tokens still work for scripts.</p>
+				</details>
 			</section>
 
 			<div className="card p-4 space-y-3">
@@ -143,7 +145,10 @@ export default function AiConnectionsPage() {
 					Connection name
 					<input className="mt-1 w-full rounded border px-3 py-2" value={name} onChange={(event) => setName(event.target.value)} />
 				</label>
-				<p className="text-sm text-text-soft">Capabilities: {CHIEF_OF_STAFF_CAPABILITIES.join(', ')}</p>
+				<details className="text-sm text-text-soft">
+					<summary className="cursor-pointer text-link">Permission list</summary>
+					<p className="mt-2">Capabilities: {CHIEF_OF_STAFF_CAPABILITIES.join(', ')}</p>
+				</details>
 				<button className="rounded bg-primary px-4 py-2 text-white" type="button" onClick={() => void createAllBrandsCredential()}>
 					Connect assistant (all brands)
 				</button>

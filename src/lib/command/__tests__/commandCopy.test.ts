@@ -33,6 +33,10 @@ describe('command copy', () => {
 		const content = ['/content', '/content/articles', '/content/published'];
 		expect(isNavHrefActive('/content/articles/abc', '/content', content)).toBe(false);
 		expect(isNavHrefActive('/content/articles/abc', '/content/articles', content)).toBe(true);
+		const intelligence = ['/intelligence', '/intelligence?tab=themes', '/intelligence?tab=diagnostics'];
+		expect(isNavHrefActive('/intelligence', '/intelligence', intelligence, 'tab=themes')).toBe(false);
+		expect(isNavHrefActive('/intelligence', '/intelligence?tab=themes', intelligence, 'tab=themes')).toBe(true);
+		expect(isNavHrefActive('/intelligence', '/intelligence?tab=diagnostics', intelligence, 'tab=themes')).toBe(false);
 		expect(presentArticleHeadline({ needsAttention: true, decisionCount: 2, approval: 'pending', published: false })).toEqual({
 			label: 'Human review required',
 			detail: '2 editorial recommendations need a decision.',

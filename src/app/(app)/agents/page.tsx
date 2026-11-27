@@ -29,7 +29,15 @@ export default function AgentsPage() {
 						</div>
 						<p className="text-sm">{agent.description}</p>
 						{agent.tools.length ? <p className="text-sm text-text-soft">Includes {agent.tools.join(', ')}.</p> : null}
-						{agent.href ? <Link className="btn-primary w-fit" href={agent.href}>{agent.action} →</Link> : <p className="text-sm text-text-dim">{agent.action}</p>}
+						<p className="text-sm text-text-soft">{agent.status === 'planned' ? 'Not used by a live workflow.' : 'Used in the content opportunity workflow. There is no separate run button.'}</p>
+						<details>
+							<summary className="cursor-pointer text-sm text-link">View agent</summary>
+							<div className="mt-2 space-y-2 text-sm">
+								<p>Tools: {agent.tools.length ? agent.tools.join(', ') : 'None configured.'}</p>
+								<p>{agent.status === 'planned' ? 'This capability is planned. It cannot be run.' : 'Open the related screen to inspect real records. This page does not start a job.'}</p>
+							</div>
+						</details>
+						{agent.href ? <Link className="btn w-fit" href={agent.href}>{agent.action}</Link> : <p className="text-sm text-text-dim">{agent.action}</p>}
 					</article>
 					);
 				})}
