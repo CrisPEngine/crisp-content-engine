@@ -60,6 +60,7 @@ export function WorkspaceFrame({
 				{WORKSPACE_STAGES.map((item) => (
 					<button key={item.id} type="button" className={`shrink-0 rounded-full border px-3 py-1 text-sm ${item.id === stage ? 'border-primary bg-primary/15' : 'border-edge'}`} aria-current={item.id === stage ? 'page' : undefined} onClick={() => onStage(item.id)}>
 						{item.label}
+						<span className="ml-2 text-xs text-text-dim">{STAGE_TONE_LABEL[tones[item.id]]}</span>
 					</button>
 				))}
 			</div>
@@ -76,7 +77,7 @@ export function WorkspaceFrame({
 								>
 									<span className={`h-2 w-2 rounded-full ${TONE_CLASS[tones[item.id]]}`} aria-hidden />
 									<span className="min-w-0 flex-1">{item.label}</span>
-									<span className="sr-only">{STAGE_TONE_LABEL[tones[item.id]]}</span>
+									<span className="text-xs text-text-dim">{STAGE_TONE_LABEL[tones[item.id]]}</span>
 								</button>
 							</li>
 						))}

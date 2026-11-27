@@ -75,6 +75,27 @@ export function findingTitle(category: string): string {
 	return CATEGORY_LABEL[category] ?? 'Editorial note';
 }
 
+const FINDING_CODE_LABEL: Record<string, string> = {
+	'intro-weak': 'Introduction needs improvement',
+	'cta-weak': 'Call to action needs improvement',
+	'opening-guide': 'Opening needs a clearer guide',
+	'definition-thin': 'Definition needs more substance',
+	'answers-indirect': 'Answer the reader’s question more directly',
+	'example-conflict': 'Example conflicts with the claim',
+	'missing_destination_resource': 'A required resource is missing',
+	'near_duplicate_sentences': 'Repeated sentences need a rewrite',
+	'missing_required_link': 'A required link is missing',
+	'content_overlap': 'This overlaps another article',
+};
+
+/** Plain-language label. The technical code stays available for diagnostics. */
+export function findingCodeLabel(code: string): string {
+	if (FINDING_CODE_LABEL[code]) return FINDING_CODE_LABEL[code];
+	const readable = code.replace(/[_-]+/g, ' ').trim();
+	if (!readable) return 'Editorial note';
+	return readable.charAt(0).toUpperCase() + readable.slice(1);
+}
+
 export function findingGroup(severity: 'critical' | 'major' | 'minor'): 'Blocking' | 'Important' | 'Suggested improvements' {
 	if (severity === 'critical') return 'Blocking';
 	if (severity === 'major') return 'Important';

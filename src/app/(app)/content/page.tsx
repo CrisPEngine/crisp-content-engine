@@ -3,6 +3,9 @@
 import { useEffect, useState } from 'react';
 import { productionCapacity } from '@/lib/campaigns/productionPolicy';
 import { buildContentOverview, type OverviewArticle, type OverviewJob, type OverviewOpportunity } from '@/lib/content/overview';
+import { PageHeader } from '@/components/command/PageHeader';
+import { StatusBadge } from '@/components/command/StatusBadge';
+import { WorkflowStepper } from '@/components/command/WorkflowStepper';
 
 type Brand = { id: string; name: string };
 type Operations = { paused?: boolean; autonomousPublishingEnabled?: boolean; weeklyMaximum?: number; mode?: string; costUsd?: number };
@@ -42,21 +45,25 @@ export default function ContentOverviewPage() {
 	}, []);
 
 	return (
-		<div className="mx-auto max-w-5xl space-y-4 p-4">
-			<header>
-				<p className="text-xs text-text-dim">Content</p>
-				<h1 className="text-2xl font-semibold">Overview</h1>
-			</header>
+		<div className="mx-auto max-w-5xl space-y-6 p-4 md:p-8">
+			<PageHeader eyebrow="Content" title="Editorial planning" description="Drafts, reviews and publication stay separate. A count is a record in this workspace, not a target." />
 			{error ? <p className="card border-danger/60 p-3 text-sm" role="alert">{error}</p> : null}
 			{brandId && view ? null : <p className="text-sm">Loading the content queue…</p>}
 			{view ? (
 				<>
-					<section className="card grid gap-3 p-4 text-sm md:grid-cols-4">
-						<p><span className="block text-text-dim">Campaign</span>{view.campaign.state === 'paused' ? 'Paused' : view.campaign.state === 'blocked' ? 'Blocked' : 'Active'}</p>
-						<p><span className="block text-text-dim">Autonomous publishing</span>{view.campaign.publishingEnabled ? 'On' : 'Off'}</p>
-						<p><span className="block text-text-dim">Weekly capacity</span>{view.campaign.started} of {view.campaign.weeklyMaximum} used. {view.campaign.remaining} open.</p>
-						<p><span className="block text-text-dim">Next capacity slot</span>{view.campaign.capacitySlotAt ? new Date(view.campaign.capacitySlotAt).toLocaleString() : 'A slot is open.'}{view.campaign.paused ? ' A paused campaign has no scheduled start.' : ''}</p>
+					<section className="card-info grid gap-3 text-sm md:grid-cols-4">
+						<p><span className="mb-1 block"><StatusBadge label={view.campaign.state === 'paused' ? 'Paused' : view.campaign.state === 'blocked' ? 'Blocked' : 'Active'} tone={view.campaign.state === 'paused' ? 'warning' : view.campaign.state === 'blocked' ? 'danger' : 'success'} /></span>Campaign</p>
+						<p><span className="mb-1 block"><StatusBadge label={view.campaign.publishingEnabled ? 'Publishing on' : 'Publishing off'} tone={view.campaign.publishingEnabled ? 'danger' : 'info'} /></span>Autonomous publishing</p>
+						<p><span className="block text-text-soft">Weekly capacity</span>{view.campaign.started} of {view.campaign.weeklyMaximum} used. {view.campaign.remaining} open.</p>
+						<p><span className="block text-text-soft">Next capacity slot</span>{view.campaign.capacitySlotAt ? new Date(view.campaign.capacitySlotAt).toLocaleString() : 'A slot is open.'}{view.campaign.paused ? ' A paused campaign has no scheduled start.' : ''}</p>
 					</section>
+					<WorkflowStepper stages={[
+						{ name: 'Research', status: view.pipeline.research ? `${view.pipeline.research} running` : 'None running' },
+						{ name: 'Draft', status: view.pipeline.draft ? `${view.pipeline.draft} running` : 'None running' },
+						{ name: 'Review', status: view.pipeline.review ? `${view.pipeline.review} waiting` : 'None waiting' },
+						{ name: 'Scheduling', status: view.pipeline.scheduling ? `${view.pipeline.scheduling} scheduled` : 'None scheduled' },
+						{ name: 'Published', status: view.pipeline.publication ? `${view.pipeline.publication} published` : 'None published' },
+					]} />
 					<section className="grid gap-3 md:grid-cols-5">
 						<Metric label="Approved" value={view.metrics.approved} href="/campaigns#approved" />
 						<Metric label="In production" value={view.metrics.production} href="/campaigns#production" />
@@ -67,13 +74,6 @@ export default function ContentOverviewPage() {
 						<Metric label="Indexed" value={view.metrics.indexed ?? 'Not confirmed'} href="/campaigns#operations" />
 					</section>
 					<ListCard title="Action queue" href="/campaigns" empty="Nothing is waiting for a decision." items={view.actions} />
-					<section className="card grid gap-3 p-4 text-sm md:grid-cols-5">
-						<p><span className="block text-text-dim">Research</span>{view.pipeline.research}</p>
-						<p><span className="block text-text-dim">Draft</span>{view.pipeline.draft}</p>
-						<p><span className="block text-text-dim">Review</span>{view.pipeline.review}</p>
-						<p><span className="block text-text-dim">Scheduling</span>{view.pipeline.scheduling}</p>
-						<p><span className="block text-text-dim">Publication</span>{view.pipeline.publication}</p>
-					</section>
 					<ListCard title="Recent activity" href="/content/articles" empty="No recent article activity." items={view.activity} />
 					<ListCard title="Production failures" href="/campaigns#production" empty="No production jobs have failed." items={view.failures} />
 				</>
@@ -83,7 +83,7 @@ export default function ContentOverviewPage() {
 }
 
 function Metric(props: { label: string; value: number | string; href: string }) {
-	return <a className="card p-3 text-sm" href={props.href}><span className="block text-text-dim">{props.label}</span><span className="text-xl font-semibold">{props.value}</span></a>;
+	return <a className="card-nav" href={props.href}><span className="block text-sm text-text-soft">{props.label}</span><span className="text-2xl font-semibold">{props.value}</span><span className="mt-2 block text-sm text-primary">Open →</span></a>;
 }
 
 function ListCard(props: { title: string; href: string; empty: string; items: Array<{ title: string; detail: string; href: string }> }) {
@@ -91,9 +91,9 @@ function ListCard(props: { title: string; href: string; empty: string; items: Ar
 		<section className="card space-y-2 p-4 text-sm">
 			<div className="flex items-center justify-between gap-3">
 				<h2 className="font-medium">{props.title}</h2>
-				<a className="underline" href={props.href}>Open</a>
+				<a className="text-link" href={props.href}>Open →</a>
 			</div>
-			{props.items.length ? props.items.map((item) => <p key={`${item.href}-${item.title}`}><a className="font-medium underline" href={item.href}>{item.title}</a><span className="block text-text-soft">{item.detail}</span></p>) : <p className="text-text-soft">{props.empty}</p>}
+			{props.items.length ? props.items.map((item) => <p key={`${item.href}-${item.title}`}><a className="text-link font-medium" href={item.href}>{item.title}</a><span className="block text-text-soft">{item.detail}</span></p>) : <p className="text-text-soft">{props.empty}</p>}
 		</section>
 	);
 }

@@ -22,6 +22,8 @@ import { findingGroup, findingTitle, passageAnchor, stageTone, workspaceStageFro
 import type { ArticleRecord, ArticleRevisionRef } from '@/lib/articles/types';
 import { MetadataProposalPanel } from '@/components/articles/MetadataProposalPanel';
 import { contentRevisionApproved, draftNextAction, improvementJourney, localStatusLabel } from '@/lib/articles/publishedBaseline';
+import { ArticleCommandBar } from '@/components/articles/ArticleCommandBar';
+import { STAGE_TONE_LABEL } from '@/lib/articles/workspaceNavigation';
 
 type ArticleDetail = {
 	article: ArticleRecord;
@@ -535,8 +537,26 @@ export default function ArticleWorkspacePage() {
 			}
 		>
 		<div className="space-y-6">
+			<ArticleCommandBar
+				brandId={article.brandId}
+				articleId={article.id}
+				title={article.title}
+				approval={article.approval.status}
+				nextAction={detail.nextStep?.action ?? journey.label}
+				nextDetail={detail.nextStep?.detail ?? journey.detail}
+				published={detail.lifecycle.published}
+				submittedToCms={detail.lifecycle.submittedToCms}
+				stages={[
+					{ name: 'Brief', status: STAGE_TONE_LABEL[tones.brief] },
+					{ name: 'Research', status: STAGE_TONE_LABEL[tones.research] },
+					{ name: 'Draft', status: STAGE_TONE_LABEL[tones.draft] },
+					{ name: 'Editorial', status: STAGE_TONE_LABEL[tones.review] },
+					{ name: 'Approval', status: detail.lifecycle.approved ? 'Complete' : 'Waiting for approval' },
+					{ name: 'Publication', status: detail.lifecycle.published ? 'Published' : detail.lifecycle.submittedToCms ? 'CMS draft only' : 'Not started' },
+				]}
+			/>
 
-			<div aria-live="polite" className="sticky top-2 z-10">
+			<div aria-live="polite" className="sticky top-16 z-10">
 				{toast ? (
 					<div className={`card p-3 text-sm flex justify-between gap-3 ${toast.kind === 'error' ? 'border-danger/60' : 'border-accent/60'}`} role={toast.kind === 'error' ? 'alert' : 'status'}>
 						<span>{toast.kind === 'ok' ? '✓ ' : ''}{toast.text}</span>
@@ -935,21 +955,24 @@ export default function ArticleWorkspacePage() {
 				) : null}
 			</section>
 
-			<section className="card p-4 space-y-3" id="approval">
-				<h2 className="font-medium">Approval and schedule</h2>
+			<section className="card-action space-y-3 p-4" id="approval">
+				<h2 className="text-lg font-semibold">Approval</h2>
+				<p className="text-sm">This panel separates three outcomes: approving the draft in CRISP, sending a CMS draft, and publishing the live page.</p>
 				<p className="text-sm">
-					Approval: {article.approval.status}
+					Draft approval: {article.approval.status}
 					{workspace?.approvedAt ? ` · ${new Date(workspace.approvedAt).toLocaleString()}` : ''}
 					{' · '}Schedule: {workspace?.schedule.status}
+					{' · '}CMS: {detail.lifecycle.submittedToCms ? 'draft sent' : 'not sent'}
+					{' · '}Live page: {detail.lifecycle.published ? 'published' : 'not published'}
 				</p>
 				{!gate.ok ? <p className="text-sm text-warning">{gate.message}</p> : null}
 				{workspace?.schedule.blockedReason ? <p className="text-sm">{workspace.schedule.blockedReason}</p> : null}
 				<p className="text-sm">{changes.detail}</p>
-				<p className="text-sm text-text-dim">Approval does not publish. Publish stays off until the article is approved and someone uses the button below. The update targets the existing Payload document and keeps its URL.</p>
+				<p className="text-sm text-text-soft">Approve this draft records a human decision in CRISP. It does not publish the website. Publishing uses the separate control and still has to pass the existing gates.</p>
 				<div className="flex flex-wrap gap-2">
 					<button className="btn" type="button" disabled={busy || article.approval.status === 'approved'} onClick={() => actBool('request_approval', {}, 'Approval requested.')}>Request approval</button>
-					<button className="btn" type="button" disabled={busy || !gate.ok || article.approval.status === 'approved'} onClick={() => actBool('approve', {}, `Revision ${workspace?.revision?.number ?? ''} approved.`)}>Approve article</button>
-					<button className="btn" type="button" disabled={busy || article.approval.status !== 'approved'} onClick={() => actBool('publish', { confirmPublish: true }, 'Publish checked. Nothing is sent unless live publishing is enabled and every gate passes.')}>Publish approved article</button>
+					<button className="btn-primary" type="button" disabled={busy || !gate.ok || article.approval.status === 'approved'} onClick={() => actBool('approve', {}, `Revision ${workspace?.revision?.number ?? ''} approved.`)}>Approve this draft</button>
+					<button className="btn-danger" type="button" disabled={busy || article.approval.status !== 'approved'} onClick={() => actBool('publish', { confirmPublish: true }, 'Publish checked. Nothing is sent unless live publishing is enabled and every gate passes.')}>Publish to the website</button>
 				</div>
 				<details className="text-sm space-y-2">
 					<summary>Schedule and record publication</summary>

@@ -2,20 +2,26 @@
 
 /* Design tokens */
 :root {
-  /* Palette */
+  /* Semantic palette. Components read these tokens so a later light theme can swap values. */
   --bg:        #0B0F12;
-  --surface:   #0F141A;
-  --edge:      #111821;
-  --primary:   #8AB4F8;
-  --accent:    #4FF0B8;
-  --warning:   #F9AB00;
-  --danger:    #FF6D6D;
-  --text:      #E6EAF2;
-  --text-soft: #B5C0CF;
-  --text-dim:  #8190A6;
+  --surface:   #141B24;
+  --edge:      #314050;
+  --primary:   #8EBEFF;
+  --accent:    #3DDC97;
+  --success:   #3DDC97;
+  --warning:   #F5B942;
+  --review:    #F5B942;
+  --danger:    #FF8A80;
+  --info:      #8EBEFF;
+  --text:      #F4F7FB;
+  --text-soft: #C5D0DE;
+  --text-dim:  #A8B6C8;
+  --on-primary:#0B0F12;
 
   /* Misc */
   --ring: 0 0% 100%;
+  --motion-hover: 150ms;
+  --motion-panel: 220ms;
 }
 
 /* Map tokens to Tailwind v4 theme */
@@ -28,6 +34,9 @@
   --color-accent: var(--accent);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-info: var(--info);
+  --color-review: var(--review);
   --color-text: var(--text);
   --color-text-soft: var(--text-soft);
   --color-text-dim: var(--text-dim);
@@ -59,21 +68,69 @@ html {
 }
 
 .card {
-  @apply bg-surface/80 border border-edge/60 shadow-soft rounded-xl2 backdrop-blur-xs;
+  @apply bg-surface border border-edge shadow-soft rounded-xl;
+}
+
+.card-info {
+  @apply bg-surface border border-edge rounded-xl p-4;
+}
+
+.card-nav {
+  @apply block bg-surface border border-edge rounded-xl p-4 text-left transition-colors;
+  transition-duration: var(--motion-hover);
+}
+.card-nav:hover {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--surface) 82%, var(--primary));
+}
+.card-action {
+  @apply bg-surface border border-review/70 rounded-xl p-4;
 }
 
 .input {
-  @apply bg-surface border border-edge rounded-lg px-3 py-2 text-sm text-text;
+  @apply bg-bg border border-edge rounded-lg px-3 py-2 text-sm text-text;
 }
 
 .btn {
-  @apply inline-flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm text-text hover:bg-primary/20 disabled:opacity-50;
+  @apply inline-flex items-center justify-center gap-2 rounded-lg border border-edge bg-surface px-3 py-2 text-sm font-medium text-text hover:border-primary hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-45;
+  transition: background-color var(--motion-hover) ease, border-color var(--motion-hover) ease;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-[var(--on-primary)] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45;
+}
+
+.btn-danger {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg border border-danger/70 bg-danger/15 px-3.5 py-2 text-sm font-semibold text-text hover:bg-danger/25 disabled:cursor-not-allowed disabled:opacity-45;
+}
+
+a.text-link {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+a:focus-visible,
+button:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 /* Utility shims for custom tokens */
 .shadow-glow { box-shadow: var(--shadow-glow); }
 .backdrop-blur-xs { backdrop-filter: blur(var(--backdrop-blur-xs)); }
 .rounded-xl2 { border-radius: var(--radius-xl2); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 /* Premium skeleton shimmer animation */
 @keyframes shimmer {

@@ -2,7 +2,7 @@ export type OverviewOpportunity = { id: string; title: string; status: string; r
 export type OverviewJob = { id: string; opportunityId: string; articleId: string | null; stage: string; status: string; note: string; error: string | null; workType?: string; createdAt?: string };
 export type OverviewArticle = { id: string; title: string; status: string; publicationPhase?: string; contentStage?: string; localChangesPending?: boolean; cmsState?: string | null; updatedAt?: string };
 
-export type OverviewLink = { title: string; detail: string; href: string };
+export type OverviewLink = { title: string; detail: string; href: string; at?: string | null };
 
 export function isQaRecord(title: string): boolean {
 	return /\(qa\b|qa copy|\btest article\b/i.test(title);
@@ -49,6 +49,7 @@ export function buildContentOverview(input: {
 		title: article.title,
 		detail: article.localChangesPending ? 'Local changes pending' : article.cmsState === 'published' ? 'Published in the CMS' : article.contentStage === 'optimisation' ? 'Metadata proposal' : article.status,
 		href: `/content/articles/${article.id}`,
+		at: article.updatedAt ?? null,
 	}));
 	return {
 		campaign: {

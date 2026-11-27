@@ -1,6 +1,7 @@
 export type UnifiedFinding = {
 	id: string;
 	title: string;
+	diagnosticCode?: string;
 	severity: 'critical' | 'major' | 'minor';
 	source: string;
 	section: string | null;

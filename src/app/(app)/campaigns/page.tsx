@@ -147,9 +147,10 @@ export default function CampaignsPage() {
 	return (
 		<div className="mx-auto max-w-6xl space-y-6 p-4">
 			<header>
-				<p className="text-xs text-text-dim">CCE / Campaigns / Opportunities</p>
-				<h1 className="text-2xl font-semibold">Opportunity queue</h1>
-				<p className="text-sm text-text-soft">Discover and validate a topic before an article is produced. A weekly number is a maximum, not a quota.</p>
+				<p className="text-sm font-medium text-text-soft">Campaigns</p>
+				<h1 className="text-[1.75rem] font-semibold">Opportunity queue</h1>
+				<p className="text-base text-text-soft">Discover and validate a topic before an article is produced. A weekly number is a maximum, not a quota. Opening an opportunity does not start it, and this page does not publish.</p>
+				<p className="mt-2 text-sm"><a className="text-link" href="/workflows">View the workflow path →</a></p>
 				<nav className="mt-3 flex flex-wrap gap-3 text-sm" aria-label="Content operations">
 					<a className="underline" href="#approved">Approved opportunities</a>
 					<a className="underline" href="#production">Production jobs</a>

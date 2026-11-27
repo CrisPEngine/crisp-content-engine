@@ -6,7 +6,7 @@ import { hrefWithWorkingBrand, readWorkingBrandId, writeWorkingBrandId } from '@
 
 type BrandRow = { id: string; name: string };
 
-export function HeaderBrandSwitcher() {
+export function HeaderBrandSwitcher({ variant = 'header' }: { variant?: 'header' | 'sidebar' } = {}) {
 	const pathname = usePathname();
 	const router = useRouter();
 	const [brands, setBrands] = useState<BrandRow[]>([]);
@@ -21,12 +21,20 @@ export function HeaderBrandSwitcher() {
 				fetch('/api/brands', { cache: 'no-store' }),
 				fetch('/api/social/connections?skipSync=1', { cache: 'no-store' }),
 			]);
-			const data = (await brandRes.json()) as { profiles?: Array<{ id: string; client_name?: string }> };
-			if (!brandRes.ok) return;
-			const rows: BrandRow[] = (data.profiles ?? []).map((row) => ({
+			const data = brandRes.ok
+				? (await brandRes.json()) as { profiles?: Array<{ id: string; client_name?: string }> }
+				: { profiles: [] };
+			let rows: BrandRow[] = (data.profiles ?? []).map((row) => ({
 				id: row.id,
 				name: row.client_name || 'Unnamed brand',
 			}));
+			if (!rows.length) {
+				const intelRes = await fetch('/api/intelligence/brands', { cache: 'no-store' });
+				if (intelRes.ok) {
+					const intel = (await intelRes.json()) as { brands?: Array<{ id: string; name?: string }> };
+					rows = (intel.brands ?? []).map((row) => ({ id: row.id, name: row.name || 'Unnamed workspace' }));
+				}
+			}
 			setBrands(rows);
 			let brainMap: Record<string, string> = {};
 			if (socialRes.ok) {
@@ -68,18 +76,19 @@ export function HeaderBrandSwitcher() {
 		load().catch(() => setLoading(false));
 	}, [load]);
 
-	if (loading || brands.length === 0) return null;
+	if (loading) return variant === 'sidebar' ? <p className="text-sm text-text-dim">Workspace loading…</p> : null;
+	if (brands.length === 0) return variant === 'sidebar' ? <p className="text-sm text-text-dim">No workspace</p> : null;
 	if (brands.length === 1) {
 		return (
-			<div className="hidden md:flex items-center max-w-[180px] truncate text-xs text-white/50 px-2" title={brands[0].name}>
+			<div className={variant === 'sidebar' ? 'truncate text-sm font-medium text-text' : 'hidden md:flex items-center max-w-[180px] truncate text-xs text-text-soft px-2'} title={brands[0].name}>
 				{brands[0].name}
 			</div>
 		);
 	}
 
 	return (
-		<label className="hidden md:flex items-center gap-2 text-xs text-white/50 mr-2">
-			<span className="sr-only">Working brand</span>
+		<label className={variant === 'sidebar' ? 'flex w-full flex-col gap-1 text-sm text-text' : 'hidden md:flex items-center gap-2 text-xs text-text-soft mr-2'}>
+			<span className={variant === 'sidebar' ? 'sr-only' : 'sr-only'}>Working brand</span>
 			<select
 				value={brandId}
 				onChange={(event) => {
@@ -88,7 +97,7 @@ export function HeaderBrandSwitcher() {
 					writeWorkingBrandId(next);
 					router.push(hrefWithWorkingBrand(pathname, next, brainByAirtable));
 				}}
-				className="max-w-[200px] truncate rounded-lg border border-white/10 bg-black/40 px-2 py-1.5 text-xs text-white/80"
+				className={variant === 'sidebar' ? 'w-full truncate rounded-lg border border-edge bg-bg px-2 py-2 text-sm text-text' : 'max-w-[200px] truncate rounded-lg border border-edge bg-bg px-2 py-1.5 text-xs text-text'}
 			>
 				{brands.map((brand) => (
 					<option key={brand.id} value={brand.id}>

@@ -12,6 +12,7 @@ import { AuthLoadingHandler } from '@/components/AuthLoadingHandler';
 import { WelcomeOnboarding } from '@/components/WelcomeOnboarding';
 import { NewBrandCallout } from '@/components/NewBrandCallout';
 import { NativeGetStartedCard } from '@/components/dashboard/NativeGetStartedCard';
+import { CommandHome } from '@/components/command/CommandHome';
 import { Suspense } from 'react';
 
 export const dynamic = 'force-dynamic';
@@ -253,7 +254,11 @@ export default async function Dashboard({
 		// Server-side fetch would require passing cookies which is complex
 
 		return (
-			<main className="p-4 md:p-6 space-y-4 md:space-y-6">
+			<main className="mx-auto max-w-6xl space-y-8 p-4 md:p-8">
+			<CommandHome />
+			<details className="card-info">
+				<summary className="cursor-pointer text-base font-semibold">Account, brands and setup</summary>
+				<div className="mt-6 space-y-6">
 			<WelcomeOnboarding
 				show={showWelcomeOnboarding}
 				hasNativeBrand={(nativeBrandCount ?? 0) > 0}
@@ -271,9 +276,9 @@ export default async function Dashboard({
 			/>
 			<div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
 				<div className="flex-1">
-					<h1 className="text-2xl md:text-3xl font-semibold">Welcome 👋</h1>
-					<p className="text-sm md:text-base text-text-dim mt-1">
-						You're signed in as <span className="font-medium">{user.email}</span>.
+					<h2 className="text-xl font-semibold">Account and brands</h2>
+					<p className="text-sm md:text-base text-text-soft mt-1">
+						You're signed in as <span className="font-medium text-text">{user.email}</span>.
 					</p>
 				</div>
 				<div className="flex items-center gap-3">
@@ -421,6 +426,8 @@ export default async function Dashboard({
 			</div>
 				</>
 			)}
+				</div>
+			</details>
 			</main>
 		);
 	} catch (error: any) {

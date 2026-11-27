@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { DiffView } from '@/components/articles/RevisionDiff';
 import type { EditorialCritique, RevisionProposal, RevisionPreview } from '@/lib/articles/editorialDesk';
 import type { ArticleEditorialFinding } from '@/lib/articles/types';
-import { findingGroup, findingTitle } from '@/lib/articles/workspaceNavigation';
+import { findingCodeLabel, findingGroup, findingTitle } from '@/lib/articles/workspaceNavigation';
 import { findingLifecycle, findingMayBeSetAside, lifecycleLabel, type FindingLifecycle } from '@/lib/articles/reviewWorkflow';
 import { consolidateFindings, sourceLabel, type UnifiedFinding } from '@/lib/articles/unifiedFindings';
 
@@ -76,7 +76,8 @@ export function EditorialReviewBoard({
 			const proposal = proposalFor(item.id);
 			return {
 				id: item.id,
-				title: item.code.replace(/_/g, ' '),
+				title: findingCodeLabel(item.code),
+				diagnosticCode: item.code,
 				severity: item.severity,
 				source: sourceLabel(item.source, item.dimension),
 				section: item.section ?? null,
@@ -287,7 +288,13 @@ function FindingCard({
 	return (
 		<li className="border-t border-edge/50 pt-2">
 			<p className="font-medium">{card.item.title}</p>
-			<p className="text-xs uppercase text-text-dim">{card.item.severity} · {card.item.source}{card.item.section ? ` · ${card.item.section}` : ''} · {lifecycleLabel(card.state, card.item.appliedRevisionNumber)}</p>
+			<p className="text-sm text-text-soft">{card.item.severity} · {card.item.source}{card.item.section ? ` · ${card.item.section}` : ''} · {lifecycleLabel(card.state, card.item.appliedRevisionNumber)}</p>
+			{card.item.diagnosticCode ? (
+				<details className="text-xs text-text-dim">
+					<summary>Diagnostic details</summary>
+					Code: {card.item.diagnosticCode}
+				</details>
+			) : null}
 			<p><span className="text-text-soft">Explanation. </span>{card.item.explanation}</p>
 			{card.item.historyNote ? <p className="text-text-soft">{card.item.historyNote}</p> : null}
 			<p className="text-text-soft">Affected content. {card.item.section ? `Section “${card.item.section}”. ` : ''}{card.item.evidence.length ? card.item.evidence.slice(0, 4).join(' ') : 'No quoted passage was recorded.'}</p>
@@ -315,7 +322,7 @@ function FindingCard({
 				{open ? <button className="btn" type="button" disabled={busy} onClick={() => setShowFix((current) => !current)}>Review suggested fix</button> : null}
 				{open ? <button className="btn" type="button" disabled={busy} onClick={() => setEditing((current) => !current)}>Edit manually</button> : null}
 				{card.state === 'pending' || card.state === 'applied-unresolved' ? (
-					<button className="btn" type="button" disabled={busy} onClick={() => onDecide(card, 'accepted')}>{card.state === 'applied-unresolved' ? 'Approve again' : 'Approve'}</button>
+					<button className="btn-primary" type="button" disabled={busy} onClick={() => onDecide(card, 'accepted')}>{card.state === 'applied-unresolved' ? 'Approve proposed change again' : 'Approve proposed change'}</button>
 				) : null}
 				{card.state === 'approved' ? <span className="btn">Approved, awaiting application</span> : null}
 				{open && onSetAside && card.item.dismissible ? (
