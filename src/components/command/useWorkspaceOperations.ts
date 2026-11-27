@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useState } from 'react';
 import { productionCapacity } from '@/lib/campaigns/productionPolicy';
 import { buildContentOverview, type OverviewArticle, type OverviewJob, type OverviewOpportunity } from '@/lib/content/overview';
 
@@ -16,21 +16,10 @@ export type WorkspaceOperations = {
 	articles: OverviewArticle[];
 };
 
-let cachedOperations: WorkspaceOperations | null = null;
 let inflightOperations: Promise<WorkspaceOperations> | null = null;
-const listeners = new Set<() => void>();
-
-function publish(next: WorkspaceOperations | null) {
-	cachedOperations = next;
-	listeners.forEach((listener) => listener());
-}
 
 async function readJson(response: Response): Promise<unknown> {
-	if (response.status === 401) {
-		publish(null);
-		throw new Error('unauthorized');
-	}
-	if (!response.ok) throw new Error('request failed');
+	if (!response.ok) throw new Error(response.status === 401 ? 'unauthorized' : 'request failed');
 	return response.json();
 }
 
@@ -71,7 +60,6 @@ function loadOperations(): Promise<WorkspaceOperations> {
 				articles,
 			}),
 		};
-		publish(next);
 		return next;
 	})().finally(() => {
 		inflightOperations = null;
@@ -80,24 +68,20 @@ function loadOperations(): Promise<WorkspaceOperations> {
 }
 
 export function useWorkspaceOperations() {
-	const data = useSyncExternalStore(
-		(listener) => {
-			listeners.add(listener);
-			return () => listeners.delete(listener);
-		},
-		() => cachedOperations,
-		() => null,
-	);
+	const [data, setData] = useState<WorkspaceOperations | null>(null);
 	const [error, setError] = useState('');
 
 	useEffect(() => {
 		let cancelled = false;
 		loadOperations()
-			.then(() => {
-				if (!cancelled) setError('');
+			.then((next) => {
+				if (!cancelled) {
+					setData(next);
+					setError('');
+				}
 			})
 			.catch(() => {
-				if (!cancelled && !cachedOperations) setError('Workspace activity could not be loaded.');
+				if (!cancelled) setError('Workspace activity could not be loaded.');
 			});
 		return () => {
 			cancelled = true;
